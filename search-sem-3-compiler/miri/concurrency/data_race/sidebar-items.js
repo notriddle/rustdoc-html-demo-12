@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AccessType","AtomicAccessType","AtomicFenceOrd","AtomicReadOrd","AtomicRwOrd","AtomicWriteOrd","NaReadType","NaWriteType"],"struct":["AtomicMemoryCellClocks","DataRace","GlobalState","MemoryCellClocks","ThreadClockSet","ThreadExtraState","VClockAlloc"],"trait":["EvalContextExt","EvalContextPrivExt"],"type":["AllocState"]};

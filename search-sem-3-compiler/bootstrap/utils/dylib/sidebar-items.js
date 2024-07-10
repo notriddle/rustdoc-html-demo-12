@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["dylib_path","dylib_path_var","exe"]};

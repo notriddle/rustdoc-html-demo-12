@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_for_main_and_extern_crate","check_if_attr_is_complete","make_test","partition_source"]};

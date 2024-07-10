@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ErrorKind"],"fn":["strip_url_protocol"],"struct":["PackageIdSpec","PackageIdSpecError"],"type":["Result"]};

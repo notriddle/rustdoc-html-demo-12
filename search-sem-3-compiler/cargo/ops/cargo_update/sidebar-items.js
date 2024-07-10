@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["fill_with_deps","generate_lockfile","is_latest","print_lockfile_changes","print_lockfile_generation","print_lockfile_sync","print_lockfile_updates","status_locking","update_lockfile","upgrade_dependency","upgrade_manifests","write_manifest_upgrades"],"struct":["PackageDiff","UpdateOptions"],"type":["UpgradeMap"]};

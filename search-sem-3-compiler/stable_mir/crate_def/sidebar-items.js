@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["crate_def","crate_def_with_ty"],"struct":["DefId"],"trait":["CrateDef","CrateDefType"]};

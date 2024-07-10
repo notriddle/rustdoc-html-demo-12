@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["trait_object_ty","transform_instance"],"struct":["TransformTy"],"type":["TransformTyOptions"]};

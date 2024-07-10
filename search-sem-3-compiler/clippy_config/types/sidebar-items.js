@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DisallowedPath","MatchLintBehaviour","PubUnderscoreFieldsBehaviour"],"macro":["unimplemented_serialize"],"struct":["MacroMatcher","Rename"]};
