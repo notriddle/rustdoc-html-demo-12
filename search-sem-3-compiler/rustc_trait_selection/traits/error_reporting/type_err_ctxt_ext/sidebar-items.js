@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["OverflowCause"],"fn":["report_object_safety_error","suggest_new_overflow_limit"],"trait":["InferCtxtPrivExt","TypeErrCtxtExt"]};

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/place.rs`."><title>place.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/place.rs`."><title>place.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1032,6 +1032,18 @@
 <a href="#1032" id="1032">1032</a>
 <a href="#1033" id="1033">1033</a>
 <a href="#1034" id="1034">1034</a>
+<a href="#1035" id="1035">1035</a>
+<a href="#1036" id="1036">1036</a>
+<a href="#1037" id="1037">1037</a>
+<a href="#1038" id="1038">1038</a>
+<a href="#1039" id="1039">1039</a>
+<a href="#1040" id="1040">1040</a>
+<a href="#1041" id="1041">1041</a>
+<a href="#1042" id="1042">1042</a>
+<a href="#1043" id="1043">1043</a>
+<a href="#1044" id="1044">1044</a>
+<a href="#1045" id="1045">1045</a>
+<a href="#1046" id="1046">1046</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Computations on places -- field projections, going from mir::Place, and writing
 //! into a place.
 //! All high-level functions to write to memory work on places as destinations.
@@ -1475,7 +1487,7 @@
 
     <span class="doccomment">/// Take an operand, representing a pointer, and dereference it to a place.
     /// Corresponds to the `*` operator in Rust.
-    </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"debug"</span>)]
+    </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
     </span><span class="kw">pub fn </span>deref_pointer(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Readable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
@@ -1567,7 +1579,7 @@
 
     <span class="doccomment">/// Computes a place. You should only use this if you intend to write into this
     /// place; for reading, a more efficient alternative is `eval_place_to_op`.
-    </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"debug"</span>)]
+    </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
     </span><span class="kw">pub fn </span>eval_place(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         mir_place: mir::Place&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -1604,7 +1616,7 @@
 
     <span class="doccomment">/// Write an immediate to a place
     </span><span class="attr">#[inline(always)]
-    #[instrument(skip(<span class="self">self</span>), level = <span class="string">"debug"</span>)]
+    #[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
     </span><span class="kw">pub fn </span>write_immediate(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         src: Immediate&lt;M::Provenance&gt;,
@@ -1842,7 +1854,7 @@
     <span class="doccomment">/// Copies the data from an operand to a place.
     /// `allow_transmute` indicates whether the layouts may disagree.
     </span><span class="attr">#[inline(always)]
-    #[instrument(skip(<span class="self">self</span>), level = <span class="string">"debug"</span>)]
+    #[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
     </span><span class="kw">fn </span>copy_op_inner(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Readable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
@@ -1871,7 +1883,7 @@
     /// `allow_transmute` indicates whether the layouts may disagree.
     /// Also, if you use this you are responsible for validating that things get copied at the
     /// right type.
-    </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"debug"</span>)]
+    </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
     </span><span class="kw">fn </span>copy_op_no_validate(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Readable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
@@ -1948,7 +1960,7 @@
     /// If the place currently refers to a local that doesn't yet have a matching allocation,
     /// create such an allocation.
     /// This is essentially `force_to_memplace`.
-    </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"debug"</span>)]
+    </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
     </span><span class="kw">pub fn </span>force_allocation(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         place: <span class="kw-2">&amp;</span>PlaceTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
@@ -2029,13 +2041,25 @@
     }
 
     <span class="doccomment">/// Returns a wide MPlace of type `str` to a new 1-aligned allocation.
+    /// Immutable strings are deduplicated and stored in global memory.
     </span><span class="kw">pub fn </span>allocate_str(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         str: <span class="kw-2">&amp;</span>str,
         kind: MemoryKind&lt;M::MemoryKind&gt;,
         mutbl: Mutability,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, MPlaceTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt; {
-        <span class="kw">let </span>ptr = <span class="self">self</span>.allocate_bytes_ptr(str.as_bytes(), Align::ONE, kind, mutbl)<span class="question-mark">?</span>;
+        <span class="kw">let </span>tcx = <span class="self">self</span>.tcx.tcx;
+
+        <span class="comment">// Use cache for immutable strings.
+        </span><span class="kw">let </span>ptr = <span class="kw">if </span>mutbl.is_not() {
+            <span class="comment">// Use dedup'd allocation function.
+            </span><span class="kw">let </span>id = tcx.allocate_bytes_dedup(str.as_bytes());
+
+            <span class="comment">// Turn untagged "global" pointers (obtained via `tcx`) into the machine pointer to the allocation.
+            </span>M::adjust_alloc_root_pointer(<span class="kw-2">&amp;</span><span class="self">self</span>, Pointer::from(id), <span class="prelude-val">Some</span>(kind))<span class="question-mark">?
+        </span>} <span class="kw">else </span>{
+            <span class="self">self</span>.allocate_bytes_ptr(str.as_bytes(), Align::ONE, kind, mutbl)<span class="question-mark">?
+        </span>};
         <span class="kw">let </span>meta = Scalar::from_target_usize(u64::try_from(str.len()).unwrap(), <span class="self">self</span>);
         <span class="kw">let </span>layout = <span class="self">self</span>.layout_of(<span class="self">self</span>.tcx.types.str_).unwrap();
         <span class="prelude-val">Ok</span>(<span class="self">self</span>.ptr_with_meta_to_mplace(ptr.into(), MemPlaceMeta::Meta(meta), layout))

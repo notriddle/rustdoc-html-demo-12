@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/traits.rs`."><title>traits.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/traits.rs`."><title>traits.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -121,15 +121,10 @@
 <a href="#121" id="121">121</a>
 <a href="#122" id="122">122</a>
 <a href="#123" id="123">123</a>
-<a href="#124" id="124">124</a>
-<a href="#125" id="125">125</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_infer::infer::TyCtxtInferExt;
-<span class="kw">use </span>rustc_infer::traits::ObligationCause;
-<span class="kw">use </span>rustc_middle::mir::interpret::{InterpResult, Pointer};
+</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_middle::mir::interpret::{InterpResult, Pointer};
 <span class="kw">use </span>rustc_middle::ty::layout::LayoutOf;
-<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Ty};
+<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Ty, TyCtxt, VtblEntry};
 <span class="kw">use </span>rustc_target::abi::{Align, Size};
-<span class="kw">use </span>rustc_trait_selection::traits::ObligationCtxt;
 <span class="kw">use </span>tracing::trace;
 
 <span class="kw">use </span><span class="kw">super</span>::util::ensure_monomorphic_enough;
@@ -172,6 +167,20 @@
         <span class="prelude-val">Ok</span>((layout.size, layout.align.abi))
     }
 
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>vtable_entries(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        trait_: <span class="prelude-ty">Option</span>&lt;ty::PolyExistentialTraitRef&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+        dyn_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
+    ) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>[VtblEntry&lt;<span class="lifetime">'tcx</span>&gt;] {
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(trait_) = trait_ {
+            <span class="kw">let </span>trait_ref = trait_.with_self_ty(<span class="kw-2">*</span><span class="self">self</span>.tcx, dyn_ty);
+            <span class="kw">let </span>trait_ref = <span class="self">self</span>.tcx.erase_regions(trait_ref);
+            <span class="self">self</span>.tcx.vtable_entries(trait_ref)
+        } <span class="kw">else </span>{
+            TyCtxt::COMMON_VTABLE_ENTRIES
+        }
+    }
+
     <span class="doccomment">/// Check that the given vtable trait is valid for a pointer/reference/place with the given
     /// expected trait type.
     </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>check_vtable_for_type(
@@ -179,28 +188,15 @@
         vtable_trait: <span class="prelude-ty">Option</span>&lt;ty::PolyExistentialTraitRef&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
         expected_trait: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>ty::List&lt;ty::PolyExistentialPredicate&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
-        <span class="comment">// Fast path: if they are equal, it's all fine.
-        </span><span class="kw">if </span>expected_trait.principal() == vtable_trait {
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+        <span class="kw">let </span>eq = <span class="kw">match </span>(expected_trait.principal(), vtable_trait) {
+            (<span class="prelude-val">Some</span>(a), <span class="prelude-val">Some</span>(b)) =&gt; <span class="self">self</span>.eq_in_param_env(a, b),
+            (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>) =&gt; <span class="bool-val">true</span>,
+            <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
+        };
+        <span class="kw">if </span>!eq {
+            <span class="macro">throw_ub!</span>(InvalidVTableTrait { expected_trait, vtable_trait });
         }
-        <span class="kw">if let </span>(<span class="prelude-val">Some</span>(expected_trait), <span class="prelude-val">Some</span>(vtable_trait)) =
-            (expected_trait.principal(), vtable_trait)
-        {
-            <span class="comment">// Slow path: spin up an inference context to check if these traits are sufficiently equal.
-            </span><span class="kw">let </span>infcx = <span class="self">self</span>.tcx.infer_ctxt().build();
-            <span class="kw">let </span>ocx = ObligationCtxt::new(<span class="kw-2">&amp;</span>infcx);
-            <span class="kw">let </span>cause = ObligationCause::dummy_with_span(<span class="self">self</span>.cur_span());
-            <span class="comment">// equate the two trait refs after normalization
-            </span><span class="kw">let </span>expected_trait = ocx.normalize(<span class="kw-2">&amp;</span>cause, <span class="self">self</span>.param_env, expected_trait);
-            <span class="kw">let </span>vtable_trait = ocx.normalize(<span class="kw-2">&amp;</span>cause, <span class="self">self</span>.param_env, vtable_trait);
-            <span class="kw">if </span>ocx.eq(<span class="kw-2">&amp;</span>cause, <span class="self">self</span>.param_env, expected_trait, vtable_trait).is_ok() {
-                <span class="kw">if </span>ocx.select_all_or_error().is_empty() {
-                    <span class="comment">// All good.
-                    </span><span class="kw">return </span><span class="prelude-val">Ok</span>(());
-                }
-            }
-        }
-        <span class="macro">throw_ub!</span>(InvalidVTableTrait { expected_trait, vtable_trait });
+        <span class="prelude-val">Ok</span>(())
     }
 
     <span class="doccomment">/// Turn a place with a `dyn Trait` type into a place with the actual dynamic type.

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["check_impl_wf","enforce_impl_params_are_constrained","report_unused_parameter"],"mod":["min_specialization"]};
+window.SIDEBAR_ITEMS = {"fn":["check_impl_wf","enforce_impl_params_are_constrained"],"mod":["min_specialization"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["cwd","filename_not_in_denylist","has_extension","has_prefix","has_suffix","not_contains","path","shallow_find_files","source_root"]};

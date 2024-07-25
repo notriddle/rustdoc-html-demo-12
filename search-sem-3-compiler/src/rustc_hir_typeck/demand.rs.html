@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_typeck/src/demand.rs`."><title>demand.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_typeck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_typeck/src/demand.rs`."><title>demand.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_typeck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1195,6 +1195,7 @@
 <a href="#1195" id="1195">1195</a>
 <a href="#1196" id="1196">1196</a>
 <a href="#1197" id="1197">1197</a>
+<a href="#1198" id="1198">1198</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::FnCtxt;
 <span class="kw">use </span>rustc_errors::MultiSpan;
 <span class="kw">use </span>rustc_errors::{Applicability, Diag};
@@ -1210,6 +1211,7 @@
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, AssocItem, Ty, TypeFoldable, TypeVisitableExt};
 <span class="kw">use </span>rustc_span::symbol::sym;
 <span class="kw">use </span>rustc_span::{Span, DUMMY_SP};
+<span class="kw">use </span>rustc_trait_selection::infer::InferCtxtExt;
 <span class="kw">use </span>rustc_trait_selection::traits::ObligationCause;
 
 <span class="kw">use </span><span class="kw">super</span>::method::probe;
@@ -1369,21 +1371,21 @@
     }
 
     <span class="kw">pub fn </span>demand_suptype_diag(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="self">self</span>,
         sp: Span,
         expected: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
         actual: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), Diag&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), Diag&lt;<span class="lifetime">'a</span>&gt;&gt; {
         <span class="self">self</span>.demand_suptype_with_origin(<span class="kw-2">&amp;</span><span class="self">self</span>.misc(sp), expected, actual)
     }
 
     <span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"debug"</span>)]
     </span><span class="kw">pub fn </span>demand_suptype_with_origin(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="self">self</span>,
         cause: <span class="kw-2">&amp;</span>ObligationCause&lt;<span class="lifetime">'tcx</span>&gt;,
         expected: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
         actual: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), Diag&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), Diag&lt;<span class="lifetime">'a</span>&gt;&gt; {
         <span class="self">self</span>.at(cause, <span class="self">self</span>.param_env)
             .sup(DefineOpaqueTypes::Yes, expected, actual)
             .map(|infer_ok| <span class="self">self</span>.register_infer_ok_obligations(infer_ok))
@@ -1397,20 +1399,20 @@
     }
 
     <span class="kw">pub fn </span>demand_eqtype_diag(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="self">self</span>,
         sp: Span,
         expected: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
         actual: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), Diag&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), Diag&lt;<span class="lifetime">'a</span>&gt;&gt; {
         <span class="self">self</span>.demand_eqtype_with_origin(<span class="kw-2">&amp;</span><span class="self">self</span>.misc(sp), expected, actual)
     }
 
     <span class="kw">pub fn </span>demand_eqtype_with_origin(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="self">self</span>,
         cause: <span class="kw-2">&amp;</span>ObligationCause&lt;<span class="lifetime">'tcx</span>&gt;,
         expected: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
         actual: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), Diag&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), Diag&lt;<span class="lifetime">'a</span>&gt;&gt; {
         <span class="self">self</span>.at(cause, <span class="self">self</span>.param_env)
             .eq(DefineOpaqueTypes::Yes, expected, actual)
             .map(|infer_ok| <span class="self">self</span>.register_infer_ok_obligations(infer_ok))
@@ -1444,13 +1446,13 @@
     /// will be permitted if the diverges flag is currently "always".
     </span><span class="attr">#[instrument(level = <span class="string">"debug"</span>, skip(<span class="self">self</span>, expr, expected_ty_expr, allow_two_phase))]
     </span><span class="kw">pub fn </span>demand_coerce_diag(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="self">self</span>,
         <span class="kw-2">mut </span>expr: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>hir::Expr&lt;<span class="lifetime">'tcx</span>&gt;,
         checked_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
         expected: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
         <span class="kw-2">mut </span>expected_ty_expr: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>hir::Expr&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
         allow_two_phase: AllowTwoPhase,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;Ty&lt;<span class="lifetime">'tcx</span>&gt;, Diag&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;Ty&lt;<span class="lifetime">'tcx</span>&gt;, Diag&lt;<span class="lifetime">'a</span>&gt;&gt; {
         <span class="kw">let </span>expected = <span class="self">self</span>.resolve_vars_with_obligations(expected);
 
         <span class="kw">let </span>e = <span class="kw">match </span><span class="self">self</span>.coerce(expr, checked_ty, expected, allow_two_phase, <span class="prelude-val">None</span>) {

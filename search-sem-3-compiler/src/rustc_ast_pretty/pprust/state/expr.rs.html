@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_ast_pretty/src/pprust/state/expr.rs`."><title>expr.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_ast_pretty" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_ast_pretty/src/pprust/state/expr.rs`."><title>expr.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_ast_pretty" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -898,6 +898,10 @@
 <a href="#898" id="898">898</a>
 <a href="#899" id="899">899</a>
 <a href="#900" id="900">900</a>
+<a href="#901" id="901">901</a>
+<a href="#902" id="902">902</a>
+<a href="#903" id="903">903</a>
+<a href="#904" id="904">904</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::pp::Breaks::Inconsistent;
 <span class="kw">use </span><span class="kw">crate</span>::pprust::state::fixup::FixupContext;
 <span class="kw">use </span><span class="kw">crate</span>::pprust::state::{AnnNode, PrintState, State, INDENT_UNIT};
@@ -905,6 +909,7 @@
 <span class="kw">use </span>itertools::{Itertools, Position};
 <span class="kw">use </span>rustc_ast::ptr::P;
 <span class="kw">use </span>rustc_ast::token;
+<span class="kw">use </span>rustc_ast::util::classify;
 <span class="kw">use </span>rustc_ast::util::literal::escape_byte_str_symbol;
 <span class="kw">use </span>rustc_ast::util::parser::{<span class="self">self</span>, AssocOp, Fixity};
 <span class="kw">use </span>rustc_ast::{<span class="self">self </span><span class="kw">as </span>ast, BlockCheckMode};
@@ -1117,7 +1122,7 @@
     <span class="kw">fn </span>print_expr_call(<span class="kw-2">&amp;mut </span><span class="self">self</span>, func: <span class="kw-2">&amp;</span>ast::Expr, args: <span class="kw-2">&amp;</span>[P&lt;ast::Expr&gt;], fixup: FixupContext) {
         <span class="kw">let </span>prec = <span class="kw">match </span>func.kind {
             ast::ExprKind::Field(..) =&gt; parser::PREC_FORCE_PAREN,
-            <span class="kw">_ </span>=&gt; parser::PREC_POSTFIX,
+            <span class="kw">_ </span>=&gt; parser::PREC_UNAMBIGUOUS,
         };
 
         <span class="comment">// Independent of parenthesization related to precedence, we must
@@ -1157,7 +1162,7 @@
         // boundaries, `$receiver.method()` can be parsed back as a statement
         // containing an expression if and only if `$receiver` can be parsed as
         // a statement containing an expression.
-        </span><span class="self">self</span>.print_expr_maybe_paren(receiver, parser::PREC_POSTFIX, fixup);
+        </span><span class="self">self</span>.print_expr_maybe_paren(receiver, parser::PREC_UNAMBIGUOUS, fixup);
 
         <span class="self">self</span>.word(<span class="string">"."</span>);
         <span class="self">self</span>.print_ident(segment.ident);
@@ -1389,7 +1394,7 @@
                         <span class="self">self</span>.space();
                     }
                     MatchKind::Postfix =&gt; {
-                        <span class="self">self</span>.print_expr_maybe_paren(expr, parser::PREC_POSTFIX, fixup);
+                        <span class="self">self</span>.print_expr_maybe_paren(expr, parser::PREC_UNAMBIGUOUS, fixup);
                         <span class="self">self</span>.word_nbsp(<span class="string">".match"</span>);
                     }
                 }
@@ -1440,7 +1445,7 @@
                 </span><span class="self">self</span>.ibox(<span class="number">0</span>);
                 <span class="self">self</span>.print_block_with_attrs(blk, attrs);
             }
-            ast::ExprKind::Gen(capture_clause, blk, kind) =&gt; {
+            ast::ExprKind::Gen(capture_clause, blk, kind, _decl_span) =&gt; {
                 <span class="self">self</span>.word_nbsp(kind.modifier());
                 <span class="self">self</span>.print_capture_clause(<span class="kw-2">*</span>capture_clause);
                 <span class="comment">// cbox/ibox in analogy to the `ExprKind::Block` arm above
@@ -1449,7 +1454,7 @@
                 <span class="self">self</span>.print_block_with_attrs(blk, attrs);
             }
             ast::ExprKind::Await(expr, <span class="kw">_</span>) =&gt; {
-                <span class="self">self</span>.print_expr_maybe_paren(expr, parser::PREC_POSTFIX, fixup);
+                <span class="self">self</span>.print_expr_maybe_paren(expr, parser::PREC_UNAMBIGUOUS, fixup);
                 <span class="self">self</span>.word(<span class="string">".await"</span>);
             }
             ast::ExprKind::Assign(lhs, rhs, <span class="kw">_</span>) =&gt; {
@@ -1468,14 +1473,14 @@
                 <span class="self">self</span>.print_expr_maybe_paren(rhs, prec, fixup.subsequent_subexpression());
             }
             ast::ExprKind::Field(expr, ident) =&gt; {
-                <span class="self">self</span>.print_expr_maybe_paren(expr, parser::PREC_POSTFIX, fixup);
+                <span class="self">self</span>.print_expr_maybe_paren(expr, parser::PREC_UNAMBIGUOUS, fixup);
                 <span class="self">self</span>.word(<span class="string">"."</span>);
                 <span class="self">self</span>.print_ident(<span class="kw-2">*</span>ident);
             }
             ast::ExprKind::Index(expr, index, <span class="kw">_</span>) =&gt; {
                 <span class="self">self</span>.print_expr_maybe_paren(
                     expr,
-                    parser::PREC_POSTFIX,
+                    parser::PREC_UNAMBIGUOUS,
                     fixup.leftmost_subexpression(),
                 );
                 <span class="self">self</span>.word(<span class="string">"["</span>);
@@ -1510,9 +1515,12 @@
                 }
                 <span class="kw">if let </span><span class="prelude-val">Some</span>(expr) = opt_expr {
                     <span class="self">self</span>.space();
-                    <span class="self">self</span>.print_expr_maybe_paren(
+                    <span class="self">self</span>.print_expr_cond_paren(
                         expr,
-                        parser::PREC_JUMP,
+                        <span class="comment">// Parenthesize if required by precedence, or in the
+                        // case of `break 'inner: loop { break 'inner 1 } + 1`
+                        </span>expr.precedence().order() &lt; parser::PREC_JUMP
+                            || (opt_label.is_none() &amp;&amp; classify::leading_labeled_expr(expr)),
                         fixup.subsequent_subexpression(),
                     );
                 }
@@ -1613,7 +1621,7 @@
                 }
             }
             ast::ExprKind::Try(e) =&gt; {
-                <span class="self">self</span>.print_expr_maybe_paren(e, parser::PREC_POSTFIX, fixup);
+                <span class="self">self</span>.print_expr_maybe_paren(e, parser::PREC_UNAMBIGUOUS, fixup);
                 <span class="self">self</span>.word(<span class="string">"?"</span>)
             }
             ast::ExprKind::TryBlock(blk) =&gt; {

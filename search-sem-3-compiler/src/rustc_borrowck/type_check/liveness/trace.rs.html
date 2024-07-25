@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/type_check/liveness/trace.rs`."><title>trace.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/type_check/liveness/trace.rs`."><title>trace.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -629,6 +629,23 @@
 <a href="#629" id="629">629</a>
 <a href="#630" id="630">630</a>
 <a href="#631" id="631">631</a>
+<a href="#632" id="632">632</a>
+<a href="#633" id="633">633</a>
+<a href="#634" id="634">634</a>
+<a href="#635" id="635">635</a>
+<a href="#636" id="636">636</a>
+<a href="#637" id="637">637</a>
+<a href="#638" id="638">638</a>
+<a href="#639" id="639">639</a>
+<a href="#640" id="640">640</a>
+<a href="#641" id="641">641</a>
+<a href="#642" id="642">642</a>
+<a href="#643" id="643">643</a>
+<a href="#644" id="644">644</a>
+<a href="#645" id="645">645</a>
+<a href="#646" id="646">646</a>
+<a href="#647" id="647">647</a>
+<a href="#648" id="648">648</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span>rustc_data_structures::fx::{FxIndexMap, FxIndexSet};
 <span class="kw">use </span>rustc_index::bit_set::BitSet;
 <span class="kw">use </span>rustc_index::interval::IntervalSet;
@@ -674,7 +691,7 @@
     typeck: <span class="kw-2">&amp;mut </span>TypeChecker&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
     body: <span class="kw-2">&amp;</span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
     elements: <span class="kw-2">&amp;</span>Rc&lt;DenseLocationMap&gt;,
-    flow_inits: <span class="kw-2">&amp;mut </span>ResultsCursor&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>, MaybeInitializedPlaces&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
+    flow_inits: <span class="kw-2">&amp;mut </span>ResultsCursor&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>, MaybeInitializedPlaces&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
     move_data: <span class="kw-2">&amp;</span>MoveData&lt;<span class="lifetime">'tcx</span>&gt;,
     relevant_live_locals: Vec&lt;Local&gt;,
     boring_locals: Vec&lt;Local&gt;,
@@ -732,7 +749,7 @@
 }
 
 <span class="doccomment">/// Contextual state for the type-liveness coroutine.
-</span><span class="kw">struct </span>LivenessContext&lt;<span class="lifetime">'me</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt; {
+</span><span class="kw">struct </span>LivenessContext&lt;<span class="lifetime">'a</span>, <span class="lifetime">'me</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="doccomment">/// Current type-checker, giving us our inference context etc.
     </span>typeck: <span class="kw-2">&amp;</span><span class="lifetime">'me </span><span class="kw-2">mut </span>TypeChecker&lt;<span class="lifetime">'typeck</span>, <span class="lifetime">'tcx</span>&gt;,
 
@@ -750,7 +767,7 @@
 
     <span class="doccomment">/// Results of dataflow tracking which variables (and paths) have been
     /// initialized.
-    </span>flow_inits: <span class="kw-2">&amp;</span><span class="lifetime">'me </span><span class="kw-2">mut </span>ResultsCursor&lt;<span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>, MaybeInitializedPlaces&lt;<span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
+    </span>flow_inits: <span class="kw-2">&amp;</span><span class="lifetime">'me </span><span class="kw-2">mut </span>ResultsCursor&lt;<span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>, MaybeInitializedPlaces&lt;<span class="lifetime">'a</span>, <span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
 
     <span class="doccomment">/// Index indicating where each variable is assigned, used, or
     /// dropped.
@@ -762,8 +779,8 @@
     region_constraint_data: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>QueryRegionConstraints&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
 }
 
-<span class="kw">struct </span>LivenessResults&lt;<span class="lifetime">'me</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt; {
-    cx: LivenessContext&lt;<span class="lifetime">'me</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt;,
+<span class="kw">struct </span>LivenessResults&lt;<span class="lifetime">'a</span>, <span class="lifetime">'me</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt; {
+    cx: LivenessContext&lt;<span class="lifetime">'a</span>, <span class="lifetime">'me</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt;,
 
     <span class="doccomment">/// Set of points that define the current local.
     </span>defs: BitSet&lt;PointIndex&gt;,
@@ -784,8 +801,8 @@
     </span>stack: Vec&lt;PointIndex&gt;,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'me</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt; LivenessResults&lt;<span class="lifetime">'me</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">fn </span>new(cx: LivenessContext&lt;<span class="lifetime">'me</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'me</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt; LivenessResults&lt;<span class="lifetime">'a</span>, <span class="lifetime">'me</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">fn </span>new(cx: LivenessContext&lt;<span class="lifetime">'a</span>, <span class="lifetime">'me</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'flow</span>, <span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
         <span class="kw">let </span>num_points = cx.elements.num_points();
         LivenessResults {
             cx,
@@ -848,35 +865,52 @@
     /// Add facts for all locals with free regions, since regions may outlive
     /// the function body only at certain nodes in the CFG.
     </span><span class="kw">fn </span>add_extra_drop_facts(<span class="kw-2">&amp;mut </span><span class="self">self</span>, relevant_live_locals: <span class="kw-2">&amp;</span>[Local]) -&gt; <span class="prelude-ty">Option</span>&lt;()&gt; {
-        <span class="kw">let </span>drop_used = <span class="self">self
-            </span>.cx
-            .typeck
-            .borrowck_context
-            .all_facts
-            .as_ref()
-            .map(|facts| facts.var_dropped_at.clone())<span class="question-mark">?</span>;
+        <span class="comment">// This collect is more necessary than immediately apparent
+        // because these facts go into `add_drop_live_facts_for()`,
+        // which also writes to `all_facts`, and so this is genuinely
+        // a simulatneous overlapping mutable borrow.
+        // FIXME for future hackers: investigate whether this is
+        // actually necessary; these facts come from Polonius
+        // and probably maybe plausibly does not need to go back in.
+        // It may be necessary to just pick out the parts of
+        // `add_drop_live_facts_for()` that make sense.
+        </span><span class="kw">let </span>facts_to_add: Vec&lt;<span class="kw">_</span>&gt; = {
+            <span class="kw">let </span>drop_used = <span class="kw-2">&amp;</span><span class="self">self</span>.cx.typeck.borrowck_context.all_facts.as_ref()<span class="question-mark">?</span>.var_dropped_at;
 
-        <span class="kw">let </span>relevant_live_locals: FxIndexSet&lt;<span class="kw">_</span>&gt; = relevant_live_locals.iter().copied().collect();
+            <span class="kw">let </span>relevant_live_locals: FxIndexSet&lt;<span class="kw">_</span>&gt; =
+                relevant_live_locals.iter().copied().collect();
 
-        <span class="kw">let </span>locations = IntervalSet::new(<span class="self">self</span>.cx.elements.num_points());
+            drop_used
+                .iter()
+                .filter_map(|(local, location_index)| {
+                    <span class="kw">let </span>local_ty = <span class="self">self</span>.cx.body.local_decls[<span class="kw-2">*</span>local].ty;
+                    <span class="kw">if </span>relevant_live_locals.contains(local) || !local_ty.has_free_regions() {
+                        <span class="kw">return </span><span class="prelude-val">None</span>;
+                    }
 
-        <span class="kw">for </span>(local, location_index) <span class="kw">in </span>drop_used {
-            <span class="kw">if </span>!relevant_live_locals.contains(<span class="kw-2">&amp;</span>local) {
-                <span class="kw">let </span>local_ty = <span class="self">self</span>.cx.body.local_decls[local].ty;
-                <span class="kw">if </span>local_ty.has_free_regions() {
                     <span class="kw">let </span>location = <span class="kw">match </span><span class="self">self
                         </span>.cx
                         .typeck
                         .borrowck_context
                         .location_table
-                        .to_location(location_index)
+                        .to_location(<span class="kw-2">*</span>location_index)
                     {
                         RichLocation::Start(l) =&gt; l,
                         RichLocation::Mid(l) =&gt; l,
                     };
-                    <span class="self">self</span>.cx.add_drop_live_facts_for(local, local_ty, <span class="kw-2">&amp;</span>[location], <span class="kw-2">&amp;</span>locations);
-                }
-            }
+
+                    <span class="prelude-val">Some</span>((<span class="kw-2">*</span>local, local_ty, location))
+                })
+                .collect()
+        };
+
+        <span class="comment">// FIXME: these locations seem to have a special meaning (e.g. everywhere, at the end, ...), but I don't know which one. Please help me rename it to something descriptive!
+        // Also, if this IntervalSet is used in many places, it maybe should have a newtype'd
+        // name with a description of what it means for future mortals passing by.
+        </span><span class="kw">let </span>locations = IntervalSet::new(<span class="self">self</span>.cx.elements.num_points());
+
+        <span class="kw">for </span>(local, local_ty, location) <span class="kw">in </span>facts_to_add {
+            <span class="self">self</span>.cx.add_drop_live_facts_for(local, local_ty, <span class="kw-2">&amp;</span>[location], <span class="kw-2">&amp;</span>locations);
         }
         <span class="prelude-val">Some</span>(())
     }
@@ -1121,7 +1155,7 @@
     </span>}
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; LivenessContext&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; LivenessContext&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="doccomment">/// Returns `true` if the local variable (or some part of it) is initialized at the current
     /// cursor position. Callers should call one of the `seek` methods immediately before to point
     /// the cursor to the desired location.

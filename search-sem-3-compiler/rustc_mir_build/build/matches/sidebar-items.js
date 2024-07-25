@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["TestBranch","TestCase","TestKind"],"fn":["traverse_candidate"],"mod":["simplify","test","util"],"struct":["ArmHasGuard","Ascription","Binding","Candidate","FlatPat","MatchPair","PatternExtraData","Test","ThenElseArgs"]};
+window.SIDEBAR_ITEMS = {"enum":["DeclareLetBindings","EmitStorageLive","ScheduleDrops","TestBranch","TestCase","TestKind"],"fn":["traverse_candidate"],"mod":["match_pair","simplify","test","util"],"struct":["ArmHasGuard","Ascription","Binding","Candidate","FlatPat","MatchPairTree","PatternExtraData","Test","ThenElseArgs"]};

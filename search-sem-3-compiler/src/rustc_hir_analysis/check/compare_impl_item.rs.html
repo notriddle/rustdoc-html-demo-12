@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/check/compare_impl_item.rs`."><title>compare_impl_item.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/check/compare_impl_item.rs`."><title>compare_impl_item.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -2294,6 +2294,11 @@
 <a href="#2294" id="2294">2294</a>
 <a href="#2295" id="2295">2295</a>
 <a href="#2296" id="2296">2296</a>
+<a href="#2297" id="2297">2297</a>
+<a href="#2298" id="2298">2298</a>
+<a href="#2299" id="2299">2299</a>
+<a href="#2300" id="2300">2300</a>
+<a href="#2301" id="2301">2301</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">super</span>::potentially_plural_count;
 <span class="kw">use </span><span class="kw">crate</span>::errors::{LifetimesOrBoundsMismatchOnTrait, MethodShouldReturnFuture};
 <span class="kw">use </span>core::ops::ControlFlow;
@@ -2317,8 +2322,9 @@
 <span class="kw">use </span>rustc_middle::ty::{GenericParamDefKind, TyCtxt};
 <span class="kw">use </span>rustc_middle::{bug, span_bug};
 <span class="kw">use </span>rustc_span::Span;
+<span class="kw">use </span>rustc_trait_selection::error_reporting::InferCtxtErrorExt;
+<span class="kw">use </span>rustc_trait_selection::infer::InferCtxtExt;
 <span class="kw">use </span>rustc_trait_selection::regions::InferCtxtRegionExt;
-<span class="kw">use </span>rustc_trait_selection::traits::error_reporting::TypeErrCtxtExt;
 <span class="kw">use </span>rustc_trait_selection::traits::outlives_bounds::InferCtxtExt <span class="kw">as _</span>;
 <span class="kw">use </span>rustc_trait_selection::traits::{
     <span class="self">self</span>, FulfillmentError, ObligationCause, ObligationCauseCode, ObligationCtxt, Reveal,
@@ -2693,7 +2699,7 @@
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; TypeFolder&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span>RemapLateBound&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">fn </span>interner(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.tcx
     }
 
@@ -3086,13 +3092,13 @@
 <span class="kw">where
     </span>E: <span class="lifetime">'tcx</span>,
 {
-    <span class="kw">fn </span>interner(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.ocx.infcx.tcx
     }
 
     <span class="kw">fn </span>fold_ty(<span class="kw-2">&amp;mut </span><span class="self">self</span>, ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; Ty&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">if let </span>ty::Alias(ty::Projection, proj) = ty.kind()
-            &amp;&amp; <span class="self">self</span>.interner().is_impl_trait_in_trait(proj.def_id)
+            &amp;&amp; <span class="self">self</span>.cx().is_impl_trait_in_trait(proj.def_id)
         {
             <span class="kw">if let </span><span class="prelude-val">Some</span>((ty, <span class="kw">_</span>)) = <span class="self">self</span>.types.get(<span class="kw-2">&amp;</span>proj.def_id) {
                 <span class="kw">return </span><span class="kw-2">*</span>ty;
@@ -3106,9 +3112,9 @@
             <span class="self">self</span>.types.insert(proj.def_id, (infer_ty, proj.args));
             <span class="comment">// Recurse into bounds
             </span><span class="kw">for </span>(pred, pred_span) <span class="kw">in </span><span class="self">self
-                </span>.interner()
+                </span>.cx()
                 .explicit_item_bounds(proj.def_id)
-                .iter_instantiated_copied(<span class="self">self</span>.interner(), proj.args)
+                .iter_instantiated_copied(<span class="self">self</span>.cx(), proj.args)
             {
                 <span class="kw">let </span>pred = pred.fold_with(<span class="self">self</span>);
                 <span class="kw">let </span>pred = <span class="self">self</span>.ocx.normalize(
@@ -3118,7 +3124,7 @@
                 );
 
                 <span class="self">self</span>.ocx.register_obligation(traits::Obligation::new(
-                    <span class="self">self</span>.interner(),
+                    <span class="self">self</span>.cx(),
                     ObligationCause::new(
                         <span class="self">self</span>.span,
                         <span class="self">self</span>.body_id,
@@ -3149,7 +3155,7 @@
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; ty::FallibleTypeFolder&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span>RemapHiddenTyRegions&lt;<span class="lifetime">'tcx</span>&gt; {
     <span class="kw">type </span>Error = ErrorGuaranteed;
 
-    <span class="kw">fn </span>interner(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.tcx
     }
 
@@ -3277,7 +3283,7 @@
                 .next()
                 .unwrap_or(impl_err_span);
 
-            diag.span_suggestion(
+            diag.span_suggestion_verbose(
                 span,
                 <span class="string">"change the self-receiver type to match the trait"</span>,
                 sugg,
@@ -3301,12 +3307,12 @@
                         }
                         hir::FnRetTy::Return(hir_ty) =&gt; {
                             <span class="kw">let </span>sugg = trait_sig.output();
-                            diag.span_suggestion(hir_ty.span, msg, sugg, ap);
+                            diag.span_suggestion_verbose(hir_ty.span, msg, sugg, ap);
                         }
                     };
                 };
             } <span class="kw">else if let </span><span class="prelude-val">Some</span>(trait_ty) = trait_sig.inputs().get(<span class="kw-2">*</span>i) {
-                diag.span_suggestion(
+                diag.span_suggestion_verbose(
                     impl_err_span,
                     <span class="string">"change the parameter type to match the trait"</span>,
                     trait_ty,
@@ -4281,10 +4287,10 @@
     <span class="kw">let </span>infcx = tcx.infer_ctxt().build();
     <span class="kw">let </span>ocx = ObligationCtxt::new_with_diagnostics(<span class="kw-2">&amp;</span>infcx);
 
-    <span class="comment">// A synthetic impl Trait for RPITIT desugaring has no HIR, which we currently use to get the
-    // span for an impl's associated type. Instead, for these, use the def_span for the synthesized
-    // associated type.
-    </span><span class="kw">let </span>impl_ty_span = <span class="kw">if </span>impl_ty.is_impl_trait_in_trait() {
+    <span class="comment">// A synthetic impl Trait for RPITIT desugaring or assoc type for effects desugaring has no HIR,
+    // which we currently use to get the span for an impl's associated type. Instead, for these,
+    // use the def_span for the synthesized  associated type.
+    </span><span class="kw">let </span>impl_ty_span = <span class="kw">if </span>impl_ty.is_impl_trait_in_trait() || impl_ty.is_effects_desugaring {
         tcx.def_span(impl_ty_def_id)
     } <span class="kw">else </span>{
         <span class="kw">match </span>tcx.hir_node_by_def_id(impl_ty_def_id) {
@@ -4328,7 +4334,7 @@
     // to its definition type. This should be the param-env we use to *prove* the
     // predicate too, but we don't do that because of performance issues.
     // See &lt;https://github.com/rust-lang/rust/pull/117542#issue-1976337685&gt;.
-    </span><span class="kw">let </span>trait_projection_ty = Ty::new_projection(tcx, trait_ty.def_id, rebased_args);
+    </span><span class="kw">let </span>trait_projection_ty = Ty::new_projection_from_args(tcx, trait_ty.def_id, rebased_args);
     <span class="kw">let </span>impl_identity_ty = tcx.type_of(impl_ty.def_id).instantiate_identity();
     <span class="kw">let </span>normalize_param_env = param_env_with_gat_bounds(tcx, impl_ty, impl_trait_ref);
     <span class="kw">for </span><span class="kw-2">mut </span>obligation <span class="kw">in </span>util::elaborate(tcx, obligations) {
@@ -4368,7 +4374,7 @@
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; TypeFolder&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span>ReplaceTy&lt;<span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">fn </span>interner(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.tcx
     }
 
@@ -4526,7 +4532,11 @@
             <span class="kw">_ </span>=&gt; predicates.push(
                 ty::Binder::bind_with_vars(
                     ty::ProjectionPredicate {
-                        projection_term: ty::AliasTerm::new(tcx, trait_ty.def_id, rebased_args),
+                        projection_term: ty::AliasTerm::new_from_args(
+                            tcx,
+                            trait_ty.def_id,
+                            rebased_args,
+                        ),
                         term: normalize_impl_ty.into(),
                     },
                     bound_vars,

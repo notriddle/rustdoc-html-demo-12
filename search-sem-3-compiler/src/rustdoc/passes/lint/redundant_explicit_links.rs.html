@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/librustdoc/passes/lint/redundant_explicit_links.rs`."><title>redundant_explicit_links.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustdoc" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/librustdoc/passes/lint/redundant_explicit_links.rs`."><title>redundant_explicit_links.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustdoc" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -376,9 +376,15 @@
 <a href="#376" id="376">376</a>
 <a href="#377" id="377">377</a>
 <a href="#378" id="378">378</a>
+<a href="#379" id="379">379</a>
+<a href="#380" id="380">380</a>
+<a href="#381" id="381">381</a>
+<a href="#382" id="382">382</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span>std::ops::Range;
 
-<span class="kw">use </span>pulldown_cmark::{BrokenLink, CowStr, Event, LinkType, OffsetIter, Parser, Tag};
+<span class="kw">use </span>pulldown_cmark::{
+    BrokenLink, BrokenLinkCallback, CowStr, Event, LinkType, OffsetIter, Parser, Tag,
+};
 <span class="kw">use </span>rustc_ast::NodeId;
 <span class="kw">use </span>rustc_errors::SuggestionStyle;
 <span class="kw">use </span>rustc_hir::def::{DefKind, DocLinkResMap, Namespace, Res};
@@ -473,7 +479,7 @@
 
     <span class="kw">while let </span><span class="prelude-val">Some</span>((event, link_range)) = offset_iter.next() {
         <span class="kw">match </span>event {
-            Event::Start(Tag::Link(link_type, dest, <span class="kw">_</span>)) =&gt; {
+            Event::Start(Tag::Link { link_type, dest_url, .. }) =&gt; {
                 <span class="kw">let </span>link_data = collect_link_data(<span class="kw-2">&amp;mut </span>offset_iter);
 
                 <span class="kw">if let </span><span class="prelude-val">Some</span>(resolvable_link) = link_data.resolvable_link.as_ref() {
@@ -486,7 +492,7 @@
                     }
                 }
 
-                <span class="kw">let </span>explicit_link = dest.to_string();
+                <span class="kw">let </span>explicit_link = dest_url.to_string();
                 <span class="kw">let </span>display_link = link_data.resolvable_link.clone()<span class="question-mark">?</span>;
 
                 <span class="kw">if </span>explicit_link.ends_with(<span class="kw-2">&amp;</span>display_link) || display_link.ends_with(<span class="kw-2">&amp;</span>explicit_link)
@@ -500,7 +506,7 @@
                                 doc,
                                 resolutions,
                                 link_range,
-                                dest.to_string(),
+                                dest_url.to_string(),
                                 link_data,
                                 <span class="kw">if </span>link_type == LinkType::Inline {
                                     (<span class="string">b'('</span>, <span class="string">b')'</span>)
@@ -517,7 +523,7 @@
                                 doc,
                                 resolutions,
                                 link_range,
-                                <span class="kw-2">&amp;</span>dest,
+                                <span class="kw-2">&amp;</span>dest_url,
                                 link_data,
                             );
                         }
@@ -637,7 +643,9 @@
 }
 
 <span class="doccomment">/// Collects all necessary data of link.
-</span><span class="kw">fn </span>collect_link_data(offset_iter: <span class="kw-2">&amp;mut </span>OffsetIter&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;) -&gt; LinkData {
+</span><span class="kw">fn </span>collect_link_data&lt;<span class="lifetime">'input</span>, F: BrokenLinkCallback&lt;<span class="lifetime">'input</span>&gt;&gt;(
+    offset_iter: <span class="kw-2">&amp;mut </span>OffsetIter&lt;<span class="lifetime">'input</span>, F&gt;,
+) -&gt; LinkData {
     <span class="kw">let </span><span class="kw-2">mut </span>resolvable_link = <span class="prelude-val">None</span>;
     <span class="kw">let </span><span class="kw-2">mut </span>resolvable_link_range = <span class="prelude-val">None</span>;
     <span class="kw">let </span><span class="kw-2">mut </span>display_link = String::new();

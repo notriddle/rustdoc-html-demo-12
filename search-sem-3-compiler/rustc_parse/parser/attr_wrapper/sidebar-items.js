@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["has_cfg_or_cfg_attr","make_token_stream"],"mod":["size_asserts"],"struct":["AttrWrapper","LazyAttrTokenStreamImpl"]};
+window.SIDEBAR_ITEMS = {"fn":["has_cfg_or_cfg_attr","make_attr_token_stream"],"mod":["size_asserts"],"struct":["AttrWrapper","LazyAttrTokenStreamImpl"]};

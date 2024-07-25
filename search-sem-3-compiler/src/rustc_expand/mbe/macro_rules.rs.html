@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_expand/src/mbe/macro_rules.rs`."><title>macro_rules.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_expand" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_expand/src/mbe/macro_rules.rs`."><title>macro_rules.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_expand" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1417,6 +1417,11 @@
 <a href="#1417" id="1417">1417</a>
 <a href="#1418" id="1418">1418</a>
 <a href="#1419" id="1419">1419</a>
+<a href="#1420" id="1420">1420</a>
+<a href="#1421" id="1421">1421</a>
+<a href="#1422" id="1422">1422</a>
+<a href="#1423" id="1423">1423</a>
+<a href="#1424" id="1424">1424</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::base::{DummyResult, SyntaxExtension, SyntaxExtensionKind};
 <span class="kw">use </span><span class="kw">crate</span>::base::{ExpandResult, ExtCtxt, MacResult, MacroExpanderResult, TTMacroExpander};
 <span class="kw">use </span><span class="kw">crate</span>::expand::{ensure_complete_parse, parse_ast_fragment, AstFragment, AstFragmentKind};
@@ -1429,7 +1434,9 @@
 
 <span class="kw">use </span>ast::token::IdentIsRaw;
 <span class="kw">use </span>rustc_ast <span class="kw">as </span>ast;
-<span class="kw">use </span>rustc_ast::token::{<span class="self">self</span>, Delimiter, NonterminalKind, Token, TokenKind, TokenKind::<span class="kw-2">*</span>};
+<span class="kw">use </span>rustc_ast::token::{
+    <span class="self">self</span>, Delimiter, NonterminalKind, NtPatKind::<span class="kw-2">*</span>, Token, TokenKind, TokenKind::<span class="kw-2">*</span>,
+};
 <span class="kw">use </span>rustc_ast::tokenstream::{DelimSpan, TokenStream};
 <span class="kw">use </span>rustc_ast::{NodeId, DUMMY_NODE_ID};
 <span class="kw">use </span>rustc_ast_pretty::pprust;
@@ -1570,7 +1577,7 @@
     <span class="doccomment">/// Arm failed to match. If the token is `token::Eof`, it indicates an unexpected
     /// end of macro invocation. Otherwise, it indicates that no rules expected the given token.
     /// The usize is the approximate position of the token in the input token stream.
-    </span><span class="kw">fn </span>build_failure(tok: Token, position: usize, msg: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str) -&gt; <span class="self">Self</span>::Failure;
+    </span><span class="kw">fn </span>build_failure(tok: Token, position: u32, msg: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str) -&gt; <span class="self">Self</span>::Failure;
 
     <span class="doccomment">/// This is called before trying to match next MatcherLoc on the current token.
     </span><span class="kw">fn </span>before_match_loc(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _parser: <span class="kw-2">&amp;</span>TtParser, _matcher: <span class="kw-2">&amp;</span><span class="lifetime">'matcher </span>MatcherLoc) {}
@@ -1599,7 +1606,7 @@
 <span class="kw">impl</span>&lt;<span class="lifetime">'matcher</span>&gt; Tracker&lt;<span class="lifetime">'matcher</span>&gt; <span class="kw">for </span>NoopTracker {
     <span class="kw">type </span>Failure = ();
 
-    <span class="kw">fn </span>build_failure(_tok: Token, _position: usize, _msg: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str) -&gt; <span class="self">Self</span>::Failure {}
+    <span class="kw">fn </span>build_failure(_tok: Token, _position: u32, _msg: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str) -&gt; <span class="self">Self</span>::Failure {}
 
     <span class="kw">fn </span>description() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str {
         <span class="string">"none"
@@ -2564,14 +2571,17 @@
                     // Macros defined in the current crate have a real node id,
                     // whereas macros from an external crate have a dummy id.
                     </span><span class="kw">if </span>def.id != DUMMY_NODE_ID
-                        &amp;&amp; <span class="macro">matches!</span>(kind, NonterminalKind::PatParam { inferred: <span class="bool-val">true </span>})
-                        &amp;&amp; <span class="macro">matches!</span>(next_token, TokenTree::Token(token) <span class="kw">if </span>token.kind == BinOp(token::BinOpToken::Or))
+                        &amp;&amp; <span class="macro">matches!</span>(kind, NonterminalKind::Pat(PatParam { inferred: <span class="bool-val">true </span>}))
+                        &amp;&amp; <span class="macro">matches!</span>(
+                            next_token,
+                            TokenTree::Token(token) <span class="kw">if </span>token.kind == BinOp(token::BinOpToken::Or)
+                        )
                     {
                         <span class="comment">// It is suggestion to use pat_param, for example: $x:pat -&gt; $x:pat_param.
                         </span><span class="kw">let </span>suggestion = quoted_tt_to_string(<span class="kw-2">&amp;</span>TokenTree::MetaVarDecl(
                             span,
                             name,
-                            <span class="prelude-val">Some</span>(NonterminalKind::PatParam { inferred: <span class="bool-val">false </span>}),
+                            <span class="prelude-val">Some</span>(NonterminalKind::Pat(PatParam { inferred: <span class="bool-val">false </span>})),
                         ));
                         sess.psess.buffer_lint(
                             RUST_2021_INCOMPATIBLE_OR_PATTERNS,
@@ -2604,14 +2614,14 @@
                             );
                             err.span_label(sp, <span class="macro">format!</span>(<span class="string">"not allowed after `{kind}` fragments"</span>));
 
-                            <span class="kw">if </span>kind == NonterminalKind::PatWithOr
+                            <span class="kw">if </span>kind == NonterminalKind::Pat(PatWithOr)
                                 &amp;&amp; sess.psess.edition.at_least_rust_2021()
                                 &amp;&amp; next_token.is_token(<span class="kw-2">&amp;</span>BinOp(token::BinOpToken::Or))
                             {
                                 <span class="kw">let </span>suggestion = quoted_tt_to_string(<span class="kw-2">&amp;</span>TokenTree::MetaVarDecl(
                                     span,
                                     name,
-                                    <span class="prelude-val">Some</span>(NonterminalKind::PatParam { inferred: <span class="bool-val">false </span>}),
+                                    <span class="prelude-val">Some</span>(NonterminalKind::Pat(PatParam { inferred: <span class="bool-val">false </span>})),
                                 ));
                                 err.span_suggestion(
                                     span,
@@ -2711,7 +2721,7 @@
                 // maintain
                 </span>IsInFollow::Yes
             }
-            NonterminalKind::Stmt | NonterminalKind::Expr | NonterminalKind::Expr2021 =&gt; {
+            NonterminalKind::Stmt | NonterminalKind::Expr(<span class="kw">_</span>) =&gt; {
                 <span class="kw">const </span>TOKENS: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>str] = <span class="kw-2">&amp;</span>[<span class="string">"`=&gt;`"</span>, <span class="string">"`,`"</span>, <span class="string">"`;`"</span>];
                 <span class="kw">match </span>tok {
                     TokenTree::Token(token) =&gt; <span class="kw">match </span>token.kind {
@@ -2721,7 +2731,7 @@
                     <span class="kw">_ </span>=&gt; IsInFollow::No(TOKENS),
                 }
             }
-            NonterminalKind::PatParam { .. } =&gt; {
+            NonterminalKind::Pat(PatParam { .. }) =&gt; {
                 <span class="kw">const </span>TOKENS: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>str] = <span class="kw-2">&amp;</span>[<span class="string">"`=&gt;`"</span>, <span class="string">"`,`"</span>, <span class="string">"`=`"</span>, <span class="string">"`|`"</span>, <span class="string">"`if`"</span>, <span class="string">"`in`"</span>];
                 <span class="kw">match </span>tok {
                     TokenTree::Token(token) =&gt; <span class="kw">match </span>token.kind {
@@ -2734,7 +2744,7 @@
                     <span class="kw">_ </span>=&gt; IsInFollow::No(TOKENS),
                 }
             }
-            NonterminalKind::PatWithOr =&gt; {
+            NonterminalKind::Pat(PatWithOr) =&gt; {
                 <span class="kw">const </span>TOKENS: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>str] = <span class="kw-2">&amp;</span>[<span class="string">"`=&gt;`"</span>, <span class="string">"`,`"</span>, <span class="string">"`=`"</span>, <span class="string">"`if`"</span>, <span class="string">"`in`"</span>];
                 <span class="kw">match </span>tok {
                     TokenTree::Token(token) =&gt; <span class="kw">match </span>token.kind {

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/concurrency/sync.rs`."><title>sync.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/concurrency/sync.rs`."><title>sync.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -772,6 +772,15 @@
 <a href="#772" id="772">772</a>
 <a href="#773" id="773">773</a>
 <a href="#774" id="774">774</a>
+<a href="#775" id="775">775</a>
+<a href="#776" id="776">776</a>
+<a href="#777" id="777">777</a>
+<a href="#778" id="778">778</a>
+<a href="#779" id="779">779</a>
+<a href="#780" id="780">780</a>
+<a href="#781" id="781">781</a>
+<a href="#782" id="782">782</a>
+<a href="#783" id="783">783</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span>std::collections::{hash_map::Entry, VecDeque};
 <span class="kw">use </span>std::ops::Not;
 <span class="kw">use </span>std::time::Duration;
@@ -1043,7 +1052,7 @@
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
         <span class="kw">if </span>this.mutex_is_locked(mutex) {
             <span class="macro">assert_ne!</span>(this.mutex_get_owner(mutex), this.active_thread());
-            this.mutex_enqueue_and_block(mutex, retval, dest);
+            this.mutex_enqueue_and_block(mutex, <span class="prelude-val">Some</span>((retval, dest)));
         } <span class="kw">else </span>{
             <span class="comment">// We can have it right now!
             </span>this.mutex_lock(mutex);
@@ -1164,9 +1173,15 @@
     }
 
     <span class="doccomment">/// Put the thread into the queue waiting for the mutex.
-    /// Once the Mutex becomes available, `retval` will be written to `dest`.
+    ///
+    /// Once the Mutex becomes available and if it exists, `retval_dest.0` will
+    /// be written to `retval_dest.1`.
     </span><span class="attr">#[inline]
-    </span><span class="kw">fn </span>mutex_enqueue_and_block(<span class="kw-2">&amp;mut </span><span class="self">self</span>, id: MutexId, retval: Scalar, dest: MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;) {
+    </span><span class="kw">fn </span>mutex_enqueue_and_block(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        id: MutexId,
+        retval_dest: <span class="prelude-ty">Option</span>&lt;(Scalar, MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;)&gt;,
+    ) {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
         <span class="macro">assert!</span>(this.mutex_is_locked(id), <span class="string">"queing on unlocked mutex"</span>);
         <span class="kw">let </span>thread = this.active_thread();
@@ -1177,13 +1192,16 @@
             <span class="macro">callback!</span>(
                 @capture&lt;<span class="lifetime">'tcx</span>&gt; {
                     id: MutexId,
-                    retval: Scalar,
-                    dest: MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+                    retval_dest: <span class="prelude-ty">Option</span>&lt;(Scalar, MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;)&gt;,
                 }
                 @unblock = |this| {
                     <span class="macro">assert!</span>(!this.mutex_is_locked(id));
                     this.mutex_lock(id);
-                    this.write_scalar(retval, <span class="kw-2">&amp;</span>dest)<span class="question-mark">?</span>;
+
+                    <span class="kw">if let </span><span class="prelude-val">Some</span>((retval, dest)) = retval_dest {
+                        this.write_scalar(retval, <span class="kw-2">&amp;</span>dest)<span class="question-mark">?</span>;
+                    }
+
                     <span class="prelude-val">Ok</span>(())
                 }
             ),

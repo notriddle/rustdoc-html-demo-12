@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/check/check.rs`."><title>check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/check/check.rs`."><title>check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1752,6 +1752,8 @@
 <a href="#1752" id="1752">1752</a>
 <a href="#1753" id="1753">1753</a>
 <a href="#1754" id="1754">1754</a>
+<a href="#1755" id="1755">1755</a>
+<a href="#1756" id="1756">1756</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::check::intrinsicck::InlineAsmCtxt;
 
 <span class="kw">use </span><span class="kw">super</span>::compare_impl_item::check_type_bounds;
@@ -1779,9 +1781,9 @@
 };
 <span class="kw">use </span>rustc_session::lint::builtin::{UNINHABITED_STATIC, UNSUPPORTED_CALLING_CONVENTIONS};
 <span class="kw">use </span>rustc_target::abi::FieldIdx;
+<span class="kw">use </span>rustc_trait_selection::error_reporting::traits::on_unimplemented::OnUnimplementedDirective;
+<span class="kw">use </span>rustc_trait_selection::error_reporting::InferCtxtErrorExt;
 <span class="kw">use </span>rustc_trait_selection::traits;
-<span class="kw">use </span>rustc_trait_selection::traits::error_reporting::on_unimplemented::OnUnimplementedDirective;
-<span class="kw">use </span>rustc_trait_selection::traits::error_reporting::TypeErrCtxtExt <span class="kw">as _</span>;
 <span class="kw">use </span>rustc_trait_selection::traits::outlives_bounds::InferCtxtExt <span class="kw">as _</span>;
 <span class="kw">use </span>rustc_type_ir::fold::TypeFoldable;
 
@@ -2473,7 +2475,7 @@
                             tcx,
                             assoc_item,
                             assoc_item,
-                            ty::TraitRef::new(tcx, def_id.to_def_id(), trait_args),
+                            ty::TraitRef::new_from_args(tcx, def_id.to_def_id(), trait_args),
                         );
                     }
                     <span class="kw">_ </span>=&gt; {}
@@ -2633,7 +2635,8 @@
     </span><span class="kw">let </span>result = opt_result.unwrap_or(<span class="prelude-val">Ok</span>(()));
 
     <span class="kw">if let </span><span class="prelude-val">Err</span>(parent_impl) = result {
-        <span class="kw">if </span>!tcx.is_impl_trait_in_trait(impl_item) {
+        <span class="comment">// FIXME(effects) the associated type from effects could be specialized
+        </span><span class="kw">if </span>!tcx.is_impl_trait_in_trait(impl_item) &amp;&amp; !tcx.is_effects_desugared_assoc_ty(impl_item) {
             report_forbidden_specialization(tcx, impl_item, parent_impl);
         } <span class="kw">else </span>{
             tcx.dcx().delayed_bug(<span class="macro">format!</span>(<span class="string">"parent item: {parent_impl:?} not marked as default"</span>));
@@ -3325,6 +3328,7 @@
                 param_name,
                 param_def_kind: tcx.def_descr(param.def_id),
                 help: errors::UnusedGenericParameterHelp::TyAlias { param_name },
+                usage_spans: <span class="macro">vec!</span>[],
                 const_param_help,
             });
             diag.code(E0091);

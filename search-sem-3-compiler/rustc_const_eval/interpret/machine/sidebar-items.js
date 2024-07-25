@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["StackPopJump"],"macro":["compile_time_machine"],"trait":["AllocMap","Machine","MayLeak"]};
+window.SIDEBAR_ITEMS = {"enum":["ReturnAction"],"macro":["compile_time_machine"],"trait":["AllocMap","Machine","MayLeak"]};

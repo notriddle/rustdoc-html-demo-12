@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_lint/src/non_local_def.rs`."><title>non_local_def.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_lint" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_lint/src/non_local_def.rs`."><title>non_local_def.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_lint" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -536,6 +536,13 @@
 <a href="#536" id="536">536</a>
 <a href="#537" id="537">537</a>
 <a href="#538" id="538">538</a>
+<a href="#539" id="539">539</a>
+<a href="#540" id="540">540</a>
+<a href="#541" id="541">541</a>
+<a href="#542" id="542">542</a>
+<a href="#543" id="543">543</a>
+<a href="#544" id="544">544</a>
+<a href="#545" id="545">545</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span>rustc_errors::MultiSpan;
 <span class="kw">use </span>rustc_hir::intravisit::{<span class="self">self</span>, Visitor};
 <span class="kw">use </span>rustc_hir::HirId;
@@ -549,10 +556,10 @@
 <span class="kw">use </span>rustc_span::def_id::{DefId, LOCAL_CRATE};
 <span class="kw">use </span>rustc_span::Span;
 <span class="kw">use </span>rustc_span::{sym, symbol::kw, ExpnKind, MacroKind, Symbol};
-<span class="kw">use </span>rustc_trait_selection::infer::TyCtxtInferExt;
-<span class="kw">use </span>rustc_trait_selection::traits::error_reporting::ambiguity::{
+<span class="kw">use </span>rustc_trait_selection::error_reporting::traits::ambiguity::{
     compute_applicable_impls_for_diagnostics, CandidateSource,
 };
+<span class="kw">use </span>rustc_trait_selection::infer::TyCtxtInferExt;
 
 <span class="kw">use </span><span class="kw">crate</span>::fluent_generated <span class="kw">as </span>fluent;
 <span class="kw">use </span><span class="kw">crate</span>::lints::{NonLocalDefinitionsCargoUpdateNote, NonLocalDefinitionsDiag};
@@ -588,7 +595,7 @@
     /// All nested bodies (functions, enum discriminant, array length, consts) (expect for
     /// `const _: Ty = { ... }` in top-level module, which is still undecided) are checked.
     </span><span class="kw">pub </span>NON_LOCAL_DEFINITIONS,
-    Warn,
+    Allow,
     <span class="string">"checks for non-local definitions"</span>,
     report_in_external_macro
 }
@@ -648,6 +655,12 @@
                 <span class="prelude-val">None
             </span>}
         };
+
+        <span class="comment">// determining if we are in a doctest context can't currently be determined
+        // by the code itself (there are no specific attributes), but fortunately rustdoc
+        // sets a perma-unstable env var for libtest so we just reuse that for now
+        </span><span class="kw">let </span>is_at_toplevel_doctest =
+            || <span class="self">self</span>.body_depth == <span class="number">2 </span>&amp;&amp; std::env::var(<span class="string">"UNSTABLE_RUSTDOC_TEST_PATH"</span>).is_ok();
 
         <span class="kw">match </span>item.kind {
             ItemKind::Impl(impl_) =&gt; {
@@ -729,29 +742,6 @@
                     <span class="prelude-val">None
                 </span>};
 
-                <span class="kw">let </span><span class="kw-2">mut </span>collector = PathCollector { paths: Vec::new() };
-                collector.visit_ty(<span class="kw-2">&amp;</span>impl_.self_ty);
-                <span class="kw">if let </span><span class="prelude-val">Some</span>(of_trait) = <span class="kw-2">&amp;</span>impl_.of_trait {
-                    collector.visit_trait_ref(of_trait);
-                }
-                collector.visit_generics(<span class="kw-2">&amp;</span>impl_.generics);
-
-                <span class="kw">let </span><span class="kw-2">mut </span>may_move: Vec&lt;Span&gt; = collector
-                    .paths
-                    .into_iter()
-                    .filter_map(|path| {
-                        <span class="kw">if let </span><span class="prelude-val">Some</span>(did) = path.res.opt_def_id()
-                            &amp;&amp; did_has_local_parent(did, cx.tcx, parent, parent_parent)
-                        {
-                            <span class="prelude-val">Some</span>(cx.tcx.def_span(did))
-                        } <span class="kw">else </span>{
-                            <span class="prelude-val">None
-                        </span>}
-                    })
-                    .collect();
-                may_move.sort();
-                may_move.dedup();
-
                 <span class="kw">let </span>const_anon = <span class="macro">matches!</span>(parent_def_kind, DefKind::Const | DefKind::Static { .. })
                     .then_some(span_for_const_anon_suggestion);
 
@@ -786,14 +776,44 @@
                 } <span class="kw">else </span>{
                     <span class="prelude-val">None
                 </span>};
-                <span class="kw">let </span>move_to = <span class="kw">if </span>may_move.is_empty() {
-                    ms.push_span_label(
-                        cx.tcx.def_span(parent),
-                        fluent::lint_non_local_definitions_impl_move_help,
-                    );
-                    <span class="prelude-val">None
-                </span>} <span class="kw">else </span>{
-                    <span class="prelude-val">Some</span>((cx.tcx.def_span(parent), may_move))
+
+                <span class="kw">let </span>(doctest, move_to) = <span class="kw">if </span>is_at_toplevel_doctest() {
+                    (<span class="bool-val">true</span>, <span class="prelude-val">None</span>)
+                } <span class="kw">else </span>{
+                    <span class="kw">let </span><span class="kw-2">mut </span>collector = PathCollector { paths: Vec::new() };
+                    collector.visit_ty(<span class="kw-2">&amp;</span>impl_.self_ty);
+                    <span class="kw">if let </span><span class="prelude-val">Some</span>(of_trait) = <span class="kw-2">&amp;</span>impl_.of_trait {
+                        collector.visit_trait_ref(of_trait);
+                    }
+                    collector.visit_generics(<span class="kw-2">&amp;</span>impl_.generics);
+
+                    <span class="kw">let </span><span class="kw-2">mut </span>may_move: Vec&lt;Span&gt; = collector
+                        .paths
+                        .into_iter()
+                        .filter_map(|path| {
+                            <span class="kw">if let </span><span class="prelude-val">Some</span>(did) = path.res.opt_def_id()
+                                &amp;&amp; did_has_local_parent(did, cx.tcx, parent, parent_parent)
+                            {
+                                <span class="prelude-val">Some</span>(cx.tcx.def_span(did))
+                            } <span class="kw">else </span>{
+                                <span class="prelude-val">None
+                            </span>}
+                        })
+                        .collect();
+                    may_move.sort();
+                    may_move.dedup();
+
+                    <span class="kw">let </span>move_to = <span class="kw">if </span>may_move.is_empty() {
+                        ms.push_span_label(
+                            cx.tcx.def_span(parent),
+                            fluent::lint_non_local_definitions_impl_move_help,
+                        );
+                        <span class="prelude-val">None
+                    </span>} <span class="kw">else </span>{
+                        <span class="prelude-val">Some</span>((cx.tcx.def_span(parent), may_move))
+                    };
+
+                    (<span class="bool-val">false</span>, move_to)
                 };
 
                 <span class="kw">let </span>macro_to_change =
@@ -817,6 +837,7 @@
                         self_ty_str,
                         of_trait_str,
                         move_to,
+                        doctest,
                         may_remove,
                         has_trait: impl_.of_trait.is_some(),
                         macro_to_change,
@@ -826,12 +847,6 @@
             ItemKind::Macro(_macro, MacroKind::Bang)
                 <span class="kw">if </span>cx.tcx.has_attr(item.owner_id.def_id, sym::macro_export) =&gt;
             {
-                <span class="comment">// determining we if are in a doctest context can't currently be determined
-                // by the code it-self (no specific attrs), but fortunatly rustdoc sets a
-                // perma-unstable env for libtest so we just re-use that env for now
-                </span><span class="kw">let </span>is_at_toplevel_doctest =
-                    <span class="self">self</span>.body_depth == <span class="number">2 </span>&amp;&amp; std::env::var(<span class="string">"UNSTABLE_RUSTDOC_TEST_PATH"</span>).is_ok();
-
                 cx.emit_span_lint(
                     NON_LOCAL_DEFINITIONS,
                     item.span,
@@ -842,8 +857,7 @@
                             .map(|s| s.to_ident_string())
                             .unwrap_or_else(|| <span class="string">"&lt;unnameable&gt;"</span>.to_string()),
                         cargo_update: cargo_update(),
-                        help: (!is_at_toplevel_doctest).then_some(()),
-                        doctest_help: is_at_toplevel_doctest.then_some(()),
+                        doctest: is_at_toplevel_doctest(),
                     },
                 )
             }
@@ -921,7 +935,7 @@
 <span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, F: FnMut(DefId) -&gt; bool&gt; TypeFolder&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt;
     <span class="kw">for </span>ReplaceLocalTypesWithInfer&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, F&gt;
 {
-    <span class="kw">fn </span>interner(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.infcx.tcx
     }
 

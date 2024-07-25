@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/cargo/ops/cargo_package.rs`."><title>cargo_package.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="cargo" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/cargo/ops/cargo_package.rs`."><title>cargo_package.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="cargo" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1090,6 +1090,12 @@
 <a href="#1090" id="1090">1090</a>
 <a href="#1091" id="1091">1091</a>
 <a href="#1092" id="1092">1092</a>
+<a href="#1093" id="1093">1093</a>
+<a href="#1094" id="1094">1094</a>
+<a href="#1095" id="1095">1095</a>
+<a href="#1096" id="1096">1096</a>
+<a href="#1097" id="1097">1097</a>
+<a href="#1098" id="1098">1098</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span>std::collections::{BTreeSet, HashMap};
 <span class="kw">use </span>std::fs::{<span class="self">self</span>, File};
 <span class="kw">use </span>std::io::prelude::<span class="kw-2">*</span>;
@@ -1173,6 +1179,9 @@
 <span class="attr">#[derive(Serialize)]
 </span><span class="kw">struct </span>GitVcsInfo {
     sha1: String,
+    <span class="doccomment">/// Indicate whether or not the Git worktree is dirty.
+    </span><span class="attr">#[serde(skip_serializing_if = <span class="string">"std::ops::Not::not"</span>)]
+    </span>dirty: bool,
 }
 
 <span class="doccomment">/// Packages a single package in a workspace, returning the resulting tar file.
@@ -1313,7 +1322,7 @@
 ) -&gt; CargoResult&lt;Vec&lt;ArchiveFile&gt;&gt; {
     <span class="kw">let </span>gctx = ws.gctx();
     <span class="kw">let </span><span class="kw-2">mut </span>src = PathSource::new(pkg.root(), pkg.package_id().source_id(), gctx);
-    src.update()<span class="question-mark">?</span>;
+    src.load()<span class="question-mark">?</span>;
 
     <span class="kw">if </span>opts.check_metadata {
         check_metadata(pkg, gctx)<span class="question-mark">?</span>;
@@ -1327,14 +1336,8 @@
     }
     <span class="kw">let </span>src_files = src.list_files(pkg)<span class="question-mark">?</span>;
 
-    <span class="comment">// Check (git) repository state, getting the current commit hash if not
-    // dirty.
-    </span><span class="kw">let </span>vcs_info = <span class="kw">if </span>!opts.allow_dirty {
-        <span class="comment">// This will error if a dirty repo is found.
-        </span>check_repo_state(pkg, <span class="kw-2">&amp;</span>src_files, gctx)<span class="question-mark">?
-    </span>} <span class="kw">else </span>{
-        <span class="prelude-val">None
-    </span>};
+    <span class="comment">// Check (git) repository state, getting the current commit hash.
+    </span><span class="kw">let </span>vcs_info = check_repo_state(pkg, <span class="kw-2">&amp;</span>src_files, gctx, <span class="kw-2">&amp;</span>opts)<span class="question-mark">?</span>;
 
     build_ar_list(ws, pkg, src_files, vcs_info)
 }
@@ -1651,13 +1654,15 @@
 }
 
 <span class="doccomment">/// Checks if the package source is in a *git* DVCS repository. If *git*, and
-/// the source is *dirty* (e.g., has uncommitted changes) then `bail!` with an
-/// informative message. Otherwise return the sha1 hash of the current *HEAD*
-/// commit, or `None` if no repo is found.
+/// the source is *dirty* (e.g., has uncommitted changes), and `--allow-dirty`
+/// has not been passed, then `bail!` with an informative message. Otherwise
+/// return the sha1 hash of the current *HEAD* commit, or `None` if no repo is
+/// found.
 </span><span class="kw">fn </span>check_repo_state(
     p: <span class="kw-2">&amp;</span>Package,
     src_files: <span class="kw-2">&amp;</span>[PathBuf],
     gctx: <span class="kw-2">&amp;</span>GlobalContext,
+    opts: <span class="kw-2">&amp;</span>PackageOpts&lt;<span class="lifetime">'_</span>&gt;,
 ) -&gt; CargoResult&lt;<span class="prelude-ty">Option</span>&lt;VcsInfo&gt;&gt; {
     <span class="kw">if let </span><span class="prelude-val">Ok</span>(repo) = git2::Repository::discover(p.root()) {
         <span class="kw">if let </span><span class="prelude-val">Some</span>(workdir) = repo.workdir() {
@@ -1677,7 +1682,7 @@
                         .unwrap_or(<span class="string">""</span>)
                         .replace(<span class="string">"\\"</span>, <span class="string">"/"</span>);
                     <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(VcsInfo {
-                        git: git(p, src_files, <span class="kw-2">&amp;</span>repo)<span class="question-mark">?</span>,
+                        git: git(p, src_files, <span class="kw-2">&amp;</span>repo, <span class="kw-2">&amp;</span>opts)<span class="question-mark">?</span>,
                         path_in_vcs,
                     }));
                 }
@@ -1700,7 +1705,12 @@
     // directory is dirty or not, thus we have to assume that it's clean.
     </span><span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
 
-    <span class="kw">fn </span>git(p: <span class="kw-2">&amp;</span>Package, src_files: <span class="kw-2">&amp;</span>[PathBuf], repo: <span class="kw-2">&amp;</span>git2::Repository) -&gt; CargoResult&lt;GitVcsInfo&gt; {
+    <span class="kw">fn </span>git(
+        p: <span class="kw-2">&amp;</span>Package,
+        src_files: <span class="kw-2">&amp;</span>[PathBuf],
+        repo: <span class="kw-2">&amp;</span>git2::Repository,
+        opts: <span class="kw-2">&amp;</span>PackageOpts&lt;<span class="lifetime">'_</span>&gt;,
+    ) -&gt; CargoResult&lt;GitVcsInfo&gt; {
         <span class="comment">// This is a collection of any dirty or untracked files. This covers:
         // - new/modified/deleted/renamed/type change (index or worktree)
         // - untracked files (which are "new" worktree files)
@@ -1725,10 +1735,12 @@
                     .to_string()
             })
             .collect();
-        <span class="kw">if </span>dirty_src_files.is_empty() {
+        <span class="kw">let </span>dirty = !dirty_src_files.is_empty();
+        <span class="kw">if </span>!dirty || opts.allow_dirty {
             <span class="kw">let </span>rev_obj = repo.revparse_single(<span class="string">"HEAD"</span>)<span class="question-mark">?</span>;
             <span class="prelude-val">Ok</span>(GitVcsInfo {
                 sha1: rev_obj.id().to_string(),
+                dirty,
             })
         } <span class="kw">else </span>{
             <span class="macro">anyhow::bail!</span>(

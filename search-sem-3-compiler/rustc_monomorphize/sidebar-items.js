@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["custom_coerce_unsize_info","is_call_from_compiler_builtins_to_upstream_monomorphization","provide"],"mod":["collector","errors","partitioning","polymorphize","util"],"static":["DEFAULT_LOCALE_RESOURCE"]};
+window.SIDEBAR_ITEMS = {"fn":["custom_coerce_unsize_info","provide"],"mod":["collector","errors","partitioning","polymorphize","util"],"static":["DEFAULT_LOCALE_RESOURCE"]};

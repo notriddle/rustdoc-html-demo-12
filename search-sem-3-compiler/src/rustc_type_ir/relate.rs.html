@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_type_ir/src/relate.rs`."><title>relate.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_type_ir" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_type_ir/src/relate.rs`."><title>relate.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_type_ir" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -664,14 +664,18 @@
 <a href="#664" id="664">664</a>
 <a href="#665" id="665">665</a>
 <a href="#666" id="666">666</a>
+<a href="#667" id="667">667</a>
+<a href="#668" id="668">668</a>
+<a href="#669" id="669">669</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span>std::iter;
 
 <span class="kw">use </span>rustc_ast_ir::Mutability;
-<span class="kw">use </span>rustc_type_ir::error::{ExpectedFound, TypeError};
-<span class="kw">use </span>rustc_type_ir::fold::TypeFoldable;
-<span class="kw">use </span>rustc_type_ir::inherent::<span class="kw-2">*</span>;
-<span class="kw">use </span>rustc_type_ir::{<span class="self">self </span><span class="kw">as </span>ty, Interner};
-<span class="kw">use </span>tracing::{debug, instrument};
+<span class="kw">use </span>tracing::{instrument, trace};
+
+<span class="kw">use </span><span class="kw">crate</span>::error::{ExpectedFound, TypeError};
+<span class="kw">use </span><span class="kw">crate</span>::fold::TypeFoldable;
+<span class="kw">use </span><span class="kw">crate</span>::inherent::<span class="kw-2">*</span>;
+<span class="kw">use crate</span>::{<span class="self">self </span><span class="kw">as </span>ty, Interner};
 
 <span class="kw">pub type </span>RelateResult&lt;I, T&gt; = <span class="prelude-ty">Result</span>&lt;T, TypeError&lt;I&gt;&gt;;
 
@@ -721,10 +725,7 @@
 }
 
 <span class="kw">pub trait </span>TypeRelation&lt;I: Interner&gt;: Sized {
-    <span class="kw">fn </span>tcx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; I;
-
-    <span class="doccomment">/// Returns a static string we can use for printouts.
-    </span><span class="kw">fn </span>tag(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str;
+    <span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; I;
 
     <span class="doccomment">/// Generic relation routine suitable for most anything.
     </span><span class="kw">fn </span>relate&lt;T: Relate&lt;I&gt;&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, a: T, b: T) -&gt; RelateResult&lt;I, T&gt; {
@@ -734,20 +735,16 @@
     <span class="doccomment">/// Relate the two args for the given item. The default
     /// is to look up the variance for the item and proceed
     /// accordingly.
+    </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
     </span><span class="kw">fn </span>relate_item_args(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         item_def_id: I::DefId,
         a_arg: I::GenericArgs,
         b_arg: I::GenericArgs,
     ) -&gt; RelateResult&lt;I, I::GenericArgs&gt; {
-        <span class="macro">debug!</span>(
-            <span class="string">"relate_item_args(item_def_id={:?}, a_arg={:?}, b_arg={:?})"</span>,
-            item_def_id, a_arg, b_arg
-        );
-
-        <span class="kw">let </span>tcx = <span class="self">self</span>.tcx();
-        <span class="kw">let </span>opt_variances = tcx.variances_of(item_def_id);
-        relate_args_with_variances(<span class="self">self</span>, item_def_id, <span class="kw-2">&amp;</span>opt_variances, a_arg, b_arg, <span class="bool-val">true</span>)
+        <span class="kw">let </span>cx = <span class="self">self</span>.cx();
+        <span class="kw">let </span>opt_variances = cx.variances_of(item_def_id);
+        relate_args_with_variances(<span class="self">self</span>, item_def_id, opt_variances, a_arg, b_arg, <span class="bool-val">true</span>)
     }
 
     <span class="doccomment">/// Switch variance for the purpose of relating `a` and `b`.
@@ -793,7 +790,7 @@
     a_arg: I::GenericArgs,
     b_arg: I::GenericArgs,
 ) -&gt; RelateResult&lt;I, I::GenericArgs&gt; {
-    relation.tcx().mk_args_from_iter(iter::zip(a_arg, b_arg).map(|(a, b)| {
+    relation.cx().mk_args_from_iter(iter::zip(a_arg.iter(), b_arg.iter()).map(|(a, b)| {
         relation.relate_with_variance(ty::Invariant, VarianceDiagInfo::default(), a, b)
     }))
 }
@@ -801,19 +798,18 @@
 <span class="kw">pub fn </span>relate_args_with_variances&lt;I: Interner, R: TypeRelation&lt;I&gt;&gt;(
     relation: <span class="kw-2">&amp;mut </span>R,
     ty_def_id: I::DefId,
-    variances: <span class="kw-2">&amp;</span>[ty::Variance],
+    variances: I::VariancesOf,
     a_arg: I::GenericArgs,
     b_arg: I::GenericArgs,
     fetch_ty_for_diag: bool,
 ) -&gt; RelateResult&lt;I, I::GenericArgs&gt; {
-    <span class="kw">let </span>tcx = relation.tcx();
+    <span class="kw">let </span>cx = relation.cx();
 
     <span class="kw">let </span><span class="kw-2">mut </span>cached_ty = <span class="prelude-val">None</span>;
-    <span class="kw">let </span>params = iter::zip(a_arg, b_arg).enumerate().map(|(i, (a, b))| {
-        <span class="kw">let </span>variance = variances[i];
+    <span class="kw">let </span>params = iter::zip(a_arg.iter(), b_arg.iter()).enumerate().map(|(i, (a, b))| {
+        <span class="kw">let </span>variance = variances.get(i).unwrap();
         <span class="kw">let </span>variance_info = <span class="kw">if </span>variance == ty::Invariant &amp;&amp; fetch_ty_for_diag {
-            <span class="kw">let </span>ty =
-                <span class="kw-2">*</span>cached_ty.get_or_insert_with(|| tcx.type_of(ty_def_id).instantiate(tcx, <span class="kw-2">&amp;</span>a_arg));
+            <span class="kw">let </span>ty = <span class="kw-2">*</span>cached_ty.get_or_insert_with(|| cx.type_of(ty_def_id).instantiate(cx, a_arg));
             VarianceDiagInfo::Invariant { ty, param_index: i.try_into().unwrap() }
         } <span class="kw">else </span>{
             VarianceDiagInfo::default()
@@ -821,7 +817,7 @@
         relation.relate_with_variance(variance, variance_info, a, b)
     });
 
-    tcx.mk_args_from_iter(params)
+    cx.mk_args_from_iter(params)
 }
 
 <span class="kw">impl</span>&lt;I: Interner&gt; Relate&lt;I&gt; <span class="kw">for </span>ty::FnSig&lt;I&gt; {
@@ -830,7 +826,7 @@
         a: ty::FnSig&lt;I&gt;,
         b: ty::FnSig&lt;I&gt;,
     ) -&gt; RelateResult&lt;I, ty::FnSig&lt;I&gt;&gt; {
-        <span class="kw">let </span>tcx = relation.tcx();
+        <span class="kw">let </span>cx = relation.cx();
 
         <span class="kw">if </span>a.c_variadic != b.c_variadic {
             <span class="kw">return </span><span class="prelude-val">Err</span>(TypeError::VariadicMismatch({
@@ -850,7 +846,7 @@
         }
 
         <span class="kw">let </span>inputs_and_output = iter::zip(a_inputs.iter(), b_inputs.iter())
-            .map(|(<span class="kw-2">&amp;</span>a, <span class="kw-2">&amp;</span>b)| ((a, b), <span class="bool-val">false</span>))
+            .map(|(a, b)| ((a, b), <span class="bool-val">false</span>))
             .chain(iter::once(((a.output(), b.output()), <span class="bool-val">true</span>)))
             .map(|((a, b), is_output)| {
                 <span class="kw">if </span>is_output {
@@ -875,7 +871,7 @@
                 r =&gt; r,
             });
         <span class="prelude-val">Ok</span>(ty::FnSig {
-            inputs_and_output: tcx.mk_type_list_from_iter(inputs_and_output)<span class="question-mark">?</span>,
+            inputs_and_output: cx.mk_type_list_from_iter(inputs_and_output)<span class="question-mark">?</span>,
             c_variadic: a.c_variadic,
             safety,
             abi,
@@ -910,11 +906,11 @@
                 ExpectedFound::new(<span class="bool-val">true</span>, a, b)
             }))
         } <span class="kw">else </span>{
-            <span class="kw">let </span>args = <span class="kw">match </span>a.kind(relation.tcx()) {
+            <span class="kw">let </span>args = <span class="kw">match </span>a.kind(relation.cx()) {
                 ty::Opaque =&gt; relate_args_with_variances(
                     relation,
                     a.def_id,
-                    <span class="kw-2">&amp;</span>relation.tcx().variances_of(a.def_id),
+                    relation.cx().variances_of(a.def_id),
                     a.args,
                     b.args,
                     <span class="bool-val">false</span>, <span class="comment">// do not fetch `type_of(a_def_id)`, as it will cause a cycle
@@ -923,7 +919,7 @@
                     relate_args_invariantly(relation, a.args, b.args)<span class="question-mark">?
                 </span>}
             };
-            <span class="prelude-val">Ok</span>(ty::AliasTy::new(relation.tcx(), a.def_id, args))
+            <span class="prelude-val">Ok</span>(ty::AliasTy::new_from_args(relation.cx(), a.def_id, args))
         }
     }
 }
@@ -941,11 +937,11 @@
                 ExpectedFound::new(<span class="bool-val">true</span>, a, b)
             }))
         } <span class="kw">else </span>{
-            <span class="kw">let </span>args = <span class="kw">match </span>a.kind(relation.tcx()) {
+            <span class="kw">let </span>args = <span class="kw">match </span>a.kind(relation.cx()) {
                 ty::AliasTermKind::OpaqueTy =&gt; relate_args_with_variances(
                     relation,
                     a.def_id,
-                    <span class="kw-2">&amp;</span>relation.tcx().variances_of(a.def_id),
+                    relation.cx().variances_of(a.def_id),
                     a.args,
                     b.args,
                     <span class="bool-val">false</span>, <span class="comment">// do not fetch `type_of(a_def_id)`, as it will cause a cycle
@@ -958,7 +954,7 @@
                     relate_args_invariantly(relation, a.args, b.args)<span class="question-mark">?
                 </span>}
             };
-            <span class="prelude-val">Ok</span>(ty::AliasTerm::new(relation.tcx(), a.def_id, args))
+            <span class="prelude-val">Ok</span>(ty::AliasTerm::new_from_args(relation.cx(), a.def_id, args))
         }
     }
 }
@@ -1008,7 +1004,7 @@
             }))
         } <span class="kw">else </span>{
             <span class="kw">let </span>args = relate_args_invariantly(relation, a.args, b.args)<span class="question-mark">?</span>;
-            <span class="prelude-val">Ok</span>(ty::TraitRef::new(relation.tcx(), a.def_id, args))
+            <span class="prelude-val">Ok</span>(ty::TraitRef::new_from_args(relation.cx(), a.def_id, args))
         }
     }
 }
@@ -1042,7 +1038,7 @@
     a: I::Ty,
     b: I::Ty,
 ) -&gt; RelateResult&lt;I, I::Ty&gt; {
-    <span class="kw">let </span>tcx = relation.tcx();
+    <span class="kw">let </span>cx = relation.cx();
     <span class="kw">match </span>(a.kind(), b.kind()) {
         (ty::Infer(<span class="kw">_</span>), <span class="kw">_</span>) | (<span class="kw">_</span>, ty::Infer(<span class="kw">_</span>)) =&gt; {
             <span class="comment">// The caller should handle these cases!
@@ -1053,7 +1049,7 @@
             <span class="macro">panic!</span>(<span class="string">"bound types encountered in structurally_relate_tys"</span>)
         }
 
-        (ty::Error(guar), <span class="kw">_</span>) | (<span class="kw">_</span>, ty::Error(guar)) =&gt; <span class="prelude-val">Ok</span>(Ty::new_error(tcx, guar)),
+        (ty::Error(guar), <span class="kw">_</span>) | (<span class="kw">_</span>, ty::Error(guar)) =&gt; <span class="prelude-val">Ok</span>(Ty::new_error(cx, guar)),
 
         (ty::Never, <span class="kw">_</span>)
         | (ty::Char, <span class="kw">_</span>)
@@ -1077,16 +1073,16 @@
 
         (ty::Adt(a_def, a_args), ty::Adt(b_def, b_args)) <span class="kw">if </span>a_def == b_def =&gt; {
             <span class="kw">let </span>args = relation.relate_item_args(a_def.def_id(), a_args, b_args)<span class="question-mark">?</span>;
-            <span class="prelude-val">Ok</span>(Ty::new_adt(tcx, a_def, args))
+            <span class="prelude-val">Ok</span>(Ty::new_adt(cx, a_def, args))
         }
 
-        (ty::Foreign(a_id), ty::Foreign(b_id)) <span class="kw">if </span>a_id == b_id =&gt; <span class="prelude-val">Ok</span>(Ty::new_foreign(tcx, a_id)),
+        (ty::Foreign(a_id), ty::Foreign(b_id)) <span class="kw">if </span>a_id == b_id =&gt; <span class="prelude-val">Ok</span>(Ty::new_foreign(cx, a_id)),
 
         (ty::Dynamic(a_obj, a_region, a_repr), ty::Dynamic(b_obj, b_region, b_repr))
             <span class="kw">if </span>a_repr == b_repr =&gt;
         {
             <span class="prelude-val">Ok</span>(Ty::new_dynamic(
-                tcx,
+                cx,
                 relation.relate(a_obj, b_obj)<span class="question-mark">?</span>,
                 relation.relate(a_region, b_region)<span class="question-mark">?</span>,
                 a_repr,
@@ -1098,7 +1094,7 @@
             // the (anonymous) type of the same coroutine expression. So
             // all of their regions should be equated.
             </span><span class="kw">let </span>args = relate_args_invariantly(relation, a_args, b_args)<span class="question-mark">?</span>;
-            <span class="prelude-val">Ok</span>(Ty::new_coroutine(tcx, a_id, args))
+            <span class="prelude-val">Ok</span>(Ty::new_coroutine(cx, a_id, args))
         }
 
         (ty::CoroutineWitness(a_id, a_args), ty::CoroutineWitness(b_id, b_args))
@@ -1108,7 +1104,7 @@
             // the (anonymous) type of the same coroutine expression. So
             // all of their regions should be equated.
             </span><span class="kw">let </span>args = relate_args_invariantly(relation, a_args, b_args)<span class="question-mark">?</span>;
-            <span class="prelude-val">Ok</span>(Ty::new_coroutine_witness(tcx, a_id, args))
+            <span class="prelude-val">Ok</span>(Ty::new_coroutine_witness(cx, a_id, args))
         }
 
         (ty::Closure(a_id, a_args), ty::Closure(b_id, b_args)) <span class="kw">if </span>a_id == b_id =&gt; {
@@ -1116,14 +1112,14 @@
             // the (anonymous) type of the same closure expression. So
             // all of their regions should be equated.
             </span><span class="kw">let </span>args = relate_args_invariantly(relation, a_args, b_args)<span class="question-mark">?</span>;
-            <span class="prelude-val">Ok</span>(Ty::new_closure(tcx, a_id, args))
+            <span class="prelude-val">Ok</span>(Ty::new_closure(cx, a_id, args))
         }
 
         (ty::CoroutineClosure(a_id, a_args), ty::CoroutineClosure(b_id, b_args))
             <span class="kw">if </span>a_id == b_id =&gt;
         {
             <span class="kw">let </span>args = relate_args_invariantly(relation, a_args, b_args)<span class="question-mark">?</span>;
-            <span class="prelude-val">Ok</span>(Ty::new_coroutine_closure(tcx, a_id, args))
+            <span class="prelude-val">Ok</span>(Ty::new_coroutine_closure(cx, a_id, args))
         }
 
         (ty::RawPtr(a_ty, a_mutbl), ty::RawPtr(b_ty, b_mutbl)) =&gt; {
@@ -1140,7 +1136,7 @@
 
             <span class="kw">let </span>ty = relation.relate_with_variance(variance, info, a_ty, b_ty)<span class="question-mark">?</span>;
 
-            <span class="prelude-val">Ok</span>(Ty::new_ptr(tcx, ty, a_mutbl))
+            <span class="prelude-val">Ok</span>(Ty::new_ptr(cx, ty, a_mutbl))
         }
 
         (ty::Ref(a_r, a_ty, a_mutbl), ty::Ref(b_r, b_ty, b_mutbl)) =&gt; {
@@ -1158,18 +1154,18 @@
             <span class="kw">let </span>r = relation.relate(a_r, b_r)<span class="question-mark">?</span>;
             <span class="kw">let </span>ty = relation.relate_with_variance(variance, info, a_ty, b_ty)<span class="question-mark">?</span>;
 
-            <span class="prelude-val">Ok</span>(Ty::new_ref(tcx, r, ty, a_mutbl))
+            <span class="prelude-val">Ok</span>(Ty::new_ref(cx, r, ty, a_mutbl))
         }
 
         (ty::Array(a_t, sz_a), ty::Array(b_t, sz_b)) =&gt; {
             <span class="kw">let </span>t = relation.relate(a_t, b_t)<span class="question-mark">?</span>;
             <span class="kw">match </span>relation.relate(sz_a, sz_b) {
-                <span class="prelude-val">Ok</span>(sz) =&gt; <span class="prelude-val">Ok</span>(Ty::new_array_with_const_len(tcx, t, sz)),
+                <span class="prelude-val">Ok</span>(sz) =&gt; <span class="prelude-val">Ok</span>(Ty::new_array_with_const_len(cx, t, sz)),
                 <span class="prelude-val">Err</span>(err) =&gt; {
                     <span class="comment">// Check whether the lengths are both concrete/known values,
                     // but are unequal, for better diagnostics.
-                    </span><span class="kw">let </span>sz_a = sz_a.try_to_target_usize(tcx);
-                    <span class="kw">let </span>sz_b = sz_b.try_to_target_usize(tcx);
+                    </span><span class="kw">let </span>sz_a = sz_a.try_to_target_usize(cx);
+                    <span class="kw">let </span>sz_b = sz_b.try_to_target_usize(cx);
 
                     <span class="kw">match </span>(sz_a, sz_b) {
                         (<span class="prelude-val">Some</span>(sz_a_val), <span class="prelude-val">Some</span>(sz_b_val)) <span class="kw">if </span>sz_a_val != sz_b_val =&gt; <span class="prelude-val">Err</span>(
@@ -1183,14 +1179,14 @@
 
         (ty::Slice(a_t), ty::Slice(b_t)) =&gt; {
             <span class="kw">let </span>t = relation.relate(a_t, b_t)<span class="question-mark">?</span>;
-            <span class="prelude-val">Ok</span>(Ty::new_slice(tcx, t))
+            <span class="prelude-val">Ok</span>(Ty::new_slice(cx, t))
         }
 
         (ty::Tuple(as_), ty::Tuple(bs)) =&gt; {
             <span class="kw">if </span>as_.len() == bs.len() {
                 <span class="prelude-val">Ok</span>(Ty::new_tup_from_iter(
-                    tcx,
-                    iter::zip(as_, bs).map(|(a, b)| relation.relate(a, b)),
+                    cx,
+                    iter::zip(as_.iter(), bs.iter()).map(|(a, b)| relation.relate(a, b)),
                 )<span class="question-mark">?</span>)
             } <span class="kw">else if </span>!(as_.is_empty() || bs.is_empty()) {
                 <span class="prelude-val">Err</span>(TypeError::TupleSize(ExpectedFound::new(<span class="bool-val">true</span>, as_.len(), bs.len())))
@@ -1201,25 +1197,25 @@
 
         (ty::FnDef(a_def_id, a_args), ty::FnDef(b_def_id, b_args)) <span class="kw">if </span>a_def_id == b_def_id =&gt; {
             <span class="kw">let </span>args = relation.relate_item_args(a_def_id, a_args, b_args)<span class="question-mark">?</span>;
-            <span class="prelude-val">Ok</span>(Ty::new_fn_def(tcx, a_def_id, args))
+            <span class="prelude-val">Ok</span>(Ty::new_fn_def(cx, a_def_id, args))
         }
 
         (ty::FnPtr(a_fty), ty::FnPtr(b_fty)) =&gt; {
             <span class="kw">let </span>fty = relation.relate(a_fty, b_fty)<span class="question-mark">?</span>;
-            <span class="prelude-val">Ok</span>(Ty::new_fn_ptr(tcx, fty))
+            <span class="prelude-val">Ok</span>(Ty::new_fn_ptr(cx, fty))
         }
 
         <span class="comment">// Alias tend to mostly already be handled downstream due to normalization.
         </span>(ty::Alias(a_kind, a_data), ty::Alias(b_kind, b_data)) =&gt; {
             <span class="kw">let </span>alias_ty = relation.relate(a_data, b_data)<span class="question-mark">?</span>;
             <span class="macro">assert_eq!</span>(a_kind, b_kind);
-            <span class="prelude-val">Ok</span>(Ty::new_alias(tcx, a_kind, alias_ty))
+            <span class="prelude-val">Ok</span>(Ty::new_alias(cx, a_kind, alias_ty))
         }
 
         (ty::Pat(a_ty, a_pat), ty::Pat(b_ty, b_pat)) =&gt; {
             <span class="kw">let </span>ty = relation.relate(a_ty, b_ty)<span class="question-mark">?</span>;
             <span class="kw">let </span>pat = relation.relate(a_pat, b_pat)<span class="question-mark">?</span>;
-            <span class="prelude-val">Ok</span>(Ty::new_pat(tcx, ty, pat))
+            <span class="prelude-val">Ok</span>(Ty::new_pat(cx, ty, pat))
         }
 
         <span class="kw">_ </span>=&gt; <span class="prelude-val">Err</span>(TypeError::Sorts(ExpectedFound::new(<span class="bool-val">true</span>, a, b))),
@@ -1237,15 +1233,25 @@
     <span class="kw-2">mut </span>a: I::Const,
     <span class="kw-2">mut </span>b: I::Const,
 ) -&gt; RelateResult&lt;I, I::Const&gt; {
-    <span class="macro">debug!</span>(<span class="string">"{}.structurally_relate_consts(a = {:?}, b = {:?})"</span>, relation.tag(), a, b);
-    <span class="kw">let </span>tcx = relation.tcx();
+    <span class="macro">trace!</span>(
+        <span class="string">"structurally_relate_consts::&lt;{}&gt;(a = {:?}, b = {:?})"</span>,
+        std::any::type_name::&lt;R&gt;(),
+        a,
+        b
+    );
+    <span class="kw">let </span>cx = relation.cx();
 
-    <span class="kw">if </span>tcx.features().generic_const_exprs() {
-        a = tcx.expand_abstract_consts(a);
-        b = tcx.expand_abstract_consts(b);
+    <span class="kw">if </span>cx.features().generic_const_exprs() {
+        a = cx.expand_abstract_consts(a);
+        b = cx.expand_abstract_consts(b);
     }
 
-    <span class="macro">debug!</span>(<span class="string">"{}.structurally_relate_consts(normed_a = {:?}, normed_b = {:?})"</span>, relation.tag(), a, b);
+    <span class="macro">trace!</span>(
+        <span class="string">"structurally_relate_consts::&lt;{}&gt;(normed_a = {:?}, normed_b = {:?})"</span>,
+        std::any::type_name::&lt;R&gt;(),
+        a,
+        b
+    );
 
     <span class="comment">// Currently, the values that can be unified are primitive types,
     // and those that derive both `PartialEq` and `Eq`, corresponding
@@ -1272,8 +1278,8 @@
         // be stabilized.
         </span>(ty::ConstKind::Unevaluated(au), ty::ConstKind::Unevaluated(bu)) <span class="kw">if </span>au.def == bu.def =&gt; {
             <span class="kw">if </span><span class="macro">cfg!</span>(debug_assertions) {
-                <span class="kw">let </span>a_ty = tcx.type_of(au.def).instantiate(tcx, <span class="kw-2">&amp;</span>au.args);
-                <span class="kw">let </span>b_ty = tcx.type_of(bu.def).instantiate(tcx, <span class="kw-2">&amp;</span>bu.args);
+                <span class="kw">let </span>a_ty = cx.type_of(au.def).instantiate(cx, au.args);
+                <span class="kw">let </span>b_ty = cx.type_of(bu.def).instantiate(cx, bu.args);
                 <span class="macro">assert_eq!</span>(a_ty, b_ty);
             }
 
@@ -1283,11 +1289,11 @@
                 au.args,
                 bu.args,
             )<span class="question-mark">?</span>;
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(Const::new_unevaluated(tcx, ty::UnevaluatedConst { def: au.def, args }));
+            <span class="kw">return </span><span class="prelude-val">Ok</span>(Const::new_unevaluated(cx, ty::UnevaluatedConst { def: au.def, args }));
         }
         (ty::ConstKind::Expr(ae), ty::ConstKind::Expr(be)) =&gt; {
             <span class="kw">let </span>expr = relation.relate(ae, be)<span class="question-mark">?</span>;
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(Const::new_expr(tcx, expr));
+            <span class="kw">return </span><span class="prelude-val">Ok</span>(Const::new_expr(cx, expr));
         }
         <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
     };

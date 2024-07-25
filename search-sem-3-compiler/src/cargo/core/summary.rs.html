@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/cargo/core/summary.rs`."><title>summary.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="cargo" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/cargo/core/summary.rs`."><title>summary.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="cargo" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -427,7 +427,6 @@
 <a href="#427" id="427">427</a>
 <a href="#428" id="428">428</a>
 <a href="#429" id="429">429</a>
-<a href="#430" id="430">430</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::core::{Dependency, PackageId, SourceId};
 <span class="kw">use </span><span class="kw">crate</span>::util::interning::InternedString;
 <span class="kw">use </span><span class="kw">crate</span>::util::CargoResult;
@@ -439,7 +438,7 @@
 <span class="kw">use </span>std::fmt;
 <span class="kw">use </span>std::hash::{Hash, Hasher};
 <span class="kw">use </span>std::mem;
-<span class="kw">use </span>std::rc::Rc;
+<span class="kw">use </span>std::sync::Arc;
 
 <span class="doccomment">/// Subset of a `Manifest`. Contains only the most important information about
 /// a package.
@@ -447,17 +446,46 @@
 /// Summaries are cloned, and should not be mutated after creation
 </span><span class="attr">#[derive(Debug, Clone)]
 </span><span class="kw">pub struct </span>Summary {
-    inner: Rc&lt;Inner&gt;,
+    inner: Arc&lt;Inner&gt;,
 }
 
 <span class="attr">#[derive(Debug, Clone)]
 </span><span class="kw">struct </span>Inner {
     package_id: PackageId,
     dependencies: Vec&lt;Dependency&gt;,
-    features: Rc&lt;FeatureMap&gt;,
+    features: Arc&lt;FeatureMap&gt;,
     checksum: <span class="prelude-ty">Option</span>&lt;String&gt;,
     links: <span class="prelude-ty">Option</span>&lt;InternedString&gt;,
     rust_version: <span class="prelude-ty">Option</span>&lt;RustVersion&gt;,
+}
+
+<span class="doccomment">/// Indicates the dependency inferred from the `dep` syntax that should exist,
+/// but missing on the resolved dependencies tables.
+</span><span class="attr">#[derive(Debug)]
+</span><span class="kw">pub struct </span>MissingDependencyError {
+    <span class="kw">pub </span>dep_name: InternedString,
+    <span class="kw">pub </span>feature: InternedString,
+    <span class="kw">pub </span>feature_value: FeatureValue,
+    <span class="doccomment">/// Indicates the dependency inferred from the `dep?` syntax that is weak optional
+    </span><span class="kw">pub </span>weak_optional: bool,
+}
+
+<span class="kw">impl </span>std::error::Error <span class="kw">for </span>MissingDependencyError {}
+
+<span class="kw">impl </span>fmt::Display <span class="kw">for </span>MissingDependencyError {
+    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
+        <span class="kw">let </span><span class="self">Self </span>{
+            dep_name,
+            feature,
+            feature_value: fv,
+            ..
+        } = <span class="self">self</span>;
+
+        <span class="macro">write!</span>(
+            f,
+            <span class="string">"feature `{feature}` includes `{fv}`, but `{dep_name}` is not a dependency"</span>,
+        )
+    }
 }
 
 <span class="kw">impl </span>Summary {
@@ -483,10 +511,10 @@
         }
         <span class="kw">let </span>feature_map = build_feature_map(features, <span class="kw-2">&amp;</span>dependencies)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(Summary {
-            inner: Rc::new(Inner {
+            inner: Arc::new(Inner {
                 package_id: pkg_id,
                 dependencies,
-                features: Rc::new(feature_map),
+                features: Arc::new(feature_map),
                 checksum: <span class="prelude-val">None</span>,
                 links: links.map(|l| l.into()),
                 rust_version,
@@ -525,12 +553,12 @@
     }
 
     <span class="kw">pub fn </span>override_id(<span class="kw-2">mut </span><span class="self">self</span>, id: PackageId) -&gt; Summary {
-        Rc::make_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>.inner).package_id = id;
+        Arc::make_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>.inner).package_id = id;
         <span class="self">self
     </span>}
 
     <span class="kw">pub fn </span>set_checksum(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cksum: String) {
-        Rc::make_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>.inner).checksum = <span class="prelude-val">Some</span>(cksum);
+        Arc::make_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>.inner).checksum = <span class="prelude-val">Some</span>(cksum);
     }
 
     <span class="kw">pub fn </span>map_dependencies&lt;F&gt;(<span class="self">self</span>, <span class="kw-2">mut </span>f: F) -&gt; Summary
@@ -545,7 +573,7 @@
         </span>F: FnMut(Dependency) -&gt; CargoResult&lt;Dependency&gt;,
     {
         {
-            <span class="kw">let </span>slot = <span class="kw-2">&amp;mut </span>Rc::make_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>.inner).dependencies;
+            <span class="kw">let </span>slot = <span class="kw-2">&amp;mut </span>Arc::make_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>.inner).dependencies;
             <span class="kw-2">*</span>slot = mem::take(slot)
                 .into_iter()
                 .map(f)
@@ -579,6 +607,12 @@
     }
 }
 
+<span class="comment">// A check that only compiles if Summary is Sync
+</span><span class="kw">const _</span>: <span class="kw">fn</span>() = || {
+    <span class="kw">fn </span>is_sync&lt;T: Sync&gt;() {}
+    is_sync::&lt;Summary&gt;();
+};
+
 <span class="doccomment">/// Checks features for errors, bailing out a CargoResult:Err if invalid,
 /// and creates FeatureValues for each feature.
 </span><span class="kw">fn </span>build_feature_map(
@@ -586,15 +620,14 @@
     dependencies: <span class="kw-2">&amp;</span>[Dependency],
 ) -&gt; CargoResult&lt;FeatureMap&gt; {
     <span class="kw">use </span><span class="self">self</span>::FeatureValue::<span class="kw-2">*</span>;
-    <span class="kw">let </span><span class="kw-2">mut </span>dep_map = HashMap::new();
+    <span class="comment">// A map of dependency names to whether there are any that are optional.
+    </span><span class="kw">let </span><span class="kw-2">mut </span>dep_map: HashMap&lt;InternedString, bool&gt; = HashMap::new();
     <span class="kw">for </span>dep <span class="kw">in </span>dependencies.iter() {
-        dep_map
-            .entry(dep.name_in_toml())
-            .or_insert_with(Vec::new)
-            .push(dep);
+        <span class="kw-2">*</span>dep_map.entry(dep.name_in_toml()).or_insert(<span class="bool-val">false</span>) |= dep.is_optional();
     }
+    <span class="kw">let </span>dep_map = dep_map; <span class="comment">// We are done mutating this variable
 
-    <span class="kw">let </span><span class="kw-2">mut </span>map: FeatureMap = features
+    </span><span class="kw">let </span><span class="kw-2">mut </span>map: FeatureMap = features
         .iter()
         .map(|(feature, list)| {
             <span class="kw">let </span>fvs: Vec&lt;<span class="kw">_</span>&gt; = list
@@ -610,117 +643,78 @@
     </span><span class="kw">let </span>explicitly_listed: HashSet&lt;<span class="kw">_</span>&gt; = map
         .values()
         .flatten()
-        .filter_map(|fv| <span class="kw">match </span>fv {
-            Dep { dep_name } =&gt; <span class="prelude-val">Some</span>(<span class="kw-2">*</span>dep_name),
-            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
-        })
+        .filter_map(|fv| fv.explicit_dep_name())
         .collect();
     <span class="kw">for </span>dep <span class="kw">in </span>dependencies {
         <span class="kw">if </span>!dep.is_optional() {
             <span class="kw">continue</span>;
         }
-        <span class="kw">let </span>dep_name_in_toml = dep.name_in_toml();
-        <span class="kw">if </span>features.contains_key(<span class="kw-2">&amp;</span>dep_name_in_toml) || explicitly_listed.contains(<span class="kw-2">&amp;</span>dep_name_in_toml)
-        {
+        <span class="kw">let </span>dep_name = dep.name_in_toml();
+        <span class="kw">if </span>features.contains_key(<span class="kw-2">&amp;</span>dep_name) || explicitly_listed.contains(<span class="kw-2">&amp;</span>dep_name) {
             <span class="kw">continue</span>;
         }
-        <span class="kw">let </span>fv = Dep {
-            dep_name: dep_name_in_toml,
-        };
-        map.insert(dep_name_in_toml, <span class="macro">vec!</span>[fv]);
+        map.insert(dep_name, <span class="macro">vec!</span>[Dep { dep_name }]);
     }
+    <span class="kw">let </span>map = map; <span class="comment">// We are done mutating this variable
 
-    <span class="comment">// Validate features are listed properly.
+    // Validate features are listed properly.
     </span><span class="kw">for </span>(feature, fvs) <span class="kw">in </span><span class="kw-2">&amp;</span>map {
         FeatureName::new(feature)<span class="question-mark">?</span>;
         <span class="kw">for </span>fv <span class="kw">in </span>fvs {
             <span class="comment">// Find data for the referenced dependency...
-            </span><span class="kw">let </span>dep_data = {
-                <span class="kw">match </span>fv {
-                    Feature(dep_name) | Dep { dep_name, .. } | DepFeature { dep_name, .. } =&gt; {
-                        dep_map.get(dep_name)
-                    }
-                }
-            };
-            <span class="kw">let </span>is_optional_dep = dep_data
-                .iter()
-                .flat_map(|d| d.iter())
-                .any(|d| d.is_optional());
+            </span><span class="kw">let </span>dep_data = dep_map.get(<span class="kw-2">&amp;</span>fv.feature_or_dep_name());
             <span class="kw">let </span>is_any_dep = dep_data.is_some();
+            <span class="kw">let </span>is_optional_dep = dep_data.is_some_and(|<span class="kw-2">&amp;</span>o| o);
             <span class="kw">match </span>fv {
                 Feature(f) =&gt; {
                     <span class="kw">if </span>!features.contains_key(f) {
                         <span class="kw">if </span>!is_any_dep {
                             <span class="macro">bail!</span>(
-                                <span class="string">"feature `{}` includes `{}` which is neither a dependency \
-                                 nor another feature"</span>,
-                                feature,
-                                fv
-                            );
+                                <span class="string">"feature `{feature}` includes `{fv}` which is neither a dependency \
+                                 nor another feature"                              
+                              </span>);
                         }
                         <span class="kw">if </span>is_optional_dep {
                             <span class="kw">if </span>!map.contains_key(f) {
                                 <span class="macro">bail!</span>(
-                                    <span class="string">"feature `{}` includes `{}`, but `{}` is an \
+                                    <span class="string">"feature `{feature}` includes `{fv}`, but `{f}` is an \
                                      optional dependency without an implicit feature\n\
-                                     Use `dep:{}` to enable the dependency."</span>,
-                                    feature,
-                                    fv,
-                                    f,
-                                    f
-                                );
+                                     Use `dep:{f}` to enable the dependency."
+                                </span>);
                             }
                         } <span class="kw">else </span>{
-                            <span class="macro">bail!</span>(<span class="string">"feature `{}` includes `{}`, but `{}` is not an optional dependency\n\
+                            <span class="macro">bail!</span>(<span class="string">"feature `{feature}` includes `{fv}`, but `{f}` is not an optional dependency\n\
                                 A non-optional dependency of the same name is defined; \
-                                consider adding `optional = true` to its definition."</span>,
-                                feature, fv, f);
+                                consider adding `optional = true` to its definition."</span>);
                         }
                     }
                 }
                 Dep { dep_name } =&gt; {
                     <span class="kw">if </span>!is_any_dep {
-                        <span class="macro">bail!</span>(
-                            <span class="string">"feature `{}` includes `{}`, but `{}` is not listed as a dependency"</span>,
-                            feature,
-                            fv,
-                            dep_name
-                        );
+                        <span class="macro">bail!</span>(<span class="string">"feature `{feature}` includes `{fv}`, but `{dep_name}` is not listed as a dependency"</span>);
                     }
                     <span class="kw">if </span>!is_optional_dep {
                         <span class="macro">bail!</span>(
-                            <span class="string">"feature `{}` includes `{}`, but `{}` is not an optional dependency\n\
+                            <span class="string">"feature `{feature}` includes `{fv}`, but `{dep_name}` is not an optional dependency\n\
                              A non-optional dependency of the same name is defined; \
-                             consider adding `optional = true` to its definition."</span>,
-                            feature,
-                            fv,
-                            dep_name
-                        );
+                             consider adding `optional = true` to its definition."
+                        </span>);
                     }
                 }
                 DepFeature {
                     dep_name,
                     dep_feature,
                     weak,
-                    ..
                 } =&gt; {
                     <span class="comment">// Early check for some unlikely syntax.
                     </span><span class="kw">if </span>dep_feature.contains(<span class="string">'/'</span>) {
-                        <span class="macro">bail!</span>(
-                            <span class="string">"multiple slashes in feature `{}` (included by feature `{}`) are not allowed"</span>,
-                            fv,
-                            feature
-                        );
+                        <span class="macro">bail!</span>(<span class="string">"multiple slashes in feature `{fv}` (included by feature `{feature}`) are not allowed"</span>);
                     }
 
                     <span class="comment">// dep: cannot be combined with /
                     </span><span class="kw">if let </span><span class="prelude-val">Some</span>(stripped_dep) = dep_name.strip_prefix(<span class="string">"dep:"</span>) {
                         <span class="kw">let </span>has_other_dep = explicitly_listed.contains(stripped_dep);
-                        <span class="kw">let </span>is_optional = dep_map
-                            .get(stripped_dep)
-                            .iter()
-                            .flat_map(|d| d.iter())
-                            .any(|d| d.is_optional());
+                        <span class="kw">let </span>is_optional = dep_map.get(stripped_dep).is_some_and(|<span class="kw-2">&amp;</span>o| o);
                         <span class="kw">let </span>extra_help = <span class="kw">if </span><span class="kw-2">*</span>weak || has_other_dep || !is_optional {
                             <span class="comment">// In this case, the user should just remove dep:.
                             // Note that "hiding" an optional dependency
@@ -744,18 +738,19 @@
 
                     <span class="comment">// Validation of the feature name will be performed in the resolver.
                     </span><span class="kw">if </span>!is_any_dep {
-                        <span class="macro">bail!</span>(
-                            <span class="string">"feature `{}` includes `{}`, but `{}` is not a dependency"</span>,
-                            feature,
-                            fv,
-                            dep_name
-                        );
+                        <span class="macro">bail!</span>(MissingDependencyError {
+                            feature: <span class="kw-2">*</span>feature,
+                            feature_value: (<span class="kw-2">*</span>fv).clone(),
+                            dep_name: <span class="kw-2">*</span>dep_name,
+                            weak_optional: <span class="kw-2">*</span>weak,
+                        })
                     }
                     <span class="kw">if </span><span class="kw-2">*</span>weak &amp;&amp; !is_optional_dep {
-                        <span class="macro">bail!</span>(<span class="string">"feature `{}` includes `{}` with a `?`, but `{}` is not an optional dependency\n\
+                        <span class="macro">bail!</span>(
+                            <span class="string">"feature `{feature}` includes `{fv}` with a `?`, but `{dep_name}` is not an optional dependency\n\
                             A non-optional dependency of the same name is defined; \
-                            consider removing the `?` or changing the dependency to be optional"</span>,
-                            feature, fv, dep_name);
+                            consider removing the `?` or changing the dependency to be optional"
+                        </span>);
                     }
                 }
             }
@@ -771,16 +766,14 @@
             <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
         })
         .collect();
-    <span class="kw">if let </span><span class="prelude-val">Some</span>(dep) = dependencies
+    <span class="kw">if let </span><span class="prelude-val">Some</span>((dep, <span class="kw">_</span>)) = dep_map
         .iter()
-        .find(|dep| dep.is_optional() &amp;&amp; !used.contains(<span class="kw-2">&amp;</span>dep.name_in_toml()))
+        .find(|<span class="kw-2">&amp;</span>(dep, <span class="kw-2">&amp;</span>is_optional)| is_optional &amp;&amp; !used.contains(dep))
     {
         <span class="macro">bail!</span>(
-            <span class="string">"optional dependency `{}` is not included in any feature\n\
-            Make sure that `dep:{}` is included in one of features in the [features] table."</span>,
-            dep.name_in_toml(),
-            dep.name_in_toml(),
-        );
+            <span class="string">"optional dependency `{dep}` is not included in any feature\n\
+            Make sure that `dep:{dep}` is included in one of features in the [features] table."
+        </span>);
     }
 
     <span class="prelude-val">Ok</span>(map)
@@ -806,19 +799,13 @@
 
 <span class="kw">impl </span>FeatureValue {
     <span class="kw">pub fn </span>new(feature: InternedString) -&gt; FeatureValue {
-        <span class="kw">match </span>feature.find(<span class="string">'/'</span>) {
-            <span class="prelude-val">Some</span>(pos) =&gt; {
-                <span class="kw">let </span>(dep, dep_feat) = feature.split_at(pos);
-                <span class="kw">let </span>dep_feat = <span class="kw-2">&amp;</span>dep_feat[<span class="number">1</span>..];
-                <span class="kw">let </span>(dep, weak) = <span class="kw">if let </span><span class="prelude-val">Some</span>(dep) = dep.strip_suffix(<span class="string">'?'</span>) {
-                    (dep, <span class="bool-val">true</span>)
-                } <span class="kw">else </span>{
-                    (dep, <span class="bool-val">false</span>)
-                };
+        <span class="kw">match </span>feature.split_once(<span class="string">'/'</span>) {
+            <span class="prelude-val">Some</span>((dep, dep_feat)) =&gt; {
+                <span class="kw">let </span>dep_name = dep.strip_suffix(<span class="string">'?'</span>);
                 FeatureValue::DepFeature {
-                    dep_name: InternedString::new(dep),
+                    dep_name: InternedString::new(dep_name.unwrap_or(dep)),
                     dep_feature: InternedString::new(dep_feat),
-                    weak,
+                    weak: dep_name.is_some(),
                 }
             }
             <span class="prelude-val">None </span>=&gt; {
@@ -833,9 +820,20 @@
         }
     }
 
-    <span class="doccomment">/// Returns `true` if this feature explicitly used `dep:` syntax.
-    </span><span class="kw">pub fn </span>has_dep_prefix(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
-        <span class="macro">matches!</span>(<span class="self">self</span>, FeatureValue::Dep { .. })
+    <span class="doccomment">/// Returns the name of the dependency if and only if it was explicitly named with the `dep:` syntax.
+    </span><span class="kw">fn </span>explicit_dep_name(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;InternedString&gt; {
+        <span class="kw">match </span><span class="self">self </span>{
+            FeatureValue::Dep { dep_name, .. } =&gt; <span class="prelude-val">Some</span>(<span class="kw-2">*</span>dep_name),
+            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+        }
+    }
+
+    <span class="kw">fn </span>feature_or_dep_name(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; InternedString {
+        <span class="kw">match </span><span class="self">self </span>{
+            FeatureValue::Feature(dep_name)
+            | FeatureValue::Dep { dep_name, .. }
+            | FeatureValue::DepFeature { dep_name, .. } =&gt; <span class="kw-2">*</span>dep_name,
+        }
     }
 }
 
@@ -843,15 +841,15 @@
     <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
         <span class="kw">use </span><span class="self">self</span>::FeatureValue::<span class="kw-2">*</span>;
         <span class="kw">match </span><span class="self">self </span>{
-            Feature(feat) =&gt; <span class="macro">write!</span>(f, <span class="string">"{}"</span>, feat),
-            Dep { dep_name } =&gt; <span class="macro">write!</span>(f, <span class="string">"dep:{}"</span>, dep_name),
+            Feature(feat) =&gt; <span class="macro">write!</span>(f, <span class="string">"{feat}"</span>),
+            Dep { dep_name } =&gt; <span class="macro">write!</span>(f, <span class="string">"dep:{dep_name}"</span>),
             DepFeature {
                 dep_name,
                 dep_feature,
                 weak,
             } =&gt; {
                 <span class="kw">let </span>weak = <span class="kw">if </span><span class="kw-2">*</span>weak { <span class="string">"?" </span>} <span class="kw">else </span>{ <span class="string">"" </span>};
-                <span class="macro">write!</span>(f, <span class="string">"{}{}/{}"</span>, dep_name, weak, dep_feature)
+                <span class="macro">write!</span>(f, <span class="string">"{dep_name}{weak}/{dep_feature}"</span>)
             }
         }
     }

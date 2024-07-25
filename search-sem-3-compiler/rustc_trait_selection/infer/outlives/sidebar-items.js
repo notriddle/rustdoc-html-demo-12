@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["explicit_outlives_bounds"],"mod":["components","env","for_liveness","obligations","test_type_match","verify"]};
+window.SIDEBAR_ITEMS = {"fn":["explicit_outlives_bounds"],"mod":["env","for_liveness","obligations","test_type_match","verify"]};

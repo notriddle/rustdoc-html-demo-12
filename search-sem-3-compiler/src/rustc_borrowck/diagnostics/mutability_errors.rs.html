@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/diagnostics/mutability_errors.rs`."><title>mutability_errors.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/diagnostics/mutability_errors.rs`."><title>mutability_errors.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1554,6 +1554,9 @@
 <a href="#1554" id="1554">1554</a>
 <a href="#1555" id="1555">1555</a>
 <a href="#1556" id="1556">1556</a>
+<a href="#1557" id="1557">1557</a>
+<a href="#1558" id="1558">1558</a>
+<a href="#1559" id="1559">1559</a>
 </pre></div><pre class="rust"><code><span class="attr">#![allow(rustc::diagnostic_outside_of_impl)]
 #![allow(rustc::untranslatable_diagnostic)]
 
@@ -1572,9 +1575,9 @@
 <span class="kw">use </span>rustc_span::symbol::{kw, Symbol};
 <span class="kw">use </span>rustc_span::{sym, BytePos, DesugaringKind, Span};
 <span class="kw">use </span>rustc_target::abi::FieldIdx;
+<span class="kw">use </span>rustc_trait_selection::error_reporting::InferCtxtErrorExt;
 <span class="kw">use </span>rustc_trait_selection::infer::InferCtxtExt;
 <span class="kw">use </span>rustc_trait_selection::traits;
-<span class="kw">use </span>rustc_trait_selection::traits::error_reporting::suggestions::TypeErrCtxtExt;
 
 <span class="kw">use </span><span class="kw">crate</span>::diagnostics::BorrowedContentSource;
 <span class="kw">use </span><span class="kw">crate</span>::util::FindAssignments;
@@ -1586,7 +1589,7 @@
     Mutate,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; MirBorrowckCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; MirBorrowckCtxt&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>report_mutability_error(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         access_place: Place&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -1964,10 +1967,10 @@
                                     fn_decl.implicit_self,
                                     hir::ImplicitSelfKind::RefImm | hir::ImplicitSelfKind::RefMut
                                 ) {
-                                    err.span_suggestion(
-                                        upvar_ident.span,
+                                    err.span_suggestion_verbose(
+                                        upvar_ident.span.shrink_to_lo(),
                                         <span class="string">"consider changing this to be mutable"</span>,
-                                        <span class="macro">format!</span>(<span class="string">"mut {}"</span>, upvar_ident.name),
+                                        <span class="string">"mut "</span>,
                                         Applicability::MachineApplicable,
                                     );
                                     <span class="kw">break</span>;
@@ -1975,10 +1978,10 @@
                             }
                         }
                     } <span class="kw">else </span>{
-                        err.span_suggestion(
-                            upvar_ident.span,
+                        err.span_suggestion_verbose(
+                            upvar_ident.span.shrink_to_lo(),
                             <span class="string">"consider changing this to be mutable"</span>,
-                            <span class="macro">format!</span>(<span class="string">"mut {}"</span>, upvar_ident.name),
+                            <span class="string">"mut "</span>,
                             Applicability::MachineApplicable,
                         );
                     }
@@ -2005,8 +2008,8 @@
                     .is_ok_and(|snippet| snippet.starts_with(<span class="string">"&amp;mut "</span>)) =&gt;
             {
                 err.span_label(span, <span class="macro">format!</span>(<span class="string">"cannot {act}"</span>));
-                err.span_suggestion(
-                    span,
+                err.span_suggestion_verbose(
+                    span.with_hi(span.lo() + BytePos(<span class="number">5</span>)),
                     <span class="string">"try removing `&amp;mut` here"</span>,
                     <span class="string">""</span>,
                     Applicability::MaybeIncorrect,
@@ -2097,7 +2100,7 @@
     }
 
     <span class="doccomment">/// Suggest `map[k] = v` =&gt; `map.insert(k, v)` and the like.
-    </span><span class="kw">fn </span>suggest_map_index_mut_alternatives(<span class="kw-2">&amp;</span><span class="self">self</span>, ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;, err: <span class="kw-2">&amp;mut </span>Diag&lt;<span class="lifetime">'tcx</span>&gt;, span: Span) {
+    </span><span class="kw">fn </span>suggest_map_index_mut_alternatives(<span class="kw-2">&amp;</span><span class="self">self</span>, ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;, err: <span class="kw-2">&amp;mut </span>Diag&lt;<span class="lifetime">'infcx</span>&gt;, span: Span) {
         <span class="kw">let </span><span class="prelude-val">Some</span>(adt) = ty.ty_adt_def() <span class="kw">else </span>{ <span class="kw">return </span>};
         <span class="kw">let </span>did = adt.did();
         <span class="kw">if </span><span class="self">self</span>.infcx.tcx.is_diagnostic_item(sym::HashMap, did)
@@ -2106,13 +2109,13 @@
             <span class="doccomment">/// Walks through the HIR, looking for the corresponding span for this error.
             /// When it finds it, see if it corresponds to assignment operator whose LHS
             /// is an index expr.
-            </span><span class="kw">struct </span>SuggestIndexOperatorAlternativeVisitor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+            </span><span class="kw">struct </span>SuggestIndexOperatorAlternativeVisitor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; {
                 assign_span: Span,
-                err: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>Diag&lt;<span class="lifetime">'tcx</span>&gt;,
+                err: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>Diag&lt;<span class="lifetime">'infcx</span>&gt;,
                 ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
                 suggested: bool,
             }
-            <span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; Visitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>SuggestIndexOperatorAlternativeVisitor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+            <span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; Visitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>SuggestIndexOperatorAlternativeVisitor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; {
                 <span class="kw">fn </span>visit_stmt(<span class="kw-2">&amp;mut </span><span class="self">self</span>, stmt: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>hir::Stmt&lt;<span class="lifetime">'tcx</span>&gt;) {
                     hir::intravisit::walk_stmt(<span class="self">self</span>, stmt);
                     <span class="kw">let </span>expr = <span class="kw">match </span>stmt.kind {
@@ -2311,13 +2314,16 @@
                 pat: hir::Pat { kind: hir::PatKind::Ref(<span class="kw">_</span>, <span class="kw">_</span>), .. },
                 ..
             }) = node
-            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Ok</span>(name) =
-                <span class="self">self</span>.infcx.tcx.sess.source_map().span_to_snippet(local_decl.source_info.span)
         {
-            err.span_suggestion(
-                pat_span,
+            err.multipart_suggestion(
                 <span class="string">"consider changing this to be mutable"</span>,
-                <span class="macro">format!</span>(<span class="string">"&amp;(mut {name})"</span>),
+                <span class="macro">vec!</span>[
+                    (pat_span.until(local_decl.source_info.span), <span class="string">"&amp;(mut "</span>.to_string()),
+                    (
+                        local_decl.source_info.span.shrink_to_hi().with_hi(pat_span.hi()),
+                        <span class="string">")"</span>.to_string(),
+                    ),
+                ],
                 Applicability::MachineApplicable,
             );
             <span class="kw">return</span>;

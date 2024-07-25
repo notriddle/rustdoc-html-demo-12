@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/machine.rs`."><title>machine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/machine.rs`."><title>machine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -661,6 +661,10 @@
 <a href="#661" id="661">661</a>
 <a href="#662" id="662">662</a>
 <a href="#663" id="663">663</a>
+<a href="#664" id="664">664</a>
+<a href="#665" id="665">665</a>
+<a href="#666" id="666">666</a>
+<a href="#667" id="667">667</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! This module contains everything needed to instantiate an interpreter.
 //! This separation exists to ensure that no fancy miri features like
 //! interpreting common C functions leak into CTFE.
@@ -686,10 +690,11 @@
     MemoryKind, Misalignment, OpTy, PlaceTy, Pointer, Provenance,
 };
 
-<span class="doccomment">/// Data returned by Machine::stack_pop,
-/// to provide further control over the popping of the stack frame
+<span class="doccomment">/// Data returned by [`Machine::after_stack_pop`], and consumed by
+/// [`InterpCx::return_from_current_stack_frame`] to determine what actions should be done when
+/// returning from a stack frame.
 </span><span class="attr">#[derive(Eq, PartialEq, Debug, Copy, Clone)]
-</span><span class="kw">pub enum </span>StackPopJump {
+</span><span class="kw">pub enum </span>ReturnAction {
     <span class="doccomment">/// Indicates that no special handling should be
     /// done - we'll either return normally or unwind
     /// based on the terminator for the function
@@ -699,6 +704,9 @@
     <span class="doccomment">/// Indicates that we should *not* jump to the return/unwind address, as the callback already
     /// took care of everything.
     </span>NoJump,
+
+    <span class="doccomment">/// Returned by [`InterpCx::pop_stack_frame`] when no cleanup should be done.
+    </span>NoCleanup,
 }
 
 <span class="doccomment">/// Whether this kind of memory is allowed to leak
@@ -1185,10 +1193,10 @@
         _ecx: <span class="kw-2">&amp;mut </span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;,
         _frame: Frame&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>::Provenance, <span class="self">Self</span>::FrameExtra&gt;,
         unwinding: bool,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, StackPopJump&gt; {
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ReturnAction&gt; {
         <span class="comment">// By default, we do not support unwinding from panics
         </span><span class="macro">assert!</span>(!unwinding);
-        <span class="prelude-val">Ok</span>(StackPopJump::Normal)
+        <span class="prelude-val">Ok</span>(ReturnAction::Normal)
     }
 
     <span class="doccomment">/// Called immediately after actual memory was allocated for a local

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/traits/select/_match.rs`."><title>_match.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/traits/select/_match.rs`."><title>_match.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -115,16 +115,12 @@
 <a href="#115" id="115">115</a>
 <a href="#116" id="116">116</a>
 <a href="#117" id="117">117</a>
-<a href="#118" id="118">118</a>
-<a href="#119" id="119">119</a>
-<a href="#120" id="120">120</a>
-<a href="#121" id="121">121</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span>rustc_infer::infer::relate::{
     <span class="self">self</span>, structurally_relate_tys, Relate, RelateResult, TypeRelation,
 };
 <span class="kw">use </span>rustc_middle::ty::error::{ExpectedFound, TypeError};
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, InferConst, Ty, TyCtxt};
-<span class="kw">use </span>tracing::{debug, instrument};
+<span class="kw">use </span>tracing::instrument;
 
 <span class="doccomment">/// A type "A" *matches* "B" if the fresh types in B could be
 /// instantiated with values so as to make it equal to A. Matching is
@@ -153,11 +149,7 @@
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; TypeRelation&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span>MatchAgainstFreshVars&lt;<span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">fn </span>tag(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str {
-        <span class="string">"MatchAgainstFreshVars"
-    </span>}
-
-    <span class="kw">fn </span>tcx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.tcx
     }
 
@@ -171,7 +163,7 @@
         <span class="self">self</span>.relate(a, b)
     }
 
-    <span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"debug"</span>)]
+    <span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
     </span><span class="kw">fn </span>regions(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         a: ty::Region&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -180,7 +172,7 @@
         <span class="prelude-val">Ok</span>(a)
     }
 
-    <span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"debug"</span>)]
+    <span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
     </span><span class="kw">fn </span>tys(<span class="kw-2">&amp;mut </span><span class="self">self</span>, a: Ty&lt;<span class="lifetime">'tcx</span>&gt;, b: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; RelateResult&lt;<span class="lifetime">'tcx</span>, Ty&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
         <span class="kw">if </span>a == b {
             <span class="kw">return </span><span class="prelude-val">Ok</span>(a);
@@ -198,18 +190,18 @@
                 <span class="prelude-val">Err</span>(TypeError::Sorts(ExpectedFound::new(<span class="bool-val">true</span>, a, b)))
             }
 
-            (<span class="kw-2">&amp;</span>ty::Error(guar), <span class="kw">_</span>) | (<span class="kw">_</span>, <span class="kw-2">&amp;</span>ty::Error(guar)) =&gt; <span class="prelude-val">Ok</span>(Ty::new_error(<span class="self">self</span>.tcx(), guar)),
+            (<span class="kw-2">&amp;</span>ty::Error(guar), <span class="kw">_</span>) | (<span class="kw">_</span>, <span class="kw-2">&amp;</span>ty::Error(guar)) =&gt; <span class="prelude-val">Ok</span>(Ty::new_error(<span class="self">self</span>.cx(), guar)),
 
             <span class="kw">_ </span>=&gt; structurally_relate_tys(<span class="self">self</span>, a, b),
         }
     }
 
-    <span class="kw">fn </span>consts(
+    <span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
+    </span><span class="kw">fn </span>consts(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         a: ty::Const&lt;<span class="lifetime">'tcx</span>&gt;,
         b: ty::Const&lt;<span class="lifetime">'tcx</span>&gt;,
     ) -&gt; RelateResult&lt;<span class="lifetime">'tcx</span>, ty::Const&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
-        <span class="macro">debug!</span>(<span class="string">"{}.consts({:?}, {:?})"</span>, <span class="self">self</span>.tag(), a, b);
         <span class="kw">if </span>a == b {
             <span class="kw">return </span><span class="prelude-val">Ok</span>(a);
         }

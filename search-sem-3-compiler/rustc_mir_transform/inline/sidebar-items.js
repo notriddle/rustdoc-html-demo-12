@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["TOP_DOWN_DEPTH_LIMIT"],"fn":["inline","try_instance_mir"],"mod":["cycle"],"struct":["CallSite","Inline","Inliner","Integrator"]};
+window.SIDEBAR_ITEMS = {"constant":["TOP_DOWN_DEPTH_LIMIT"],"fn":["body_is_forwarder","inline","try_instance_mir"],"mod":["cycle"],"struct":["CallSite","Inline","Inliner","Integrator"]};

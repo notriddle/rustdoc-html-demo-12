@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_next_trait_solver/src/resolve.rs`."><title>resolve.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_next_trait_solver" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_next_trait_solver/src/resolve.rs`."><title>resolve.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_next_trait_solver" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -79,47 +79,47 @@
 <a href="#79" id="79">79</a>
 <a href="#80" id="80">80</a>
 <a href="#81" id="81">81</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::infcx::SolverDelegate;
+</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::delegate::SolverDelegate;
 <span class="kw">use </span>rustc_type_ir::fold::{TypeFoldable, TypeFolder, TypeSuperFoldable};
 <span class="kw">use </span>rustc_type_ir::inherent::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_type_ir::visit::TypeVisitableExt;
-<span class="kw">use </span>rustc_type_ir::{<span class="self">self </span><span class="kw">as </span>ty, Interner};
+<span class="kw">use </span>rustc_type_ir::{<span class="self">self </span><span class="kw">as </span>ty, InferCtxtLike, Interner};
 
 <span class="comment">///////////////////////////////////////////////////////////////////////////
 // EAGER RESOLUTION
 
 </span><span class="doccomment">/// Resolves ty, region, and const vars to their inferred values or their root vars.
-</span><span class="kw">pub struct </span>EagerResolver&lt;<span class="lifetime">'a</span>, Infcx, I = &lt;Infcx <span class="kw">as </span>SolverDelegate&gt;::Interner&gt;
+</span><span class="kw">pub struct </span>EagerResolver&lt;<span class="lifetime">'a</span>, D, I = &lt;D <span class="kw">as </span>SolverDelegate&gt;::Interner&gt;
 <span class="kw">where
-    </span>Infcx: SolverDelegate&lt;Interner = I&gt;,
+    </span>D: SolverDelegate&lt;Interner = I&gt;,
     I: Interner,
 {
-    infcx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Infcx,
+    delegate: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>D,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, Infcx: SolverDelegate&gt; EagerResolver&lt;<span class="lifetime">'a</span>, Infcx&gt; {
-    <span class="kw">pub fn </span>new(infcx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Infcx) -&gt; <span class="self">Self </span>{
-        EagerResolver { infcx }
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, D: SolverDelegate&gt; EagerResolver&lt;<span class="lifetime">'a</span>, D&gt; {
+    <span class="kw">pub fn </span>new(delegate: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>D) -&gt; <span class="self">Self </span>{
+        EagerResolver { delegate }
     }
 }
 
-<span class="kw">impl</span>&lt;Infcx: SolverDelegate&lt;Interner = I&gt;, I: Interner&gt; TypeFolder&lt;I&gt; <span class="kw">for </span>EagerResolver&lt;<span class="lifetime">'_</span>, Infcx&gt; {
-    <span class="kw">fn </span>interner(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; I {
-        <span class="self">self</span>.infcx.interner()
+<span class="kw">impl</span>&lt;D: SolverDelegate&lt;Interner = I&gt;, I: Interner&gt; TypeFolder&lt;I&gt; <span class="kw">for </span>EagerResolver&lt;<span class="lifetime">'_</span>, D&gt; {
+    <span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; I {
+        <span class="self">self</span>.delegate.cx()
     }
 
     <span class="kw">fn </span>fold_ty(<span class="kw-2">&amp;mut </span><span class="self">self</span>, t: I::Ty) -&gt; I::Ty {
         <span class="kw">match </span>t.kind() {
             ty::Infer(ty::TyVar(vid)) =&gt; {
-                <span class="kw">let </span>resolved = <span class="self">self</span>.infcx.opportunistic_resolve_ty_var(vid);
+                <span class="kw">let </span>resolved = <span class="self">self</span>.delegate.opportunistic_resolve_ty_var(vid);
                 <span class="kw">if </span>t != resolved &amp;&amp; resolved.has_infer() {
                     resolved.fold_with(<span class="self">self</span>)
                 } <span class="kw">else </span>{
                     resolved
                 }
             }
-            ty::Infer(ty::IntVar(vid)) =&gt; <span class="self">self</span>.infcx.opportunistic_resolve_int_var(vid),
-            ty::Infer(ty::FloatVar(vid)) =&gt; <span class="self">self</span>.infcx.opportunistic_resolve_float_var(vid),
+            ty::Infer(ty::IntVar(vid)) =&gt; <span class="self">self</span>.delegate.opportunistic_resolve_int_var(vid),
+            ty::Infer(ty::FloatVar(vid)) =&gt; <span class="self">self</span>.delegate.opportunistic_resolve_float_var(vid),
             <span class="kw">_ </span>=&gt; {
                 <span class="kw">if </span>t.has_infer() {
                     t.super_fold_with(<span class="self">self</span>)
@@ -132,7 +132,7 @@
 
     <span class="kw">fn </span>fold_region(<span class="kw-2">&amp;mut </span><span class="self">self</span>, r: I::Region) -&gt; I::Region {
         <span class="kw">match </span>r.kind() {
-            ty::ReVar(vid) =&gt; <span class="self">self</span>.infcx.opportunistic_resolve_lt_var(vid),
+            ty::ReVar(vid) =&gt; <span class="self">self</span>.delegate.opportunistic_resolve_lt_var(vid),
             <span class="kw">_ </span>=&gt; r,
         }
     }
@@ -140,7 +140,7 @@
     <span class="kw">fn </span>fold_const(<span class="kw-2">&amp;mut </span><span class="self">self</span>, c: I::Const) -&gt; I::Const {
         <span class="kw">match </span>c.kind() {
             ty::ConstKind::Infer(ty::InferConst::Var(vid)) =&gt; {
-                <span class="kw">let </span>resolved = <span class="self">self</span>.infcx.opportunistic_resolve_ct_var(vid);
+                <span class="kw">let </span>resolved = <span class="self">self</span>.delegate.opportunistic_resolve_ct_var(vid);
                 <span class="kw">if </span>c != resolved &amp;&amp; resolved.has_infer() {
                     resolved.fold_with(<span class="self">self</span>)
                 } <span class="kw">else </span>{
@@ -148,7 +148,7 @@
                 }
             }
             ty::ConstKind::Infer(ty::InferConst::EffectVar(vid)) =&gt; {
-                <span class="self">self</span>.infcx.opportunistic_resolve_effect_var(vid)
+                <span class="self">self</span>.delegate.opportunistic_resolve_effect_var(vid)
             }
             <span class="kw">_ </span>=&gt; {
                 <span class="kw">if </span>c.has_infer() {

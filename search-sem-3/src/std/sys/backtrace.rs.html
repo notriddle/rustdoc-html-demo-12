@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `library/std/src/sys/backtrace.rs`."><title>backtrace.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="std" data-themes="" data-resource-suffix="1.81.0" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files1.81.0.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `library/std/src/sys/backtrace.rs`."><title>backtrace.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="std" data-themes="" data-resource-suffix="1.82.0" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files1.82.0.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -225,7 +225,9 @@
 <a href="#225" id="225">225</a>
 <a href="#226" id="226">226</a>
 <a href="#227" id="227">227</a>
+<a href="#228" id="228">228</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Common code for printing backtraces.
+</span><span class="attr">#![forbid(unsafe_op_in_unsafe_fn)]
 
 </span><span class="kw">use </span><span class="kw">crate</span>::backtrace_rs::{<span class="self">self</span>, BacktraceFmt, BytesOrWideString, PrintFmt};
 <span class="kw">use </span><span class="kw">crate</span>::borrow::Cow;
@@ -234,44 +236,41 @@
 <span class="kw">use </span><span class="kw">crate</span>::io;
 <span class="kw">use </span><span class="kw">crate</span>::io::prelude::<span class="kw-2">*</span>;
 <span class="kw">use </span><span class="kw">crate</span>::path::{<span class="self">self</span>, Path, PathBuf};
-<span class="kw">use </span><span class="kw">crate</span>::sync::{Mutex, PoisonError};
+<span class="kw">use </span><span class="kw">crate</span>::sync::{Mutex, MutexGuard, PoisonError};
 
 <span class="doccomment">/// Max number of frames to print.
 </span><span class="kw">const </span>MAX_NB_FRAMES: usize = <span class="number">100</span>;
 
-<span class="kw">pub fn </span>lock() -&gt; <span class="kw">impl </span>Drop {
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>BacktraceLock&lt;<span class="lifetime">'a</span>&gt;(<span class="attr">#[allow(dead_code)] </span>MutexGuard&lt;<span class="lifetime">'a</span>, ()&gt;);
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>lock&lt;<span class="lifetime">'a</span>&gt;() -&gt; BacktraceLock&lt;<span class="lifetime">'a</span>&gt; {
     <span class="kw">static </span>LOCK: Mutex&lt;()&gt; = Mutex::new(());
-    LOCK.lock().unwrap_or_else(PoisonError::into_inner)
+    BacktraceLock(LOCK.lock().unwrap_or_else(PoisonError::into_inner))
 }
 
-<span class="doccomment">/// Prints the current backtrace.
-</span><span class="kw">pub fn </span>print(w: <span class="kw-2">&amp;mut </span><span class="kw">dyn </span>Write, format: PrintFmt) -&gt; io::Result&lt;()&gt; {
-    <span class="comment">// There are issues currently linking libbacktrace into tests, and in
-    // general during std's own unit tests we're not testing this path. In
-    // test mode immediately return here to optimize away any references to the
-    // libbacktrace symbols
-    </span><span class="kw">if </span><span class="macro">cfg!</span>(test) {
-        <span class="kw">return </span><span class="prelude-val">Ok</span>(());
-    }
-
-    <span class="comment">// Use a lock to prevent mixed output in multithreading context.
-    // Some platforms also requires it, like `SymFromAddr` on Windows.
-    </span><span class="kw">unsafe </span>{
-        <span class="kw">let </span>_lock = lock();
-        _print(w, format)
-    }
-}
-
-<span class="kw">unsafe fn </span>_print(w: <span class="kw-2">&amp;mut </span><span class="kw">dyn </span>Write, format: PrintFmt) -&gt; io::Result&lt;()&gt; {
-    <span class="kw">struct </span>DisplayBacktrace {
-        format: PrintFmt,
-    }
-    <span class="kw">impl </span>fmt::Display <span class="kw">for </span>DisplayBacktrace {
-        <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, fmt: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
-            <span class="kw">unsafe </span>{ _print_fmt(fmt, <span class="self">self</span>.format) }
+<span class="kw">impl </span>BacktraceLock&lt;<span class="lifetime">'_</span>&gt; {
+    <span class="doccomment">/// Prints the current backtrace.
+    ///
+    /// NOTE: this function is not Sync. The caller must hold a mutex lock, or there must be only one thread in the program.
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>print(<span class="kw-2">&amp;mut </span><span class="self">self</span>, w: <span class="kw-2">&amp;mut </span><span class="kw">dyn </span>Write, format: PrintFmt) -&gt; io::Result&lt;()&gt; {
+        <span class="comment">// There are issues currently linking libbacktrace into tests, and in
+        // general during std's own unit tests we're not testing this path. In
+        // test mode immediately return here to optimize away any references to the
+        // libbacktrace symbols
+        </span><span class="kw">if </span><span class="macro">cfg!</span>(test) {
+            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
         }
+
+        <span class="kw">struct </span>DisplayBacktrace {
+            format: PrintFmt,
+        }
+        <span class="kw">impl </span>fmt::Display <span class="kw">for </span>DisplayBacktrace {
+            <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, fmt: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
+                <span class="kw">unsafe </span>{ _print_fmt(fmt, <span class="self">self</span>.format) }
+            }
+        }
+        <span class="macro">write!</span>(w, <span class="string">"{}"</span>, DisplayBacktrace { format })
     }
-    <span class="macro">write!</span>(w, <span class="string">"{}"</span>, DisplayBacktrace { format })
 }
 
 <span class="kw">unsafe fn </span>_print_fmt(fmt: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;, print_fmt: PrintFmt) -&gt; fmt::Result {
@@ -292,73 +291,76 @@
     <span class="comment">// Start immediately if we're not using a short backtrace.
     </span><span class="kw">let </span><span class="kw-2">mut </span>start = print_fmt != PrintFmt::Short;
     set_image_base();
-    backtrace_rs::trace_unsynchronized(|frame| {
-        <span class="kw">if </span>print_fmt == PrintFmt::Short &amp;&amp; idx &gt; MAX_NB_FRAMES {
-            <span class="kw">return </span><span class="bool-val">false</span>;
-        }
-
-        <span class="kw">let </span><span class="kw-2">mut </span>hit = <span class="bool-val">false</span>;
-        backtrace_rs::resolve_frame_unsynchronized(frame, |symbol| {
-            hit = <span class="bool-val">true</span>;
-
-            <span class="comment">// Any frames between `__rust_begin_short_backtrace` and `__rust_end_short_backtrace`
-            // are omitted from the backtrace in short mode, `__rust_end_short_backtrace` will be
-            // called before the panic hook, so we won't ignore any frames if there is no
-            // invoke of `__rust_begin_short_backtrace`.
-            </span><span class="kw">if </span>print_fmt == PrintFmt::Short {
-                <span class="kw">if let </span><span class="prelude-val">Some</span>(sym) = symbol.name().and_then(|s| s.as_str()) {
-                    <span class="kw">if </span>start &amp;&amp; sym.contains(<span class="string">"__rust_begin_short_backtrace"</span>) {
-                        start = <span class="bool-val">false</span>;
-                        <span class="kw">return</span>;
-                    }
-                    <span class="kw">if </span>sym.contains(<span class="string">"__rust_end_short_backtrace"</span>) {
-                        start = <span class="bool-val">true</span>;
-                        <span class="kw">return</span>;
-                    }
-                    <span class="kw">if </span>!start {
-                        omitted_count += <span class="number">1</span>;
-                    }
-                }
+    <span class="comment">// SAFETY: we roll our own locking in this town
+    </span><span class="kw">unsafe </span>{
+        backtrace_rs::trace_unsynchronized(|frame| {
+            <span class="kw">if </span>print_fmt == PrintFmt::Short &amp;&amp; idx &gt; MAX_NB_FRAMES {
+                <span class="kw">return </span><span class="bool-val">false</span>;
             }
 
-            <span class="kw">if </span>start {
-                <span class="kw">if </span>omitted_count &gt; <span class="number">0 </span>{
-                    <span class="macro">debug_assert!</span>(print_fmt == PrintFmt::Short);
-                    <span class="comment">// only print the message between the middle of frames
-                    </span><span class="kw">if </span>!first_omit {
-                        <span class="kw">let _ </span>= <span class="macro">writeln!</span>(
-                            bt_fmt.formatter(),
-                            <span class="string">"      [... omitted {} frame{} ...]"</span>,
-                            omitted_count,
-                            <span class="kw">if </span>omitted_count &gt; <span class="number">1 </span>{ <span class="string">"s" </span>} <span class="kw">else </span>{ <span class="string">"" </span>}
-                        );
+            <span class="kw">let </span><span class="kw-2">mut </span>hit = <span class="bool-val">false</span>;
+            backtrace_rs::resolve_frame_unsynchronized(frame, |symbol| {
+                hit = <span class="bool-val">true</span>;
+
+                <span class="comment">// Any frames between `__rust_begin_short_backtrace` and `__rust_end_short_backtrace`
+                // are omitted from the backtrace in short mode, `__rust_end_short_backtrace` will be
+                // called before the panic hook, so we won't ignore any frames if there is no
+                // invoke of `__rust_begin_short_backtrace`.
+                </span><span class="kw">if </span>print_fmt == PrintFmt::Short {
+                    <span class="kw">if let </span><span class="prelude-val">Some</span>(sym) = symbol.name().and_then(|s| s.as_str()) {
+                        <span class="kw">if </span>start &amp;&amp; sym.contains(<span class="string">"__rust_begin_short_backtrace"</span>) {
+                            start = <span class="bool-val">false</span>;
+                            <span class="kw">return</span>;
+                        }
+                        <span class="kw">if </span>sym.contains(<span class="string">"__rust_end_short_backtrace"</span>) {
+                            start = <span class="bool-val">true</span>;
+                            <span class="kw">return</span>;
+                        }
+                        <span class="kw">if </span>!start {
+                            omitted_count += <span class="number">1</span>;
+                        }
                     }
-                    first_omit = <span class="bool-val">false</span>;
-                    omitted_count = <span class="number">0</span>;
                 }
-                res = bt_fmt.frame().symbol(frame, symbol);
+
+                <span class="kw">if </span>start {
+                    <span class="kw">if </span>omitted_count &gt; <span class="number">0 </span>{
+                        <span class="macro">debug_assert!</span>(print_fmt == PrintFmt::Short);
+                        <span class="comment">// only print the message between the middle of frames
+                        </span><span class="kw">if </span>!first_omit {
+                            <span class="kw">let _ </span>= <span class="macro">writeln!</span>(
+                                bt_fmt.formatter(),
+                                <span class="string">"      [... omitted {} frame{} ...]"</span>,
+                                omitted_count,
+                                <span class="kw">if </span>omitted_count &gt; <span class="number">1 </span>{ <span class="string">"s" </span>} <span class="kw">else </span>{ <span class="string">"" </span>}
+                            );
+                        }
+                        first_omit = <span class="bool-val">false</span>;
+                        omitted_count = <span class="number">0</span>;
+                    }
+                    res = bt_fmt.frame().symbol(frame, symbol);
+                }
+            });
+            <span class="attr">#[cfg(target_os = <span class="string">"nto"</span>)]
+            </span><span class="kw">if </span>libc::__my_thread_exit <span class="kw">as </span><span class="kw-2">*mut </span>libc::c_void == frame.ip() {
+                <span class="kw">if </span>!hit &amp;&amp; start {
+                    <span class="kw">use </span><span class="kw">crate</span>::backtrace_rs::SymbolName;
+                    res = bt_fmt.frame().print_raw(
+                        frame.ip(),
+                        <span class="prelude-val">Some</span>(SymbolName::new(<span class="string">"__my_thread_exit"</span>.as_bytes())),
+                        <span class="prelude-val">None</span>,
+                        <span class="prelude-val">None</span>,
+                    );
+                }
+                <span class="kw">return </span><span class="bool-val">false</span>;
             }
-        });
-        <span class="attr">#[cfg(target_os = <span class="string">"nto"</span>)]
-        </span><span class="kw">if </span>libc::__my_thread_exit <span class="kw">as </span><span class="kw-2">*mut </span>libc::c_void == frame.ip() {
             <span class="kw">if </span>!hit &amp;&amp; start {
-                <span class="kw">use </span><span class="kw">crate</span>::backtrace_rs::SymbolName;
-                res = bt_fmt.frame().print_raw(
-                    frame.ip(),
-                    <span class="prelude-val">Some</span>(SymbolName::new(<span class="string">"__my_thread_exit"</span>.as_bytes())),
-                    <span class="prelude-val">None</span>,
-                    <span class="prelude-val">None</span>,
-                );
+                res = bt_fmt.frame().print_raw(frame.ip(), <span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
             }
-            <span class="kw">return </span><span class="bool-val">false</span>;
-        }
-        <span class="kw">if </span>!hit &amp;&amp; start {
-            res = bt_fmt.frame().print_raw(frame.ip(), <span class="prelude-val">None</span>, <span class="prelude-val">None</span>, <span class="prelude-val">None</span>);
-        }
 
-        idx += <span class="number">1</span>;
-        res.is_ok()
-    });
+            idx += <span class="number">1</span>;
+            res.is_ok()
+        })
+    };
     res<span class="question-mark">?</span>;
     bt_fmt.finish()<span class="question-mark">?</span>;
     <span class="kw">if </span>print_fmt == PrintFmt::Short {

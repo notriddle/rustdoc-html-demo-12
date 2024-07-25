@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/tree_borrows/tree.rs`."><title>tree.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/tree_borrows/tree.rs`."><title>tree.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -800,6 +800,11 @@
 <a href="#800" id="800">800</a>
 <a href="#801" id="801">801</a>
 <a href="#802" id="802">802</a>
+<a href="#803" id="803">803</a>
+<a href="#804" id="804">804</a>
+<a href="#805" id="805">805</a>
+<a href="#806" id="806">806</a>
+<a href="#807" id="807">807</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! In this file we handle the "Tree" part of Tree Borrows, i.e. all tree
 //! traversal functions, optimizations to trim branches, and keeping track of
 //! the relative position of the access to each node being updated. This of course
@@ -1332,13 +1337,11 @@
         </span>span: Span,        <span class="comment">// diagnostics
     </span>) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.perform_access(
-            AccessKind::Write,
             tag,
-            <span class="prelude-val">Some</span>(access_range),
+            <span class="prelude-val">Some</span>((access_range, AccessKind::Write, diagnostics::AccessCause::Dealloc)),
             global,
             alloc_id,
             span,
-            diagnostics::AccessCause::Dealloc,
         )<span class="question-mark">?</span>;
         <span class="kw">for </span>(perms_range, perms) <span class="kw">in </span><span class="self">self</span>.rperms.iter_mut(access_range.start, access_range.size) {
             TreeVisitor { nodes: <span class="kw-2">&amp;mut </span><span class="self">self</span>.nodes, tag_mapping: <span class="kw-2">&amp;</span><span class="self">self</span>.tag_mapping, perms }
@@ -1372,12 +1375,16 @@
     }
 
     <span class="doccomment">/// Map the per-node and per-location `LocationState::perform_access`
-    /// to each location of `access_range`, on every tag of the allocation.
+    /// to each location of the first component of `access_range_and_kind`,
+    /// on every tag of the allocation.
     ///
-    /// If `access_range` is `None`, this is interpreted as the special
+    /// If `access_range_and_kind` is `None`, this is interpreted as the special
     /// access that is applied on protector release:
     /// - the access will be applied only to initialized locations of the allocation,
-    /// - and it will not be visible to children.
+    /// - it will not be visible to children,
+    /// - it will be recorded as a `FnExit` diagnostic access
+    /// - and it will be a read except if the location is `Active`, i.e. has been written to,
+    ///   in which case it will be a write.
     ///
     /// `LocationState::perform_access` will take care of raising transition
     /// errors and updating the `initialized` status of each location,
@@ -1387,13 +1394,11 @@
     /// - recording the history.
     </span><span class="kw">pub fn </span>perform_access(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        access_kind: AccessKind,
         tag: BorTag,
-        access_range: <span class="prelude-ty">Option</span>&lt;AllocRange&gt;,
+        access_range_and_kind: <span class="prelude-ty">Option</span>&lt;(AllocRange, AccessKind, diagnostics::AccessCause)&gt;,
         global: <span class="kw-2">&amp;</span>GlobalState,
-        alloc_id: AllocId,                      <span class="comment">// diagnostics
-        </span>span: Span,                             <span class="comment">// diagnostics
-        </span>access_cause: diagnostics::AccessCause, <span class="comment">// diagnostics
+        alloc_id: AllocId, <span class="comment">// diagnostics
+        </span>span: Span,        <span class="comment">// diagnostics
     </span>) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">use </span>std::ops::Range;
         <span class="comment">// Performs the per-node work:
@@ -1407,6 +1412,8 @@
         // `perms_range` is only for diagnostics (it is the range of
         // the `RangeMap` on which we are currently working).
         </span><span class="kw">let </span>node_app = |perms_range: Range&lt;u64&gt;,
+                        access_kind: AccessKind,
+                        access_cause: diagnostics::AccessCause,
                         args: NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;|
          -&gt; <span class="prelude-ty">Result</span>&lt;ContinueTraversal, TransitionError&gt; {
             <span class="kw">let </span>NodeAppArgs { node, <span class="kw-2">mut </span>perm, rel_pos } = args;
@@ -1420,14 +1427,13 @@
 
             <span class="kw">let </span>protected = global.borrow().protected_tags.contains_key(<span class="kw-2">&amp;</span>node.tag);
             <span class="kw">let </span>transition = old_state.perform_access(access_kind, rel_pos, protected)<span class="question-mark">?</span>;
-
             <span class="comment">// Record the event as part of the history
             </span><span class="kw">if </span>!transition.is_noop() {
                 node.debug_info.history.push(diagnostics::Event {
                     transition,
                     is_foreign: rel_pos.is_foreign(),
                     access_cause,
-                    access_range,
+                    access_range: access_range_and_kind.map(|x| x.<span class="number">0</span>),
                     transition_range: perms_range,
                     span,
                 });
@@ -1438,6 +1444,7 @@
         <span class="comment">// Error handler in case `node_app` goes wrong.
         // Wraps the faulty transition in more context for diagnostics.
         </span><span class="kw">let </span>err_handler = |perms_range: Range&lt;u64&gt;,
+                           access_cause: diagnostics::AccessCause,
                            args: ErrHandlerArgs&lt;<span class="lifetime">'_</span>, TransitionError&gt;|
          -&gt; InterpError&lt;<span class="lifetime">'tcx</span>&gt; {
             <span class="kw">let </span>ErrHandlerArgs { error_kind, conflicting_info, accessed_info } = args;
@@ -1452,7 +1459,7 @@
             .build()
         };
 
-        <span class="kw">if let </span><span class="prelude-val">Some</span>(access_range) = access_range {
+        <span class="kw">if let </span><span class="prelude-val">Some</span>((access_range, access_kind, access_cause)) = access_range_and_kind {
             <span class="comment">// Default branch: this is a "normal" access through a known range.
             // We iterate over affected locations and traverse the tree for each of them.
             </span><span class="kw">for </span>(perms_range, perms) <span class="kw">in </span><span class="self">self</span>.rperms.iter_mut(access_range.start, access_range.size)
@@ -1460,8 +1467,8 @@
                 TreeVisitor { nodes: <span class="kw-2">&amp;mut </span><span class="self">self</span>.nodes, tag_mapping: <span class="kw-2">&amp;</span><span class="self">self</span>.tag_mapping, perms }
                     .traverse_parents_this_children_others(
                         tag,
-                        |args| node_app(perms_range.clone(), args),
-                        |args| err_handler(perms_range.clone(), args),
+                        |args| node_app(perms_range.clone(), access_kind, access_cause, args),
+                        |args| err_handler(perms_range.clone(), access_cause, args),
                     )<span class="question-mark">?</span>;
             }
         } <span class="kw">else </span>{
@@ -1480,11 +1487,14 @@
                 </span><span class="kw">if let </span><span class="prelude-val">Some</span>(p) = perms.get(idx)
                     &amp;&amp; p.initialized
                 {
+                    <span class="kw">let </span>access_kind =
+                        <span class="kw">if </span>p.permission.is_active() { AccessKind::Write } <span class="kw">else </span>{ AccessKind::Read };
+                    <span class="kw">let </span>access_cause = diagnostics::AccessCause::FnExit(access_kind);
                     TreeVisitor { nodes: <span class="kw-2">&amp;mut </span><span class="self">self</span>.nodes, tag_mapping: <span class="kw-2">&amp;</span><span class="self">self</span>.tag_mapping, perms }
                         .traverse_nonchildren(
                         tag,
-                        |args| node_app(perms_range.clone(), args),
-                        |args| err_handler(perms_range.clone(), args),
+                        |args| node_app(perms_range.clone(), access_kind, access_cause, args),
+                        |args| err_handler(perms_range.clone(), access_cause, args),
                     )<span class="question-mark">?</span>;
                 }
             }

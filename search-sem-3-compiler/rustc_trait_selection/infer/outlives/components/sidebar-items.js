@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Component"],"fn":["push_outlives_components"]};

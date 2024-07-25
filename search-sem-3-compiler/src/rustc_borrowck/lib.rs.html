@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/lib.rs`."><title>lib.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/lib.rs`."><title>lib.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -2570,6 +2570,19 @@
 <a href="#2570" id="2570">2570</a>
 <a href="#2571" id="2571">2571</a>
 <a href="#2572" id="2572">2572</a>
+<a href="#2573" id="2573">2573</a>
+<a href="#2574" id="2574">2574</a>
+<a href="#2575" id="2575">2575</a>
+<a href="#2576" id="2576">2576</a>
+<a href="#2577" id="2577">2577</a>
+<a href="#2578" id="2578">2578</a>
+<a href="#2579" id="2579">2579</a>
+<a href="#2580" id="2580">2580</a>
+<a href="#2581" id="2581">2581</a>
+<a href="#2582" id="2582">2582</a>
+<a href="#2583" id="2583">2583</a>
+<a href="#2584" id="2584">2584</a>
+<a href="#2585" id="2585">2585</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! This query borrow-checks the MIR to (further) ensure it is not broken.
 
 </span><span class="comment">// tidy-alphabetical-start
@@ -2579,7 +2592,6 @@
 #![feature(box_patterns)]
 #![feature(control_flow_enum)]
 #![feature(let_chains)]
-#![feature(min_specialization)]
 #![feature(never_type)]
 #![feature(rustc_attrs)]
 #![feature(rustdoc_internals)]
@@ -2882,11 +2894,11 @@
         promoted_mbcx.report_move_errors();
         diags = promoted_mbcx.diags;
 
-        <span class="kw">struct </span>MoveVisitor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; {
-            ctxt: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>MirBorrowckCtxt&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+        <span class="kw">struct </span>MoveVisitor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; {
+            ctxt: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>MirBorrowckCtxt&lt;<span class="lifetime">'b</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt;,
         }
 
-        <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; Visitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>MoveVisitor&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
+        <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; Visitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>MoveVisitor&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
             <span class="kw">fn </span>visit_operand(<span class="kw-2">&amp;mut </span><span class="self">self</span>, operand: <span class="kw-2">&amp;</span>Operand&lt;<span class="lifetime">'tcx</span>&gt;, location: Location) {
                 <span class="kw">if let </span>Operand::Move(place) = operand {
                     <span class="self">self</span>.ctxt.check_movable_place(location, <span class="kw-2">*</span>place);
@@ -3100,15 +3112,15 @@
     }
 }
 
-<span class="kw">struct </span>MirBorrowckCtxt&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; {
-    infcx: <span class="kw-2">&amp;</span><span class="lifetime">'cx </span>BorrowckInferCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
+<span class="kw">struct </span>MirBorrowckCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; {
+    infcx: <span class="kw-2">&amp;</span><span class="lifetime">'infcx </span>BorrowckInferCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     param_env: ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
-    body: <span class="kw-2">&amp;</span><span class="lifetime">'cx </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
-    move_data: <span class="kw-2">&amp;</span><span class="lifetime">'cx </span>MoveData&lt;<span class="lifetime">'tcx</span>&gt;,
+    body: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
+    move_data: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>MoveData&lt;<span class="lifetime">'tcx</span>&gt;,
 
     <span class="doccomment">/// Map from MIR `Location` to `LocationIndex`; created
     /// when MIR borrowck begins.
-    </span>location_table: <span class="kw-2">&amp;</span><span class="lifetime">'cx </span>LocationTable,
+    </span>location_table: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>LocationTable,
 
     movable_coroutine: bool,
     <span class="doccomment">/// This keeps track of whether local variables are free-ed when the function
@@ -3168,7 +3180,7 @@
     <span class="doccomment">/// Results of Polonius analysis.
     </span>polonius_output: <span class="prelude-ty">Option</span>&lt;Rc&lt;PoloniusOutput&gt;&gt;,
 
-    diags: diags::BorrowckDiags&lt;<span class="lifetime">'tcx</span>&gt;,
+    diags: diags::BorrowckDiags&lt;<span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt;,
     move_errors: Vec&lt;MoveError&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
 }
 
@@ -3177,14 +3189,16 @@
 // 2. loans made in overlapping scopes do not conflict
 // 3. assignments do not affect things loaned out as immutable
 // 4. moves do not affect things loaned out in any way
-</span><span class="kw">impl</span>&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>, R&gt; rustc_mir_dataflow::ResultsVisitor&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>, R&gt; <span class="kw">for </span>MirBorrowckCtxt&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">type </span>FlowState = Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;;
+</span><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>, R&gt; rustc_mir_dataflow::ResultsVisitor&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>, R&gt;
+    <span class="kw">for </span>MirBorrowckCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;
+{
+    <span class="kw">type </span>FlowState = Flows&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;;
 
     <span class="kw">fn </span>visit_statement_before_primary_effect(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         _results: <span class="kw-2">&amp;mut </span>R,
-        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
-        stmt: <span class="kw-2">&amp;</span><span class="lifetime">'cx </span>Statement&lt;<span class="lifetime">'tcx</span>&gt;,
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
+        stmt: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Statement&lt;<span class="lifetime">'tcx</span>&gt;,
         location: Location,
     ) {
         <span class="macro">debug!</span>(<span class="string">"MirBorrowckCtxt::process_statement({:?}, {:?}): {:?}"</span>, location, stmt, flow_state);
@@ -3253,8 +3267,8 @@
     <span class="kw">fn </span>visit_terminator_before_primary_effect(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         _results: <span class="kw-2">&amp;mut </span>R,
-        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
-        term: <span class="kw-2">&amp;</span><span class="lifetime">'cx </span>Terminator&lt;<span class="lifetime">'tcx</span>&gt;,
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
+        term: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Terminator&lt;<span class="lifetime">'tcx</span>&gt;,
         loc: Location,
     ) {
         <span class="macro">debug!</span>(<span class="string">"MirBorrowckCtxt::process_terminator({:?}, {:?}): {:?}"</span>, loc, term, flow_state);
@@ -3297,6 +3311,12 @@
                     <span class="self">self</span>.consume_operand(loc, (<span class="kw-2">&amp;</span>arg.node, arg.span), flow_state);
                 }
                 <span class="self">self</span>.mutate_place(loc, (<span class="kw-2">*</span>destination, span), Deep, flow_state);
+            }
+            TerminatorKind::TailCall { func, args, fn_span: <span class="kw">_ </span>} =&gt; {
+                <span class="self">self</span>.consume_operand(loc, (func, span), flow_state);
+                <span class="kw">for </span>arg <span class="kw">in </span>args {
+                    <span class="self">self</span>.consume_operand(loc, (<span class="kw-2">&amp;</span>arg.node, arg.span), flow_state);
+                }
             }
             TerminatorKind::Assert { cond, expected: <span class="kw">_</span>, msg, target: <span class="kw">_</span>, unwind: <span class="kw">_ </span>} =&gt; {
                 <span class="self">self</span>.consume_operand(loc, (cond, span), flow_state);
@@ -3364,8 +3384,8 @@
     <span class="kw">fn </span>visit_terminator_after_primary_effect(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         _results: <span class="kw-2">&amp;mut </span>R,
-        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
-        term: <span class="kw-2">&amp;</span><span class="lifetime">'cx </span>Terminator&lt;<span class="lifetime">'tcx</span>&gt;,
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
+        term: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Terminator&lt;<span class="lifetime">'tcx</span>&gt;,
         loc: Location,
     ) {
         <span class="kw">let </span>span = term.source_info.span;
@@ -3384,6 +3404,7 @@
 
             TerminatorKind::UnwindResume
             | TerminatorKind::Return
+            | TerminatorKind::TailCall { .. }
             | TerminatorKind::CoroutineDrop =&gt; {
                 <span class="comment">// Returning from the function implicitly kills storage for all locals and statics.
                 // Often, the storage will already have been killed by an explicit
@@ -3541,8 +3562,8 @@
     }
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; MirBorrowckCtxt&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">fn </span>body(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'cx </span>Body&lt;<span class="lifetime">'tcx</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; MirBorrowckCtxt&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">fn </span>body(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Body&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.body
     }
 
@@ -3558,7 +3579,7 @@
         place_span: (Place&lt;<span class="lifetime">'tcx</span>&gt;, Span),
         kind: (AccessDepth, ReadOrWrite),
         is_local_mutation_allowed: LocalMutationIsAllowed,
-        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
     ) {
         <span class="kw">let </span>(sd, rw) = kind;
 
@@ -3608,7 +3629,7 @@
         place_span: (Place&lt;<span class="lifetime">'tcx</span>&gt;, Span),
         sd: AccessDepth,
         rw: ReadOrWrite,
-        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
     ) -&gt; bool {
         <span class="kw">let </span><span class="kw-2">mut </span>error_reported = <span class="bool-val">false</span>;
         <span class="kw">let </span>borrow_set = Rc::clone(<span class="kw-2">&amp;</span><span class="self">self</span>.borrow_set);
@@ -3749,7 +3770,7 @@
         location: Location,
         place_span: (Place&lt;<span class="lifetime">'tcx</span>&gt;, Span),
         kind: AccessDepth,
-        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
     ) {
         <span class="comment">// Write of P[i] or *P requires P init'd.
         </span><span class="self">self</span>.check_if_assigned_path_is_moved(location, place_span, flow_state);
@@ -3766,8 +3787,8 @@
     <span class="kw">fn </span>consume_rvalue(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         location: Location,
-        (rvalue, span): (<span class="kw-2">&amp;</span><span class="lifetime">'cx </span>Rvalue&lt;<span class="lifetime">'tcx</span>&gt;, Span),
-        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+        (rvalue, span): (<span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Rvalue&lt;<span class="lifetime">'tcx</span>&gt;, Span),
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
     ) {
         <span class="kw">match </span>rvalue {
             <span class="kw-2">&amp;</span>Rvalue::Ref(<span class="kw">_ </span><span class="comment">/*rgn*/</span>, bk, place) =&gt; {
@@ -4024,8 +4045,8 @@
     <span class="kw">fn </span>consume_operand(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         location: Location,
-        (operand, span): (<span class="kw-2">&amp;</span><span class="lifetime">'cx </span>Operand&lt;<span class="lifetime">'tcx</span>&gt;, Span),
-        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+        (operand, span): (<span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Operand&lt;<span class="lifetime">'tcx</span>&gt;, Span),
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
     ) {
         <span class="kw">match </span><span class="kw-2">*</span>operand {
             Operand::Copy(place) =&gt; {
@@ -4145,7 +4166,12 @@
         }
     }
 
-    <span class="kw">fn </span>check_activations(<span class="kw-2">&amp;mut </span><span class="self">self</span>, location: Location, span: Span, flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;) {
+    <span class="kw">fn </span>check_activations(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        location: Location,
+        span: Span,
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
+    ) {
         <span class="comment">// Two-phase borrow support: For each activation that is newly
         // generated at this statement, check if it interferes with
         // another borrow.
@@ -4308,7 +4334,7 @@
         location: Location,
         desired_action: InitializationRequiringAction,
         place_span: (PlaceRef&lt;<span class="lifetime">'tcx</span>&gt;, Span),
-        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
     ) {
         <span class="kw">let </span>maybe_uninits = <span class="kw-2">&amp;</span>flow_state.uninits;
 
@@ -4413,7 +4439,7 @@
         location: Location,
         desired_action: InitializationRequiringAction,
         place_span: (PlaceRef&lt;<span class="lifetime">'tcx</span>&gt;, Span),
-        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
     ) {
         <span class="kw">let </span>maybe_uninits = <span class="kw-2">&amp;</span>flow_state.uninits;
 
@@ -4512,7 +4538,7 @@
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         location: Location,
         (place, span): (Place&lt;<span class="lifetime">'tcx</span>&gt;, Span),
-        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
     ) {
         <span class="macro">debug!</span>(<span class="string">"check_if_assigned_path_is_moved place: {:?}"</span>, place);
 
@@ -4573,12 +4599,12 @@
             }
         }
 
-        <span class="kw">fn </span>check_parent_of_field&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;(
-            this: <span class="kw-2">&amp;mut </span>MirBorrowckCtxt&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+        <span class="kw">fn </span>check_parent_of_field&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;(
+            this: <span class="kw-2">&amp;mut </span>MirBorrowckCtxt&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
             location: Location,
             base: PlaceRef&lt;<span class="lifetime">'tcx</span>&gt;,
             span: Span,
-            flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+            flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
         ) {
             <span class="comment">// rust-lang/rust#21232: Until Rust allows reads from the
             // initialized parts of partially initialized structs, we
@@ -4669,7 +4695,7 @@
         (place, span): (Place&lt;<span class="lifetime">'tcx</span>&gt;, Span),
         kind: ReadOrWrite,
         is_local_mutation_allowed: LocalMutationIsAllowed,
-        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
         location: Location,
     ) -&gt; bool {
         <span class="macro">debug!</span>(
@@ -4785,7 +4811,7 @@
     <span class="kw">fn </span>is_local_ever_initialized(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         local: Local,
-        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+        flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;,
     ) -&gt; <span class="prelude-ty">Option</span>&lt;InitIndex&gt; {
         <span class="kw">let </span>mpi = <span class="self">self</span>.move_data.rev_lookup.find_local(local)<span class="question-mark">?</span>;
         <span class="kw">let </span>ii = <span class="kw-2">&amp;</span><span class="self">self</span>.move_data.init_path_map[mpi];
@@ -4793,7 +4819,7 @@
     }
 
     <span class="doccomment">/// Adds the place into the used mutable variables set
-    </span><span class="kw">fn </span>add_used_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>, root_place: RootPlace&lt;<span class="lifetime">'tcx</span>&gt;, flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;) {
+    </span><span class="kw">fn </span>add_used_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>, root_place: RootPlace&lt;<span class="lifetime">'tcx</span>&gt;, flow_state: <span class="kw-2">&amp;</span>Flows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;) {
         <span class="kw">match </span>root_place {
             RootPlace { place_local: local, place_projection: [], is_local_mutation_allowed } =&gt; {
                 <span class="comment">// If the local may have been initialized, and it is now currently being
@@ -4993,12 +5019,12 @@
 
     <span class="kw">use super</span>::<span class="kw-2">*</span>;
 
-    <span class="kw">enum </span>BufferedDiag&lt;<span class="lifetime">'tcx</span>&gt; {
-        Error(Diag&lt;<span class="lifetime">'tcx</span>&gt;),
-        NonError(Diag&lt;<span class="lifetime">'tcx</span>, ()&gt;),
+    <span class="kw">enum </span>BufferedDiag&lt;<span class="lifetime">'infcx</span>&gt; {
+        Error(Diag&lt;<span class="lifetime">'infcx</span>&gt;),
+        NonError(Diag&lt;<span class="lifetime">'infcx</span>, ()&gt;),
     }
 
-    <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; BufferedDiag&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">impl</span>&lt;<span class="lifetime">'infcx</span>&gt; BufferedDiag&lt;<span class="lifetime">'infcx</span>&gt; {
         <span class="kw">fn </span>sort_span(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Span {
             <span class="kw">match </span><span class="self">self </span>{
                 BufferedDiag::Error(diag) =&gt; diag.sort_span,
@@ -5007,7 +5033,7 @@
         }
     }
 
-    <span class="kw">pub struct </span>BorrowckDiags&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">pub struct </span>BorrowckDiags&lt;<span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; {
         <span class="doccomment">/// This field keeps track of move errors that are to be reported for given move indices.
         ///
         /// There are situations where many errors can be reported for a single move out (see
@@ -5022,15 +5048,15 @@
         /// `BTreeMap` is used to preserve the order of insertions when iterating. This is necessary
         /// when errors in the map are being re-added to the error buffer so that errors with the
         /// same primary span come out in a consistent order.
-        </span>buffered_move_errors: BTreeMap&lt;Vec&lt;MoveOutIndex&gt;, (PlaceRef&lt;<span class="lifetime">'tcx</span>&gt;, Diag&lt;<span class="lifetime">'tcx</span>&gt;)&gt;,
+        </span>buffered_move_errors: BTreeMap&lt;Vec&lt;MoveOutIndex&gt;, (PlaceRef&lt;<span class="lifetime">'tcx</span>&gt;, Diag&lt;<span class="lifetime">'infcx</span>&gt;)&gt;,
 
-        buffered_mut_errors: FxIndexMap&lt;Span, (Diag&lt;<span class="lifetime">'tcx</span>&gt;, usize)&gt;,
+        buffered_mut_errors: FxIndexMap&lt;Span, (Diag&lt;<span class="lifetime">'infcx</span>&gt;, usize)&gt;,
 
         <span class="doccomment">/// Buffer of diagnostics to be reported. A mixture of error and non-error diagnostics.
-        </span>buffered_diags: Vec&lt;BufferedDiag&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+        </span>buffered_diags: Vec&lt;BufferedDiag&lt;<span class="lifetime">'infcx</span>&gt;&gt;,
     }
 
-    <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; BorrowckDiags&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">impl</span>&lt;<span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; BorrowckDiags&lt;<span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; {
         <span class="kw">pub fn </span>new() -&gt; <span class="self">Self </span>{
             BorrowckDiags {
                 buffered_move_errors: BTreeMap::new(),
@@ -5039,28 +5065,28 @@
             }
         }
 
-        <span class="kw">pub fn </span>buffer_error(<span class="kw-2">&amp;mut </span><span class="self">self</span>, diag: Diag&lt;<span class="lifetime">'tcx</span>&gt;) {
+        <span class="kw">pub fn </span>buffer_error(<span class="kw-2">&amp;mut </span><span class="self">self</span>, diag: Diag&lt;<span class="lifetime">'infcx</span>&gt;) {
             <span class="self">self</span>.buffered_diags.push(BufferedDiag::Error(diag));
         }
 
-        <span class="kw">pub fn </span>buffer_non_error(<span class="kw-2">&amp;mut </span><span class="self">self</span>, diag: Diag&lt;<span class="lifetime">'tcx</span>, ()&gt;) {
+        <span class="kw">pub fn </span>buffer_non_error(<span class="kw-2">&amp;mut </span><span class="self">self</span>, diag: Diag&lt;<span class="lifetime">'infcx</span>, ()&gt;) {
             <span class="self">self</span>.buffered_diags.push(BufferedDiag::NonError(diag));
         }
     }
 
-    <span class="kw">impl</span>&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; MirBorrowckCtxt&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; {
-        <span class="kw">pub fn </span>buffer_error(<span class="kw-2">&amp;mut </span><span class="self">self</span>, diag: Diag&lt;<span class="lifetime">'tcx</span>&gt;) {
+    <span class="kw">impl</span>&lt;<span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; MirBorrowckCtxt&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; {
+        <span class="kw">pub fn </span>buffer_error(<span class="kw-2">&amp;mut </span><span class="self">self</span>, diag: Diag&lt;<span class="lifetime">'infcx</span>&gt;) {
             <span class="self">self</span>.diags.buffer_error(diag);
         }
 
-        <span class="kw">pub fn </span>buffer_non_error(<span class="kw-2">&amp;mut </span><span class="self">self</span>, diag: Diag&lt;<span class="lifetime">'tcx</span>, ()&gt;) {
+        <span class="kw">pub fn </span>buffer_non_error(<span class="kw-2">&amp;mut </span><span class="self">self</span>, diag: Diag&lt;<span class="lifetime">'infcx</span>, ()&gt;) {
             <span class="self">self</span>.diags.buffer_non_error(diag);
         }
 
         <span class="kw">pub fn </span>buffer_move_error(
             <span class="kw-2">&amp;mut </span><span class="self">self</span>,
             move_out_indices: Vec&lt;MoveOutIndex&gt;,
-            place_and_err: (PlaceRef&lt;<span class="lifetime">'tcx</span>&gt;, Diag&lt;<span class="lifetime">'tcx</span>&gt;),
+            place_and_err: (PlaceRef&lt;<span class="lifetime">'tcx</span>&gt;, Diag&lt;<span class="lifetime">'infcx</span>&gt;),
         ) -&gt; bool {
             <span class="kw">if let </span><span class="prelude-val">Some</span>((<span class="kw">_</span>, diag)) =
                 <span class="self">self</span>.diags.buffered_move_errors.insert(move_out_indices, place_and_err)
@@ -5073,12 +5099,12 @@
             </span>}
         }
 
-        <span class="kw">pub fn </span>get_buffered_mut_error(<span class="kw-2">&amp;mut </span><span class="self">self</span>, span: Span) -&gt; <span class="prelude-ty">Option</span>&lt;(Diag&lt;<span class="lifetime">'tcx</span>&gt;, usize)&gt; {
+        <span class="kw">pub fn </span>get_buffered_mut_error(<span class="kw-2">&amp;mut </span><span class="self">self</span>, span: Span) -&gt; <span class="prelude-ty">Option</span>&lt;(Diag&lt;<span class="lifetime">'infcx</span>&gt;, usize)&gt; {
             <span class="comment">// FIXME(#120456) - is `swap_remove` correct?
             </span><span class="self">self</span>.diags.buffered_mut_errors.swap_remove(<span class="kw-2">&amp;</span>span)
         }
 
-        <span class="kw">pub fn </span>buffer_mut_error(<span class="kw-2">&amp;mut </span><span class="self">self</span>, span: Span, diag: Diag&lt;<span class="lifetime">'tcx</span>&gt;, count: usize) {
+        <span class="kw">pub fn </span>buffer_mut_error(<span class="kw-2">&amp;mut </span><span class="self">self</span>, span: Span, diag: Diag&lt;<span class="lifetime">'infcx</span>&gt;, count: usize) {
             <span class="self">self</span>.diags.buffered_mut_errors.insert(span, (diag, count));
         }
 
@@ -5119,7 +5145,7 @@
         <span class="kw">pub fn </span>has_move_error(
             <span class="kw-2">&amp;</span><span class="self">self</span>,
             move_out_indices: <span class="kw-2">&amp;</span>[MoveOutIndex],
-        ) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>(PlaceRef&lt;<span class="lifetime">'tcx</span>&gt;, Diag&lt;<span class="lifetime">'tcx</span>&gt;)&gt; {
+        ) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>(PlaceRef&lt;<span class="lifetime">'tcx</span>&gt;, Diag&lt;<span class="lifetime">'infcx</span>&gt;)&gt; {
             <span class="self">self</span>.diags.buffered_move_errors.get(move_out_indices)
         }
     }

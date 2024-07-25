@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_type_ir/src/binder.rs`."><title>binder.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_type_ir" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_type_ir/src/binder.rs`."><title>binder.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_type_ir" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -853,6 +853,14 @@
 <a href="#853" id="853">853</a>
 <a href="#854" id="854">854</a>
 <a href="#855" id="855">855</a>
+<a href="#856" id="856">856</a>
+<a href="#857" id="857">857</a>
+<a href="#858" id="858">858</a>
+<a href="#859" id="859">859</a>
+<a href="#860" id="860">860</a>
+<a href="#861" id="861">861</a>
+<a href="#862" id="862">862</a>
+<a href="#863" id="863">863</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span>std::fmt::Debug;
 <span class="kw">use </span>std::hash::Hash;
 <span class="kw">use </span>std::marker::PhantomData;
@@ -860,14 +868,16 @@
 
 <span class="attr">#[cfg(feature = <span class="string">"nightly"</span>)]
 </span><span class="kw">use </span>rustc_macros::{HashStable_NoContext, TyDecodable, TyEncodable};
-<span class="kw">use </span>rustc_serialize::Decodable;
+<span class="attr">#[cfg(feature = <span class="string">"nightly"</span>)]
+</span><span class="kw">use </span>rustc_serialize::Decodable;
 <span class="kw">use </span>tracing::debug;
 
+<span class="kw">use </span><span class="kw">crate</span>::data_structures::SsoHashSet;
 <span class="kw">use </span><span class="kw">crate</span>::fold::{FallibleTypeFolder, TypeFoldable, TypeFolder, TypeSuperFoldable};
 <span class="kw">use </span><span class="kw">crate</span>::inherent::<span class="kw-2">*</span>;
 <span class="kw">use </span><span class="kw">crate</span>::lift::Lift;
 <span class="kw">use </span><span class="kw">crate</span>::visit::{Flags, TypeSuperVisitable, TypeVisitable, TypeVisitableExt, TypeVisitor};
-<span class="kw">use crate</span>::{<span class="self">self </span><span class="kw">as </span>ty, Interner, SsoHashSet};
+<span class="kw">use crate</span>::{<span class="self">self </span><span class="kw">as </span>ty, Interner};
 
 <span class="doccomment">/// Binder is a binder for higher-ranked lifetimes or types. It is part of the
 /// compiler's representation for things like `for&lt;'a&gt; Fn(&amp;'a isize)`
@@ -902,15 +912,16 @@
 {
     <span class="kw">type </span>Lifted = Binder&lt;U, T::Lifted&gt;;
 
-    <span class="kw">fn </span>lift_to_tcx(<span class="self">self</span>, tcx: U) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="self">Self</span>::Lifted&gt; {
+    <span class="kw">fn </span>lift_to_interner(<span class="self">self</span>, cx: U) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="self">Self</span>::Lifted&gt; {
         <span class="prelude-val">Some</span>(Binder {
-            value: <span class="self">self</span>.value.lift_to_tcx(tcx)<span class="question-mark">?</span>,
-            bound_vars: <span class="self">self</span>.bound_vars.lift_to_tcx(tcx)<span class="question-mark">?</span>,
+            value: <span class="self">self</span>.value.lift_to_interner(cx)<span class="question-mark">?</span>,
+            bound_vars: <span class="self">self</span>.bound_vars.lift_to_interner(cx)<span class="question-mark">?</span>,
         })
     }
 }
 
-<span class="macro">macro_rules!</span> impl_binder_encode_decode {
+<span class="attr">#[cfg(feature = <span class="string">"nightly"</span>)]
+</span><span class="macro">macro_rules!</span> impl_binder_encode_decode {
     ($(<span class="macro-nonterminal">$t</span>:ty),+ $(,)<span class="question-mark">?</span>) =&gt; {
         $(
             <span class="kw">impl</span>&lt;I: Interner, E: <span class="kw">crate</span>::TyEncoder&lt;I = I&gt;&gt; rustc_serialize::Encodable&lt;E&gt; <span class="kw">for </span>ty::Binder&lt;I, <span class="macro-nonterminal">$t</span>&gt;
@@ -937,7 +948,8 @@
     }
 }
 
-<span class="macro">impl_binder_encode_decode!</span> {
+<span class="attr">#[cfg(feature = <span class="string">"nightly"</span>)]
+</span><span class="macro">impl_binder_encode_decode!</span> {
     ty::FnSig&lt;I&gt;,
     ty::TraitPredicate&lt;I&gt;,
     ty::ExistentialPredicate&lt;I&gt;,
@@ -1171,7 +1183,7 @@
                 <span class="kw">if </span><span class="self">self</span>.bound_vars.len() &lt;= idx {
                     <span class="macro">panic!</span>(<span class="string">"Not enough bound vars: {:?} not found in {:?}"</span>, t, <span class="self">self</span>.bound_vars);
                 }
-                bound_ty.assert_eq(<span class="self">self</span>.bound_vars[idx]);
+                bound_ty.assert_eq(<span class="self">self</span>.bound_vars.get(idx).unwrap());
             }
             <span class="kw">_ </span>=&gt; {}
         };
@@ -1186,7 +1198,7 @@
                 <span class="kw">if </span><span class="self">self</span>.bound_vars.len() &lt;= idx {
                     <span class="macro">panic!</span>(<span class="string">"Not enough bound vars: {:?} not found in {:?}"</span>, r, <span class="self">self</span>.bound_vars);
                 }
-                br.assert_eq(<span class="self">self</span>.bound_vars[idx]);
+                br.assert_eq(<span class="self">self</span>.bound_vars.get(idx).unwrap());
             }
 
             <span class="kw">_ </span>=&gt; (),
@@ -1216,7 +1228,8 @@
 #[cfg_attr(feature = <span class="string">"nightly"</span>, derive(TyEncodable, TyDecodable, HashStable_NoContext))]
 </span><span class="kw">pub struct </span>EarlyBinder&lt;I: Interner, T&gt; {
     value: T,
-    _tcx: PhantomData&lt;I&gt;,
+    <span class="attr">#[derivative(Debug = <span class="string">"ignore"</span>)]
+    </span>_tcx: PhantomData&lt;I&gt;,
 }
 
 <span class="doccomment">/// For early binders, you should first call `instantiate` before using any visitors.
@@ -1285,41 +1298,41 @@
     }
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'s</span>, I: Interner, Iter: IntoIterator&gt; EarlyBinder&lt;I, Iter&gt;
+<span class="kw">impl</span>&lt;I: Interner, Iter: IntoIterator&gt; EarlyBinder&lt;I, Iter&gt;
 <span class="kw">where
     </span>Iter::Item: TypeFoldable&lt;I&gt;,
 {
-    <span class="kw">pub fn </span>iter_instantiated(
-        <span class="self">self</span>,
-        tcx: I,
-        args: <span class="kw-2">&amp;</span><span class="lifetime">'s </span>[I::GenericArg],
-    ) -&gt; IterInstantiated&lt;<span class="lifetime">'s</span>, I, Iter&gt; {
-        IterInstantiated { it: <span class="self">self</span>.value.into_iter(), tcx, args }
+    <span class="kw">pub fn </span>iter_instantiated&lt;A&gt;(<span class="self">self</span>, cx: I, args: A) -&gt; IterInstantiated&lt;I, Iter, A&gt;
+    <span class="kw">where
+        </span>A: SliceLike&lt;Item = I::GenericArg&gt;,
+    {
+        IterInstantiated { it: <span class="self">self</span>.value.into_iter(), cx, args }
     }
 
     <span class="doccomment">/// Similar to [`instantiate_identity`](EarlyBinder::instantiate_identity),
     /// but on an iterator of `TypeFoldable` values.
-    </span><span class="kw">pub fn </span>instantiate_identity_iter(<span class="self">self</span>) -&gt; Iter::IntoIter {
+    </span><span class="kw">pub fn </span>iter_identity(<span class="self">self</span>) -&gt; Iter::IntoIter {
         <span class="self">self</span>.value.into_iter()
     }
 }
 
-<span class="kw">pub struct </span>IterInstantiated&lt;<span class="lifetime">'s</span>, I: Interner, Iter: IntoIterator&gt; {
+<span class="kw">pub struct </span>IterInstantiated&lt;I: Interner, Iter: IntoIterator, A&gt; {
     it: Iter::IntoIter,
-    tcx: I,
-    args: <span class="kw-2">&amp;</span><span class="lifetime">'s </span>[I::GenericArg],
+    cx: I,
+    args: A,
 }
 
-<span class="kw">impl</span>&lt;I: Interner, Iter: IntoIterator&gt; Iterator <span class="kw">for </span>IterInstantiated&lt;<span class="lifetime">'_</span>, I, Iter&gt;
+<span class="kw">impl</span>&lt;I: Interner, Iter: IntoIterator, A&gt; Iterator <span class="kw">for </span>IterInstantiated&lt;I, Iter, A&gt;
 <span class="kw">where
     </span>Iter::Item: TypeFoldable&lt;I&gt;,
+    A: SliceLike&lt;Item = I::GenericArg&gt;,
 {
     <span class="kw">type </span>Item = Iter::Item;
 
     <span class="kw">fn </span>next(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="self">Self</span>::Item&gt; {
         <span class="prelude-val">Some</span>(
             EarlyBinder { value: <span class="self">self</span>.it.next()<span class="question-mark">?</span>, _tcx: PhantomData }
-                .instantiate(<span class="self">self</span>.tcx, <span class="self">self</span>.args),
+                .instantiate(<span class="self">self</span>.cx, <span class="self">self</span>.args),
         )
     }
 
@@ -1328,23 +1341,25 @@
     }
 }
 
-<span class="kw">impl</span>&lt;I: Interner, Iter: IntoIterator&gt; DoubleEndedIterator <span class="kw">for </span>IterInstantiated&lt;<span class="lifetime">'_</span>, I, Iter&gt;
+<span class="kw">impl</span>&lt;I: Interner, Iter: IntoIterator, A&gt; DoubleEndedIterator <span class="kw">for </span>IterInstantiated&lt;I, Iter, A&gt;
 <span class="kw">where
     </span>Iter::IntoIter: DoubleEndedIterator,
     Iter::Item: TypeFoldable&lt;I&gt;,
+    A: SliceLike&lt;Item = I::GenericArg&gt;,
 {
     <span class="kw">fn </span>next_back(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="self">Self</span>::Item&gt; {
         <span class="prelude-val">Some</span>(
             EarlyBinder { value: <span class="self">self</span>.it.next_back()<span class="question-mark">?</span>, _tcx: PhantomData }
-                .instantiate(<span class="self">self</span>.tcx, <span class="self">self</span>.args),
+                .instantiate(<span class="self">self</span>.cx, <span class="self">self</span>.args),
         )
     }
 }
 
-<span class="kw">impl</span>&lt;I: Interner, Iter: IntoIterator&gt; ExactSizeIterator <span class="kw">for </span>IterInstantiated&lt;<span class="lifetime">'_</span>, I, Iter&gt;
+<span class="kw">impl</span>&lt;I: Interner, Iter: IntoIterator, A&gt; ExactSizeIterator <span class="kw">for </span>IterInstantiated&lt;I, Iter, A&gt;
 <span class="kw">where
     </span>Iter::IntoIter: ExactSizeIterator,
     Iter::Item: TypeFoldable&lt;I&gt;,
+    A: SliceLike&lt;Item = I::GenericArg&gt;,
 {
 }
 
@@ -1355,24 +1370,22 @@
 {
     <span class="kw">pub fn </span>iter_instantiated_copied(
         <span class="self">self</span>,
-        tcx: I,
+        cx: I,
         args: <span class="kw-2">&amp;</span><span class="lifetime">'s </span>[I::GenericArg],
     ) -&gt; IterInstantiatedCopied&lt;<span class="lifetime">'s</span>, I, Iter&gt; {
-        IterInstantiatedCopied { it: <span class="self">self</span>.value.into_iter(), tcx, args }
+        IterInstantiatedCopied { it: <span class="self">self</span>.value.into_iter(), cx, args }
     }
 
     <span class="doccomment">/// Similar to [`instantiate_identity`](EarlyBinder::instantiate_identity),
     /// but on an iterator of values that deref to a `TypeFoldable`.
-    </span><span class="kw">pub fn </span>instantiate_identity_iter_copied(
-        <span class="self">self</span>,
-    ) -&gt; <span class="kw">impl </span>Iterator&lt;Item = &lt;Iter::Item <span class="kw">as </span>Deref&gt;::Target&gt; {
+    </span><span class="kw">pub fn </span>iter_identity_copied(<span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = &lt;Iter::Item <span class="kw">as </span>Deref&gt;::Target&gt; {
         <span class="self">self</span>.value.into_iter().map(|v| <span class="kw-2">*</span>v)
     }
 }
 
 <span class="kw">pub struct </span>IterInstantiatedCopied&lt;<span class="lifetime">'a</span>, I: Interner, Iter: IntoIterator&gt; {
     it: Iter::IntoIter,
-    tcx: I,
+    cx: I,
     args: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>[I::GenericArg],
 }
 
@@ -1385,7 +1398,7 @@
 
     <span class="kw">fn </span>next(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="self">Self</span>::Item&gt; {
         <span class="self">self</span>.it.next().map(|value| {
-            EarlyBinder { value: <span class="kw-2">*</span>value, _tcx: PhantomData }.instantiate(<span class="self">self</span>.tcx, <span class="self">self</span>.args)
+            EarlyBinder { value: <span class="kw-2">*</span>value, _tcx: PhantomData }.instantiate(<span class="self">self</span>.cx, <span class="self">self</span>.args)
         })
     }
 
@@ -1402,7 +1415,7 @@
 {
     <span class="kw">fn </span>next_back(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="self">Self</span>::Item&gt; {
         <span class="self">self</span>.it.next_back().map(|value| {
-            EarlyBinder { value: <span class="kw-2">*</span>value, _tcx: PhantomData }.instantiate(<span class="self">self</span>.tcx, <span class="self">self</span>.args)
+            EarlyBinder { value: <span class="kw-2">*</span>value, _tcx: PhantomData }.instantiate(<span class="self">self</span>.cx, <span class="self">self</span>.args)
         })
     }
 }
@@ -1439,8 +1452,11 @@
 }
 
 <span class="kw">impl</span>&lt;I: Interner, T: TypeFoldable&lt;I&gt;&gt; ty::EarlyBinder&lt;I, T&gt; {
-    <span class="kw">pub fn </span>instantiate(<span class="self">self</span>, tcx: I, args: <span class="kw-2">&amp;</span>[I::GenericArg]) -&gt; T {
-        <span class="kw">let </span><span class="kw-2">mut </span>folder = ArgFolder { tcx, args, binders_passed: <span class="number">0 </span>};
+    <span class="kw">pub fn </span>instantiate&lt;A&gt;(<span class="self">self</span>, cx: I, args: A) -&gt; T
+    <span class="kw">where
+        </span>A: SliceLike&lt;Item = I::GenericArg&gt;,
+    {
+        <span class="kw">let </span><span class="kw-2">mut </span>folder = ArgFolder { cx, args: args.as_slice(), binders_passed: <span class="number">0 </span>};
         <span class="self">self</span>.value.fold_with(<span class="kw-2">&amp;mut </span>folder)
     }
 
@@ -1466,7 +1482,7 @@
 // The actual instantiation engine itself is a type folder.
 
 </span><span class="kw">struct </span>ArgFolder&lt;<span class="lifetime">'a</span>, I: Interner&gt; {
-    tcx: I,
+    cx: I,
     args: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>[I::GenericArg],
 
     <span class="doccomment">/// Number of region binders we have passed through while doing the instantiation
@@ -1475,8 +1491,8 @@
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, I: Interner&gt; TypeFolder&lt;I&gt; <span class="kw">for </span>ArgFolder&lt;<span class="lifetime">'a</span>, I&gt; {
     <span class="attr">#[inline]
-    </span><span class="kw">fn </span>interner(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; I {
-        <span class="self">self</span>.tcx
+    </span><span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; I {
+        <span class="self">self</span>.cx
     }
 
     <span class="kw">fn </span>fold_binder&lt;T: TypeFoldable&lt;I&gt;&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, t: ty::Binder&lt;I, T&gt;) -&gt; ty::Binder&lt;I, T&gt; {
@@ -1695,7 +1711,7 @@
             <span class="kw">return </span>val;
         }
 
-        <span class="kw">let </span>result = ty::fold::shift_vars(TypeFolder::interner(<span class="self">self</span>), val, <span class="self">self</span>.binders_passed);
+        <span class="kw">let </span>result = ty::fold::shift_vars(TypeFolder::cx(<span class="self">self</span>), val, <span class="self">self</span>.binders_passed);
         <span class="macro">debug!</span>(<span class="string">"shift_vars: shifted result = {:?}"</span>, result);
 
         result
@@ -1705,7 +1721,7 @@
         <span class="kw">if </span><span class="self">self</span>.binders_passed == <span class="number">0 </span>|| !region.has_escaping_bound_vars() {
             <span class="kw">return </span>region;
         }
-        ty::fold::shift_region(<span class="self">self</span>.tcx, region, <span class="self">self</span>.binders_passed)
+        ty::fold::shift_region(<span class="self">self</span>.cx, region, <span class="self">self</span>.binders_passed)
     }
 }
 </code></pre></div></section></main></body></html>

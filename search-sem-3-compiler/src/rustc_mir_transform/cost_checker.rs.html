@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/cost_checker.rs`."><title>cost_checker.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/cost_checker.rs`."><title>cost_checker.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -98,7 +98,103 @@
 <a href="#98" id="98">98</a>
 <a href="#99" id="99">99</a>
 <a href="#100" id="100">100</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_middle::mir::visit::<span class="kw-2">*</span>;
+<a href="#101" id="101">101</a>
+<a href="#102" id="102">102</a>
+<a href="#103" id="103">103</a>
+<a href="#104" id="104">104</a>
+<a href="#105" id="105">105</a>
+<a href="#106" id="106">106</a>
+<a href="#107" id="107">107</a>
+<a href="#108" id="108">108</a>
+<a href="#109" id="109">109</a>
+<a href="#110" id="110">110</a>
+<a href="#111" id="111">111</a>
+<a href="#112" id="112">112</a>
+<a href="#113" id="113">113</a>
+<a href="#114" id="114">114</a>
+<a href="#115" id="115">115</a>
+<a href="#116" id="116">116</a>
+<a href="#117" id="117">117</a>
+<a href="#118" id="118">118</a>
+<a href="#119" id="119">119</a>
+<a href="#120" id="120">120</a>
+<a href="#121" id="121">121</a>
+<a href="#122" id="122">122</a>
+<a href="#123" id="123">123</a>
+<a href="#124" id="124">124</a>
+<a href="#125" id="125">125</a>
+<a href="#126" id="126">126</a>
+<a href="#127" id="127">127</a>
+<a href="#128" id="128">128</a>
+<a href="#129" id="129">129</a>
+<a href="#130" id="130">130</a>
+<a href="#131" id="131">131</a>
+<a href="#132" id="132">132</a>
+<a href="#133" id="133">133</a>
+<a href="#134" id="134">134</a>
+<a href="#135" id="135">135</a>
+<a href="#136" id="136">136</a>
+<a href="#137" id="137">137</a>
+<a href="#138" id="138">138</a>
+<a href="#139" id="139">139</a>
+<a href="#140" id="140">140</a>
+<a href="#141" id="141">141</a>
+<a href="#142" id="142">142</a>
+<a href="#143" id="143">143</a>
+<a href="#144" id="144">144</a>
+<a href="#145" id="145">145</a>
+<a href="#146" id="146">146</a>
+<a href="#147" id="147">147</a>
+<a href="#148" id="148">148</a>
+<a href="#149" id="149">149</a>
+<a href="#150" id="150">150</a>
+<a href="#151" id="151">151</a>
+<a href="#152" id="152">152</a>
+<a href="#153" id="153">153</a>
+<a href="#154" id="154">154</a>
+<a href="#155" id="155">155</a>
+<a href="#156" id="156">156</a>
+<a href="#157" id="157">157</a>
+<a href="#158" id="158">158</a>
+<a href="#159" id="159">159</a>
+<a href="#160" id="160">160</a>
+<a href="#161" id="161">161</a>
+<a href="#162" id="162">162</a>
+<a href="#163" id="163">163</a>
+<a href="#164" id="164">164</a>
+<a href="#165" id="165">165</a>
+<a href="#166" id="166">166</a>
+<a href="#167" id="167">167</a>
+<a href="#168" id="168">168</a>
+<a href="#169" id="169">169</a>
+<a href="#170" id="170">170</a>
+<a href="#171" id="171">171</a>
+<a href="#172" id="172">172</a>
+<a href="#173" id="173">173</a>
+<a href="#174" id="174">174</a>
+<a href="#175" id="175">175</a>
+<a href="#176" id="176">176</a>
+<a href="#177" id="177">177</a>
+<a href="#178" id="178">178</a>
+<a href="#179" id="179">179</a>
+<a href="#180" id="180">180</a>
+<a href="#181" id="181">181</a>
+<a href="#182" id="182">182</a>
+<a href="#183" id="183">183</a>
+<a href="#184" id="184">184</a>
+<a href="#185" id="185">185</a>
+<a href="#186" id="186">186</a>
+<a href="#187" id="187">187</a>
+<a href="#188" id="188">188</a>
+<a href="#189" id="189">189</a>
+<a href="#190" id="190">190</a>
+<a href="#191" id="191">191</a>
+<a href="#192" id="192">192</a>
+<a href="#193" id="193">193</a>
+<a href="#194" id="194">194</a>
+<a href="#195" id="195">195</a>
+</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_middle::bug;
+<span class="kw">use </span>rustc_middle::mir::visit::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, ParamEnv, Ty, TyCtxt};
 
@@ -106,13 +202,16 @@
 <span class="kw">const </span>CALL_PENALTY: usize = <span class="number">25</span>;
 <span class="kw">const </span>LANDINGPAD_PENALTY: usize = <span class="number">50</span>;
 <span class="kw">const </span>RESUME_PENALTY: usize = <span class="number">45</span>;
+<span class="kw">const </span>LARGE_SWITCH_PENALTY: usize = <span class="number">20</span>;
+<span class="kw">const </span>CONST_SWITCH_BONUS: usize = <span class="number">10</span>;
 
 <span class="doccomment">/// Verify that the callee body is compatible with the caller.
 </span><span class="attr">#[derive(Clone)]
 </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>CostChecker&lt;<span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>&gt; {
     tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     param_env: ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
-    cost: usize,
+    penalty: usize,
+    bonus: usize,
     callee_body: <span class="kw-2">&amp;</span><span class="lifetime">'b </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
     instance: <span class="prelude-ty">Option</span>&lt;ty::Instance&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
 }
@@ -124,11 +223,44 @@
         instance: <span class="prelude-ty">Option</span>&lt;ty::Instance&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
         callee_body: <span class="kw-2">&amp;</span><span class="lifetime">'b </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
     ) -&gt; CostChecker&lt;<span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>&gt; {
-        CostChecker { tcx, param_env, callee_body, instance, cost: <span class="number">0 </span>}
+        CostChecker { tcx, param_env, callee_body, instance, penalty: <span class="number">0</span>, bonus: <span class="number">0 </span>}
+    }
+
+    <span class="doccomment">/// Add function-level costs not well-represented by the block-level costs.
+    ///
+    /// Needed because the `CostChecker` is used sometimes for just blocks,
+    /// and even the full `Inline` doesn't call `visit_body`, so there's nowhere
+    /// to put this logic in the visitor.
+    </span><span class="kw">pub fn </span>add_function_level_costs(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+        <span class="kw">fn </span>is_call_like(bbd: <span class="kw-2">&amp;</span>BasicBlockData&lt;<span class="lifetime">'_</span>&gt;) -&gt; bool {
+            <span class="kw">use </span>TerminatorKind::<span class="kw-2">*</span>;
+            <span class="kw">match </span>bbd.terminator().kind {
+                Call { .. } | TailCall { .. } | Drop { .. } | Assert { .. } | InlineAsm { .. } =&gt; {
+                    <span class="bool-val">true
+                </span>}
+
+                Goto { .. }
+                | SwitchInt { .. }
+                | UnwindResume
+                | UnwindTerminate(<span class="kw">_</span>)
+                | Return
+                | Unreachable =&gt; <span class="bool-val">false</span>,
+
+                Yield { .. } | CoroutineDrop | FalseEdge { .. } | FalseUnwind { .. } =&gt; {
+                    <span class="macro">unreachable!</span>()
+                }
+            }
+        }
+
+        <span class="comment">// If the only has one Call (or similar), inlining isn't increasing the total
+        // number of calls, so give extra encouragement to inlining that.
+        </span><span class="kw">if </span><span class="self">self</span>.callee_body.basic_blocks.iter().filter(|bbd| is_call_like(bbd)).count() == <span class="number">1 </span>{
+            <span class="self">self</span>.bonus += CALL_PENALTY;
+        }
     }
 
     <span class="kw">pub fn </span>cost(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
-        <span class="self">self</span>.cost
+        usize::saturating_sub(<span class="self">self</span>.penalty, <span class="self">self</span>.bonus)
     }
 
     <span class="kw">fn </span>instantiate_ty(<span class="kw-2">&amp;</span><span class="self">self</span>, v: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; Ty&lt;<span class="lifetime">'tcx</span>&gt; {
@@ -141,36 +273,57 @@
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; Visitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>CostChecker&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">fn </span>visit_statement(<span class="kw-2">&amp;mut </span><span class="self">self</span>, statement: <span class="kw-2">&amp;</span>Statement&lt;<span class="lifetime">'tcx</span>&gt;, <span class="kw">_</span>: Location) {
-        <span class="comment">// Don't count StorageLive/StorageDead in the inlining cost.
+    <span class="kw">fn </span>visit_statement(<span class="kw-2">&amp;mut </span><span class="self">self</span>, statement: <span class="kw-2">&amp;</span>Statement&lt;<span class="lifetime">'tcx</span>&gt;, location: Location) {
+        <span class="comment">// Most costs are in rvalues and terminators, not in statements.
         </span><span class="kw">match </span>statement.kind {
-            StatementKind::StorageLive(<span class="kw">_</span>)
-            | StatementKind::StorageDead(<span class="kw">_</span>)
-            | StatementKind::Deinit(<span class="kw">_</span>)
-            | StatementKind::Nop =&gt; {}
-            <span class="kw">_ </span>=&gt; <span class="self">self</span>.cost += INSTR_COST,
+            StatementKind::Intrinsic(<span class="kw-2">ref </span>ndi) =&gt; {
+                <span class="self">self</span>.penalty += <span class="kw">match </span><span class="kw-2">**</span>ndi {
+                    NonDivergingIntrinsic::Assume(..) =&gt; INSTR_COST,
+                    NonDivergingIntrinsic::CopyNonOverlapping(..) =&gt; CALL_PENALTY,
+                };
+            }
+            <span class="kw">_ </span>=&gt; <span class="self">self</span>.super_statement(statement, location),
+        }
+    }
+
+    <span class="kw">fn </span>visit_rvalue(<span class="kw-2">&amp;mut </span><span class="self">self</span>, rvalue: <span class="kw-2">&amp;</span>Rvalue&lt;<span class="lifetime">'tcx</span>&gt;, _location: Location) {
+        <span class="kw">match </span>rvalue {
+            Rvalue::NullaryOp(NullOp::UbChecks, ..)
+                <span class="kw">if </span>!<span class="self">self
+                    </span>.tcx
+                    .sess
+                    .opts
+                    .unstable_opts
+                    .inline_mir_preserve_debug
+                    .unwrap_or(<span class="self">self</span>.tcx.sess.ub_checks()) =&gt;
+            {
+                <span class="comment">// If this is in optimized MIR it's because it's used later,
+                // so if we don't need UB checks this session, give a bonus
+                // here to offset the cost of the call later.
+                </span><span class="self">self</span>.bonus += CALL_PENALTY;
+            }
+            <span class="comment">// These are essentially constants that didn't end up in an Operand,
+            // so treat them as also being free.
+            </span>Rvalue::NullaryOp(..) =&gt; {}
+            <span class="kw">_ </span>=&gt; <span class="self">self</span>.penalty += INSTR_COST,
         }
     }
 
     <span class="kw">fn </span>visit_terminator(<span class="kw-2">&amp;mut </span><span class="self">self</span>, terminator: <span class="kw-2">&amp;</span>Terminator&lt;<span class="lifetime">'tcx</span>&gt;, <span class="kw">_</span>: Location) {
-        <span class="kw">let </span>tcx = <span class="self">self</span>.tcx;
-        <span class="kw">match </span>terminator.kind {
-            TerminatorKind::Drop { <span class="kw-2">ref </span>place, unwind, .. } =&gt; {
+        <span class="kw">match </span><span class="kw-2">&amp;</span>terminator.kind {
+            TerminatorKind::Drop { place, unwind, .. } =&gt; {
                 <span class="comment">// If the place doesn't actually need dropping, treat it like a regular goto.
-                </span><span class="kw">let </span>ty = <span class="self">self</span>.instantiate_ty(place.ty(<span class="self">self</span>.callee_body, tcx).ty);
-                <span class="kw">if </span>ty.needs_drop(tcx, <span class="self">self</span>.param_env) {
-                    <span class="self">self</span>.cost += CALL_PENALTY;
+                </span><span class="kw">let </span>ty = <span class="self">self</span>.instantiate_ty(place.ty(<span class="self">self</span>.callee_body, <span class="self">self</span>.tcx).ty);
+                <span class="kw">if </span>ty.needs_drop(<span class="self">self</span>.tcx, <span class="self">self</span>.param_env) {
+                    <span class="self">self</span>.penalty += CALL_PENALTY;
                     <span class="kw">if let </span>UnwindAction::Cleanup(<span class="kw">_</span>) = unwind {
-                        <span class="self">self</span>.cost += LANDINGPAD_PENALTY;
+                        <span class="self">self</span>.penalty += LANDINGPAD_PENALTY;
                     }
-                } <span class="kw">else </span>{
-                    <span class="self">self</span>.cost += INSTR_COST;
                 }
             }
-            TerminatorKind::Call { func: Operand::Constant(<span class="kw-2">ref </span>f), unwind, .. } =&gt; {
-                <span class="kw">let </span>fn_ty = <span class="self">self</span>.instantiate_ty(f.const_.ty());
-                <span class="self">self</span>.cost += <span class="kw">if let </span>ty::FnDef(def_id, <span class="kw">_</span>) = <span class="kw-2">*</span>fn_ty.kind()
-                    &amp;&amp; tcx.intrinsic(def_id).is_some()
+            TerminatorKind::Call { func, unwind, .. } =&gt; {
+                <span class="self">self</span>.penalty += <span class="kw">if let </span><span class="prelude-val">Some</span>((def_id, ..)) = func.const_fn_def()
+                    &amp;&amp; <span class="self">self</span>.tcx.intrinsic(def_id).is_some()
                 {
                     <span class="comment">// Don't give intrinsics the extra penalty for calls
                     </span>INSTR_COST
@@ -178,23 +331,60 @@
                     CALL_PENALTY
                 };
                 <span class="kw">if let </span>UnwindAction::Cleanup(<span class="kw">_</span>) = unwind {
-                    <span class="self">self</span>.cost += LANDINGPAD_PENALTY;
+                    <span class="self">self</span>.penalty += LANDINGPAD_PENALTY;
                 }
             }
-            TerminatorKind::Assert { unwind, .. } =&gt; {
-                <span class="self">self</span>.cost += CALL_PENALTY;
+            TerminatorKind::TailCall { .. } =&gt; {
+                <span class="self">self</span>.penalty += CALL_PENALTY;
+            }
+            TerminatorKind::SwitchInt { discr, targets } =&gt; {
+                <span class="kw">if </span>discr.constant().is_some() {
+                    <span class="comment">// Not only will this become a `Goto`, but likely other
+                    // things will be removable as unreachable.
+                    </span><span class="self">self</span>.bonus += CONST_SWITCH_BONUS;
+                } <span class="kw">else if </span>targets.all_targets().len() &gt; <span class="number">3 </span>{
+                    <span class="comment">// More than false/true/unreachable gets extra cost.
+                    </span><span class="self">self</span>.penalty += LARGE_SWITCH_PENALTY;
+                } <span class="kw">else </span>{
+                    <span class="self">self</span>.penalty += INSTR_COST;
+                }
+            }
+            TerminatorKind::Assert { unwind, msg, .. } =&gt; {
+                <span class="self">self</span>.penalty += <span class="kw">if </span>msg.is_optional_overflow_check()
+                    &amp;&amp; !<span class="self">self
+                        </span>.tcx
+                        .sess
+                        .opts
+                        .unstable_opts
+                        .inline_mir_preserve_debug
+                        .unwrap_or(<span class="self">self</span>.tcx.sess.overflow_checks())
+                {
+                    INSTR_COST
+                } <span class="kw">else </span>{
+                    CALL_PENALTY
+                };
                 <span class="kw">if let </span>UnwindAction::Cleanup(<span class="kw">_</span>) = unwind {
-                    <span class="self">self</span>.cost += LANDINGPAD_PENALTY;
+                    <span class="self">self</span>.penalty += LANDINGPAD_PENALTY;
                 }
             }
-            TerminatorKind::UnwindResume =&gt; <span class="self">self</span>.cost += RESUME_PENALTY,
+            TerminatorKind::UnwindResume =&gt; <span class="self">self</span>.penalty += RESUME_PENALTY,
             TerminatorKind::InlineAsm { unwind, .. } =&gt; {
-                <span class="self">self</span>.cost += INSTR_COST;
+                <span class="self">self</span>.penalty += INSTR_COST;
                 <span class="kw">if let </span>UnwindAction::Cleanup(<span class="kw">_</span>) = unwind {
-                    <span class="self">self</span>.cost += LANDINGPAD_PENALTY;
+                    <span class="self">self</span>.penalty += LANDINGPAD_PENALTY;
                 }
             }
-            <span class="kw">_ </span>=&gt; <span class="self">self</span>.cost += INSTR_COST,
+            TerminatorKind::Unreachable =&gt; {
+                <span class="self">self</span>.bonus += INSTR_COST;
+            }
+            TerminatorKind::Goto { .. } | TerminatorKind::Return =&gt; {}
+            TerminatorKind::UnwindTerminate(..) =&gt; {}
+            kind @ (TerminatorKind::FalseUnwind { .. }
+            | TerminatorKind::FalseEdge { .. }
+            | TerminatorKind::Yield { .. }
+            | TerminatorKind::CoroutineDrop) =&gt; {
+                <span class="macro">bug!</span>(<span class="string">"{kind:?} should not be in runtime MIR"</span>);
+            }
         }
     }
 }

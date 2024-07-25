@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["foreign_items"]};
+window.SIDEBAR_ITEMS = {"mod":["foreign_items","sync"]};

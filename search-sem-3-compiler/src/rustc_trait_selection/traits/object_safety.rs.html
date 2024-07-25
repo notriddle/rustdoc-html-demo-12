@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/traits/object_safety.rs`."><title>object_safety.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/traits/object_safety.rs`."><title>object_safety.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -859,6 +859,7 @@
 <a href="#859" id="859">859</a>
 <a href="#860" id="860">860</a>
 <a href="#861" id="861">861</a>
+<a href="#862" id="862">862</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! "Object safety" refers to the ability for a trait to be converted
 //! to an object. In general, traits may only be converted to an
 //! object if all of their methods meet certain criteria. In particular,
@@ -1048,7 +1049,7 @@
 ) -&gt; SmallVec&lt;[Span; <span class="number">1</span>]&gt; {
     <span class="kw">let </span>trait_ref = ty::Binder::dummy(ty::TraitRef::identity(tcx, trait_def_id));
     <span class="kw">let </span>predicates = <span class="kw">if </span>supertraits_only {
-        tcx.super_predicates_of(trait_def_id)
+        tcx.explicit_super_predicates_of(trait_def_id)
     } <span class="kw">else </span>{
         tcx.predicates_of(trait_def_id)
     };
@@ -1064,7 +1065,7 @@
     tcx.associated_items(trait_def_id)
         .in_definition_order()
         .filter(|item| item.kind == ty::AssocKind::Type)
-        .flat_map(|item| tcx.explicit_item_bounds(item.def_id).instantiate_identity_iter_copied())
+        .flat_map(|item| tcx.explicit_item_bounds(item.def_id).iter_identity_copied())
         .filter_map(|c| predicate_references_self(tcx, c))
         .collect()
 }
@@ -1117,7 +1118,7 @@
     </span><span class="kw">if </span>!tcx.features().non_lifetime_binders {
         <span class="kw">return </span>SmallVec::new();
     }
-    tcx.super_predicates_of(trait_def_id)
+    tcx.explicit_super_predicates_of(trait_def_id)
         .predicates
         .iter()
         .filter_map(|(pred, span)| pred.has_non_region_bound_vars().then_some(<span class="kw-2">*</span>span))
@@ -1550,7 +1551,7 @@
                 <span class="kw">if </span>param.index == <span class="number">0 </span>{ unsized_self_ty.into() } <span class="kw">else </span>{ tcx.mk_param_from_def(param) }
             });
 
-            ty::TraitRef::new(tcx, trait_def_id, args).upcast(tcx)
+            ty::TraitRef::new_from_args(tcx, trait_def_id, args).upcast(tcx)
         };
 
         <span class="kw">let </span>caller_bounds =
@@ -1666,10 +1667,11 @@
                         .unwrap()
                         .contains(<span class="kw-2">&amp;</span>data.trait_ref(<span class="self">self</span>.tcx).def_id);
 
-                    <span class="kw">if </span>is_supertrait_of_current_trait {
-                        ControlFlow::Continue(()) <span class="comment">// do not walk contained types, do not report error, do collect $200
-                    </span>} <span class="kw">else </span>{
-                        t.super_visit_with(<span class="self">self</span>) <span class="comment">// DO walk contained types, POSSIBLY reporting an error
+                    <span class="comment">// only walk contained types if it's not a super trait
+                    </span><span class="kw">if </span>is_supertrait_of_current_trait {
+                        ControlFlow::Continue(())
+                    } <span class="kw">else </span>{
+                        t.super_visit_with(<span class="self">self</span>) <span class="comment">// POSSIBLY reporting an error
                     </span>}
                 }
                 <span class="kw">_ </span>=&gt; t.super_visit_with(<span class="self">self</span>), <span class="comment">// walk contained types, if any

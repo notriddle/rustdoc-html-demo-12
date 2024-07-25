@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/check/intrinsic.rs`."><title>intrinsic.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/check/intrinsic.rs`."><title>intrinsic.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -664,6 +664,16 @@
 <a href="#664" id="664">664</a>
 <a href="#665" id="665">665</a>
 <a href="#666" id="666">666</a>
+<a href="#667" id="667">667</a>
+<a href="#668" id="668">668</a>
+<a href="#669" id="669">669</a>
+<a href="#670" id="670">670</a>
+<a href="#671" id="671">671</a>
+<a href="#672" id="672">672</a>
+<a href="#673" id="673">673</a>
+<a href="#674" id="674">674</a>
+<a href="#675" id="675">675</a>
+<a href="#676" id="676">676</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Type-checking for the rust-intrinsic and platform-intrinsic
 //! intrinsics that the compiler exposes.
 
@@ -692,15 +702,12 @@
     n_cts: usize,
     sig: ty::PolyFnSig&lt;<span class="lifetime">'tcx</span>&gt;,
 ) {
-    <span class="kw">let </span>(own_counts, span) = <span class="kw">match </span>tcx.hir_node_by_def_id(def_id) {
+    <span class="kw">let </span>(generics, span) = <span class="kw">match </span>tcx.hir_node_by_def_id(def_id) {
         hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(<span class="kw">_</span>, generics, <span class="kw">_</span>), .. })
         | hir::Node::ForeignItem(hir::ForeignItem {
             kind: hir::ForeignItemKind::Fn(.., generics, <span class="kw">_</span>),
             ..
-        }) =&gt; {
-            <span class="kw">let </span>own_counts = tcx.generics_of(def_id).own_counts();
-            (own_counts, generics.span)
-        }
+        }) =&gt; (tcx.generics_of(def_id), generics.span),
         <span class="kw">_ </span>=&gt; {
             <span class="macro">struct_span_code_err!</span>(tcx.dcx(), span, E0622, <span class="string">"intrinsic must be a function"</span>)
                 .with_span_label(span, <span class="string">"expected a function"</span>)
@@ -708,6 +715,7 @@
             <span class="kw">return</span>;
         }
     };
+    <span class="kw">let </span>own_counts = generics.own_counts();
 
     <span class="kw">let </span>gen_count_ok = |found: usize, expected: usize, descr: <span class="kw-2">&amp;</span>str| -&gt; bool {
         <span class="kw">if </span>found != expected {
@@ -723,9 +731,17 @@
         </span>}
     };
 
+    <span class="comment">// the host effect param should be invisible as it shouldn't matter
+    // whether effects is enabled for the intrinsic provider crate.
+    </span><span class="kw">let </span>consts_count = <span class="kw">if </span>generics.host_effect_index.is_some() {
+        own_counts.consts - <span class="number">1
+    </span>} <span class="kw">else </span>{
+        own_counts.consts
+    };
+
     <span class="kw">if </span>gen_count_ok(own_counts.lifetimes, n_lts, <span class="string">"lifetime"</span>)
         &amp;&amp; gen_count_ok(own_counts.types, n_tps, <span class="string">"type"</span>)
-        &amp;&amp; gen_count_ok(own_counts.consts, n_cts, <span class="string">"const"</span>)
+        &amp;&amp; gen_count_ok(consts_count, n_cts, <span class="string">"const"</span>)
     {
         <span class="kw">let _ </span>= check_function_signature(
             tcx,
@@ -1095,17 +1111,17 @@
 
             sym::ptr_guaranteed_cmp =&gt; (
                 <span class="number">1</span>,
-                <span class="number">1</span>,
+                <span class="number">0</span>,
                 <span class="macro">vec!</span>[Ty::new_imm_ptr(tcx, param(<span class="number">0</span>)), Ty::new_imm_ptr(tcx, param(<span class="number">0</span>))],
                 tcx.types.u8,
             ),
 
             sym::const_allocate =&gt; {
-                (<span class="number">0</span>, <span class="number">1</span>, <span class="macro">vec!</span>[tcx.types.usize, tcx.types.usize], Ty::new_mut_ptr(tcx, tcx.types.u8))
+                (<span class="number">0</span>, <span class="number">0</span>, <span class="macro">vec!</span>[tcx.types.usize, tcx.types.usize], Ty::new_mut_ptr(tcx, tcx.types.u8))
             }
             sym::const_deallocate =&gt; (
                 <span class="number">0</span>,
-                <span class="number">1</span>,
+                <span class="number">0</span>,
                 <span class="macro">vec!</span>[Ty::new_mut_ptr(tcx, tcx.types.u8), tcx.types.usize, tcx.types.usize],
                 tcx.types.unit,
             ),
@@ -1144,16 +1160,16 @@
             | sym::frem_algebraic =&gt; (<span class="number">1</span>, <span class="number">0</span>, <span class="macro">vec!</span>[param(<span class="number">0</span>), param(<span class="number">0</span>)], param(<span class="number">0</span>)),
             sym::float_to_int_unchecked =&gt; (<span class="number">2</span>, <span class="number">0</span>, <span class="macro">vec!</span>[param(<span class="number">0</span>)], param(<span class="number">1</span>)),
 
-            sym::assume =&gt; (<span class="number">0</span>, <span class="number">1</span>, <span class="macro">vec!</span>[tcx.types.bool], tcx.types.unit),
-            sym::likely =&gt; (<span class="number">0</span>, <span class="number">1</span>, <span class="macro">vec!</span>[tcx.types.bool], tcx.types.bool),
-            sym::unlikely =&gt; (<span class="number">0</span>, <span class="number">1</span>, <span class="macro">vec!</span>[tcx.types.bool], tcx.types.bool),
+            sym::assume =&gt; (<span class="number">0</span>, <span class="number">0</span>, <span class="macro">vec!</span>[tcx.types.bool], tcx.types.unit),
+            sym::likely =&gt; (<span class="number">0</span>, <span class="number">0</span>, <span class="macro">vec!</span>[tcx.types.bool], tcx.types.bool),
+            sym::unlikely =&gt; (<span class="number">0</span>, <span class="number">0</span>, <span class="macro">vec!</span>[tcx.types.bool], tcx.types.bool),
 
             sym::read_via_copy =&gt; (<span class="number">1</span>, <span class="number">0</span>, <span class="macro">vec!</span>[Ty::new_imm_ptr(tcx, param(<span class="number">0</span>))], param(<span class="number">0</span>)),
             sym::write_via_move =&gt; {
                 (<span class="number">1</span>, <span class="number">0</span>, <span class="macro">vec!</span>[Ty::new_mut_ptr(tcx, param(<span class="number">0</span>)), param(<span class="number">0</span>)], tcx.types.unit)
             }
 
-            sym::typed_swap =&gt; (<span class="number">1</span>, <span class="number">1</span>, <span class="macro">vec!</span>[Ty::new_mut_ptr(tcx, param(<span class="number">0</span>)); <span class="number">2</span>], tcx.types.unit),
+            sym::typed_swap =&gt; (<span class="number">1</span>, <span class="number">0</span>, <span class="macro">vec!</span>[Ty::new_mut_ptr(tcx, param(<span class="number">0</span>)); <span class="number">2</span>], tcx.types.unit),
 
             sym::discriminant_value =&gt; {
                 <span class="kw">let </span>assoc_items = tcx.associated_item_def_ids(
@@ -1170,7 +1186,11 @@
                         ty::Region::new_bound(tcx, ty::INNERMOST, br),
                         param(<span class="number">0</span>),
                     )],
-                    Ty::new_projection(tcx, discriminant_def_id, tcx.mk_args(<span class="kw-2">&amp;</span>[param(<span class="number">0</span>).into()])),
+                    Ty::new_projection_from_args(
+                        tcx,
+                        discriminant_def_id,
+                        tcx.mk_args(<span class="kw-2">&amp;</span>[param(<span class="number">0</span>).into()]),
+                    ),
                 )
             }
 
@@ -1232,9 +1252,9 @@
 
             sym::black_box =&gt; (<span class="number">1</span>, <span class="number">0</span>, <span class="macro">vec!</span>[param(<span class="number">0</span>)], param(<span class="number">0</span>)),
 
-            sym::is_val_statically_known =&gt; (<span class="number">1</span>, <span class="number">1</span>, <span class="macro">vec!</span>[param(<span class="number">0</span>)], tcx.types.bool),
+            sym::is_val_statically_known =&gt; (<span class="number">1</span>, <span class="number">0</span>, <span class="macro">vec!</span>[param(<span class="number">0</span>)], tcx.types.bool),
 
-            sym::const_eval_select =&gt; (<span class="number">4</span>, <span class="number">1</span>, <span class="macro">vec!</span>[param(<span class="number">0</span>), param(<span class="number">1</span>), param(<span class="number">2</span>)], param(<span class="number">3</span>)),
+            sym::const_eval_select =&gt; (<span class="number">4</span>, <span class="number">0</span>, <span class="macro">vec!</span>[param(<span class="number">0</span>), param(<span class="number">1</span>), param(<span class="number">2</span>)], param(<span class="number">3</span>)),
 
             sym::vtable_size | sym::vtable_align =&gt; {
                 (<span class="number">0</span>, <span class="number">0</span>, <span class="macro">vec!</span>[Ty::new_imm_ptr(tcx, tcx.types.unit)], tcx.types.usize)
@@ -1242,10 +1262,10 @@
 
             <span class="comment">// This type check is not particularly useful, but the `where` bounds
             // on the definition in `core` do the heavy lifting for checking it.
-            </span>sym::aggregate_raw_ptr =&gt; (<span class="number">3</span>, <span class="number">1</span>, <span class="macro">vec!</span>[param(<span class="number">1</span>), param(<span class="number">2</span>)], param(<span class="number">0</span>)),
-            sym::ptr_metadata =&gt; (<span class="number">2</span>, <span class="number">1</span>, <span class="macro">vec!</span>[Ty::new_imm_ptr(tcx, param(<span class="number">0</span>))], param(<span class="number">1</span>)),
+            </span>sym::aggregate_raw_ptr =&gt; (<span class="number">3</span>, <span class="number">0</span>, <span class="macro">vec!</span>[param(<span class="number">1</span>), param(<span class="number">2</span>)], param(<span class="number">0</span>)),
+            sym::ptr_metadata =&gt; (<span class="number">2</span>, <span class="number">0</span>, <span class="macro">vec!</span>[Ty::new_imm_ptr(tcx, param(<span class="number">0</span>))], param(<span class="number">1</span>)),
 
-            sym::ub_checks =&gt; (<span class="number">0</span>, <span class="number">1</span>, Vec::new(), tcx.types.bool),
+            sym::ub_checks =&gt; (<span class="number">0</span>, <span class="number">0</span>, Vec::new(), tcx.types.bool),
 
             sym::simd_eq
             | sym::simd_ne

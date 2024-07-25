@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/ty/instance.rs`."><title>instance.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/ty/instance.rs`."><title>instance.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1005,26 +1005,142 @@
 <a href="#1005" id="1005">1005</a>
 <a href="#1006" id="1006">1006</a>
 <a href="#1007" id="1007">1007</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::middle::codegen_fn_attrs::CodegenFnAttrFlags;
-<span class="kw">use </span><span class="kw">crate</span>::ty::print::{FmtPrinter, Printer};
-<span class="kw">use </span><span class="kw">crate</span>::ty::{<span class="self">self</span>, Ty, TyCtxt, TypeFoldable, TypeSuperFoldable};
-<span class="kw">use </span><span class="kw">crate</span>::ty::{EarlyBinder, GenericArgs, GenericArgsRef, TypeVisitableExt};
+<a href="#1008" id="1008">1008</a>
+<a href="#1009" id="1009">1009</a>
+<a href="#1010" id="1010">1010</a>
+<a href="#1011" id="1011">1011</a>
+<a href="#1012" id="1012">1012</a>
+<a href="#1013" id="1013">1013</a>
+<a href="#1014" id="1014">1014</a>
+<a href="#1015" id="1015">1015</a>
+<a href="#1016" id="1016">1016</a>
+<a href="#1017" id="1017">1017</a>
+<a href="#1018" id="1018">1018</a>
+<a href="#1019" id="1019">1019</a>
+<a href="#1020" id="1020">1020</a>
+<a href="#1021" id="1021">1021</a>
+<a href="#1022" id="1022">1022</a>
+<a href="#1023" id="1023">1023</a>
+<a href="#1024" id="1024">1024</a>
+<a href="#1025" id="1025">1025</a>
+<a href="#1026" id="1026">1026</a>
+<a href="#1027" id="1027">1027</a>
+<a href="#1028" id="1028">1028</a>
+<a href="#1029" id="1029">1029</a>
+<a href="#1030" id="1030">1030</a>
+<a href="#1031" id="1031">1031</a>
+<a href="#1032" id="1032">1032</a>
+<a href="#1033" id="1033">1033</a>
+<a href="#1034" id="1034">1034</a>
+<a href="#1035" id="1035">1035</a>
+<a href="#1036" id="1036">1036</a>
+<a href="#1037" id="1037">1037</a>
+<a href="#1038" id="1038">1038</a>
+<a href="#1039" id="1039">1039</a>
+<a href="#1040" id="1040">1040</a>
+<a href="#1041" id="1041">1041</a>
+<a href="#1042" id="1042">1042</a>
+<a href="#1043" id="1043">1043</a>
+<a href="#1044" id="1044">1044</a>
+<a href="#1045" id="1045">1045</a>
+<a href="#1046" id="1046">1046</a>
+<a href="#1047" id="1047">1047</a>
+<a href="#1048" id="1048">1048</a>
+<a href="#1049" id="1049">1049</a>
+<a href="#1050" id="1050">1050</a>
+<a href="#1051" id="1051">1051</a>
+<a href="#1052" id="1052">1052</a>
+<a href="#1053" id="1053">1053</a>
+<a href="#1054" id="1054">1054</a>
+<a href="#1055" id="1055">1055</a>
+<a href="#1056" id="1056">1056</a>
+<a href="#1057" id="1057">1057</a>
+<a href="#1058" id="1058">1058</a>
+<a href="#1059" id="1059">1059</a>
+<a href="#1060" id="1060">1060</a>
+<a href="#1061" id="1061">1061</a>
+<a href="#1062" id="1062">1062</a>
+<a href="#1063" id="1063">1063</a>
+<a href="#1064" id="1064">1064</a>
+<a href="#1065" id="1065">1065</a>
+<a href="#1066" id="1066">1066</a>
+<a href="#1067" id="1067">1067</a>
+<a href="#1068" id="1068">1068</a>
+<a href="#1069" id="1069">1069</a>
+<a href="#1070" id="1070">1070</a>
+<a href="#1071" id="1071">1071</a>
+<a href="#1072" id="1072">1072</a>
+<a href="#1073" id="1073">1073</a>
+<a href="#1074" id="1074">1074</a>
+<a href="#1075" id="1075">1075</a>
+<a href="#1076" id="1076">1076</a>
+<a href="#1077" id="1077">1077</a>
+<a href="#1078" id="1078">1078</a>
+<a href="#1079" id="1079">1079</a>
+<a href="#1080" id="1080">1080</a>
+<a href="#1081" id="1081">1081</a>
+<a href="#1082" id="1082">1082</a>
+<a href="#1083" id="1083">1083</a>
+<a href="#1084" id="1084">1084</a>
+<a href="#1085" id="1085">1085</a>
+<a href="#1086" id="1086">1086</a>
+<a href="#1087" id="1087">1087</a>
+<a href="#1088" id="1088">1088</a>
+<a href="#1089" id="1089">1089</a>
+<a href="#1090" id="1090">1090</a>
+<a href="#1091" id="1091">1091</a>
+<a href="#1092" id="1092">1092</a>
+<a href="#1093" id="1093">1093</a>
+<a href="#1094" id="1094">1094</a>
+<a href="#1095" id="1095">1095</a>
+<a href="#1096" id="1096">1096</a>
+<a href="#1097" id="1097">1097</a>
+<a href="#1098" id="1098">1098</a>
+<a href="#1099" id="1099">1099</a>
+<a href="#1100" id="1100">1100</a>
+<a href="#1101" id="1101">1101</a>
+<a href="#1102" id="1102">1102</a>
+<a href="#1103" id="1103">1103</a>
+<a href="#1104" id="1104">1104</a>
+<a href="#1105" id="1105">1105</a>
+<a href="#1106" id="1106">1106</a>
+<a href="#1107" id="1107">1107</a>
+<a href="#1108" id="1108">1108</a>
+<a href="#1109" id="1109">1109</a>
+<a href="#1110" id="1110">1110</a>
+<a href="#1111" id="1111">1111</a>
+<a href="#1112" id="1112">1112</a>
+<a href="#1113" id="1113">1113</a>
+<a href="#1114" id="1114">1114</a>
+<a href="#1115" id="1115">1115</a>
+<a href="#1116" id="1116">1116</a>
+<a href="#1117" id="1117">1117</a>
+<a href="#1118" id="1118">1118</a>
+<a href="#1119" id="1119">1119</a>
+<a href="#1120" id="1120">1120</a>
+</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::error;
+<span class="kw">use </span><span class="kw">crate</span>::middle::codegen_fn_attrs::CodegenFnAttrFlags;
+<span class="kw">use </span><span class="kw">crate</span>::ty::print::{shrunk_instance_name, FmtPrinter, Printer};
+<span class="kw">use </span><span class="kw">crate</span>::ty::{
+    <span class="self">self</span>, EarlyBinder, GenericArgs, GenericArgsRef, Ty, TyCtxt, TypeFoldable, TypeSuperFoldable,
+    TypeSuperVisitable, TypeVisitable, TypeVisitableExt, TypeVisitor,
+};
+<span class="kw">use </span>rustc_data_structures::fx::FxHashMap;
 <span class="kw">use </span>rustc_errors::ErrorGuaranteed;
 <span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
 <span class="kw">use </span>rustc_hir::def::Namespace;
 <span class="kw">use </span>rustc_hir::def_id::{CrateNum, DefId};
 <span class="kw">use </span>rustc_hir::lang_items::LangItem;
 <span class="kw">use </span>rustc_index::bit_set::FiniteBitSet;
-<span class="kw">use </span>rustc_macros::{
-    Decodable, Encodable, HashStable, Lift, TyDecodable, TyEncodable, TypeVisitable,
-};
+<span class="kw">use </span>rustc_macros::{Decodable, Encodable, HashStable, Lift, TyDecodable, TyEncodable};
 <span class="kw">use </span>rustc_middle::ty::normalize_erasing_regions::NormalizationError;
 <span class="kw">use </span>rustc_span::def_id::LOCAL_CRATE;
-<span class="kw">use </span>rustc_span::Symbol;
+<span class="kw">use </span>rustc_span::{Span, Symbol, DUMMY_SP};
 <span class="kw">use </span>tracing::{debug, instrument};
 
 <span class="kw">use </span>std::assert_matches::assert_matches;
 <span class="kw">use </span>std::fmt;
+<span class="kw">use </span>std::path::PathBuf;
 
 <span class="doccomment">/// An `InstanceKind` along with the args that are needed to substitute the instance.
 ///
@@ -1226,8 +1342,9 @@
             InstanceKind::Item(def) =&gt; tcx
                 .upstream_monomorphizations_for(def)
                 .and_then(|monos| monos.get(<span class="kw-2">&amp;</span><span class="self">self</span>.args).cloned()),
-            InstanceKind::DropGlue(<span class="kw">_</span>, <span class="prelude-val">Some</span>(<span class="kw">_</span>)) | InstanceKind::AsyncDropGlueCtorShim(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; {
-                tcx.upstream_drop_glue_for(<span class="self">self</span>.args)
+            InstanceKind::DropGlue(<span class="kw">_</span>, <span class="prelude-val">Some</span>(<span class="kw">_</span>)) =&gt; tcx.upstream_drop_glue_for(<span class="self">self</span>.args),
+            InstanceKind::AsyncDropGlueCtorShim(<span class="kw">_</span>, <span class="prelude-val">Some</span>(<span class="kw">_</span>)) =&gt; {
+                tcx.upstream_async_drop_glue_for(<span class="self">self</span>.args)
             }
             <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
         }
@@ -1263,7 +1380,7 @@
         <span class="kw">match </span><span class="self">self </span>{
             ty::InstanceKind::Item(def) =&gt; <span class="prelude-val">Some</span>(def),
             ty::InstanceKind::DropGlue(def_id, <span class="prelude-val">Some</span>(<span class="kw">_</span>))
-            | InstanceKind::AsyncDropGlueCtorShim(def_id, <span class="kw">_</span>)
+            | InstanceKind::AsyncDropGlueCtorShim(def_id, <span class="prelude-val">Some</span>(<span class="kw">_</span>))
             | InstanceKind::ThreadLocalShim(def_id) =&gt; <span class="prelude-val">Some</span>(def_id),
             InstanceKind::VTableShim(..)
             | InstanceKind::ReifyShim(..)
@@ -1274,6 +1391,7 @@
             | ty::InstanceKind::ConstructCoroutineInClosureShim { .. }
             | ty::InstanceKind::CoroutineKindShim { .. }
             | InstanceKind::DropGlue(..)
+            | InstanceKind::AsyncDropGlueCtorShim(..)
             | InstanceKind::CloneShim(..)
             | InstanceKind::FnPtrAddrShim(..) =&gt; <span class="prelude-val">None</span>,
         }
@@ -1319,7 +1437,9 @@
         <span class="kw">if </span><span class="self">self</span>.requires_inline(tcx) {
             <span class="kw">return </span><span class="bool-val">true</span>;
         }
-        <span class="kw">if let </span>ty::InstanceKind::DropGlue(.., <span class="prelude-val">Some</span>(ty)) = <span class="kw-2">*</span><span class="self">self </span>{
+        <span class="kw">if let </span>ty::InstanceKind::DropGlue(.., <span class="prelude-val">Some</span>(ty))
+        | ty::InstanceKind::AsyncDropGlueCtorShim(.., <span class="prelude-val">Some</span>(ty)) = <span class="kw-2">*</span><span class="self">self
+        </span>{
             <span class="comment">// Drop glue generally wants to be instantiated at every codegen
             // unit, but without an #[inline] hint. We should make this
             // available to normal end-users.
@@ -1334,9 +1454,14 @@
             // drops of `Option::None` before LTO. We also respect the intent of
             // `#[inline]` on `Drop::drop` implementations.
             </span><span class="kw">return </span>ty.ty_adt_def().map_or(<span class="bool-val">true</span>, |adt_def| {
-                adt_def
-                    .destructor(tcx)
-                    .map_or_else(|| adt_def.is_enum(), |dtor| tcx.cross_crate_inlinable(dtor.did))
+                <span class="kw">match </span><span class="kw-2">*</span><span class="self">self </span>{
+                    ty::InstanceKind::DropGlue(..) =&gt; adt_def.destructor(tcx).map(|dtor| dtor.did),
+                    ty::InstanceKind::AsyncDropGlueCtorShim(..) =&gt; {
+                        adt_def.async_destructor(tcx).map(|dtor| dtor.ctor)
+                    }
+                    <span class="kw">_ </span>=&gt; <span class="macro">unreachable!</span>(),
+                }
+                .map_or_else(|| adt_def.is_enum(), |did| tcx.cross_crate_inlinable(did))
             });
         }
         <span class="kw">if let </span>ty::InstanceKind::ThreadLocalShim(..) = <span class="kw-2">*</span><span class="self">self </span>{
@@ -1383,7 +1508,40 @@
     }
 }
 
-<span class="kw">fn </span>fmt_instance(
+<span class="kw">fn </span>type_length&lt;<span class="lifetime">'tcx</span>&gt;(item: <span class="kw">impl </span>TypeVisitable&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt;) -&gt; usize {
+    <span class="kw">struct </span>Visitor&lt;<span class="lifetime">'tcx</span>&gt; {
+        type_length: usize,
+        cache: FxHashMap&lt;Ty&lt;<span class="lifetime">'tcx</span>&gt;, usize&gt;,
+    }
+    <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; TypeVisitor&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span>Visitor&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="kw">fn </span>visit_ty(<span class="kw-2">&amp;mut </span><span class="self">self</span>, t: Ty&lt;<span class="lifetime">'tcx</span>&gt;) {
+            <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>value) = <span class="self">self</span>.cache.get(<span class="kw-2">&amp;</span>t) {
+                <span class="self">self</span>.type_length += value;
+                <span class="kw">return</span>;
+            }
+
+            <span class="kw">let </span>prev = <span class="self">self</span>.type_length;
+            <span class="self">self</span>.type_length += <span class="number">1</span>;
+            t.super_visit_with(<span class="self">self</span>);
+
+            <span class="comment">// We don't try to use the cache if the type is fairly small.
+            </span><span class="kw">if </span><span class="self">self</span>.type_length &gt; <span class="number">16 </span>{
+                <span class="self">self</span>.cache.insert(t, <span class="self">self</span>.type_length - prev);
+            }
+        }
+
+        <span class="kw">fn </span>visit_const(<span class="kw-2">&amp;mut </span><span class="self">self</span>, ct: ty::Const&lt;<span class="lifetime">'tcx</span>&gt;) {
+            <span class="self">self</span>.type_length += <span class="number">1</span>;
+            ct.super_visit_with(<span class="self">self</span>);
+        }
+    }
+    <span class="kw">let </span><span class="kw-2">mut </span>visitor = Visitor { type_length: <span class="number">0</span>, cache: Default::default() };
+    item.visit_with(<span class="kw-2">&amp;mut </span>visitor);
+
+    visitor.type_length
+}
+
+<span class="kw">pub fn </span>fmt_instance(
     f: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;,
     instance: Instance&lt;<span class="lifetime">'_</span>&gt;,
     type_length: <span class="prelude-ty">Option</span>&lt;rustc_session::Limit&gt;,
@@ -1483,19 +1641,32 @@
     ///
     /// Presuming that coherence and type-check have succeeded, if this method is invoked
     /// in a monomorphic context (i.e., like during codegen), then it is guaranteed to return
-    /// `Ok(Some(instance))`.
+    /// `Ok(Some(instance))`, **except** for when the instance's inputs hit the type size limit,
+    /// in which case it may bail out and return `Ok(None)`.
     ///
     /// Returns `Err(ErrorGuaranteed)` when the `Instance` resolution process
     /// couldn't complete due to errors elsewhere - this is distinct
     /// from `Ok(None)` to avoid misleading diagnostics when an error
     /// has already been/will be emitted, for the original cause
     </span><span class="attr">#[instrument(level = <span class="string">"debug"</span>, skip(tcx), ret)]
-    </span><span class="kw">pub fn </span>resolve(
+    </span><span class="kw">pub fn </span>try_resolve(
         tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
         param_env: ty::ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
         def_id: DefId,
         args: GenericArgsRef&lt;<span class="lifetime">'tcx</span>&gt;,
     ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;Instance&lt;<span class="lifetime">'tcx</span>&gt;&gt;, ErrorGuaranteed&gt; {
+        <span class="comment">// Rust code can easily create exponentially-long types using only a
+        // polynomial recursion depth. Even with the default recursion
+        // depth, you can easily get cases that take &gt;2^60 steps to run,
+        // which means that rustc basically hangs.
+        //
+        // Bail out in these cases to avoid that bad user experience.
+        </span><span class="kw">if </span>tcx.sess.opts.unstable_opts.enforce_type_length_limit
+            &amp;&amp; !tcx.type_length_limit().value_within_limit(type_length(args))
+        {
+            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+        }
+
         <span class="comment">// All regions in the result of this query are erased, so it's
         // fine to erase all of the input regions.
 
@@ -1503,7 +1674,7 @@
         // below is more likely to ignore the bounds in scope (e.g. if the only
         // generic parameters mentioned by `args` were lifetime ones).
         </span><span class="kw">let </span>args = tcx.erase_regions(args);
-        tcx.resolve_instance(tcx.erase_regions(param_env.and((def_id, args))))
+        tcx.resolve_instance_raw(tcx.erase_regions(param_env.and((def_id, args))))
     }
 
     <span class="kw">pub fn </span>expect_resolve(
@@ -1511,10 +1682,48 @@
         param_env: ty::ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
         def_id: DefId,
         args: GenericArgsRef&lt;<span class="lifetime">'tcx</span>&gt;,
+        span: Span,
     ) -&gt; Instance&lt;<span class="lifetime">'tcx</span>&gt; {
-        <span class="kw">match </span>ty::Instance::resolve(tcx, param_env, def_id, args) {
+        <span class="comment">// We compute the span lazily, to avoid unnecessary query calls.
+        // If `span` is a DUMMY_SP, and the def id is local, then use the
+        // def span of the def id.
+        </span><span class="kw">let </span>span_or_local_def_span =
+            || <span class="kw">if </span>span.is_dummy() &amp;&amp; def_id.is_local() { tcx.def_span(def_id) } <span class="kw">else </span>{ span };
+
+        <span class="kw">match </span>ty::Instance::try_resolve(tcx, param_env, def_id, args) {
             <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(instance)) =&gt; instance,
-            instance =&gt; <span class="macro">bug!</span>(
+            <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>) =&gt; {
+                <span class="kw">let </span>type_length = type_length(args);
+                <span class="kw">if </span>!tcx.type_length_limit().value_within_limit(type_length) {
+                    <span class="kw">let </span>(shrunk, written_to_path) =
+                        shrunk_instance_name(tcx, Instance::new(def_id, args));
+                    <span class="kw">let </span><span class="kw-2">mut </span>path = PathBuf::new();
+                    <span class="kw">let </span>was_written = <span class="kw">if let </span><span class="prelude-val">Some</span>(path2) = written_to_path {
+                        path = path2;
+                        <span class="prelude-val">Some</span>(())
+                    } <span class="kw">else </span>{
+                        <span class="prelude-val">None
+                    </span>};
+                    tcx.dcx().emit_fatal(error::TypeLengthLimit {
+                        <span class="comment">// We don't use `def_span(def_id)` so that diagnostics point
+                        // to the crate root during mono instead of to foreign items.
+                        // This is arguably better.
+                        </span>span: span_or_local_def_span(),
+                        shrunk,
+                        was_written,
+                        path,
+                        type_length,
+                    });
+                } <span class="kw">else </span>{
+                    <span class="macro">span_bug!</span>(
+                        span_or_local_def_span(),
+                        <span class="string">"failed to resolve instance for {}"</span>,
+                        tcx.def_path_str_with_args(def_id, args)
+                    )
+                }
+            }
+            instance =&gt; <span class="macro">span_bug!</span>(
+                span_or_local_def_span(),
                 <span class="string">"failed to resolve instance for {}: {instance:#?}"</span>,
                 tcx.def_path_str_with_args(def_id, args)
             ),
@@ -1531,7 +1740,7 @@
         <span class="comment">// Use either `resolve_closure` or `resolve_for_vtable`
         </span><span class="macro">assert!</span>(!tcx.is_closure_like(def_id), <span class="string">"Called `resolve_for_fn_ptr` on closure: {def_id:?}"</span>);
         <span class="kw">let </span>reason = tcx.sess.is_sanitizer_kcfi_enabled().then_some(ReifyReason::FnPtr);
-        Instance::resolve(tcx, param_env, def_id, args).ok().flatten().map(|<span class="kw-2">mut </span>resolved| {
+        Instance::try_resolve(tcx, param_env, def_id, args).ok().flatten().map(|<span class="kw-2">mut </span>resolved| {
             <span class="kw">match </span>resolved.def {
                 InstanceKind::Item(def) <span class="kw">if </span>resolved.def.requires_caller_location(tcx) =&gt; {
                     <span class="macro">debug!</span>(<span class="string">" =&gt; fn pointer created for function with #[track_caller]"</span>);
@@ -1569,77 +1778,82 @@
         })
     }
 
-    <span class="kw">pub fn </span>resolve_for_vtable(
+    <span class="kw">pub fn </span>expect_resolve_for_vtable(
         tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
         param_env: ty::ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
         def_id: DefId,
         args: GenericArgsRef&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; <span class="prelude-ty">Option</span>&lt;Instance&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+        span: Span,
+    ) -&gt; Instance&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="macro">debug!</span>(<span class="string">"resolve_for_vtable(def_id={:?}, args={:?})"</span>, def_id, args);
         <span class="kw">let </span>fn_sig = tcx.fn_sig(def_id).instantiate_identity();
         <span class="kw">let </span>is_vtable_shim = !fn_sig.inputs().skip_binder().is_empty()
             &amp;&amp; fn_sig.input(<span class="number">0</span>).skip_binder().is_param(<span class="number">0</span>)
             &amp;&amp; tcx.generics_of(def_id).has_self;
+
         <span class="kw">if </span>is_vtable_shim {
             <span class="macro">debug!</span>(<span class="string">" =&gt; associated item with unsizeable self: Self"</span>);
-            <span class="prelude-val">Some</span>(Instance { def: InstanceKind::VTableShim(def_id), args })
-        } <span class="kw">else </span>{
-            <span class="kw">let </span>reason = tcx.sess.is_sanitizer_kcfi_enabled().then_some(ReifyReason::Vtable);
-            Instance::resolve(tcx, param_env, def_id, args).ok().flatten().map(|<span class="kw-2">mut </span>resolved| {
-                <span class="kw">match </span>resolved.def {
-                    InstanceKind::Item(def) =&gt; {
-                        <span class="comment">// We need to generate a shim when we cannot guarantee that
-                        // the caller of a trait object method will be aware of
-                        // `#[track_caller]` - this ensures that the caller
-                        // and callee ABI will always match.
-                        //
-                        // The shim is generated when all of these conditions are met:
-                        //
-                        // 1) The underlying method expects a caller location parameter
-                        // in the ABI
-                        </span><span class="kw">if </span>resolved.def.requires_caller_location(tcx)
-                            <span class="comment">// 2) The caller location parameter comes from having `#[track_caller]`
-                            // on the implementation, and *not* on the trait method.
-                            </span>&amp;&amp; !tcx.should_inherit_track_caller(def)
-                            <span class="comment">// If the method implementation comes from the trait definition itself
-                            // (e.g. `trait Foo { #[track_caller] my_fn() { /* impl */ } }`),
-                            // then we don't need to generate a shim. This check is needed because
-                            // `should_inherit_track_caller` returns `false` if our method
-                            // implementation comes from the trait block, and not an impl block
-                            </span>&amp;&amp; !<span class="macro">matches!</span>(
-                                tcx.opt_associated_item(def),
-                                <span class="prelude-val">Some</span>(ty::AssocItem {
-                                    container: ty::AssocItemContainer::TraitContainer,
-                                    ..
-                                })
-                            )
-                        {
-                            <span class="kw">if </span>tcx.is_closure_like(def) {
-                                <span class="macro">debug!</span>(<span class="string">" =&gt; vtable fn pointer created for closure with #[track_caller]: {:?} for method {:?} {:?}"</span>,
-                                       def, def_id, args);
-
-                                <span class="comment">// Create a shim for the `FnOnce/FnMut/Fn` method we are calling
-                                // - unlike functions, invoking a closure always goes through a
-                                // trait.
-                                </span>resolved = Instance { def: InstanceKind::ReifyShim(def_id, reason), args };
-                            } <span class="kw">else </span>{
-                                <span class="macro">debug!</span>(
-                                    <span class="string">" =&gt; vtable fn pointer created for function with #[track_caller]: {:?}"</span>, def
-                                );
-                                resolved.def = InstanceKind::ReifyShim(def, reason);
-                            }
-                        }
-                    }
-                    InstanceKind::Virtual(def_id, <span class="kw">_</span>) =&gt; {
-                        <span class="macro">debug!</span>(<span class="string">" =&gt; vtable fn pointer created for virtual call"</span>);
-                        resolved.def = InstanceKind::ReifyShim(def_id, reason)
-                    }
-                    <span class="kw">_ </span>=&gt; {}
-                }
-
-                resolved
-            })
+            <span class="kw">return </span>Instance { def: InstanceKind::VTableShim(def_id), args };
         }
+
+        <span class="kw">let </span><span class="kw-2">mut </span>resolved = Instance::expect_resolve(tcx, param_env, def_id, args, span);
+
+        <span class="kw">let </span>reason = tcx.sess.is_sanitizer_kcfi_enabled().then_some(ReifyReason::Vtable);
+        <span class="kw">match </span>resolved.def {
+            InstanceKind::Item(def) =&gt; {
+                <span class="comment">// We need to generate a shim when we cannot guarantee that
+                // the caller of a trait object method will be aware of
+                // `#[track_caller]` - this ensures that the caller
+                // and callee ABI will always match.
+                //
+                // The shim is generated when all of these conditions are met:
+                //
+                // 1) The underlying method expects a caller location parameter
+                // in the ABI
+                </span><span class="kw">if </span>resolved.def.requires_caller_location(tcx)
+                        <span class="comment">// 2) The caller location parameter comes from having `#[track_caller]`
+                        // on the implementation, and *not* on the trait method.
+                        </span>&amp;&amp; !tcx.should_inherit_track_caller(def)
+                        <span class="comment">// If the method implementation comes from the trait definition itself
+                        // (e.g. `trait Foo { #[track_caller] my_fn() { /* impl */ } }`),
+                        // then we don't need to generate a shim. This check is needed because
+                        // `should_inherit_track_caller` returns `false` if our method
+                        // implementation comes from the trait block, and not an impl block
+                        </span>&amp;&amp; !<span class="macro">matches!</span>(
+                            tcx.opt_associated_item(def),
+                            <span class="prelude-val">Some</span>(ty::AssocItem {
+                                container: ty::AssocItemContainer::TraitContainer,
+                                ..
+                            })
+                        )
+                {
+                    <span class="kw">if </span>tcx.is_closure_like(def) {
+                        <span class="macro">debug!</span>(
+                            <span class="string">" =&gt; vtable fn pointer created for closure with #[track_caller]: {:?} for method {:?} {:?}"</span>,
+                            def, def_id, args
+                        );
+
+                        <span class="comment">// Create a shim for the `FnOnce/FnMut/Fn` method we are calling
+                        // - unlike functions, invoking a closure always goes through a
+                        // trait.
+                        </span>resolved = Instance { def: InstanceKind::ReifyShim(def_id, reason), args };
+                    } <span class="kw">else </span>{
+                        <span class="macro">debug!</span>(
+                            <span class="string">" =&gt; vtable fn pointer created for function with #[track_caller]: {:?}"</span>,
+                            def
+                        );
+                        resolved.def = InstanceKind::ReifyShim(def, reason);
+                    }
+                }
+            }
+            InstanceKind::Virtual(def_id, <span class="kw">_</span>) =&gt; {
+                <span class="macro">debug!</span>(<span class="string">" =&gt; vtable fn pointer created for virtual call"</span>);
+                resolved.def = InstanceKind::ReifyShim(def_id, reason)
+            }
+            <span class="kw">_ </span>=&gt; {}
+        }
+
+        resolved
     }
 
     <span class="kw">pub fn </span>resolve_closure(
@@ -1659,13 +1873,25 @@
     <span class="kw">pub fn </span>resolve_drop_in_place(tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; ty::Instance&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>def_id = tcx.require_lang_item(LangItem::DropInPlace, <span class="prelude-val">None</span>);
         <span class="kw">let </span>args = tcx.mk_args(<span class="kw-2">&amp;</span>[ty.into()]);
-        Instance::expect_resolve(tcx, ty::ParamEnv::reveal_all(), def_id, args)
+        Instance::expect_resolve(
+            tcx,
+            ty::ParamEnv::reveal_all(),
+            def_id,
+            args,
+            ty.ty_adt_def().and_then(|adt| tcx.hir().span_if_local(adt.did())).unwrap_or(DUMMY_SP),
+        )
     }
 
     <span class="kw">pub fn </span>resolve_async_drop_in_place(tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; ty::Instance&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>def_id = tcx.require_lang_item(LangItem::AsyncDropInPlace, <span class="prelude-val">None</span>);
         <span class="kw">let </span>args = tcx.mk_args(<span class="kw-2">&amp;</span>[ty.into()]);
-        Instance::expect_resolve(tcx, ty::ParamEnv::reveal_all(), def_id, args)
+        Instance::expect_resolve(
+            tcx,
+            ty::ParamEnv::reveal_all(),
+            def_id,
+            args,
+            ty.ty_adt_def().and_then(|adt| tcx.hir().span_if_local(adt.did())).unwrap_or(DUMMY_SP),
+        )
     }
 
     <span class="attr">#[instrument(level = <span class="string">"debug"</span>, skip(tcx), ret)]
@@ -1871,7 +2097,7 @@
     }
 
     <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; ty::TypeFolder&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span>PolymorphizationFolder&lt;<span class="lifetime">'tcx</span>&gt; {
-        <span class="kw">fn </span>interner(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
             <span class="self">self</span>.tcx
         }
 

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/jump_threading.rs`."><title>jump_threading.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/jump_threading.rs`."><title>jump_threading.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -821,6 +821,23 @@
 <a href="#821" id="821">821</a>
 <a href="#822" id="822">822</a>
 <a href="#823" id="823">823</a>
+<a href="#824" id="824">824</a>
+<a href="#825" id="825">825</a>
+<a href="#826" id="826">826</a>
+<a href="#827" id="827">827</a>
+<a href="#828" id="828">828</a>
+<a href="#829" id="829">829</a>
+<a href="#830" id="830">830</a>
+<a href="#831" id="831">831</a>
+<a href="#832" id="832">832</a>
+<a href="#833" id="833">833</a>
+<a href="#834" id="834">834</a>
+<a href="#835" id="835">835</a>
+<a href="#836" id="836">836</a>
+<a href="#837" id="837">837</a>
+<a href="#838" id="838">838</a>
+<a href="#839" id="839">839</a>
+<a href="#840" id="840">840</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! A jump threading optimization.
 //!
 //! This optimization seeks to replace join-then-switch control flow patterns by straight jumps
@@ -870,6 +887,7 @@
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::ty::layout::LayoutOf;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, ScalarInt, TyCtxt};
+<span class="kw">use </span>rustc_mir_dataflow::lattice::HasBottom;
 <span class="kw">use </span>rustc_mir_dataflow::value_analysis::{Map, PlaceIndex, State, TrackElem};
 <span class="kw">use </span>rustc_span::DUMMY_SP;
 <span class="kw">use </span>rustc_target::abi::{TagEncoding, Variants};
@@ -914,43 +932,8 @@
             opportunities: Vec::new(),
         };
 
-        <span class="kw">for </span>(bb, bbdata) <span class="kw">in </span>body.basic_blocks.iter_enumerated() {
-            <span class="macro">debug!</span>(<span class="question-mark">?</span>bb, term = <span class="question-mark">?</span>bbdata.terminator());
-            <span class="kw">if </span>bbdata.is_cleanup || loop_headers.contains(bb) {
-                <span class="kw">continue</span>;
-            }
-            <span class="kw">let </span><span class="prelude-val">Some</span>((discr, targets)) = bbdata.terminator().kind.as_switch() <span class="kw">else </span>{ <span class="kw">continue </span>};
-            <span class="kw">let </span><span class="prelude-val">Some</span>(discr) = discr.place() <span class="kw">else </span>{ <span class="kw">continue </span>};
-            <span class="macro">debug!</span>(<span class="question-mark">?</span>discr, <span class="question-mark">?</span>bb);
-
-            <span class="kw">let </span>discr_ty = discr.ty(body, tcx).ty;
-            <span class="kw">let </span><span class="prelude-val">Ok</span>(discr_layout) = finder.ecx.layout_of(discr_ty) <span class="kw">else </span>{ <span class="kw">continue </span>};
-
-            <span class="kw">let </span><span class="prelude-val">Some</span>(discr) = finder.map.find(discr.as_ref()) <span class="kw">else </span>{ <span class="kw">continue </span>};
-            <span class="macro">debug!</span>(<span class="question-mark">?</span>discr);
-
-            <span class="kw">let </span>cost = CostChecker::new(tcx, param_env, <span class="prelude-val">None</span>, body);
-
-            <span class="kw">let </span><span class="kw-2">mut </span>state = State::new(ConditionSet::default(), finder.map);
-
-            <span class="kw">let </span>conds = <span class="kw">if let </span><span class="prelude-val">Some</span>((value, then, else_)) = targets.as_static_if() {
-                <span class="kw">let </span><span class="prelude-val">Some</span>(value) = ScalarInt::try_from_uint(value, discr_layout.size) <span class="kw">else </span>{
-                    <span class="kw">continue</span>;
-                };
-                arena.alloc_from_iter([
-                    Condition { value, polarity: Polarity::Eq, target: then },
-                    Condition { value, polarity: Polarity::Ne, target: else_ },
-                ])
-            } <span class="kw">else </span>{
-                arena.alloc_from_iter(targets.iter().filter_map(|(value, target)| {
-                    <span class="kw">let </span>value = ScalarInt::try_from_uint(value, discr_layout.size)<span class="question-mark">?</span>;
-                    <span class="prelude-val">Some</span>(Condition { value, polarity: Polarity::Eq, target })
-                }))
-            };
-            <span class="kw">let </span>conds = ConditionSet(conds);
-            state.insert_value_idx(discr, conds, finder.map);
-
-            finder.find_opportunity(bb, state, cost, <span class="number">0</span>);
+        <span class="kw">for </span>bb <span class="kw">in </span>body.basic_blocks.indices() {
+            finder.start_from_switch(bb);
         }
 
         <span class="kw">let </span>opportunities = finder.opportunities;
@@ -980,7 +963,7 @@
     param_env: ty::ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
     ecx: InterpCx&lt;<span class="lifetime">'tcx</span>, DummyMachine&gt;,
     body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
-    map: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Map,
+    map: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Map&lt;<span class="lifetime">'tcx</span>&gt;,
     loop_headers: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>BitSet&lt;BasicBlock&gt;,
     <span class="doccomment">/// We use an arena to avoid cloning the slices when cloning `state`.
     </span>arena: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>DroplessArena,
@@ -1016,8 +999,16 @@
     </span>}
 }
 
-<span class="attr">#[derive(Copy, Clone, Debug, Default)]
+<span class="attr">#[derive(Copy, Clone, Debug)]
 </span><span class="kw">struct </span>ConditionSet&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="lifetime">'a </span>[Condition]);
+
+<span class="kw">impl </span>HasBottom <span class="kw">for </span>ConditionSet&lt;<span class="lifetime">'_</span>&gt; {
+    <span class="kw">const </span>BOTTOM: <span class="self">Self </span>= ConditionSet(<span class="kw-2">&amp;</span>[]);
+
+    <span class="kw">fn </span>is_bottom(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+        <span class="self">self</span>.<span class="number">0</span>.is_empty()
+    }
+}
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'a</span>&gt; ConditionSet&lt;<span class="lifetime">'a</span>&gt; {
     <span class="kw">fn </span>iter(<span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = Condition&gt; + <span class="lifetime">'a </span>{
@@ -1035,10 +1026,50 @@
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt; TOFinder&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt; {
     <span class="kw">fn </span>is_empty(<span class="kw-2">&amp;</span><span class="self">self</span>, state: <span class="kw-2">&amp;</span>State&lt;ConditionSet&lt;<span class="lifetime">'a</span>&gt;&gt;) -&gt; bool {
-        state.all(|cs| cs.<span class="number">0</span>.is_empty())
+        state.all_bottom()
     }
 
     <span class="doccomment">/// Recursion entry point to find threading opportunities.
+    </span><span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>))]
+    </span><span class="kw">fn </span>start_from_switch(<span class="kw-2">&amp;mut </span><span class="self">self</span>, bb: BasicBlock) -&gt; <span class="prelude-ty">Option</span>&lt;!&gt; {
+        <span class="kw">let </span>bbdata = <span class="kw-2">&amp;</span><span class="self">self</span>.body[bb];
+        <span class="kw">if </span>bbdata.is_cleanup || <span class="self">self</span>.loop_headers.contains(bb) {
+            <span class="kw">return </span><span class="prelude-val">None</span>;
+        }
+        <span class="kw">let </span>(discr, targets) = bbdata.terminator().kind.as_switch()<span class="question-mark">?</span>;
+        <span class="kw">let </span>discr = discr.place()<span class="question-mark">?</span>;
+        <span class="macro">debug!</span>(<span class="question-mark">?</span>discr, <span class="question-mark">?</span>bb);
+
+        <span class="kw">let </span>discr_ty = discr.ty(<span class="self">self</span>.body, <span class="self">self</span>.tcx).ty;
+        <span class="kw">let </span>discr_layout = <span class="self">self</span>.ecx.layout_of(discr_ty).ok()<span class="question-mark">?</span>;
+
+        <span class="kw">let </span>discr = <span class="self">self</span>.map.find(discr.as_ref())<span class="question-mark">?</span>;
+        <span class="macro">debug!</span>(<span class="question-mark">?</span>discr);
+
+        <span class="kw">let </span>cost = CostChecker::new(<span class="self">self</span>.tcx, <span class="self">self</span>.param_env, <span class="prelude-val">None</span>, <span class="self">self</span>.body);
+        <span class="kw">let </span><span class="kw-2">mut </span>state = State::new_reachable();
+
+        <span class="kw">let </span>conds = <span class="kw">if let </span><span class="prelude-val">Some</span>((value, then, else_)) = targets.as_static_if() {
+            <span class="kw">let </span>value = ScalarInt::try_from_uint(value, discr_layout.size)<span class="question-mark">?</span>;
+            <span class="self">self</span>.arena.alloc_from_iter([
+                Condition { value, polarity: Polarity::Eq, target: then },
+                Condition { value, polarity: Polarity::Ne, target: else_ },
+            ])
+        } <span class="kw">else </span>{
+            <span class="self">self</span>.arena.alloc_from_iter(targets.iter().filter_map(|(value, target)| {
+                <span class="kw">let </span>value = ScalarInt::try_from_uint(value, discr_layout.size)<span class="question-mark">?</span>;
+                <span class="prelude-val">Some</span>(Condition { value, polarity: Polarity::Eq, target })
+            }))
+        };
+        <span class="kw">let </span>conds = ConditionSet(conds);
+        state.insert_value_idx(discr, conds, <span class="self">self</span>.map);
+
+        <span class="self">self</span>.find_opportunity(bb, state, cost, <span class="number">0</span>);
+        <span class="prelude-val">None
+    </span>}
+
+    <span class="doccomment">/// Recursively walk statements backwards from this bb's terminator to find threading
+    /// opportunities.
     </span><span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>, cost), ret)]
     </span><span class="kw">fn </span>find_opportunity(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
@@ -1073,7 +1104,7 @@
             //   _1 = 5 // Whatever happens here, it won't change the result of a `SwitchInt`.
             //   _1 = 6
             </span><span class="kw">if let </span><span class="prelude-val">Some</span>((lhs, tail)) = <span class="self">self</span>.mutated_statement(stmt) {
-                state.flood_with_tail_elem(lhs.as_ref(), tail, <span class="self">self</span>.map, ConditionSet::default());
+                state.flood_with_tail_elem(lhs.as_ref(), tail, <span class="self">self</span>.map, ConditionSet::BOTTOM);
             }
         }
 
@@ -1093,12 +1124,13 @@
                     <span class="self">self</span>.process_switch_int(discr, targets, bb, <span class="kw-2">&amp;mut </span>state);
                     <span class="self">self</span>.find_opportunity(pred, state, cost, depth + <span class="number">1</span>);
                 }
-                <span class="kw">_ </span>=&gt; <span class="self">self</span>.recurse_through_terminator(pred, <span class="kw-2">&amp;</span>state, <span class="kw-2">&amp;</span>cost, depth),
+                <span class="kw">_ </span>=&gt; <span class="self">self</span>.recurse_through_terminator(pred, || state, <span class="kw-2">&amp;</span>cost, depth),
             }
-        } <span class="kw">else </span>{
+        } <span class="kw">else if let </span><span class="kw-2">&amp;</span>[<span class="kw-2">ref </span>predecessors @ .., last_pred] = <span class="kw-2">&amp;</span>predecessors[..] {
             <span class="kw">for </span><span class="kw-2">&amp;</span>pred <span class="kw">in </span>predecessors {
-                <span class="self">self</span>.recurse_through_terminator(pred, <span class="kw-2">&amp;</span>state, <span class="kw-2">&amp;</span>cost, depth);
+                <span class="self">self</span>.recurse_through_terminator(pred, || state.clone(), <span class="kw-2">&amp;</span>cost, depth);
             }
+            <span class="self">self</span>.recurse_through_terminator(last_pred, || state, <span class="kw-2">&amp;</span>cost, depth);
         }
 
         <span class="kw">let </span>new_tos = <span class="kw-2">&amp;mut </span><span class="self">self</span>.opportunities[last_non_rec..];
@@ -1389,11 +1421,12 @@
         <span class="prelude-val">None
     </span>}
 
-    <span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>, cost))]
+    <span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>, state, cost))]
     </span><span class="kw">fn </span>recurse_through_terminator(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         bb: BasicBlock,
-        state: <span class="kw-2">&amp;</span>State&lt;ConditionSet&lt;<span class="lifetime">'a</span>&gt;&gt;,
+        <span class="comment">// Pass a closure that may clone the state, as we don't want to do it each time.
+        </span>state: <span class="kw">impl </span>FnOnce() -&gt; State&lt;ConditionSet&lt;<span class="lifetime">'a</span>&gt;&gt;,
         cost: <span class="kw-2">&amp;</span>CostChecker&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
         depth: usize,
     ) {
@@ -1403,6 +1436,7 @@
             </span>TerminatorKind::UnwindResume
             | TerminatorKind::UnwindTerminate(<span class="kw">_</span>)
             | TerminatorKind::Return
+            | TerminatorKind::TailCall { .. }
             | TerminatorKind::Unreachable
             | TerminatorKind::CoroutineDrop =&gt; <span class="macro">bug!</span>(<span class="string">"{term:?} has no terminators"</span>),
             <span class="comment">// Disallowed during optimizations.
@@ -1423,9 +1457,9 @@
         };
 
         <span class="comment">// We can recurse through this terminator.
-        </span><span class="kw">let </span><span class="kw-2">mut </span>state = state.clone();
+        </span><span class="kw">let </span><span class="kw-2">mut </span>state = state();
         <span class="kw">if let </span><span class="prelude-val">Some</span>(place_to_flood) = place_to_flood {
-            state.flood_with(place_to_flood.as_ref(), <span class="self">self</span>.map, ConditionSet::default());
+            state.flood_with(place_to_flood.as_ref(), <span class="self">self</span>.map, ConditionSet::BOTTOM);
         }
         <span class="self">self</span>.find_opportunity(bb, state, cost.clone(), depth + <span class="number">1</span>);
     }

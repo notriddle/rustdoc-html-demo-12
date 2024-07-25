@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/coherence/orphan.rs`."><title>orphan.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/coherence/orphan.rs`."><title>orphan.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -568,6 +568,7 @@
 <a href="#568" id="568">568</a>
 <a href="#569" id="569">569</a>
 <a href="#570" id="570">570</a>
+<a href="#571" id="571">571</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Orphan checker: every impl either implements a trait defined in this
 //! crate or pertains to a type defined in this crate.
 
@@ -856,7 +857,7 @@
     tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     impl_def_id: LocalDefId,
     mode: OrphanCheckMode,
-) -&gt; <span class="prelude-ty">Result</span>&lt;(), OrphanCheckErr&lt;<span class="lifetime">'tcx</span>, FxIndexSet&lt;DefId&gt;&gt;&gt; {
+) -&gt; <span class="prelude-ty">Result</span>&lt;(), OrphanCheckErr&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, FxIndexSet&lt;DefId&gt;&gt;&gt; {
     <span class="comment">// We only accept this routine to be invoked on implementations
     // of a trait, not inherent implementations.
     </span><span class="kw">let </span>trait_ref = tcx.impl_trait_ref(impl_def_id).unwrap();
@@ -896,17 +897,16 @@
             ty
         };
 
-        <span class="prelude-val">Ok</span>(ty)
+        <span class="prelude-val">Ok</span>::&lt;<span class="kw">_</span>, !&gt;(ty)
     };
 
-    <span class="kw">let </span><span class="prelude-val">Ok</span>(result) = traits::orphan_check_trait_ref::&lt;!&gt;(
+    <span class="kw">let </span>result = traits::orphan_check_trait_ref(
         <span class="kw-2">&amp;</span>infcx,
         trait_ref,
         traits::InCrate::Local { mode },
         lazily_normalize_ty,
-    ) <span class="kw">else </span>{
-        <span class="macro">unreachable!</span>()
-    };
+    )
+    .into_ok();
 
     <span class="comment">// (2)  Try to map the remaining inference vars back to generic params.
     </span>result.map_err(|err| <span class="kw">match </span>err {
@@ -939,7 +939,7 @@
     tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     trait_ref: ty::TraitRef&lt;<span class="lifetime">'tcx</span>&gt;,
     impl_def_id: LocalDefId,
-    err: traits::OrphanCheckErr&lt;<span class="lifetime">'tcx</span>, FxIndexSet&lt;DefId&gt;&gt;,
+    err: traits::OrphanCheckErr&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, FxIndexSet&lt;DefId&gt;&gt;,
 ) -&gt; ErrorGuaranteed {
     <span class="kw">match </span>err {
         traits::OrphanCheckErr::NonLocalInputType(tys) =&gt; {
@@ -1052,7 +1052,7 @@
 
 <span class="kw">fn </span>lint_uncovered_ty_params&lt;<span class="lifetime">'tcx</span>&gt;(
     tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
-    UncoveredTyParams { uncovered, local_ty }: UncoveredTyParams&lt;<span class="lifetime">'tcx</span>, FxIndexSet&lt;DefId&gt;&gt;,
+    UncoveredTyParams { uncovered, local_ty }: UncoveredTyParams&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, FxIndexSet&lt;DefId&gt;&gt;,
     impl_def_id: LocalDefId,
 ) {
     <span class="kw">let </span>hir_id = tcx.local_def_id_to_hir_id(impl_def_id);
@@ -1088,9 +1088,10 @@
         <span class="kw">if </span>!ty.has_type_flags(ty::TypeFlags::HAS_TY_INFER) {
             <span class="kw">return</span>;
         }
-        <span class="kw">let </span><span class="prelude-val">Some</span>(origin) = <span class="self">self</span>.infcx.type_var_origin(ty) <span class="kw">else </span>{
+        <span class="kw">let </span>ty::Infer(ty::TyVar(vid)) = <span class="kw-2">*</span>ty.kind() <span class="kw">else </span>{
             <span class="kw">return </span>ty.super_visit_with(<span class="self">self</span>);
         };
+        <span class="kw">let </span>origin = <span class="self">self</span>.infcx.type_var_origin(vid);
         <span class="kw">if let </span><span class="prelude-val">Some</span>(def_id) = origin.param_def_id {
             <span class="self">self</span>.uncovered_params.insert(def_id);
         }
@@ -1109,7 +1110,7 @@
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; TypeFolder&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span>TyVarReplacer&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">fn </span>interner(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.infcx.tcx
     }
 
@@ -1117,9 +1118,10 @@
         <span class="kw">if </span>!ty.has_type_flags(ty::TypeFlags::HAS_TY_INFER) {
             <span class="kw">return </span>ty;
         }
-        <span class="kw">let </span><span class="prelude-val">Some</span>(origin) = <span class="self">self</span>.infcx.type_var_origin(ty) <span class="kw">else </span>{
+        <span class="kw">let </span>ty::Infer(ty::TyVar(vid)) = <span class="kw-2">*</span>ty.kind() <span class="kw">else </span>{
             <span class="kw">return </span>ty.super_fold_with(<span class="self">self</span>);
         };
+        <span class="kw">let </span>origin = <span class="self">self</span>.infcx.type_var_origin(vid);
         <span class="kw">if let </span><span class="prelude-val">Some</span>(def_id) = origin.param_def_id {
             <span class="comment">// The generics of an `impl` don't have a parent, we can index directly.
             </span><span class="kw">let </span>index = <span class="self">self</span>.generics.param_def_id_to_index[<span class="kw-2">&amp;</span>def_id];

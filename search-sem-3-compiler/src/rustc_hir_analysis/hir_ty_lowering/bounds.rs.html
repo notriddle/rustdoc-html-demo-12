@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/hir_ty_lowering/bounds.rs`."><title>bounds.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/hir_ty_lowering/bounds.rs`."><title>bounds.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -670,6 +670,15 @@
 <a href="#670" id="670">670</a>
 <a href="#671" id="671">671</a>
 <a href="#672" id="672">672</a>
+<a href="#673" id="673">673</a>
+<a href="#674" id="674">674</a>
+<a href="#675" id="675">675</a>
+<a href="#676" id="676">676</a>
+<a href="#677" id="677">677</a>
+<a href="#678" id="678">678</a>
+<a href="#679" id="679">679</a>
+<a href="#680" id="680">680</a>
+<a href="#681" id="681">681</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span>std::ops::ControlFlow;
 
 <span class="kw">use </span>rustc_data_structures::fx::{FxIndexMap, FxIndexSet};
@@ -748,7 +757,7 @@
         }
 
         <span class="kw">if </span>unbounds.len() &gt; <span class="number">1 </span>{
-            tcx.dcx().emit_err(errors::MultipleRelaxedDefaultBounds {
+            <span class="self">self</span>.dcx().emit_err(errors::MultipleRelaxedDefaultBounds {
                 spans: unbounds.iter().map(|ptr| ptr.span).collect(),
             });
         }
@@ -762,7 +771,7 @@
                 <span class="kw">continue</span>;
             }
             <span class="comment">// There was a `?Trait` bound, but it was not `?Sized`; warn.
-            </span>tcx.dcx().span_warn(
+            </span><span class="self">self</span>.dcx().span_warn(
                 unbound.span,
                 <span class="string">"relaxing a default bound only does something for `?Sized`; \
                 all other traits are not bound by default"</span>,
@@ -982,7 +991,7 @@
         duplicates
             .entry(assoc_item.def_id)
             .and_modify(|prev_span| {
-                tcx.dcx().emit_err(errors::ValueOfAssociatedStructAlreadySpecified {
+                <span class="self">self</span>.dcx().emit_err(errors::ValueOfAssociatedStructAlreadySpecified {
                     span: constraint.span,
                     prev_span: <span class="kw-2">*</span>prev_span,
                     item_name: constraint.ident,
@@ -1010,7 +1019,7 @@
                         .into(),
                         ty::GenericParamDefKind::Type { .. } =&gt; {
                             <span class="kw">let </span>guar = <span class="kw-2">*</span>emitted_bad_param_err.get_or_insert_with(|| {
-                                tcx.dcx().emit_err(
+                                <span class="self">self</span>.dcx().emit_err(
                                     <span class="kw">crate</span>::errors::ReturnTypeNotationIllegalParam::Type {
                                         span: path_span,
                                         param_span: tcx.def_span(param.def_id),
@@ -1021,7 +1030,7 @@
                         }
                         ty::GenericParamDefKind::Const { .. } =&gt; {
                             <span class="kw">let </span>guar = <span class="kw-2">*</span>emitted_bad_param_err.get_or_insert_with(|| {
-                                tcx.dcx().emit_err(
+                                <span class="self">self</span>.dcx().emit_err(
                                     <span class="kw">crate</span>::errors::ReturnTypeNotationIllegalParam::Const {
                                         span: path_span,
                                         param_span: tcx.def_span(param.def_id),
@@ -1043,7 +1052,7 @@
             {
                 alias_ty.into()
             } <span class="kw">else </span>{
-                <span class="kw">return </span><span class="prelude-val">Err</span>(tcx.dcx().emit_err(<span class="kw">crate</span>::errors::ReturnTypeNotationOnNonRpitit {
+                <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="self">self</span>.dcx().emit_err(<span class="kw">crate</span>::errors::ReturnTypeNotationOnNonRpitit {
                     span: constraint.span,
                     ty: tcx.liberate_late_bound_regions(assoc_item.def_id, output),
                     fn_span: tcx.hir().span_if_local(assoc_item.def_id),
@@ -1081,16 +1090,22 @@
                 );
                 <span class="macro">debug!</span>(<span class="question-mark">?</span>alias_args);
 
-                ty::AliasTerm::new(tcx, assoc_item.def_id, alias_args)
+                ty::AliasTerm::new_from_args(tcx, assoc_item.def_id, alias_args)
             });
 
             <span class="comment">// Provide the resolved type of the associated constant to `type_of(AnonConst)`.
-            </span><span class="kw">if let </span><span class="prelude-val">Some</span>(anon_const) = constraint.ct() {
-                <span class="kw">let </span>ty = alias_term
-                    .map_bound(|alias| tcx.type_of(alias.def_id).instantiate(tcx, alias.args));
-                <span class="kw">let </span>ty =
-                    check_assoc_const_binding_type(tcx, constraint.ident, ty, constraint.hir_id);
-                tcx.feed_anon_const_type(anon_const.def_id, ty::EarlyBinder::bind(ty));
+            </span><span class="kw">if let </span><span class="prelude-val">Some</span>(const_arg) = constraint.ct() {
+                <span class="kw">if let </span>hir::ConstArgKind::Anon(anon_const) = const_arg.kind {
+                    <span class="kw">let </span>ty = alias_term
+                        .map_bound(|alias| tcx.type_of(alias.def_id).instantiate(tcx, alias.args));
+                    <span class="kw">let </span>ty = check_assoc_const_binding_type(
+                        <span class="self">self</span>,
+                        constraint.ident,
+                        ty,
+                        constraint.hir_id,
+                    );
+                    tcx.feed_anon_const_type(anon_const.def_id, ty::EarlyBinder::bind(ty));
+                }
             }
 
             alias_term
@@ -1098,7 +1113,7 @@
 
         <span class="kw">match </span>constraint.kind {
             hir::AssocItemConstraintKind::Equality { .. } <span class="kw">if let </span>ty::AssocKind::Fn = assoc_kind =&gt; {
-                <span class="kw">return </span><span class="prelude-val">Err</span>(tcx.dcx().emit_err(<span class="kw">crate</span>::errors::ReturnTypeNotationEqualityBound {
+                <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="self">self</span>.dcx().emit_err(<span class="kw">crate</span>::errors::ReturnTypeNotationEqualityBound {
                     span: constraint.span,
                 }));
             }
@@ -1107,7 +1122,9 @@
             </span>hir::AssocItemConstraintKind::Equality { term } =&gt; {
                 <span class="kw">let </span>term = <span class="kw">match </span>term {
                     hir::Term::Ty(ty) =&gt; <span class="self">self</span>.lower_ty(ty).into(),
-                    hir::Term::Const(ct) =&gt; ty::Const::from_anon_const(tcx, ct.def_id).into(),
+                    hir::Term::Const(ct) =&gt; {
+                        ty::Const::from_const_arg(tcx, ct, ty::FeedConstTy::No).into()
+                    }
                 };
 
                 <span class="comment">// Find any late-bound regions declared in `ty` that are not
@@ -1134,7 +1151,7 @@
                     late_bound_in_term,
                     |br_name| {
                         <span class="macro">struct_span_code_err!</span>(
-                            tcx.dcx(),
+                            <span class="self">self</span>.dcx(),
                             constraint.span,
                             E0582,
                             <span class="string">"binding for associated type `{}` references {}, \
@@ -1191,7 +1208,7 @@
 ///
 /// [^1]: &lt;https://github.com/rust-lang/project-const-generics/issues/28&gt;.
 </span><span class="kw">fn </span>check_assoc_const_binding_type&lt;<span class="lifetime">'tcx</span>&gt;(
-    tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
+    cx: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirTyLowerer&lt;<span class="lifetime">'tcx</span>&gt;,
     assoc_const: Ident,
     ty: ty::Binder&lt;<span class="lifetime">'tcx</span>, Ty&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
     hir_id: hir::HirId,
@@ -1208,13 +1225,14 @@
     }
 
     <span class="kw">let </span><span class="kw-2">mut </span>collector = GenericParamAndBoundVarCollector {
-        tcx,
+        cx,
         params: Default::default(),
         vars: Default::default(),
         depth: ty::INNERMOST,
     };
     <span class="kw">let </span><span class="kw-2">mut </span>guar = ty.visit_with(<span class="kw-2">&amp;mut </span>collector).break_value();
 
+    <span class="kw">let </span>tcx = cx.tcx();
     <span class="kw">let </span>ty_note = ty
         .make_suggestable(tcx, <span class="bool-val">false</span>, <span class="prelude-val">None</span>)
         .map(|ty| <span class="kw">crate</span>::errors::TyOfAssocConstBindingNote { assoc_const, ty });
@@ -1228,7 +1246,7 @@
     <span class="kw">for </span>index <span class="kw">in </span>collector.params {
         <span class="kw">let </span>param = generics.param_at(index <span class="kw">as _</span>, tcx);
         <span class="kw">let </span>is_self_param = param.name == rustc_span::symbol::kw::SelfUpper;
-        guar.get_or_insert(tcx.dcx().emit_err(<span class="kw">crate</span>::errors::ParamInTyOfAssocConstBinding {
+        guar.get_or_insert(cx.dcx().emit_err(<span class="kw">crate</span>::errors::ParamInTyOfAssocConstBinding {
             span: assoc_const.span,
             assoc_const,
             param_name: param.name,
@@ -1246,7 +1264,7 @@
         }));
     }
     <span class="kw">for </span>(var_def_id, var_name) <span class="kw">in </span>collector.vars {
-        guar.get_or_insert(tcx.dcx().emit_err(
+        guar.get_or_insert(cx.dcx().emit_err(
             <span class="kw">crate</span>::errors::EscapingBoundVarInTyOfAssocConstBinding {
                 span: assoc_const.span,
                 assoc_const,
@@ -1262,14 +1280,14 @@
     Ty::new_error(tcx, guar)
 }
 
-<span class="kw">struct </span>GenericParamAndBoundVarCollector&lt;<span class="lifetime">'tcx</span>&gt; {
-    tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
+<span class="kw">struct </span>GenericParamAndBoundVarCollector&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+    cx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw">dyn </span>HirTyLowerer&lt;<span class="lifetime">'tcx</span>&gt;,
     params: FxIndexSet&lt;u32&gt;,
     vars: FxIndexSet&lt;(DefId, Symbol)&gt;,
     depth: ty::DebruijnIndex,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; TypeVisitor&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span>GenericParamAndBoundVarCollector&lt;<span class="lifetime">'tcx</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; TypeVisitor&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span>GenericParamAndBoundVarCollector&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">type </span><span class="prelude-ty">Result </span>= ControlFlow&lt;ErrorGuaranteed&gt;;
 
     <span class="kw">fn </span>visit_binder&lt;T: TypeVisitable&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt;(
@@ -1292,7 +1310,7 @@
                     ty::BoundTyKind::Param(def_id, name) =&gt; (def_id, name),
                     ty::BoundTyKind::Anon =&gt; {
                         <span class="kw">let </span>reported = <span class="self">self
-                            </span>.tcx
+                            </span>.cx
                             .dcx()
                             .delayed_bug(<span class="macro">format!</span>(<span class="string">"unexpected anon bound ty: {:?}"</span>, bt.var));
                         <span class="kw">return </span>ControlFlow::Break(reported);
@@ -1315,7 +1333,7 @@
                     ty::BrNamed(def_id, name) =&gt; (def_id, name),
                     ty::BrAnon | ty::BrEnv =&gt; {
                         <span class="kw">let </span>guar = <span class="self">self
-                            </span>.tcx
+                            </span>.cx
                             .dcx()
                             .delayed_bug(<span class="macro">format!</span>(<span class="string">"unexpected bound region kind: {:?}"</span>, br.kind));
                         <span class="kw">return </span>ControlFlow::Break(guar);
@@ -1333,7 +1351,7 @@
                 <span class="self">self</span>.params.insert(param.index);
             }
             ty::ConstKind::Bound(db, ty::BoundVar { .. }) <span class="kw">if </span>db &gt;= <span class="self">self</span>.depth =&gt; {
-                <span class="kw">let </span>guar = <span class="self">self</span>.tcx.dcx().delayed_bug(<span class="string">"unexpected escaping late-bound const var"</span>);
+                <span class="kw">let </span>guar = <span class="self">self</span>.cx.dcx().delayed_bug(<span class="string">"unexpected escaping late-bound const var"</span>);
                 <span class="kw">return </span>ControlFlow::Break(guar);
             }
             <span class="kw">_ if </span>ct.has_param() || ct.has_bound_vars() =&gt; <span class="kw">return </span>ct.super_visit_with(<span class="self">self</span>),

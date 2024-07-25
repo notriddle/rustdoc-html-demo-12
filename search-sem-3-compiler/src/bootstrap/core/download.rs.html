@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/core/download.rs`."><title>download.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="bootstrap" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/core/download.rs`."><title>download.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="bootstrap" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -779,6 +779,7 @@
 <span class="kw">use </span>build_helper::ci::CiEnv;
 <span class="kw">use </span>xz2::bufread::XzDecoder;
 
+<span class="kw">use </span><span class="kw">crate</span>::utils::exec::{command, BootstrapCommand};
 <span class="kw">use </span><span class="kw">crate</span>::utils::helpers::hex_encode;
 <span class="kw">use </span><span class="kw">crate</span>::utils::helpers::{check_run, exe, move_file, program_out_of_date};
 <span class="kw">use crate</span>::{t, Config};
@@ -824,7 +825,7 @@
     <span class="doccomment">/// Runs a command, printing out nice contextual information if it fails.
     /// Returns false if do not execute at all, otherwise returns its
     /// `status.success()`.
-    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>check_run(<span class="kw-2">&amp;</span><span class="self">self</span>, cmd: <span class="kw-2">&amp;mut </span>Command) -&gt; bool {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>check_run(<span class="kw-2">&amp;</span><span class="self">self</span>, cmd: <span class="kw-2">&amp;mut </span>BootstrapCommand) -&gt; bool {
         <span class="kw">if </span><span class="self">self</span>.dry_run() {
             <span class="kw">return </span><span class="bool-val">true</span>;
         }
@@ -941,15 +942,10 @@
         }
 
         <span class="kw">let </span><span class="kw-2">mut </span>patchelf = Command::new(nix_deps_dir.join(<span class="string">"bin/patchelf"</span>));
-        <span class="kw">let </span>rpath_entries = {
-            <span class="comment">// ORIGIN is a relative default, all binary and dynamic libraries we ship
-            // appear to have this (even when `../lib` is redundant).
-            // NOTE: there are only two paths here, delimited by a `:`
-            </span><span class="kw">let </span><span class="kw-2">mut </span>entries = OsString::from(<span class="string">"$ORIGIN/../lib:"</span>);
-            entries.push(<span class="macro">t!</span>(fs::canonicalize(nix_deps_dir)).join(<span class="string">"lib"</span>));
-            entries
-        };
-        patchelf.args(<span class="kw-2">&amp;</span>[OsString::from(<span class="string">"--set-rpath"</span>), rpath_entries]);
+        patchelf.args(<span class="kw-2">&amp;</span>[
+            OsString::from(<span class="string">"--add-rpath"</span>),
+            OsString::from(<span class="macro">t!</span>(fs::canonicalize(nix_deps_dir)).join(<span class="string">"lib"</span>)),
+        ]);
         <span class="kw">if </span>!path_is_dylib(fname) {
             <span class="comment">// Finally, set the correct .interp for binaries
             </span><span class="kw">let </span>dynamic_linker_path = nix_deps_dir.join(<span class="string">"nix-support/dynamic-linker"</span>);
@@ -984,7 +980,7 @@
     <span class="kw">fn </span>download_http_with_retries(<span class="kw-2">&amp;</span><span class="self">self</span>, tempfile: <span class="kw-2">&amp;</span>Path, url: <span class="kw-2">&amp;</span>str, help_on_error: <span class="kw-2">&amp;</span>str) {
         <span class="macro">println!</span>(<span class="string">"downloading {url}"</span>);
         <span class="comment">// Try curl. If that fails and we are on windows, fallback to PowerShell.
-        </span><span class="kw">let </span><span class="kw-2">mut </span>curl = Command::new(<span class="string">"curl"</span>);
+        </span><span class="kw">let </span><span class="kw-2">mut </span>curl = command(<span class="string">"curl"</span>);
         curl.args([
             <span class="string">"-y"</span>,
             <span class="string">"30"</span>,
@@ -1474,9 +1470,13 @@ download-rustc = false
             // time `rustc_llvm` build script ran. However, the timestamps of the
             // files in the tarball are in the past, so it doesn't trigger a
             // rebuild.
-            </span><span class="kw">let </span>now = filetime::FileTime::from_system_time(std::time::SystemTime::now());
+            </span><span class="kw">let </span>now = std::time::SystemTime::now();
+            <span class="kw">let </span>file_times = fs::FileTimes::new().set_accessed(now).set_modified(now);
+
             <span class="kw">let </span>llvm_config = llvm_root.join(<span class="string">"bin"</span>).join(exe(<span class="string">"llvm-config"</span>, <span class="self">self</span>.build));
-            <span class="macro">t!</span>(filetime::set_file_times(llvm_config, now, now));
+            <span class="kw">let </span>llvm_config_file = <span class="macro">t!</span>(File::options().write(<span class="bool-val">true</span>).open(llvm_config));
+
+            <span class="macro">t!</span>(llvm_config_file.set_times(file_times));
 
             <span class="kw">if </span><span class="self">self</span>.should_fix_bins_and_dylibs() {
                 <span class="kw">let </span>llvm_lib = llvm_root.join(<span class="string">"lib"</span>);

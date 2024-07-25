@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_next_trait_solver/src/solve/assembly/structural_traits.rs`."><title>structural_traits.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_next_trait_solver" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_next_trait_solver/src/solve/assembly/structural_traits.rs`."><title>structural_traits.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_next_trait_solver" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -748,11 +748,19 @@
 <a href="#748" id="748">748</a>
 <a href="#749" id="749">749</a>
 <a href="#750" id="750">750</a>
+<a href="#751" id="751">751</a>
+<a href="#752" id="752">752</a>
+<a href="#753" id="753">753</a>
+<a href="#754" id="754">754</a>
+<a href="#755" id="755">755</a>
+<a href="#756" id="756">756</a>
+<a href="#757" id="757">757</a>
+<a href="#758" id="758">758</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Code which is used by built-in goals that match "structurally", such a auto
 //! traits, `Copy`/`Clone`.
 
 </span><span class="kw">use </span>rustc_ast_ir::{Movability, Mutability};
-<span class="kw">use </span>rustc_data_structures::fx::FxHashMap;
+<span class="kw">use </span>rustc_type_ir::data_structures::HashMap;
 <span class="kw">use </span>rustc_type_ir::fold::{TypeFoldable, TypeFolder, TypeSuperFoldable};
 <span class="kw">use </span>rustc_type_ir::inherent::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_type_ir::lang_items::TraitSolverLangItem;
@@ -760,20 +768,20 @@
 <span class="kw">use </span>rustc_type_ir_macros::{TypeFoldable_Generic, TypeVisitable_Generic};
 <span class="kw">use </span>tracing::instrument;
 
-<span class="kw">use </span><span class="kw">crate</span>::infcx::SolverDelegate;
+<span class="kw">use </span><span class="kw">crate</span>::delegate::SolverDelegate;
 <span class="kw">use </span><span class="kw">crate</span>::solve::{EvalCtxt, Goal, NoSolution};
 
 <span class="comment">// Calculates the constituent types of a type for `auto trait` purposes.
 </span><span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(ecx), ret)]
-</span><span class="kw">pub</span>(<span class="kw">in </span><span class="kw">crate</span>::solve) <span class="kw">fn </span>instantiate_constituent_tys_for_auto_trait&lt;Infcx, I&gt;(
-    ecx: <span class="kw-2">&amp;</span>EvalCtxt&lt;<span class="lifetime">'_</span>, Infcx&gt;,
+</span><span class="kw">pub</span>(<span class="kw">in </span><span class="kw">crate</span>::solve) <span class="kw">fn </span>instantiate_constituent_tys_for_auto_trait&lt;D, I&gt;(
+    ecx: <span class="kw-2">&amp;</span>EvalCtxt&lt;<span class="lifetime">'_</span>, D&gt;,
     ty: I::Ty,
 ) -&gt; <span class="prelude-ty">Result</span>&lt;Vec&lt;ty::Binder&lt;I, I::Ty&gt;&gt;, NoSolution&gt;
 <span class="kw">where
-    </span>Infcx: SolverDelegate&lt;Interner = I&gt;,
+    </span>D: SolverDelegate&lt;Interner = I&gt;,
     I: Interner,
 {
-    <span class="kw">let </span>tcx = ecx.interner();
+    <span class="kw">let </span>cx = ecx.cx();
     <span class="kw">match </span>ty.kind() {
         ty::Uint(<span class="kw">_</span>)
         | ty::Int(<span class="kw">_</span>)
@@ -786,7 +794,7 @@
         | ty::Char =&gt; <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[]),
 
         <span class="comment">// Treat `str` like it's defined as `struct str([u8]);`
-        </span>ty::Str =&gt; <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[ty::Binder::dummy(Ty::new_slice(tcx, Ty::new_u8(tcx)))]),
+        </span>ty::Str =&gt; <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[ty::Binder::dummy(Ty::new_slice(cx, Ty::new_u8(cx)))]),
 
         ty::Dynamic(..)
         | ty::Param(..)
@@ -808,7 +816,7 @@
 
         ty::Tuple(tys) =&gt; {
             <span class="comment">// (T1, ..., Tn) -- meets any bound that all of T1...Tn meet
-            </span><span class="prelude-val">Ok</span>(tys.into_iter().map(ty::Binder::dummy).collect())
+            </span><span class="prelude-val">Ok</span>(tys.iter().map(ty::Binder::dummy).collect())
         }
 
         ty::Closure(<span class="kw">_</span>, args) =&gt; <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[ty::Binder::dummy(args.as_closure().tupled_upvars_ty())]),
@@ -826,37 +834,35 @@
         }
 
         ty::CoroutineWitness(def_id, args) =&gt; <span class="prelude-val">Ok</span>(ecx
-            .interner()
+            .cx()
             .bound_coroutine_hidden_types(def_id)
             .into_iter()
-            .map(|bty| bty.instantiate(tcx, <span class="kw-2">&amp;</span>args))
+            .map(|bty| bty.instantiate(cx, args))
             .collect()),
 
         <span class="comment">// For `PhantomData&lt;T&gt;`, we pass `T`.
         </span>ty::Adt(def, args) <span class="kw">if </span>def.is_phantom_data() =&gt; <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[ty::Binder::dummy(args.type_at(<span class="number">0</span>))]),
 
-        ty::Adt(def, args) =&gt; <span class="prelude-val">Ok</span>(def
-            .all_field_tys(tcx)
-            .iter_instantiated(tcx, <span class="kw-2">&amp;</span>args)
-            .map(ty::Binder::dummy)
-            .collect()),
+        ty::Adt(def, args) =&gt; {
+            <span class="prelude-val">Ok</span>(def.all_field_tys(cx).iter_instantiated(cx, args).map(ty::Binder::dummy).collect())
+        }
 
         ty::Alias(ty::Opaque, ty::AliasTy { def_id, args, .. }) =&gt; {
             <span class="comment">// We can resolve the `impl Trait` to its concrete type,
             // which enforces a DAG between the functions requiring
             // the auto trait bounds in question.
-            </span><span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[ty::Binder::dummy(tcx.type_of(def_id).instantiate(tcx, <span class="kw-2">&amp;</span>args))])
+            </span><span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[ty::Binder::dummy(cx.type_of(def_id).instantiate(cx, args))])
         }
     }
 }
 
 <span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(ecx), ret)]
-</span><span class="kw">pub</span>(<span class="kw">in </span><span class="kw">crate</span>::solve) <span class="kw">fn </span>instantiate_constituent_tys_for_sized_trait&lt;Infcx, I&gt;(
-    ecx: <span class="kw-2">&amp;</span>EvalCtxt&lt;<span class="lifetime">'_</span>, Infcx&gt;,
+</span><span class="kw">pub</span>(<span class="kw">in </span><span class="kw">crate</span>::solve) <span class="kw">fn </span>instantiate_constituent_tys_for_sized_trait&lt;D, I&gt;(
+    ecx: <span class="kw-2">&amp;</span>EvalCtxt&lt;<span class="lifetime">'_</span>, D&gt;,
     ty: I::Ty,
 ) -&gt; <span class="prelude-ty">Result</span>&lt;Vec&lt;ty::Binder&lt;I, I::Ty&gt;&gt;, NoSolution&gt;
 <span class="kw">where
-    </span>Infcx: SolverDelegate&lt;Interner = I&gt;,
+    </span>D: SolverDelegate&lt;Interner = I&gt;,
     I: Interner,
 {
     <span class="kw">match </span>ty.kind() {
@@ -897,7 +903,7 @@
 
         <span class="comment">// impl Sized for ()
         // impl Sized for (T1, T2, .., Tn) where Tn: Sized if n &gt;= 1
-        </span>ty::Tuple(tys) =&gt; <span class="prelude-val">Ok</span>(tys.last().map_or_else(Vec::new, |<span class="kw-2">&amp;</span>ty| <span class="macro">vec!</span>[ty::Binder::dummy(ty)])),
+        </span>ty::Tuple(tys) =&gt; <span class="prelude-val">Ok</span>(tys.last().map_or_else(Vec::new, |ty| <span class="macro">vec!</span>[ty::Binder::dummy(ty)])),
 
         <span class="comment">// impl Sized for Adt&lt;Args...&gt; where sized_constraint(Adt)&lt;Args...&gt;: Sized
         //   `sized_constraint(Adt)` is the deepest struct trail that can be determined
@@ -909,8 +915,8 @@
         //   "best effort" optimization and `sized_constraint` may return `Some`, even
         //   if the ADT is sized for all possible args.
         </span>ty::Adt(def, args) =&gt; {
-            <span class="kw">if let </span><span class="prelude-val">Some</span>(sized_crit) = def.sized_constraint(ecx.interner()) {
-                <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[ty::Binder::dummy(sized_crit.instantiate(ecx.interner(), <span class="kw-2">&amp;</span>args))])
+            <span class="kw">if let </span><span class="prelude-val">Some</span>(sized_crit) = def.sized_constraint(ecx.cx()) {
+                <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[ty::Binder::dummy(sized_crit.instantiate(ecx.cx(), args))])
             } <span class="kw">else </span>{
                 <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[])
             }
@@ -919,12 +925,12 @@
 }
 
 <span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(ecx), ret)]
-</span><span class="kw">pub</span>(<span class="kw">in </span><span class="kw">crate</span>::solve) <span class="kw">fn </span>instantiate_constituent_tys_for_copy_clone_trait&lt;Infcx, I&gt;(
-    ecx: <span class="kw-2">&amp;</span>EvalCtxt&lt;<span class="lifetime">'_</span>, Infcx&gt;,
+</span><span class="kw">pub</span>(<span class="kw">in </span><span class="kw">crate</span>::solve) <span class="kw">fn </span>instantiate_constituent_tys_for_copy_clone_trait&lt;D, I&gt;(
+    ecx: <span class="kw-2">&amp;</span>EvalCtxt&lt;<span class="lifetime">'_</span>, D&gt;,
     ty: I::Ty,
 ) -&gt; <span class="prelude-ty">Result</span>&lt;Vec&lt;ty::Binder&lt;I, I::Ty&gt;&gt;, NoSolution&gt;
 <span class="kw">where
-    </span>Infcx: SolverDelegate&lt;Interner = I&gt;,
+    </span>D: SolverDelegate&lt;Interner = I&gt;,
     I: Interner,
 {
     <span class="kw">match </span>ty.kind() {
@@ -963,7 +969,7 @@
         }
 
         <span class="comment">// impl Copy/Clone for (T1, T2, .., Tn) where T1: Copy/Clone, T2: Copy/Clone, .. Tn: Copy/Clone
-        </span>ty::Tuple(tys) =&gt; <span class="prelude-val">Ok</span>(tys.into_iter().map(ty::Binder::dummy).collect()),
+        </span>ty::Tuple(tys) =&gt; <span class="prelude-val">Ok</span>(tys.iter().map(ty::Binder::dummy).collect()),
 
         <span class="comment">// impl Copy/Clone for Closure where Self::TupledUpvars: Copy/Clone
         </span>ty::Closure(<span class="kw">_</span>, args) =&gt; <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[ty::Binder::dummy(args.as_closure().tupled_upvars_ty())]),
@@ -972,10 +978,10 @@
 
         <span class="comment">// only when `coroutine_clone` is enabled and the coroutine is movable
         // impl Copy/Clone for Coroutine where T: Copy/Clone forall T in (upvars, witnesses)
-        </span>ty::Coroutine(def_id, args) =&gt; <span class="kw">match </span>ecx.interner().coroutine_movability(def_id) {
+        </span>ty::Coroutine(def_id, args) =&gt; <span class="kw">match </span>ecx.cx().coroutine_movability(def_id) {
             Movability::Static =&gt; <span class="prelude-val">Err</span>(NoSolution),
             Movability::Movable =&gt; {
-                <span class="kw">if </span>ecx.interner().features().coroutine_clone() {
+                <span class="kw">if </span>ecx.cx().features().coroutine_clone() {
                     <span class="kw">let </span>coroutine = args.as_coroutine();
                     <span class="prelude-val">Ok</span>(<span class="macro">vec!</span>[
                         ty::Binder::dummy(coroutine.tupled_upvars_ty()),
@@ -989,28 +995,28 @@
 
         <span class="comment">// impl Copy/Clone for CoroutineWitness where T: Copy/Clone forall T in coroutine_hidden_types
         </span>ty::CoroutineWitness(def_id, args) =&gt; <span class="prelude-val">Ok</span>(ecx
-            .interner()
+            .cx()
             .bound_coroutine_hidden_types(def_id)
             .into_iter()
-            .map(|bty| bty.instantiate(ecx.interner(), <span class="kw-2">&amp;</span>args))
+            .map(|bty| bty.instantiate(ecx.cx(), args))
             .collect()),
     }
 }
 
 <span class="comment">// Returns a binder of the tupled inputs types and output type from a builtin callable type.
 </span><span class="kw">pub</span>(<span class="kw">in </span><span class="kw">crate</span>::solve) <span class="kw">fn </span>extract_tupled_inputs_and_output_from_callable&lt;I: Interner&gt;(
-    tcx: I,
+    cx: I,
     self_ty: I::Ty,
     goal_kind: ty::ClosureKind,
 ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;ty::Binder&lt;I, (I::Ty, I::Ty)&gt;&gt;, NoSolution&gt; {
     <span class="kw">match </span>self_ty.kind() {
         <span class="comment">// keep this in sync with assemble_fn_pointer_candidates until the old solver is removed.
         </span>ty::FnDef(def_id, args) =&gt; {
-            <span class="kw">let </span>sig = tcx.fn_sig(def_id);
-            <span class="kw">if </span>sig.skip_binder().is_fn_trait_compatible() &amp;&amp; !tcx.has_target_features(def_id) {
+            <span class="kw">let </span>sig = cx.fn_sig(def_id);
+            <span class="kw">if </span>sig.skip_binder().is_fn_trait_compatible() &amp;&amp; !cx.has_target_features(def_id) {
                 <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(
-                    sig.instantiate(tcx, <span class="kw-2">&amp;</span>args)
-                        .map_bound(|sig| (Ty::new_tup(tcx, <span class="kw-2">&amp;</span>sig.inputs()), sig.output())),
+                    sig.instantiate(cx, args)
+                        .map_bound(|sig| (Ty::new_tup(cx, sig.inputs().as_slice()), sig.output())),
                 ))
             } <span class="kw">else </span>{
                 <span class="prelude-val">Err</span>(NoSolution)
@@ -1019,7 +1025,9 @@
         <span class="comment">// keep this in sync with assemble_fn_pointer_candidates until the old solver is removed.
         </span>ty::FnPtr(sig) =&gt; {
             <span class="kw">if </span>sig.is_fn_trait_compatible() {
-                <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(sig.map_bound(|sig| (Ty::new_tup(tcx, <span class="kw-2">&amp;</span>sig.inputs()), sig.output()))))
+                <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(
+                    sig.map_bound(|sig| (Ty::new_tup(cx, sig.inputs().as_slice()), sig.output())),
+                ))
             } <span class="kw">else </span>{
                 <span class="prelude-val">Err</span>(NoSolution)
             }
@@ -1042,7 +1050,9 @@
                     }
                 }
             }
-            <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(closure_args.sig().map_bound(|sig| (sig.inputs()[<span class="number">0</span>], sig.output()))))
+            <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(
+                closure_args.sig().map_bound(|sig| (sig.inputs().get(<span class="number">0</span>).unwrap(), sig.output())),
+            ))
         }
 
         <span class="comment">// Coroutine-closures don't implement `Fn` traits the normal way.
@@ -1054,9 +1064,10 @@
             <span class="kw">let </span>kind_ty = args.kind_ty();
             <span class="kw">let </span>sig = args.coroutine_closure_sig().skip_binder();
 
-            <span class="kw">let </span>coroutine_ty = <span class="kw">if let </span><span class="prelude-val">Some</span>(closure_kind) = kind_ty.to_opt_closure_kind()
-                &amp;&amp; !args.tupled_upvars_ty().is_ty_var()
-            {
+            <span class="comment">// FIXME: let_chains
+            </span><span class="kw">let </span>kind = kind_ty.to_opt_closure_kind();
+            <span class="kw">let </span>coroutine_ty = <span class="kw">if </span>kind.is_some() &amp;&amp; !args.tupled_upvars_ty().is_ty_var() {
+                <span class="kw">let </span>closure_kind = kind.unwrap();
                 <span class="kw">if </span>!closure_kind.extends(goal_kind) {
                     <span class="kw">return </span><span class="prelude-val">Err</span>(NoSolution);
                 }
@@ -1070,10 +1081,10 @@
                 }
 
                 coroutine_closure_to_certain_coroutine(
-                    tcx,
+                    cx,
                     goal_kind,
                     <span class="comment">// No captures by ref, so this doesn't matter.
-                    </span>Region::new_static(tcx),
+                    </span>Region::new_static(cx),
                     def_id,
                     args,
                     sig,
@@ -1086,9 +1097,9 @@
                 }
 
                 coroutine_closure_to_ambiguous_coroutine(
-                    tcx,
+                    cx,
                     goal_kind, <span class="comment">// No captures by ref, so this doesn't matter.
-                    </span>Region::new_static(tcx),
+                    </span>Region::new_static(cx),
                     def_id,
                     args,
                     sig,
@@ -1150,7 +1161,7 @@
 // which enforces the closure is actually callable with the given trait. When we
 // know the kind already, we can short-circuit this check.
 </span><span class="kw">pub</span>(<span class="kw">in </span><span class="kw">crate</span>::solve) <span class="kw">fn </span>extract_tupled_inputs_and_output_from_async_callable&lt;I: Interner&gt;(
-    tcx: I,
+    cx: I,
     self_ty: I::Ty,
     goal_kind: ty::ClosureKind,
     env_region: I::Region,
@@ -1161,16 +1172,15 @@
             <span class="kw">let </span>kind_ty = args.kind_ty();
             <span class="kw">let </span>sig = args.coroutine_closure_sig().skip_binder();
             <span class="kw">let </span><span class="kw-2">mut </span>nested = <span class="macro">vec!</span>[];
-            <span class="kw">let </span>coroutine_ty = <span class="kw">if let </span><span class="prelude-val">Some</span>(closure_kind) = kind_ty.to_opt_closure_kind()
-                &amp;&amp; !args.tupled_upvars_ty().is_ty_var()
-            {
-                <span class="kw">if </span>!closure_kind.extends(goal_kind) {
+
+            <span class="comment">// FIXME: let_chains
+            </span><span class="kw">let </span>kind = kind_ty.to_opt_closure_kind();
+            <span class="kw">let </span>coroutine_ty = <span class="kw">if </span>kind.is_some() &amp;&amp; !args.tupled_upvars_ty().is_ty_var() {
+                <span class="kw">if </span>!kind.unwrap().extends(goal_kind) {
                     <span class="kw">return </span><span class="prelude-val">Err</span>(NoSolution);
                 }
 
-                coroutine_closure_to_certain_coroutine(
-                    tcx, goal_kind, env_region, def_id, args, sig,
-                )
+                coroutine_closure_to_certain_coroutine(cx, goal_kind, env_region, def_id, args, sig)
             } <span class="kw">else </span>{
                 <span class="comment">// When we don't know the closure kind (and therefore also the closure's upvars,
                 // which are computed at the same time), we must delay the computation of the
@@ -1181,15 +1191,15 @@
                 // coroutine upvars respecting the closure kind.
                 </span>nested.push(
                     ty::TraitRef::new(
-                        tcx,
-                        tcx.require_lang_item(TraitSolverLangItem::AsyncFnKindHelper),
-                        [kind_ty, Ty::from_closure_kind(tcx, goal_kind)],
+                        cx,
+                        cx.require_lang_item(TraitSolverLangItem::AsyncFnKindHelper),
+                        [kind_ty, Ty::from_closure_kind(cx, goal_kind)],
                     )
-                    .upcast(tcx),
+                    .upcast(cx),
                 );
 
                 coroutine_closure_to_ambiguous_coroutine(
-                    tcx, goal_kind, env_region, def_id, args, sig,
+                    cx, goal_kind, env_region, def_id, args, sig,
                 )
             };
 
@@ -1204,21 +1214,21 @@
         }
 
         ty::FnDef(..) | ty::FnPtr(..) =&gt; {
-            <span class="kw">let </span>bound_sig = self_ty.fn_sig(tcx);
+            <span class="kw">let </span>bound_sig = self_ty.fn_sig(cx);
             <span class="kw">let </span>sig = bound_sig.skip_binder();
-            <span class="kw">let </span>future_trait_def_id = tcx.require_lang_item(TraitSolverLangItem::Future);
+            <span class="kw">let </span>future_trait_def_id = cx.require_lang_item(TraitSolverLangItem::Future);
             <span class="comment">// `FnDef` and `FnPtr` only implement `AsyncFn*` when their
             // return type implements `Future`.
             </span><span class="kw">let </span>nested = <span class="macro">vec!</span>[
                 bound_sig
-                    .rebind(ty::TraitRef::new(tcx, future_trait_def_id, [sig.output()]))
-                    .upcast(tcx),
+                    .rebind(ty::TraitRef::new(cx, future_trait_def_id, [sig.output()]))
+                    .upcast(cx),
             ];
-            <span class="kw">let </span>future_output_def_id = tcx.require_lang_item(TraitSolverLangItem::FutureOutput);
-            <span class="kw">let </span>future_output_ty = Ty::new_projection(tcx, future_output_def_id, [sig.output()]);
+            <span class="kw">let </span>future_output_def_id = cx.require_lang_item(TraitSolverLangItem::FutureOutput);
+            <span class="kw">let </span>future_output_ty = Ty::new_projection(cx, future_output_def_id, [sig.output()]);
             <span class="prelude-val">Ok</span>((
                 bound_sig.rebind(AsyncCallableRelevantTypes {
-                    tupled_inputs_ty: Ty::new_tup(tcx, <span class="kw-2">&amp;</span>sig.inputs()),
+                    tupled_inputs_ty: Ty::new_tup(cx, sig.inputs().as_slice()),
                     output_coroutine_ty: sig.output(),
                     coroutine_return_ty: future_output_ty,
                 }),
@@ -1229,13 +1239,13 @@
             <span class="kw">let </span>args = args.as_closure();
             <span class="kw">let </span>bound_sig = args.sig();
             <span class="kw">let </span>sig = bound_sig.skip_binder();
-            <span class="kw">let </span>future_trait_def_id = tcx.require_lang_item(TraitSolverLangItem::Future);
+            <span class="kw">let </span>future_trait_def_id = cx.require_lang_item(TraitSolverLangItem::Future);
             <span class="comment">// `Closure`s only implement `AsyncFn*` when their return type
             // implements `Future`.
             </span><span class="kw">let </span><span class="kw-2">mut </span>nested = <span class="macro">vec!</span>[
                 bound_sig
-                    .rebind(ty::TraitRef::new(tcx, future_trait_def_id, [sig.output()]))
-                    .upcast(tcx),
+                    .rebind(ty::TraitRef::new(cx, future_trait_def_id, [sig.output()]))
+                    .upcast(cx),
             ];
 
             <span class="comment">// Additionally, we need to check that the closure kind
@@ -1247,7 +1257,7 @@
                 }
             } <span class="kw">else </span>{
                 <span class="kw">let </span>async_fn_kind_trait_def_id =
-                    tcx.require_lang_item(TraitSolverLangItem::AsyncFnKindHelper);
+                    cx.require_lang_item(TraitSolverLangItem::AsyncFnKindHelper);
                 <span class="comment">// When we don't know the closure kind (and therefore also the closure's upvars,
                 // which are computed at the same time), we must delay the computation of the
                 // generator's upvars. We do this using the `AsyncFnKindHelper`, which as a trait
@@ -1257,19 +1267,19 @@
                 // coroutine upvars respecting the closure kind.
                 </span>nested.push(
                     ty::TraitRef::new(
-                        tcx,
+                        cx,
                         async_fn_kind_trait_def_id,
-                        [kind_ty, Ty::from_closure_kind(tcx, goal_kind)],
+                        [kind_ty, Ty::from_closure_kind(cx, goal_kind)],
                     )
-                    .upcast(tcx),
+                    .upcast(cx),
                 );
             }
 
-            <span class="kw">let </span>future_output_def_id = tcx.require_lang_item(TraitSolverLangItem::FutureOutput);
-            <span class="kw">let </span>future_output_ty = Ty::new_projection(tcx, future_output_def_id, [sig.output()]);
+            <span class="kw">let </span>future_output_def_id = cx.require_lang_item(TraitSolverLangItem::FutureOutput);
+            <span class="kw">let </span>future_output_ty = Ty::new_projection(cx, future_output_def_id, [sig.output()]);
             <span class="prelude-val">Ok</span>((
                 bound_sig.rebind(AsyncCallableRelevantTypes {
-                    tupled_inputs_ty: sig.inputs()[<span class="number">0</span>],
+                    tupled_inputs_ty: sig.inputs().get(<span class="number">0</span>).unwrap(),
                     output_coroutine_ty: sig.output(),
                     coroutine_return_ty: future_output_ty,
                 }),
@@ -1311,7 +1321,7 @@
 <span class="doccomment">/// Given a coroutine-closure, project to its returned coroutine when we are *certain*
 /// that the closure's kind is compatible with the goal.
 </span><span class="kw">fn </span>coroutine_closure_to_certain_coroutine&lt;I: Interner&gt;(
-    tcx: I,
+    cx: I,
     goal_kind: ty::ClosureKind,
     goal_region: I::Region,
     def_id: I::DefId,
@@ -1319,9 +1329,9 @@
     sig: ty::CoroutineClosureSignature&lt;I&gt;,
 ) -&gt; I::Ty {
     sig.to_coroutine_given_kind_and_upvars(
-        tcx,
+        cx,
         args.parent_args(),
-        tcx.coroutine_for_closure(def_id),
+        cx.coroutine_for_closure(def_id),
         goal_kind,
         goal_region,
         args.tupled_upvars_ty(),
@@ -1335,20 +1345,20 @@
 ///
 /// Note that we do not also push a `AsyncFnKindHelper` goal here.
 </span><span class="kw">fn </span>coroutine_closure_to_ambiguous_coroutine&lt;I: Interner&gt;(
-    tcx: I,
+    cx: I,
     goal_kind: ty::ClosureKind,
     goal_region: I::Region,
     def_id: I::DefId,
     args: ty::CoroutineClosureArgs&lt;I&gt;,
     sig: ty::CoroutineClosureSignature&lt;I&gt;,
 ) -&gt; I::Ty {
-    <span class="kw">let </span>upvars_projection_def_id = tcx.require_lang_item(TraitSolverLangItem::AsyncFnKindUpvars);
+    <span class="kw">let </span>upvars_projection_def_id = cx.require_lang_item(TraitSolverLangItem::AsyncFnKindUpvars);
     <span class="kw">let </span>tupled_upvars_ty = Ty::new_projection(
-        tcx,
+        cx,
         upvars_projection_def_id,
         [
             I::GenericArg::from(args.kind_ty()),
-            Ty::from_closure_kind(tcx, goal_kind).into(),
+            Ty::from_closure_kind(cx, goal_kind).into(),
             goal_region.into(),
             sig.tupled_inputs_ty.into(),
             args.tupled_upvars_ty().into(),
@@ -1356,10 +1366,10 @@
         ],
     );
     sig.to_coroutine(
-        tcx,
+        cx,
         args.parent_args(),
-        Ty::from_closure_kind(tcx, goal_kind),
-        tcx.coroutine_for_closure(def_id),
+        Ty::from_closure_kind(cx, goal_kind),
+        cx.coroutine_for_closure(def_id),
         tupled_upvars_ty,
     )
 }
@@ -1404,39 +1414,41 @@
 // This is unsound in general and once that is fixed, we don't need to
 // normalize eagerly here. See https://github.com/lcnr/solver-woes/issues/9
 // for more details.
-</span><span class="kw">pub</span>(<span class="kw">in </span><span class="kw">crate</span>::solve) <span class="kw">fn </span>predicates_for_object_candidate&lt;Infcx, I&gt;(
-    ecx: <span class="kw-2">&amp;</span>EvalCtxt&lt;<span class="lifetime">'_</span>, Infcx&gt;,
+</span><span class="kw">pub</span>(<span class="kw">in </span><span class="kw">crate</span>::solve) <span class="kw">fn </span>predicates_for_object_candidate&lt;D, I&gt;(
+    ecx: <span class="kw-2">&amp;</span>EvalCtxt&lt;<span class="lifetime">'_</span>, D&gt;,
     param_env: I::ParamEnv,
     trait_ref: ty::TraitRef&lt;I&gt;,
     object_bounds: I::BoundExistentialPredicates,
 ) -&gt; Vec&lt;Goal&lt;I, I::Predicate&gt;&gt;
 <span class="kw">where
-    </span>Infcx: SolverDelegate&lt;Interner = I&gt;,
+    </span>D: SolverDelegate&lt;Interner = I&gt;,
     I: Interner,
 {
-    <span class="kw">let </span>tcx = ecx.interner();
+    <span class="kw">let </span>cx = ecx.cx();
     <span class="kw">let </span><span class="kw-2">mut </span>requirements = <span class="macro">vec!</span>[];
-    requirements
-        .extend(tcx.super_predicates_of(trait_ref.def_id).iter_instantiated(tcx, <span class="kw-2">&amp;</span>trait_ref.args));
+    requirements.extend(
+        cx.explicit_super_predicates_of(trait_ref.def_id)
+            .iter_instantiated(cx, trait_ref.args)
+            .map(|(pred, <span class="kw">_</span>)| pred),
+    );
 
     <span class="comment">// FIXME(associated_const_equality): Also add associated consts to
     // the requirements here.
-    </span><span class="kw">for </span>associated_type_def_id <span class="kw">in </span>tcx.associated_type_def_ids(trait_ref.def_id) {
+    </span><span class="kw">for </span>associated_type_def_id <span class="kw">in </span>cx.associated_type_def_ids(trait_ref.def_id) {
         <span class="comment">// associated types that require `Self: Sized` do not show up in the built-in
         // implementation of `Trait for dyn Trait`, and can be dropped here.
-        </span><span class="kw">if </span>tcx.generics_require_sized_self(associated_type_def_id) {
+        </span><span class="kw">if </span>cx.generics_require_sized_self(associated_type_def_id) {
             <span class="kw">continue</span>;
         }
 
-        requirements.extend(
-            tcx.item_bounds(associated_type_def_id).iter_instantiated(tcx, <span class="kw-2">&amp;</span>trait_ref.args),
-        );
+        requirements
+            .extend(cx.item_bounds(associated_type_def_id).iter_instantiated(cx, trait_ref.args));
     }
 
-    <span class="kw">let </span><span class="kw-2">mut </span>replace_projection_with = FxHashMap::default();
-    <span class="kw">for </span>bound <span class="kw">in </span>object_bounds {
+    <span class="kw">let </span><span class="kw-2">mut </span>replace_projection_with = HashMap::default();
+    <span class="kw">for </span>bound <span class="kw">in </span>object_bounds.iter() {
         <span class="kw">if let </span>ty::ExistentialPredicate::Projection(proj) = bound.skip_binder() {
-            <span class="kw">let </span>proj = proj.with_self_ty(tcx, trait_ref.self_ty());
+            <span class="kw">let </span>proj = proj.with_self_ty(cx, trait_ref.self_ty());
             <span class="kw">let </span>old_ty = replace_projection_with.insert(proj.def_id(), bound.rebind(proj));
             <span class="macro">assert_eq!</span>(
                 old_ty,
@@ -1456,43 +1468,47 @@
     folder
         .nested
         .into_iter()
-        .chain(folded_requirements.into_iter().map(|clause| Goal::new(tcx, param_env, clause)))
+        .chain(folded_requirements.into_iter().map(|clause| Goal::new(cx, param_env, clause)))
         .collect()
 }
 
-<span class="kw">struct </span>ReplaceProjectionWith&lt;<span class="lifetime">'a</span>, Infcx: SolverDelegate&lt;Interner = I&gt;, I: Interner&gt; {
-    ecx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>EvalCtxt&lt;<span class="lifetime">'a</span>, Infcx&gt;,
+<span class="kw">struct </span>ReplaceProjectionWith&lt;<span class="lifetime">'a</span>, D: SolverDelegate&lt;Interner = I&gt;, I: Interner&gt; {
+    ecx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>EvalCtxt&lt;<span class="lifetime">'a</span>, D&gt;,
     param_env: I::ParamEnv,
-    mapping: FxHashMap&lt;I::DefId, ty::Binder&lt;I, ty::ProjectionPredicate&lt;I&gt;&gt;&gt;,
+    mapping: HashMap&lt;I::DefId, ty::Binder&lt;I, ty::ProjectionPredicate&lt;I&gt;&gt;&gt;,
     nested: Vec&lt;Goal&lt;I, I::Predicate&gt;&gt;,
 }
 
-<span class="kw">impl</span>&lt;Infcx: SolverDelegate&lt;Interner = I&gt;, I: Interner&gt; TypeFolder&lt;I&gt;
-    <span class="kw">for </span>ReplaceProjectionWith&lt;<span class="lifetime">'_</span>, Infcx, I&gt;
+<span class="kw">impl</span>&lt;D: SolverDelegate&lt;Interner = I&gt;, I: Interner&gt; TypeFolder&lt;I&gt;
+    <span class="kw">for </span>ReplaceProjectionWith&lt;<span class="lifetime">'_</span>, D, I&gt;
 {
-    <span class="kw">fn </span>interner(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; I {
-        <span class="self">self</span>.ecx.interner()
+    <span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; I {
+        <span class="self">self</span>.ecx.cx()
     }
 
     <span class="kw">fn </span>fold_ty(<span class="kw-2">&amp;mut </span><span class="self">self</span>, ty: I::Ty) -&gt; I::Ty {
-        <span class="kw">if let </span>ty::Alias(ty::Projection, alias_ty) = ty.kind()
-            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(replacement) = <span class="self">self</span>.mapping.get(<span class="kw-2">&amp;</span>alias_ty.def_id)
-        {
-            <span class="comment">// We may have a case where our object type's projection bound is higher-ranked,
-            // but the where clauses we instantiated are not. We can solve this by instantiating
-            // the binder at the usage site.
-            </span><span class="kw">let </span>proj = <span class="self">self</span>.ecx.instantiate_binder_with_infer(<span class="kw-2">*</span>replacement);
-            <span class="comment">// FIXME: Technically this equate could be fallible...
-            </span><span class="self">self</span>.nested.extend(
-                <span class="self">self</span>.ecx
-                    .eq_and_get_goals(
-                        <span class="self">self</span>.param_env,
-                        alias_ty,
-                        proj.projection_term.expect_ty(<span class="self">self</span>.ecx.interner()),
-                    )
-                    .expect(<span class="string">"expected to be able to unify goal projection with dyn's projection"</span>),
-            );
-            proj.term.expect_ty()
+        <span class="kw">if let </span>ty::Alias(ty::Projection, alias_ty) = ty.kind() {
+            <span class="kw">if let </span><span class="prelude-val">Some</span>(replacement) = <span class="self">self</span>.mapping.get(<span class="kw-2">&amp;</span>alias_ty.def_id) {
+                <span class="comment">// We may have a case where our object type's projection bound is higher-ranked,
+                // but the where clauses we instantiated are not. We can solve this by instantiating
+                // the binder at the usage site.
+                </span><span class="kw">let </span>proj = <span class="self">self</span>.ecx.instantiate_binder_with_infer(<span class="kw-2">*</span>replacement);
+                <span class="comment">// FIXME: Technically this equate could be fallible...
+                </span><span class="self">self</span>.nested.extend(
+                    <span class="self">self</span>.ecx
+                        .eq_and_get_goals(
+                            <span class="self">self</span>.param_env,
+                            alias_ty,
+                            proj.projection_term.expect_ty(<span class="self">self</span>.ecx.cx()),
+                        )
+                        .expect(
+                            <span class="string">"expected to be able to unify goal projection with dyn's projection"</span>,
+                        ),
+                );
+                proj.term.expect_ty()
+            } <span class="kw">else </span>{
+                ty.super_fold_with(<span class="self">self</span>)
+            }
         } <span class="kw">else </span>{
             ty.super_fold_with(<span class="self">self</span>)
         }

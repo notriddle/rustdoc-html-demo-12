@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["build_native_static_lib"]};

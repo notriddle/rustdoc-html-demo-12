@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["collect_fake_borrows","ref_pat_borrow_kind"],"struct":["FakeBorrowCollector"]};
+window.SIDEBAR_ITEMS = {"fn":["collect_fake_borrows","ref_pat_borrow_kind","visit_bindings"],"struct":["BindingsVisitor","FakeBorrowCollector"]};

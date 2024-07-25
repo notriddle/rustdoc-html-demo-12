@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/thir.rs`."><title>thir.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/thir.rs`."><title>thir.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1239,6 +1239,15 @@
 <a href="#1239" id="1239">1239</a>
 <a href="#1240" id="1240">1240</a>
 <a href="#1241" id="1241">1241</a>
+<a href="#1242" id="1242">1242</a>
+<a href="#1243" id="1243">1243</a>
+<a href="#1244" id="1244">1244</a>
+<a href="#1245" id="1245">1245</a>
+<a href="#1246" id="1246">1246</a>
+<a href="#1247" id="1247">1247</a>
+<a href="#1248" id="1248">1248</a>
+<a href="#1249" id="1249">1249</a>
+<a href="#1250" id="1250">1250</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! THIR datatypes and definitions. See the [rustc dev guide] for more info.
 //!
 //! If you compare the THIR [`ExprKind`] to [`hir::ExprKind`], you will see it is
@@ -2024,16 +2033,13 @@
     },
 
     <span class="doccomment">/// One of the following:
-    /// * `&amp;str` (represented as a valtree), which will be handled as a string pattern and thus
-    ///   exhaustiveness checking will detect if you use the same string twice in different
-    ///   patterns.
+    /// * `&amp;str`/`&amp;[u8]` (represented as a valtree), which will be handled as a string/slice pattern
+    ///   and thus exhaustiveness checking will detect if you use the same string/slice twice in
+    ///   different patterns.
     /// * integer, bool, char or float (represented as a valtree), which will be handled by
     ///   exhaustiveness to cover exactly its own value, similar to `&amp;str`, but these values are
     ///   much simpler.
-    /// * Opaque constants (represented as `mir::ConstValue`), that must not be matched
-    ///   structurally. So anything that does not derive `PartialEq` and `Eq`.
-    ///
-    /// These are always compared with the matched place using (the semantics of) `PartialEq`.
+    /// * `String`, if `string_deref_patterns` is enabled.
     </span>Constant {
         value: mir::Const&lt;<span class="lifetime">'tcx</span>&gt;,
     },
@@ -2288,6 +2294,12 @@
         <span class="kw">let </span>b = other.eval_bits(ty, tcx, param_env);
 
         <span class="kw">match </span>ty.kind() {
+            ty::Float(ty::FloatTy::F16) =&gt; {
+                <span class="kw">use </span>rustc_apfloat::Float;
+                <span class="kw">let </span>a = rustc_apfloat::ieee::Half::from_bits(a);
+                <span class="kw">let </span>b = rustc_apfloat::ieee::Half::from_bits(b);
+                a.partial_cmp(<span class="kw-2">&amp;</span>b)
+            }
             ty::Float(ty::FloatTy::F32) =&gt; {
                 <span class="kw">use </span>rustc_apfloat::Float;
                 <span class="kw">let </span>a = rustc_apfloat::ieee::Single::from_bits(a);
@@ -2298,6 +2310,12 @@
                 <span class="kw">use </span>rustc_apfloat::Float;
                 <span class="kw">let </span>a = rustc_apfloat::ieee::Double::from_bits(a);
                 <span class="kw">let </span>b = rustc_apfloat::ieee::Double::from_bits(b);
+                a.partial_cmp(<span class="kw-2">&amp;</span>b)
+            }
+            ty::Float(ty::FloatTy::F128) =&gt; {
+                <span class="kw">use </span>rustc_apfloat::Float;
+                <span class="kw">let </span>a = rustc_apfloat::ieee::Quad::from_bits(a);
+                <span class="kw">let </span>b = rustc_apfloat::ieee::Quad::from_bits(b);
                 a.partial_cmp(<span class="kw-2">&amp;</span>b)
             }
             ty::Int(ity) =&gt; {

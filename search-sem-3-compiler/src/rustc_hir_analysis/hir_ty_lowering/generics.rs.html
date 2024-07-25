@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/hir_ty_lowering/generics.rs`."><title>generics.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/hir_ty_lowering/generics.rs`."><title>generics.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -664,12 +664,17 @@
 <a href="#664" id="664">664</a>
 <a href="#665" id="665">665</a>
 <a href="#666" id="666">666</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">super</span>::IsMethodCall;
+<a href="#667" id="667">667</a>
+<a href="#668" id="668">668</a>
+<a href="#669" id="669">669</a>
+<a href="#670" id="670">670</a>
+<a href="#671" id="671">671</a>
+</pre></div><pre class="rust"><code><span class="kw">use super</span>::{HirTyLowerer, IsMethodCall};
+<span class="kw">use </span><span class="kw">crate</span>::errors::wrong_number_of_generic_args::{GenericArgsInfo, WrongNumberOfGenericArgs};
 <span class="kw">use </span><span class="kw">crate</span>::hir_ty_lowering::{
     errors::prohibit_assoc_item_constraint, ExplicitLateBound, GenericArgCountMismatch,
     GenericArgCountResult, GenericArgPosition, GenericArgsLowerer,
 };
-<span class="kw">use </span><span class="kw">crate</span>::structured_errors::{GenericArgsInfo, StructuredDiag, WrongNumberOfGenericArgs};
 <span class="kw">use </span>rustc_ast::ast::ParamKindOrd;
 <span class="kw">use </span>rustc_errors::{
     codes::<span class="kw-2">*</span>, struct_span_code_err, Applicability, Diag, ErrorGuaranteed, MultiSpan,
@@ -679,7 +684,7 @@
 <span class="kw">use </span>rustc_hir::def_id::DefId;
 <span class="kw">use </span>rustc_hir::GenericArg;
 <span class="kw">use </span>rustc_middle::ty::{
-    <span class="self">self</span>, GenericArgsRef, GenericParamDef, GenericParamDefKind, IsSuggestable, Ty, TyCtxt,
+    <span class="self">self</span>, GenericArgsRef, GenericParamDef, GenericParamDefKind, IsSuggestable, Ty,
 };
 <span class="kw">use </span>rustc_session::lint::builtin::LATE_BOUND_LIFETIME_ARGUMENTS;
 <span class="kw">use </span>rustc_span::symbol::{kw, sym};
@@ -688,15 +693,16 @@
 <span class="doccomment">/// Report an error that a generic argument did not match the generic parameter that was
 /// expected.
 </span><span class="kw">fn </span>generic_arg_mismatch_err(
-    tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;,
+    cx: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirTyLowerer&lt;<span class="lifetime">'_</span>&gt;,
     arg: <span class="kw-2">&amp;</span>GenericArg&lt;<span class="lifetime">'_</span>&gt;,
     param: <span class="kw-2">&amp;</span>GenericParamDef,
     possible_ordering_error: bool,
     help: <span class="prelude-ty">Option</span>&lt;String&gt;,
 ) -&gt; ErrorGuaranteed {
+    <span class="kw">let </span>tcx = cx.tcx();
     <span class="kw">let </span>sess = tcx.sess;
     <span class="kw">let </span><span class="kw-2">mut </span>err = <span class="macro">struct_span_code_err!</span>(
-        tcx.dcx(),
+        cx.dcx(),
         arg.span(),
         E0747,
         <span class="string">"{} provided when a {} was expected"</span>,
@@ -778,8 +784,12 @@
             }
         }
         (GenericArg::Const(cnst), GenericParamDefKind::Type { .. }) =&gt; {
-            <span class="kw">let </span>body = tcx.hir().body(cnst.value.body);
-            <span class="kw">if let </span>rustc_hir::ExprKind::Path(rustc_hir::QPath::Resolved(<span class="kw">_</span>, path)) = body.value.kind
+            <span class="comment">// FIXME(min_generic_const_args): once ConstArgKind::Path is used for non-params too,
+            // this should match against that instead of ::Anon
+            </span><span class="kw">if let </span>hir::ConstArgKind::Anon(anon) = cnst.kind
+                &amp;&amp; <span class="kw">let </span>body = tcx.hir().body(anon.body)
+                &amp;&amp; <span class="kw">let </span>rustc_hir::ExprKind::Path(rustc_hir::QPath::Resolved(<span class="kw">_</span>, path)) =
+                    body.value.kind
             {
                 <span class="kw">if let </span>Res::Def(DefKind::Fn { .. }, id) = path.res {
                     err.help(<span class="macro">format!</span>(<span class="string">"`{}` is a function item, not a type"</span>, tcx.item_name(id)));
@@ -837,7 +847,7 @@
 /// - `inferred_kind`: if no parameter was provided, and inference
 ///   is enabled, then creates a suitable inference variable.
 </span><span class="kw">pub fn </span>lower_generic_args&lt;<span class="lifetime">'tcx</span>: <span class="lifetime">'a</span>, <span class="lifetime">'a</span>&gt;(
-    tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
+    cx: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirTyLowerer&lt;<span class="lifetime">'tcx</span>&gt;,
     def_id: DefId,
     parent_args: <span class="kw-2">&amp;</span>[ty::GenericArg&lt;<span class="lifetime">'tcx</span>&gt;],
     has_self: bool,
@@ -845,6 +855,7 @@
     arg_count: <span class="kw-2">&amp;</span>GenericArgCountResult,
     ctx: <span class="kw-2">&amp;mut </span><span class="kw">impl </span>GenericArgsLowerer&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;,
 ) -&gt; GenericArgsRef&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">let </span>tcx = cx.tcx();
     <span class="comment">// Collect the segments of the path; we need to instantiate arguments
     // for parameters throughout the entire path (wherever there are
     // generic parameters).
@@ -922,7 +933,8 @@
                             | GenericParamDefKind::Lifetime,
                             <span class="kw">_</span>,
                         ) =&gt; {
-                            <span class="comment">// SPECIAL CASE FOR DESUGARED EFFECT PARAMS
+                            <span class="comment">// FIXME(effects): this should be removed
+                            // SPECIAL CASE FOR DESUGARED EFFECT PARAMS
                             // This comes from the following example:
                             //
                             // ```
@@ -991,7 +1003,7 @@
                                 param_types_present.dedup();
 
                                 generic_arg_mismatch_err(
-                                    tcx,
+                                    cx,
                                     arg,
                                     param,
                                     !args_iter.clone().is_sorted_by_key(|arg| arg.to_ord()),
@@ -1046,7 +1058,7 @@
                         <span class="macro">assert_eq!</span>(kind, <span class="string">"lifetime"</span>);
                         <span class="kw">let </span>(provided_arg, param) =
                             force_infer_lt.expect(<span class="string">"lifetimes ought to have been inferred"</span>);
-                        generic_arg_mismatch_err(tcx, provided_arg, param, <span class="bool-val">false</span>, <span class="prelude-val">None</span>);
+                        generic_arg_mismatch_err(cx, provided_arg, param, <span class="bool-val">false</span>, <span class="prelude-val">None</span>);
                     }
 
                     <span class="kw">break</span>;
@@ -1070,7 +1082,7 @@
 <span class="doccomment">/// Checks that the correct number of generic arguments have been provided.
 /// Used specifically for function calls.
 </span><span class="kw">pub fn </span>check_generic_arg_count_for_call(
-    tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;,
+    cx: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirTyLowerer&lt;<span class="lifetime">'_</span>&gt;,
     def_id: DefId,
     generics: <span class="kw-2">&amp;</span>ty::Generics,
     seg: <span class="kw-2">&amp;</span>hir::PathSegment&lt;<span class="lifetime">'_</span>&gt;,
@@ -1081,14 +1093,14 @@
         IsMethodCall::No =&gt; GenericArgPosition::Value,
     };
     <span class="kw">let </span>has_self = generics.parent.is_none() &amp;&amp; generics.has_self;
-    check_generic_arg_count(tcx, def_id, seg, generics, gen_pos, has_self)
+    check_generic_arg_count(cx, def_id, seg, generics, gen_pos, has_self)
 }
 
 <span class="doccomment">/// Checks that the correct number of generic arguments have been provided.
 /// This is used both for datatypes and function calls.
-</span><span class="attr">#[instrument(skip(tcx, gen_pos), level = <span class="string">"debug"</span>)]
+</span><span class="attr">#[instrument(skip(cx, gen_pos), level = <span class="string">"debug"</span>)]
 </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>check_generic_arg_count(
-    tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;,
+    cx: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirTyLowerer&lt;<span class="lifetime">'_</span>&gt;,
     def_id: DefId,
     seg: <span class="kw-2">&amp;</span>hir::PathSegment&lt;<span class="lifetime">'_</span>&gt;,
     gen_params: <span class="kw-2">&amp;</span>ty::Generics,
@@ -1111,7 +1123,7 @@
         .own_params
         .iter()
         .filter(|param| {
-            <span class="macro">matches!</span>(param.kind, ty::GenericParamDefKind::Const { is_host_effect: <span class="bool-val">true</span>, .. })
+            <span class="macro">matches!</span>(param.kind, ty::GenericParamDefKind::Const { synthetic: <span class="bool-val">true</span>, .. })
         })
         .count();
     <span class="kw">let </span>named_const_param_count = param_counts.consts - synth_const_param_count;
@@ -1121,11 +1133,11 @@
     <span class="kw">if </span>gen_pos != GenericArgPosition::Type
         &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(c) = gen_args.constraints.first()
     {
-        prohibit_assoc_item_constraint(tcx, c, <span class="prelude-val">None</span>);
+        prohibit_assoc_item_constraint(cx, c, <span class="prelude-val">None</span>);
     }
 
     <span class="kw">let </span>explicit_late_bound =
-        prohibit_explicit_late_bound_lifetimes(tcx, gen_params, gen_args, gen_pos);
+        prohibit_explicit_late_bound_lifetimes(cx, gen_params, gen_args, gen_pos);
 
     <span class="kw">let </span><span class="kw-2">mut </span>invalid_args = <span class="macro">vec!</span>[];
 
@@ -1151,17 +1163,15 @@
             GenericArgsInfo::MissingLifetimes { num_missing_args }
         };
 
-        <span class="kw">let </span>reported = WrongNumberOfGenericArgs::new(
-            tcx,
+        <span class="kw">let </span>reported = cx.dcx().emit_err(WrongNumberOfGenericArgs::new(
+            cx.tcx(),
             gen_args_info,
             seg,
             gen_params,
             has_self <span class="kw">as </span>usize,
             gen_args,
             def_id,
-        )
-        .diagnostic()
-        .emit();
+        ));
 
         <span class="prelude-val">Err</span>(reported)
     };
@@ -1238,17 +1248,17 @@
         <span class="macro">debug!</span>(<span class="question-mark">?</span>gen_args_info);
 
         <span class="kw">let </span>reported = gen_args.has_err().unwrap_or_else(|| {
-            WrongNumberOfGenericArgs::new(
-                tcx,
-                gen_args_info,
-                seg,
-                gen_params,
-                params_offset,
-                gen_args,
-                def_id,
-            )
-            .diagnostic()
-            .emit_unless(all_params_are_binded)
+            cx.dcx()
+                .create_err(WrongNumberOfGenericArgs::new(
+                    cx.tcx(),
+                    gen_args_info,
+                    seg,
+                    gen_params,
+                    params_offset,
+                    gen_args,
+                    def_id,
+                ))
+                .emit_unless(all_params_are_binded)
         });
 
         <span class="prelude-val">Err</span>(reported)
@@ -1288,7 +1298,7 @@
 <span class="doccomment">/// Prohibits explicit lifetime arguments if late-bound lifetime parameters
 /// are present. This is used both for datatypes and function calls.
 </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>prohibit_explicit_late_bound_lifetimes(
-    tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;,
+    cx: <span class="kw-2">&amp;</span><span class="kw">dyn </span>HirTyLowerer&lt;<span class="lifetime">'_</span>&gt;,
     def: <span class="kw-2">&amp;</span>ty::Generics,
     args: <span class="kw-2">&amp;</span>hir::GenericArgs&lt;<span class="lifetime">'_</span>&gt;,
     position: GenericArgPosition,
@@ -1309,13 +1319,13 @@
         <span class="kw">if </span>position == GenericArgPosition::Value
             &amp;&amp; args.num_lifetime_params() != param_counts.lifetimes
         {
-            <span class="macro">struct_span_code_err!</span>(tcx.dcx(), span, E0794, <span class="string">"{}"</span>, msg)
+            <span class="macro">struct_span_code_err!</span>(cx.dcx(), span, E0794, <span class="string">"{}"</span>, msg)
                 .with_span_note(span_late, note)
                 .emit();
         } <span class="kw">else </span>{
             <span class="kw">let </span><span class="kw-2">mut </span>multispan = MultiSpan::from_span(span);
             multispan.push_span_label(span_late, note);
-            tcx.node_span_lint(
+            cx.tcx().node_span_lint(
                 LATE_BOUND_LIFETIME_ARGUMENTS,
                 args.args[<span class="number">0</span>].hir_id(),
                 multispan,

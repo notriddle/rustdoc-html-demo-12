@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["SimplifiedType","TreatParams"],"fn":["simplify_type"],"struct":["DeepRejectCtxt"]};
+window.SIDEBAR_ITEMS = {"enum":["TreatParams"],"fn":["simplify_type"],"type":["DeepRejectCtxt","SimplifiedType"]};

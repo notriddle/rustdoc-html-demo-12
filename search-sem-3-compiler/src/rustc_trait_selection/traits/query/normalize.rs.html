@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/traits/query/normalize.rs`."><title>normalize.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/traits/query/normalize.rs`."><title>normalize.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -359,11 +359,11 @@
 //! which folds deeply, invoking the underlying
 //! `normalize_canonicalized_projection_ty` query when it encounters projections.
 
-</span><span class="kw">use </span><span class="kw">crate</span>::infer::at::At;
+</span><span class="kw">use </span><span class="kw">crate</span>::error_reporting::traits::OverflowCause;
+<span class="kw">use </span><span class="kw">crate</span>::error_reporting::InferCtxtErrorExt;
+<span class="kw">use </span><span class="kw">crate</span>::infer::at::At;
 <span class="kw">use </span><span class="kw">crate</span>::infer::canonical::OriginalQueryValues;
 <span class="kw">use </span><span class="kw">crate</span>::infer::{InferCtxt, InferOk};
-<span class="kw">use </span><span class="kw">crate</span>::traits::error_reporting::OverflowCause;
-<span class="kw">use </span><span class="kw">crate</span>::traits::error_reporting::TypeErrCtxtExt;
 <span class="kw">use </span><span class="kw">crate</span>::traits::normalize::needs_normalization;
 <span class="kw">use </span><span class="kw">crate</span>::traits::Normalized;
 <span class="kw">use </span><span class="kw">crate</span>::traits::{BoundVarReplacer, PlaceholderReplacer, ScrubbedTraitError};
@@ -529,7 +529,7 @@
 <span class="kw">impl</span>&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; FallibleTypeFolder&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span>QueryNormalizer&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">type </span>Error = NoSolution;
 
-    <span class="kw">fn </span>interner(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.infcx.tcx
     }
 
@@ -574,7 +574,7 @@
 
                     Reveal::All =&gt; {
                         <span class="kw">let </span>args = data.args.try_fold_with(<span class="self">self</span>)<span class="question-mark">?</span>;
-                        <span class="kw">let </span>recursion_limit = <span class="self">self</span>.interner().recursion_limit();
+                        <span class="kw">let </span>recursion_limit = <span class="self">self</span>.cx().recursion_limit();
 
                         <span class="kw">if </span>!recursion_limit.value_within_limit(<span class="self">self</span>.anon_depth) {
                             <span class="kw">let </span>guar = <span class="self">self
@@ -586,15 +586,15 @@
                                     <span class="bool-val">true</span>,
                                 )
                                 .delay_as_bug();
-                            <span class="kw">return </span><span class="prelude-val">Ok</span>(Ty::new_error(<span class="self">self</span>.interner(), guar));
+                            <span class="kw">return </span><span class="prelude-val">Ok</span>(Ty::new_error(<span class="self">self</span>.cx(), guar));
                         }
 
-                        <span class="kw">let </span>generic_ty = <span class="self">self</span>.interner().type_of(data.def_id);
-                        <span class="kw">let </span><span class="kw-2">mut </span>concrete_ty = generic_ty.instantiate(<span class="self">self</span>.interner(), args);
+                        <span class="kw">let </span>generic_ty = <span class="self">self</span>.cx().type_of(data.def_id);
+                        <span class="kw">let </span><span class="kw-2">mut </span>concrete_ty = generic_ty.instantiate(<span class="self">self</span>.cx(), args);
                         <span class="self">self</span>.anon_depth += <span class="number">1</span>;
                         <span class="kw">if </span>concrete_ty == ty {
                             concrete_ty = Ty::new_error_with_message(
-                                <span class="self">self</span>.interner(),
+                                <span class="self">self</span>.cx(),
                                 DUMMY_SP,
                                 <span class="string">"recursive opaque type"</span>,
                             );

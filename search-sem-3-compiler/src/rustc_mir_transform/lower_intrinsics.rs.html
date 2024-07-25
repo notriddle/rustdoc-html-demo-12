@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/lower_intrinsics.rs`."><title>lower_intrinsics.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/lower_intrinsics.rs`."><title>lower_intrinsics.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -324,24 +324,10 @@
 <a href="#324" id="324">324</a>
 <a href="#325" id="325">325</a>
 <a href="#326" id="326">326</a>
-<a href="#327" id="327">327</a>
-<a href="#328" id="328">328</a>
-<a href="#329" id="329">329</a>
-<a href="#330" id="330">330</a>
-<a href="#331" id="331">331</a>
-<a href="#332" id="332">332</a>
-<a href="#333" id="333">333</a>
-<a href="#334" id="334">334</a>
-<a href="#335" id="335">335</a>
-<a href="#336" id="336">336</a>
-<a href="#337" id="337">337</a>
-<a href="#338" id="338">338</a>
-<a href="#339" id="339">339</a>
-<a href="#340" id="340">340</a>
-<a href="#341" id="341">341</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Lowers intrinsic calls
 
-</span><span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
+</span><span class="kw">use </span><span class="kw">crate</span>::take_array;
+<span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, TyCtxt};
 <span class="kw">use </span>rustc_middle::{bug, span_bug};
 <span class="kw">use </span>rustc_span::symbol::sym;
@@ -391,42 +377,34 @@
                     }
                     sym::copy_nonoverlapping =&gt; {
                         <span class="kw">let </span>target = target.unwrap();
-                        <span class="kw">let </span><span class="kw-2">mut </span>args = args.drain(..);
+                        <span class="kw">let </span><span class="prelude-val">Ok</span>([src, dst, count]) = take_array(args) <span class="kw">else </span>{
+                            <span class="macro">bug!</span>(<span class="string">"Wrong arguments for copy_non_overlapping intrinsic"</span>);
+                        };
                         block.statements.push(Statement {
                             source_info: terminator.source_info,
                             kind: StatementKind::Intrinsic(Box::new(
                                 NonDivergingIntrinsic::CopyNonOverlapping(
                                     rustc_middle::mir::CopyNonOverlapping {
-                                        src: args.next().unwrap().node,
-                                        dst: args.next().unwrap().node,
-                                        count: args.next().unwrap().node,
+                                        src: src.node,
+                                        dst: dst.node,
+                                        count: count.node,
                                     },
                                 ),
                             )),
                         });
-                        <span class="macro">assert_eq!</span>(
-                            args.next(),
-                            <span class="prelude-val">None</span>,
-                            <span class="string">"Extra argument for copy_non_overlapping intrinsic"
-                        </span>);
-                        drop(args);
                         terminator.kind = TerminatorKind::Goto { target };
                     }
                     sym::assume =&gt; {
                         <span class="kw">let </span>target = target.unwrap();
-                        <span class="kw">let </span><span class="kw-2">mut </span>args = args.drain(..);
+                        <span class="kw">let </span><span class="prelude-val">Ok</span>([arg]) = take_array(args) <span class="kw">else </span>{
+                            <span class="macro">bug!</span>(<span class="string">"Wrong arguments for assume intrinsic"</span>);
+                        };
                         block.statements.push(Statement {
                             source_info: terminator.source_info,
                             kind: StatementKind::Intrinsic(Box::new(
-                                NonDivergingIntrinsic::Assume(args.next().unwrap().node),
+                                NonDivergingIntrinsic::Assume(arg.node),
                             )),
                         });
-                        <span class="macro">assert_eq!</span>(
-                            args.next(),
-                            <span class="prelude-val">None</span>,
-                            <span class="string">"Extra argument for copy_non_overlapping intrinsic"
-                        </span>);
-                        drop(args);
                         terminator.kind = TerminatorKind::Goto { target };
                     }
                     sym::wrapping_add
@@ -441,13 +419,9 @@
                     | sym::unchecked_shl
                     | sym::unchecked_shr =&gt; {
                         <span class="kw">let </span>target = target.unwrap();
-                        <span class="kw">let </span>lhs;
-                        <span class="kw">let </span>rhs;
-                        {
-                            <span class="kw">let </span><span class="kw-2">mut </span>args = args.drain(..);
-                            lhs = args.next().unwrap();
-                            rhs = args.next().unwrap();
-                        }
+                        <span class="kw">let </span><span class="prelude-val">Ok</span>([lhs, rhs]) = take_array(args) <span class="kw">else </span>{
+                            <span class="macro">bug!</span>(<span class="string">"Wrong arguments for {} intrinsic"</span>, intrinsic.name);
+                        };
                         <span class="kw">let </span>bin_op = <span class="kw">match </span>intrinsic.name {
                             sym::wrapping_add =&gt; BinOp::Add,
                             sym::wrapping_sub =&gt; BinOp::Sub,
@@ -473,13 +447,9 @@
                     }
                     sym::add_with_overflow | sym::sub_with_overflow | sym::mul_with_overflow =&gt; {
                         <span class="kw">if let </span><span class="prelude-val">Some</span>(target) = <span class="kw-2">*</span>target {
-                            <span class="kw">let </span>lhs;
-                            <span class="kw">let </span>rhs;
-                            {
-                                <span class="kw">let </span><span class="kw-2">mut </span>args = args.drain(..);
-                                lhs = args.next().unwrap();
-                                rhs = args.next().unwrap();
-                            }
+                            <span class="kw">let </span><span class="prelude-val">Ok</span>([lhs, rhs]) = take_array(args) <span class="kw">else </span>{
+                                <span class="macro">bug!</span>(<span class="string">"Wrong arguments for {} intrinsic"</span>, intrinsic.name);
+                            };
                             <span class="kw">let </span>bin_op = <span class="kw">match </span>intrinsic.name {
                                 sym::add_with_overflow =&gt; BinOp::AddWithOverflow,
                                 sym::sub_with_overflow =&gt; BinOp::SubWithOverflow,
@@ -515,7 +485,7 @@
                         }
                     }
                     sym::read_via_copy =&gt; {
-                        <span class="kw">let </span>[arg] = args.as_slice() <span class="kw">else </span>{
+                        <span class="kw">let </span><span class="prelude-val">Ok</span>([arg]) = take_array(args) <span class="kw">else </span>{
                             <span class="macro">span_bug!</span>(terminator.source_info.span, <span class="string">"Wrong number of arguments"</span>);
                         };
                         <span class="kw">let </span>derefed_place = <span class="kw">if let </span><span class="prelude-val">Some</span>(place) = arg.node.place()
@@ -548,7 +518,7 @@
                     }
                     sym::write_via_move =&gt; {
                         <span class="kw">let </span>target = target.unwrap();
-                        <span class="kw">let </span><span class="prelude-val">Ok</span>([ptr, val]) = &lt;[<span class="kw">_</span>; <span class="number">2</span>]&gt;::try_from(std::mem::take(args)) <span class="kw">else </span>{
+                        <span class="kw">let </span><span class="prelude-val">Ok</span>([ptr, val]) = take_array(args) <span class="kw">else </span>{
                             <span class="macro">span_bug!</span>(
                                 terminator.source_info.span,
                                 <span class="string">"Wrong number of arguments for write_via_move intrinsic"</span>,
@@ -588,7 +558,7 @@
                     }
                     sym::offset =&gt; {
                         <span class="kw">let </span>target = target.unwrap();
-                        <span class="kw">let </span><span class="prelude-val">Ok</span>([ptr, delta]) = &lt;[<span class="kw">_</span>; <span class="number">2</span>]&gt;::try_from(std::mem::take(args)) <span class="kw">else </span>{
+                        <span class="kw">let </span><span class="prelude-val">Ok</span>([ptr, delta]) = take_array(args) <span class="kw">else </span>{
                             <span class="macro">span_bug!</span>(
                                 terminator.source_info.span,
                                 <span class="string">"Wrong number of arguments for offset intrinsic"</span>,
@@ -605,7 +575,7 @@
                     }
                     sym::transmute | sym::transmute_unchecked =&gt; {
                         <span class="kw">let </span>dst_ty = destination.ty(local_decls, tcx).ty;
-                        <span class="kw">let </span><span class="prelude-val">Ok</span>([arg]) = &lt;[<span class="kw">_</span>; <span class="number">1</span>]&gt;::try_from(std::mem::take(args)) <span class="kw">else </span>{
+                        <span class="kw">let </span><span class="prelude-val">Ok</span>([arg]) = take_array(args) <span class="kw">else </span>{
                             <span class="macro">span_bug!</span>(
                                 terminator.source_info.span,
                                 <span class="string">"Wrong number of arguments for transmute intrinsic"</span>,
@@ -630,7 +600,7 @@
                         }
                     }
                     sym::aggregate_raw_ptr =&gt; {
-                        <span class="kw">let </span><span class="prelude-val">Ok</span>([data, meta]) = &lt;[<span class="kw">_</span>; <span class="number">2</span>]&gt;::try_from(std::mem::take(args)) <span class="kw">else </span>{
+                        <span class="kw">let </span><span class="prelude-val">Ok</span>([data, meta]) = take_array(args) <span class="kw">else </span>{
                             <span class="macro">span_bug!</span>(
                                 terminator.source_info.span,
                                 <span class="string">"Wrong number of arguments for aggregate_raw_ptr intrinsic"</span>,
@@ -658,7 +628,7 @@
                         terminator.kind = TerminatorKind::Goto { target };
                     }
                     sym::ptr_metadata =&gt; {
-                        <span class="kw">let </span><span class="prelude-val">Ok</span>([ptr]) = &lt;[<span class="kw">_</span>; <span class="number">1</span>]&gt;::try_from(std::mem::take(args)) <span class="kw">else </span>{
+                        <span class="kw">let </span><span class="prelude-val">Ok</span>([ptr]) = take_array(args) <span class="kw">else </span>{
                             <span class="macro">span_bug!</span>(
                                 terminator.source_info.span,
                                 <span class="string">"Wrong number of arguments for ptr_metadata intrinsic"</span>,

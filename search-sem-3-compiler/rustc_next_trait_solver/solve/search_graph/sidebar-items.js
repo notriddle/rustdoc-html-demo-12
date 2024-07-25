@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["StepResult"],"struct":["DetachedEntry","HasBeenUsed","ProvisionalCacheEntry","SearchGraph","SolverLimit","StackDepth","StackEntry"]};
+window.SIDEBAR_ITEMS = {"fn":["response_no_constraints"],"struct":["SearchGraphDelegate"],"type":["SearchGraph"]};

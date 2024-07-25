@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/inline.rs`."><title>inline.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/inline.rs`."><title>inline.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1079,7 +1079,81 @@
 <a href="#1079" id="1079">1079</a>
 <a href="#1080" id="1080">1080</a>
 <a href="#1081" id="1081">1081</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! Inlining pass for MIR functions
+<a href="#1082" id="1082">1082</a>
+<a href="#1083" id="1083">1083</a>
+<a href="#1084" id="1084">1084</a>
+<a href="#1085" id="1085">1085</a>
+<a href="#1086" id="1086">1086</a>
+<a href="#1087" id="1087">1087</a>
+<a href="#1088" id="1088">1088</a>
+<a href="#1089" id="1089">1089</a>
+<a href="#1090" id="1090">1090</a>
+<a href="#1091" id="1091">1091</a>
+<a href="#1092" id="1092">1092</a>
+<a href="#1093" id="1093">1093</a>
+<a href="#1094" id="1094">1094</a>
+<a href="#1095" id="1095">1095</a>
+<a href="#1096" id="1096">1096</a>
+<a href="#1097" id="1097">1097</a>
+<a href="#1098" id="1098">1098</a>
+<a href="#1099" id="1099">1099</a>
+<a href="#1100" id="1100">1100</a>
+<a href="#1101" id="1101">1101</a>
+<a href="#1102" id="1102">1102</a>
+<a href="#1103" id="1103">1103</a>
+<a href="#1104" id="1104">1104</a>
+<a href="#1105" id="1105">1105</a>
+<a href="#1106" id="1106">1106</a>
+<a href="#1107" id="1107">1107</a>
+<a href="#1108" id="1108">1108</a>
+<a href="#1109" id="1109">1109</a>
+<a href="#1110" id="1110">1110</a>
+<a href="#1111" id="1111">1111</a>
+<a href="#1112" id="1112">1112</a>
+<a href="#1113" id="1113">1113</a>
+<a href="#1114" id="1114">1114</a>
+<a href="#1115" id="1115">1115</a>
+<a href="#1116" id="1116">1116</a>
+<a href="#1117" id="1117">1117</a>
+<a href="#1118" id="1118">1118</a>
+<a href="#1119" id="1119">1119</a>
+<a href="#1120" id="1120">1120</a>
+<a href="#1121" id="1121">1121</a>
+<a href="#1122" id="1122">1122</a>
+<a href="#1123" id="1123">1123</a>
+<a href="#1124" id="1124">1124</a>
+<a href="#1125" id="1125">1125</a>
+<a href="#1126" id="1126">1126</a>
+<a href="#1127" id="1127">1127</a>
+<a href="#1128" id="1128">1128</a>
+<a href="#1129" id="1129">1129</a>
+<a href="#1130" id="1130">1130</a>
+<a href="#1131" id="1131">1131</a>
+<a href="#1132" id="1132">1132</a>
+<a href="#1133" id="1133">1133</a>
+<a href="#1134" id="1134">1134</a>
+<a href="#1135" id="1135">1135</a>
+<a href="#1136" id="1136">1136</a>
+<a href="#1137" id="1137">1137</a>
+<a href="#1138" id="1138">1138</a>
+<a href="#1139" id="1139">1139</a>
+<a href="#1140" id="1140">1140</a>
+<a href="#1141" id="1141">1141</a>
+<a href="#1142" id="1142">1142</a>
+<a href="#1143" id="1143">1143</a>
+<a href="#1144" id="1144">1144</a>
+<a href="#1145" id="1145">1145</a>
+<a href="#1146" id="1146">1146</a>
+<a href="#1147" id="1147">1147</a>
+<a href="#1148" id="1148">1148</a>
+<a href="#1149" id="1149">1149</a>
+<a href="#1150" id="1150">1150</a>
+<a href="#1151" id="1151">1151</a>
+<a href="#1152" id="1152">1152</a>
+<a href="#1153" id="1153">1153</a>
+<a href="#1154" id="1154">1154</a>
+</pre></div><pre class="rust"><code><span class="doccomment">//! Inlining pass for MIR functions.
+
 </span><span class="kw">use </span><span class="kw">crate</span>::deref_separator::deref_finder;
 <span class="kw">use </span>rustc_attr::InlineAttr;
 <span class="kw">use </span>rustc_hir::def::DefKind;
@@ -1091,7 +1165,7 @@
 <span class="kw">use </span>rustc_middle::mir::visit::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::ty::TypeVisitableExt;
-<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Instance, InstanceKind, ParamEnv, Ty, TyCtxt};
+<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Instance, InstanceKind, ParamEnv, Ty, TyCtxt, TypeFlags};
 <span class="kw">use </span>rustc_session::config::{DebugInfo, OptLevel};
 <span class="kw">use </span>rustc_span::source_map::Spanned;
 <span class="kw">use </span>rustc_span::sym;
@@ -1121,6 +1195,12 @@
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>Inline {
     <span class="kw">fn </span>is_enabled(<span class="kw-2">&amp;</span><span class="self">self</span>, sess: <span class="kw-2">&amp;</span>rustc_session::Session) -&gt; bool {
+        <span class="comment">// FIXME(#127234): Coverage instrumentation currently doesn't handle inlined
+        // MIR correctly when Modified Condition/Decision Coverage is enabled.
+        </span><span class="kw">if </span>sess.instrument_coverage_mcdc() {
+            <span class="kw">return </span><span class="bool-val">false</span>;
+        }
+
         <span class="kw">if let </span><span class="prelude-val">Some</span>(enabled) = sess.opts.unstable_opts.inline_mir {
             <span class="kw">return </span>enabled;
         }
@@ -1165,13 +1245,18 @@
     }
 
     <span class="kw">let </span>param_env = tcx.param_env_reveal_all_normalized(def_id);
+    <span class="kw">let </span>codegen_fn_attrs = tcx.codegen_fn_attrs(def_id);
 
     <span class="kw">let </span><span class="kw-2">mut </span>this = Inliner {
         tcx,
         param_env,
-        codegen_fn_attrs: tcx.codegen_fn_attrs(def_id),
+        codegen_fn_attrs,
         history: Vec::new(),
         changed: <span class="bool-val">false</span>,
+        caller_is_inline_forwarder: <span class="macro">matches!</span>(
+            codegen_fn_attrs.inline,
+            InlineAttr::Hint | InlineAttr::Always
+        ) &amp;&amp; body_is_forwarder(body),
     };
     <span class="kw">let </span>blocks = START_BLOCK..body.basic_blocks.next_index();
     this.process_blocks(body, blocks);
@@ -1191,6 +1276,9 @@
     </span>history: Vec&lt;DefId&gt;,
     <span class="doccomment">/// Indicates that the caller body has been modified.
     </span>changed: bool,
+    <span class="doccomment">/// Indicates that the caller is #[inline] and just calls another function,
+    /// and thus we can inline less into it as it'll be inlined itself.
+    </span>caller_is_inline_forwarder: bool,
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; Inliner&lt;<span class="lifetime">'tcx</span>&gt; {
@@ -1386,6 +1474,16 @@
             </span>InstanceKind::Intrinsic(<span class="kw">_</span>) | InstanceKind::Virtual(..) =&gt; {
                 <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">"instance without MIR (intrinsic / virtual)"</span>);
             }
+
+            <span class="comment">// FIXME(#127030): `ConstParamHasTy` has bad interactions with
+            // the drop shim builder, which does not evaluate predicates in
+            // the correct param-env for types being dropped. Stall resolving
+            // the MIR for this instance until all of its const params are
+            // substituted.
+            </span>InstanceKind::DropGlue(<span class="kw">_</span>, <span class="prelude-val">Some</span>(ty)) <span class="kw">if </span>ty.has_type_flags(TypeFlags::HAS_CT_PARAM) =&gt; {
+                <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">"still needs substitution"</span>);
+            }
+
             <span class="comment">// This cannot result in an immediate cycle since the callee MIR is a shim, which does
             // not get any optimizations run on it. Any subsequent inlining may cause cycles, but we
             // do not need to catch this here, we can wait until the inliner decides to continue
@@ -1445,13 +1543,15 @@
     ) -&gt; <span class="prelude-ty">Option</span>&lt;CallSite&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
         <span class="comment">// Only consider direct calls to functions
         </span><span class="kw">let </span>terminator = bb_data.terminator();
-        <span class="kw">if let </span>TerminatorKind::Call { <span class="kw-2">ref </span>func, fn_span, .. } = terminator.kind {
+
+        <span class="comment">// FIXME(explicit_tail_calls): figure out if we can inline tail calls
+        </span><span class="kw">if let </span>TerminatorKind::Call { <span class="kw-2">ref </span>func, fn_span, .. } = terminator.kind {
             <span class="kw">let </span>func_ty = func.ty(caller_body, <span class="self">self</span>.tcx);
             <span class="kw">if let </span>ty::FnDef(def_id, args) = <span class="kw-2">*</span>func_ty.kind() {
                 <span class="comment">// To resolve an instance its args have to be fully normalized.
                 </span><span class="kw">let </span>args = <span class="self">self</span>.tcx.try_normalize_erasing_regions(<span class="self">self</span>.param_env, args).ok()<span class="question-mark">?</span>;
                 <span class="kw">let </span>callee =
-                    Instance::resolve(<span class="self">self</span>.tcx, <span class="self">self</span>.param_env, def_id, args).ok().flatten()<span class="question-mark">?</span>;
+                    Instance::try_resolve(<span class="self">self</span>.tcx, <span class="self">self</span>.param_env, def_id, args).ok().flatten()<span class="question-mark">?</span>;
 
                 <span class="kw">if let </span>InstanceKind::Virtual(..) | InstanceKind::Intrinsic(<span class="kw">_</span>) = callee.def {
                     <span class="kw">return </span><span class="prelude-val">None</span>;
@@ -1555,7 +1655,9 @@
     ) -&gt; <span class="prelude-ty">Result</span>&lt;(), <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str&gt; {
         <span class="kw">let </span>tcx = <span class="self">self</span>.tcx;
 
-        <span class="kw">let </span><span class="kw-2">mut </span>threshold = <span class="kw">if </span>cross_crate_inlinable {
+        <span class="kw">let </span><span class="kw-2">mut </span>threshold = <span class="kw">if </span><span class="self">self</span>.caller_is_inline_forwarder {
+            <span class="self">self</span>.tcx.sess.opts.unstable_opts.inline_mir_forwarder_threshold.unwrap_or(<span class="number">30</span>)
+        } <span class="kw">else if </span>cross_crate_inlinable {
             <span class="self">self</span>.tcx.sess.opts.unstable_opts.inline_mir_hint_threshold.unwrap_or(<span class="number">100</span>)
         } <span class="kw">else </span>{
             <span class="self">self</span>.tcx.sess.opts.unstable_opts.inline_mir_threshold.unwrap_or(<span class="number">50</span>)
@@ -1573,6 +1675,8 @@
 
         </span><span class="kw">let </span><span class="kw-2">mut </span>checker =
             CostChecker::new(<span class="self">self</span>.tcx, <span class="self">self</span>.param_env, <span class="prelude-val">Some</span>(callsite.callee), callee_body);
+
+        checker.add_function_level_costs();
 
         <span class="comment">// Traverse the MIR manually so we can account for the effects of inlining on the CFG.
         </span><span class="kw">let </span><span class="kw-2">mut </span>work_list = <span class="macro">vec!</span>[START_BLOCK];
@@ -1608,6 +1712,9 @@
                 // inline-asm is detected. LLVM will still possibly do an inline later on
                 // if the no-attribute function ends up with the same instruction set anyway.
                 </span><span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">"Cannot move inline-asm across instruction sets"</span>);
+            } <span class="kw">else if let </span>TerminatorKind::TailCall { .. } = term.kind {
+                <span class="comment">// FIXME(explicit_tail_calls): figure out how exactly functions containing tail calls can be inlined (and if they even should)
+                </span><span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">"can't inline functions with tail calls"</span>);
             } <span class="kw">else </span>{
                 work_list.extend(term.successors())
             }
@@ -1704,8 +1811,7 @@
         };
 
         <span class="comment">// Copy the arguments if needed.
-        </span><span class="kw">let </span>args: Vec&lt;<span class="kw">_</span>&gt; =
-            <span class="self">self</span>.make_call_args(args, <span class="kw-2">&amp;</span>callsite, caller_body, <span class="kw-2">&amp;</span>callee_body, return_block);
+        </span><span class="kw">let </span>args = <span class="self">self</span>.make_call_args(args, <span class="kw-2">&amp;</span>callsite, caller_body, <span class="kw-2">&amp;</span>callee_body, return_block);
 
         <span class="kw">let </span><span class="kw-2">mut </span>integrator = Integrator {
             args: <span class="kw-2">&amp;</span>args,
@@ -1816,12 +1922,12 @@
 
     <span class="kw">fn </span>make_call_args(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        args: Vec&lt;Spanned&lt;Operand&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt;,
+        args: Box&lt;[Spanned&lt;Operand&lt;<span class="lifetime">'tcx</span>&gt;&gt;]&gt;,
         callsite: <span class="kw-2">&amp;</span>CallSite&lt;<span class="lifetime">'tcx</span>&gt;,
         caller_body: <span class="kw-2">&amp;mut </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
         callee_body: <span class="kw-2">&amp;</span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
         return_block: <span class="prelude-ty">Option</span>&lt;BasicBlock&gt;,
-    ) -&gt; Vec&lt;Local&gt; {
+    ) -&gt; Box&lt;[Local]&gt; {
         <span class="kw">let </span>tcx = <span class="self">self</span>.tcx;
 
         <span class="comment">// There is a bit of a mismatch between the *caller* of a closure and the *callee*.
@@ -1848,7 +1954,8 @@
         //
         // and the vector is `[closure_ref, tmp0, tmp1, tmp2]`.
         </span><span class="kw">if </span>callsite.fn_sig.abi() == Abi::RustCall &amp;&amp; callee_body.spread_arg.is_none() {
-            <span class="kw">let </span><span class="kw-2">mut </span>args = args.into_iter();
+            <span class="comment">// FIXME(edition_2024): switch back to a normal method call.
+            </span><span class="kw">let </span><span class="kw-2">mut </span>args = &lt;<span class="kw">_</span>&gt;::into_iter(args);
             <span class="kw">let </span>self_ = <span class="self">self</span>.create_temp_if_necessary(
                 args.next().unwrap().node,
                 callsite,
@@ -1882,7 +1989,8 @@
 
             closure_ref_arg.chain(tuple_tmp_args).collect()
         } <span class="kw">else </span>{
-            args.into_iter()
+            <span class="comment">// FIXME(edition_2024): switch back to a normal method call.
+            </span>&lt;<span class="kw">_</span>&gt;::into_iter(args)
                 .map(|a| <span class="self">self</span>.create_temp_if_necessary(a.node, callsite, caller_body, return_block))
                 .collect()
         }
@@ -2095,6 +2203,10 @@
                 <span class="kw-2">*</span>target = <span class="self">self</span>.map_block(<span class="kw-2">*</span>target);
                 <span class="kw-2">*</span>unwind = <span class="self">self</span>.map_unwind(<span class="kw-2">*</span>unwind);
             }
+            TerminatorKind::TailCall { .. } =&gt; {
+                <span class="comment">// check_mir_body forbids tail calls
+                </span><span class="macro">unreachable!</span>()
+            }
             TerminatorKind::Call { <span class="kw-2">ref mut </span>target, <span class="kw-2">ref mut </span>unwind, .. } =&gt; {
                 <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref mut </span>tgt) = <span class="kw-2">*</span>target {
                     <span class="kw-2">*</span>tgt = <span class="self">self</span>.map_block(<span class="kw-2">*</span>tgt);
@@ -2159,5 +2271,39 @@
         }
     }
     <span class="prelude-val">Ok</span>(tcx.instance_mir(instance))
+}
+
+<span class="kw">fn </span>body_is_forwarder(body: <span class="kw-2">&amp;</span>Body&lt;<span class="lifetime">'_</span>&gt;) -&gt; bool {
+    <span class="kw">let </span>TerminatorKind::Call { target, .. } = body.basic_blocks[START_BLOCK].terminator().kind
+    <span class="kw">else </span>{
+        <span class="kw">return </span><span class="bool-val">false</span>;
+    };
+    <span class="kw">if let </span><span class="prelude-val">Some</span>(target) = target {
+        <span class="kw">let </span>TerminatorKind::Return = body.basic_blocks[target].terminator().kind <span class="kw">else </span>{
+            <span class="kw">return </span><span class="bool-val">false</span>;
+        };
+    }
+
+    <span class="kw">let </span>max_blocks = <span class="kw">if </span>!body.is_polymorphic {
+        <span class="number">2
+    </span>} <span class="kw">else if </span>target.is_none() {
+        <span class="number">3
+    </span>} <span class="kw">else </span>{
+        <span class="number">4
+    </span>};
+    <span class="kw">if </span>body.basic_blocks.len() &gt; max_blocks {
+        <span class="kw">return </span><span class="bool-val">false</span>;
+    }
+
+    body.basic_blocks.iter_enumerated().all(|(bb, bb_data)| {
+        bb == START_BLOCK
+            || <span class="macro">matches!</span>(
+                bb_data.terminator().kind,
+                TerminatorKind::Return
+                    | TerminatorKind::Drop { .. }
+                    | TerminatorKind::UnwindResume
+                    | TerminatorKind::UnwindTerminate(<span class="kw">_</span>)
+            )
+    })
 }
 </code></pre></div></section></main></body></html>

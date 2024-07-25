@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["BehaviorOnFailure","OutputMode"],"struct":["BootstrapCommand"]};
+window.SIDEBAR_ITEMS = {"enum":["BehaviorOnFailure","CommandStatus","OutputMode"],"fn":["command"],"struct":["BootstrapCommand","CommandOutput"]};

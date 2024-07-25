@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `library/std/src/sync/mpmc/list.rs`."><title>list.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="std" data-themes="" data-resource-suffix="1.81.0" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files1.81.0.js"></script><script defer src="../../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `library/std/src/sync/mpmc/list.rs`."><title>list.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="std" data-themes="" data-resource-suffix="1.82.0" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files1.82.0.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -651,6 +651,10 @@
 <a href="#651" id="651">651</a>
 <a href="#652" id="652">652</a>
 <a href="#653" id="653">653</a>
+<a href="#654" id="654">654</a>
+<a href="#655" id="655">655</a>
+<a href="#656" id="656">656</a>
+<a href="#657" id="657">657</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Unbounded channel implemented as a linked list.
 
 </span><span class="kw">use </span><span class="kw">super</span>::context::Context;
@@ -744,7 +748,7 @@
         <span class="comment">// It is not necessary to set the `DESTROY` bit in the last slot because that slot has
         // begun destruction of the block.
         </span><span class="kw">for </span>i <span class="kw">in </span>start..BLOCK_CAP - <span class="number">1 </span>{
-            <span class="kw">let </span>slot = (<span class="kw-2">*</span>this).slots.get_unchecked(i);
+            <span class="kw">let </span>slot = <span class="kw">unsafe </span>{ (<span class="kw-2">*</span>this).slots.get_unchecked(i) };
 
             <span class="comment">// Mark the `DESTROY` bit if a thread is still using the slot.
             </span><span class="kw">if </span>slot.state.load(Ordering::Acquire) &amp; READ == <span class="number">0
@@ -756,7 +760,7 @@
         }
 
         <span class="comment">// No thread is using the block, now it is safe to destroy it.
-        </span>drop(Box::from_raw(this));
+        </span>drop(<span class="kw">unsafe </span>{ Box::from_raw(this) });
     }
 }
 
@@ -918,9 +922,11 @@
         <span class="comment">// Write the message into the slot.
         </span><span class="kw">let </span>block = token.list.block <span class="kw">as </span><span class="kw-2">*mut </span>Block&lt;T&gt;;
         <span class="kw">let </span>offset = token.list.offset;
-        <span class="kw">let </span>slot = (<span class="kw-2">*</span>block).slots.get_unchecked(offset);
-        slot.msg.get().write(MaybeUninit::new(msg));
-        slot.state.fetch_or(WRITE, Ordering::Release);
+        <span class="kw">unsafe </span>{
+            <span class="kw">let </span>slot = (<span class="kw-2">*</span>block).slots.get_unchecked(offset);
+            slot.msg.get().write(MaybeUninit::new(msg));
+            slot.state.fetch_or(WRITE, Ordering::Release);
+        }
 
         <span class="comment">// Wake a sleeping receiver.
         </span><span class="self">self</span>.receivers.notify();
@@ -1022,19 +1028,21 @@
         <span class="comment">// Read the message.
         </span><span class="kw">let </span>block = token.list.block <span class="kw">as </span><span class="kw-2">*mut </span>Block&lt;T&gt;;
         <span class="kw">let </span>offset = token.list.offset;
-        <span class="kw">let </span>slot = (<span class="kw-2">*</span>block).slots.get_unchecked(offset);
-        slot.wait_write();
-        <span class="kw">let </span>msg = slot.msg.get().read().assume_init();
+        <span class="kw">unsafe </span>{
+            <span class="kw">let </span>slot = (<span class="kw-2">*</span>block).slots.get_unchecked(offset);
+            slot.wait_write();
+            <span class="kw">let </span>msg = slot.msg.get().read().assume_init();
 
-        <span class="comment">// Destroy the block if we've reached the end, or if another thread wanted to destroy but
-        // couldn't because we were busy reading from the slot.
-        </span><span class="kw">if </span>offset + <span class="number">1 </span>== BLOCK_CAP {
-            Block::destroy(block, <span class="number">0</span>);
-        } <span class="kw">else if </span>slot.state.fetch_or(READ, Ordering::AcqRel) &amp; DESTROY != <span class="number">0 </span>{
-            Block::destroy(block, offset + <span class="number">1</span>);
+            <span class="comment">// Destroy the block if we've reached the end, or if another thread wanted to destroy but
+            // couldn't because we were busy reading from the slot.
+            </span><span class="kw">if </span>offset + <span class="number">1 </span>== BLOCK_CAP {
+                Block::destroy(block, <span class="number">0</span>);
+            } <span class="kw">else if </span>slot.state.fetch_or(READ, Ordering::AcqRel) &amp; DESTROY != <span class="number">0 </span>{
+                Block::destroy(block, offset + <span class="number">1</span>);
+            }
+
+            <span class="prelude-val">Ok</span>(msg)
         }
-
-        <span class="prelude-val">Ok</span>(msg)
     }
 
     <span class="doccomment">/// Attempts to send a message into the channel.

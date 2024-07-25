@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["FnArg"]};
+window.SIDEBAR_ITEMS = {"enum":["FnArg"],"struct":["EvaluatedCalleeAndArgs"]};

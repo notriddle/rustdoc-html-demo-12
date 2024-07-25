@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"static":["STRING_CACHE"],"struct":["InternedString"]};
+window.SIDEBAR_ITEMS = {"fn":["interned_storage"],"static":["INTERNED_DEFAULT"],"struct":["InternedString"]};

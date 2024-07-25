@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["RegistryCredentialConfig","RegistryOrIndex"],"fn":["get_source_id","registry"],"mod":["login","logout","owner","publish","search","yank"],"struct":["RegistrySourceIds"]};
+window.SIDEBAR_ITEMS = {"enum":["RegistryCredentialConfig","RegistryOrIndex"],"fn":["gen_replacement_error","get_initial_source_id","get_initial_source_id_from_registry_or_index","get_replacement_source_ids","get_source_id","registry"],"mod":["login","logout","owner","publish","search","yank"],"struct":["RegistrySourceIds"]};

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/coroutine.rs`."><title>coroutine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/coroutine.rs`."><title>coroutine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -2135,7 +2135,6 @@
 <a href="#2135" id="2135">2135</a>
 <a href="#2136" id="2136">2136</a>
 <a href="#2137" id="2137">2137</a>
-<a href="#2138" id="2138">2138</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! This is the implementation of the pass which transforms coroutines into state machines.
 //!
 //! MIR generation for coroutines creates a function which has a self argument which
@@ -2196,7 +2195,7 @@
 <span class="kw">use </span><span class="kw">crate</span>::errors;
 <span class="kw">use </span><span class="kw">crate</span>::pass_manager <span class="kw">as </span>pm;
 <span class="kw">use </span><span class="kw">crate</span>::simplify;
-<span class="kw">use </span>rustc_data_structures::fx::{FxHashMap, FxHashSet};
+<span class="kw">use </span>rustc_data_structures::fx::FxHashSet;
 <span class="kw">use </span>rustc_errors::pluralize;
 <span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
 <span class="kw">use </span>rustc_hir::lang_items::LangItem;
@@ -2219,8 +2218,8 @@
 <span class="kw">use </span>rustc_span::Span;
 <span class="kw">use </span>rustc_target::abi::{FieldIdx, VariantIdx};
 <span class="kw">use </span>rustc_target::spec::PanicStrategy;
+<span class="kw">use </span>rustc_trait_selection::error_reporting::InferCtxtErrorExt;
 <span class="kw">use </span>rustc_trait_selection::infer::TyCtxtInferExt <span class="kw">as _</span>;
-<span class="kw">use </span>rustc_trait_selection::traits::error_reporting::TypeErrCtxtExt <span class="kw">as _</span>;
 <span class="kw">use </span>rustc_trait_selection::traits::ObligationCtxt;
 <span class="kw">use </span>rustc_trait_selection::traits::{ObligationCause, ObligationCauseCode};
 <span class="kw">use </span>std::{iter, ops};
@@ -2346,11 +2345,8 @@
 </span><span class="kw">const </span>RETURNED: usize = CoroutineArgs::RETURNED;
 <span class="doccomment">/// Coroutine has panicked and is poisoned.
 </span><span class="kw">const </span>POISONED: usize = CoroutineArgs::POISONED;
-
-<span class="doccomment">/// Number of variants to reserve in coroutine state. Corresponds to
-/// `UNRESUMED` (beginning of a coroutine) and `RETURNED`/`POISONED`
-/// (end of a coroutine) states.
-</span><span class="kw">const </span>RESERVED_VARIANTS: usize = <span class="number">3</span>;
+<span class="doccomment">/// Number of reserved variants of coroutine state.
+</span><span class="kw">const </span>RESERVED_VARIANTS: usize = CoroutineArgs::RESERVED_VARIANTS;
 
 <span class="doccomment">/// A `yield` point in the coroutine.
 </span><span class="kw">struct </span>SuspensionPoint&lt;<span class="lifetime">'tcx</span>&gt; {
@@ -2374,8 +2370,7 @@
     </span>discr_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
 
     <span class="comment">// Mapping from Local to (type of local, coroutine struct index)
-    // FIXME(eddyb) This should use `IndexVec&lt;Local, Option&lt;_&gt;&gt;`.
-    </span>remap: FxHashMap&lt;Local, (Ty&lt;<span class="lifetime">'tcx</span>&gt;, VariantIdx, FieldIdx)&gt;,
+    </span>remap: IndexVec&lt;Local, <span class="prelude-ty">Option</span>&lt;(Ty&lt;<span class="lifetime">'tcx</span>&gt;, VariantIdx, FieldIdx)&gt;&gt;,
 
     <span class="comment">// A map from a suspension point in a block to the locals which have live storage at that point
     </span>storage_liveness: IndexVec&lt;BasicBlock, <span class="prelude-ty">Option</span>&lt;BitSet&lt;Local&gt;&gt;&gt;,
@@ -2623,7 +2618,7 @@
     }
 
     <span class="kw">fn </span>visit_local(<span class="kw-2">&amp;mut </span><span class="self">self</span>, local: <span class="kw-2">&amp;mut </span>Local, <span class="kw">_</span>: PlaceContext, <span class="kw">_</span>: Location) {
-        <span class="macro">assert_eq!</span>(<span class="self">self</span>.remap.get(local), <span class="prelude-val">None</span>);
+        <span class="macro">assert!</span>(!<span class="self">self</span>.remap.contains(<span class="kw-2">*</span>local));
     }
 
     <span class="kw">fn </span>visit_place(
@@ -2633,7 +2628,7 @@
         _location: Location,
     ) {
         <span class="comment">// Replace an Local in the remap with a coroutine struct access
-        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>(ty, variant_index, idx)) = <span class="self">self</span>.remap.get(<span class="kw-2">&amp;</span>place.local) {
+        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="prelude-val">Some</span>((ty, variant_index, idx))) = <span class="self">self</span>.remap.get(place.local) {
             replace_base(place, <span class="self">self</span>.make_field(variant_index, idx, ty), <span class="self">self</span>.tcx);
         }
     }
@@ -2642,7 +2637,7 @@
         <span class="comment">// Remove StorageLive and StorageDead statements for remapped locals
         </span>data.retain_statements(|s| <span class="kw">match </span>s.kind {
             StatementKind::StorageLive(l) | StatementKind::StorageDead(l) =&gt; {
-                !<span class="self">self</span>.remap.contains_key(<span class="kw-2">&amp;</span>l)
+                !<span class="self">self</span>.remap.contains(l)
             }
             <span class="kw">_ </span>=&gt; <span class="bool-val">true</span>,
         });
@@ -2667,13 +2662,9 @@
 
                 <span class="comment">// The resume arg target location might itself be remapped if its base local is
                 // live across a yield.
-                </span><span class="kw">let </span>resume_arg =
-                    <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>(ty, variant, idx)) = <span class="self">self</span>.remap.get(<span class="kw-2">&amp;</span>resume_arg.local) {
-                        replace_base(<span class="kw-2">&amp;mut </span>resume_arg, <span class="self">self</span>.make_field(variant, idx, ty), <span class="self">self</span>.tcx);
-                        resume_arg
-                    } <span class="kw">else </span>{
-                        resume_arg
-                    };
+                </span><span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="prelude-val">Some</span>((ty, variant, idx))) = <span class="self">self</span>.remap.get(resume_arg.local) {
+                    replace_base(<span class="kw-2">&amp;mut </span>resume_arg, <span class="self">self</span>.make_field(variant, idx, ty), <span class="self">self</span>.tcx);
+                }
 
                 <span class="kw">let </span>storage_liveness: GrowableBitSet&lt;Local&gt; =
                     <span class="self">self</span>.storage_liveness[block].clone().unwrap().into();
@@ -2681,7 +2672,7 @@
                 <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..<span class="self">self</span>.always_live_locals.domain_size() {
                     <span class="kw">let </span>l = Local::new(i);
                     <span class="kw">let </span>needs_storage_dead = storage_liveness.contains(l)
-                        &amp;&amp; !<span class="self">self</span>.remap.contains_key(<span class="kw-2">&amp;</span>l)
+                        &amp;&amp; !<span class="self">self</span>.remap.contains(l)
                         &amp;&amp; !<span class="self">self</span>.always_live_locals.contains(l);
                     <span class="kw">if </span>needs_storage_dead {
                         data.statements
@@ -2815,8 +2806,8 @@
 
 <span class="kw">fn </span>eliminate_get_context_call&lt;<span class="lifetime">'tcx</span>&gt;(bb_data: <span class="kw-2">&amp;mut </span>BasicBlockData&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; Local {
     <span class="kw">let </span>terminator = bb_data.terminator.take().unwrap();
-    <span class="kw">if let </span>TerminatorKind::Call { <span class="kw-2">mut </span>args, destination, target, .. } = terminator.kind {
-        <span class="kw">let </span>arg = args.pop().unwrap();
+    <span class="kw">if let </span>TerminatorKind::Call { args, destination, target, .. } = terminator.kind {
+        <span class="kw">let </span>[arg] = <span class="kw-2">*</span>Box::try_from(args).unwrap();
         <span class="kw">let </span>local = arg.node.place().unwrap().local;
 
         <span class="kw">let </span>arg = Rvalue::Use(arg.node);
@@ -3175,7 +3166,7 @@
     liveness: LivenessInfo,
     body: <span class="kw-2">&amp;</span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
 ) -&gt; (
-    FxHashMap&lt;Local, (Ty&lt;<span class="lifetime">'tcx</span>&gt;, VariantIdx, FieldIdx)&gt;,
+    IndexVec&lt;Local, <span class="prelude-ty">Option</span>&lt;(Ty&lt;<span class="lifetime">'tcx</span>&gt;, VariantIdx, FieldIdx)&gt;&gt;,
     CoroutineLayout&lt;<span class="lifetime">'tcx</span>&gt;,
     IndexVec&lt;BasicBlock, <span class="prelude-ty">Option</span>&lt;BitSet&lt;Local&gt;&gt;&gt;,
 ) {
@@ -3236,7 +3227,7 @@
     // Create a map from local indices to coroutine struct indices.
     </span><span class="kw">let </span><span class="kw-2">mut </span>variant_fields: IndexVec&lt;VariantIdx, IndexVec&lt;FieldIdx, CoroutineSavedLocal&gt;&gt; =
         iter::repeat(IndexVec::new()).take(RESERVED_VARIANTS).collect();
-    <span class="kw">let </span><span class="kw-2">mut </span>remap = FxHashMap::default();
+    <span class="kw">let </span><span class="kw-2">mut </span>remap = IndexVec::from_elem_n(<span class="prelude-val">None</span>, saved_locals.domain_size());
     <span class="kw">for </span>(suspension_point_idx, live_locals) <span class="kw">in </span>live_locals_at_suspension_points.iter().enumerate() {
         <span class="kw">let </span>variant_index = VariantIdx::from(RESERVED_VARIANTS + suspension_point_idx);
         <span class="kw">let </span><span class="kw-2">mut </span>fields = IndexVec::new();
@@ -3247,7 +3238,7 @@
             // around inside coroutines, so it doesn't matter which variant
             // index we access them by.
             </span><span class="kw">let </span>idx = FieldIdx::from_usize(idx);
-            remap.entry(locals[saved_local]).or_insert((tys[saved_local].ty, variant_index, idx));
+            remap[locals[saved_local]] = <span class="prelude-val">Some</span>((tys[saved_local].ty, variant_index, idx));
         }
         variant_fields.push(fields);
         variant_source_info.push(source_info_at_suspension_points[suspension_point_idx]);
@@ -3259,7 +3250,9 @@
     <span class="kw">for </span>var <span class="kw">in </span><span class="kw-2">&amp;</span>body.var_debug_info {
         <span class="kw">let </span>VarDebugInfoContents::Place(place) = <span class="kw-2">&amp;</span>var.value <span class="kw">else </span>{ <span class="kw">continue </span>};
         <span class="kw">let </span><span class="prelude-val">Some</span>(local) = place.as_local() <span class="kw">else </span>{ <span class="kw">continue </span>};
-        <span class="kw">let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>(<span class="kw">_</span>, variant, field)) = remap.get(<span class="kw-2">&amp;</span>local) <span class="kw">else </span>{ <span class="kw">continue </span>};
+        <span class="kw">let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="prelude-val">Some</span>((<span class="kw">_</span>, variant, field))) = remap.get(local) <span class="kw">else </span>{
+            <span class="kw">continue</span>;
+        };
 
         <span class="kw">let </span>saved_local = variant_fields[variant][field];
         field_names.get_or_insert_with(saved_local, || var.name);
@@ -3511,6 +3504,10 @@
             | TerminatorKind::Call { .. }
             | TerminatorKind::InlineAsm { .. }
             | TerminatorKind::Assert { .. } =&gt; <span class="kw">return </span><span class="bool-val">true</span>,
+
+            TerminatorKind::TailCall { .. } =&gt; {
+                <span class="macro">unreachable!</span>(<span class="string">"tail calls can't be present in generators"</span>)
+            }
         }
     }
 
@@ -3662,7 +3659,7 @@
                 </span><span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..(body.local_decls.len()) {
                     <span class="kw">let </span>l = Local::new(i);
                     <span class="kw">let </span>needs_storage_live = point.storage_liveness.contains(l)
-                        &amp;&amp; !transform.remap.contains_key(<span class="kw-2">&amp;</span>l)
+                        &amp;&amp; !transform.remap.contains(l)
                         &amp;&amp; !transform.always_live_locals.contains(l);
                     <span class="kw">if </span>needs_storage_live {
                         statements
@@ -4060,6 +4057,7 @@
             | TerminatorKind::UnwindResume
             | TerminatorKind::UnwindTerminate(<span class="kw">_</span>)
             | TerminatorKind::Return
+            | TerminatorKind::TailCall { .. }
             | TerminatorKind::Unreachable
             | TerminatorKind::Drop { .. }
             | TerminatorKind::Assert { .. }

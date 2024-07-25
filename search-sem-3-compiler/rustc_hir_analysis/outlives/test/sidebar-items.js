@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["test_inferred_outlives"]};

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["cache","cc_detect","change_tracker","channel","dylib","exec","helpers","job","render_tests","tarball"]};
+window.SIDEBAR_ITEMS = {"mod":["cache","cc_detect","change_tracker","channel","exec","helpers","job","render_tests","shared_helpers","tarball"]};

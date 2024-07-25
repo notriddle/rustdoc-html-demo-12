@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/alloc_bytes.rs`."><title>alloc_bytes.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/alloc_bytes.rs`."><title>alloc_bytes.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -109,6 +109,14 @@
 <a href="#109" id="109">109</a>
 <a href="#110" id="110">110</a>
 <a href="#111" id="111">111</a>
+<a href="#112" id="112">112</a>
+<a href="#113" id="113">113</a>
+<a href="#114" id="114">114</a>
+<a href="#115" id="115">115</a>
+<a href="#116" id="116">116</a>
+<a href="#117" id="117">117</a>
+<a href="#118" id="118">118</a>
+<a href="#119" id="119">119</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span>std::alloc;
 <span class="kw">use </span>std::alloc::Layout;
 <span class="kw">use </span>std::borrow::Cow;
@@ -175,17 +183,19 @@
     /// If `size == 0` we allocate using a different `alloc_layout` with `size = 1`, to ensure each allocation has a unique address.
     /// Returns `Err(alloc_layout)` if the allocation function returns a `ptr` where `ptr.is_null()`.
     </span><span class="kw">fn </span>alloc_with(
-        size: usize,
-        align: usize,
+        size: u64,
+        align: u64,
         alloc_fn: <span class="kw">impl </span>FnOnce(Layout) -&gt; <span class="kw-2">*mut </span>u8,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;MiriAllocBytes, Layout&gt; {
-        <span class="kw">let </span>layout = Layout::from_size_align(size, align).unwrap();
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;MiriAllocBytes, ()&gt; {
+        <span class="kw">let </span>size = usize::try_from(size).map_err(|<span class="kw">_</span>| ())<span class="question-mark">?</span>;
+        <span class="kw">let </span>align = usize::try_from(align).map_err(|<span class="kw">_</span>| ())<span class="question-mark">?</span>;
+        <span class="kw">let </span>layout = Layout::from_size_align(size, align).map_err(|<span class="kw">_</span>| ())<span class="question-mark">?</span>;
         <span class="comment">// When size is 0 we allocate 1 byte anyway, to ensure each allocation has a unique address.
         </span><span class="kw">let </span>alloc_layout =
             <span class="kw">if </span>size == <span class="number">0 </span>{ Layout::from_size_align(<span class="number">1</span>, align).unwrap() } <span class="kw">else </span>{ layout };
         <span class="kw">let </span>ptr = alloc_fn(alloc_layout);
         <span class="kw">if </span>ptr.is_null() {
-            <span class="prelude-val">Err</span>(alloc_layout)
+            <span class="prelude-val">Err</span>(())
         } <span class="kw">else </span>{
             <span class="comment">// SAFETY: All `MiriAllocBytes` invariants are fulfilled.
             </span><span class="prelude-val">Ok</span>(<span class="self">Self </span>{ ptr, layout })
@@ -197,11 +207,13 @@
     <span class="kw">fn </span>from_bytes&lt;<span class="lifetime">'a</span>&gt;(slice: <span class="kw">impl </span>Into&lt;Cow&lt;<span class="lifetime">'a</span>, [u8]&gt;&gt;, align: Align) -&gt; <span class="self">Self </span>{
         <span class="kw">let </span>slice = slice.into();
         <span class="kw">let </span>size = slice.len();
-        <span class="kw">let </span>align = align.bytes_usize();
+        <span class="kw">let </span>align = align.bytes();
         <span class="comment">// SAFETY: `alloc_fn` will only be used with `size != 0`.
         </span><span class="kw">let </span>alloc_fn = |layout| <span class="kw">unsafe </span>{ alloc::alloc(layout) };
-        <span class="kw">let </span>alloc_bytes = MiriAllocBytes::alloc_with(size, align, alloc_fn)
-            .unwrap_or_else(|layout| alloc::handle_alloc_error(layout));
+        <span class="kw">let </span>alloc_bytes = MiriAllocBytes::alloc_with(size.try_into().unwrap(), align, alloc_fn)
+            .unwrap_or_else(|()| {
+                <span class="macro">panic!</span>(<span class="string">"Miri ran out of memory: cannot create allocation of {size} bytes"</span>)
+            });
         <span class="comment">// SAFETY: `alloc_bytes.ptr` and `slice.as_ptr()` are non-null, properly aligned
         // and valid for the `size`-many bytes to be copied.
         </span><span class="kw">unsafe </span>{ alloc_bytes.ptr.copy_from(slice.as_ptr(), size) };
@@ -209,14 +221,18 @@
     }
 
     <span class="kw">fn </span>zeroed(size: Size, align: Align) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="self">Self</span>&gt; {
-        <span class="kw">let </span>size = size.bytes_usize();
-        <span class="kw">let </span>align = align.bytes_usize();
+        <span class="kw">let </span>size = size.bytes();
+        <span class="kw">let </span>align = align.bytes();
         <span class="comment">// SAFETY: `alloc_fn` will only be used with `size != 0`.
         </span><span class="kw">let </span>alloc_fn = |layout| <span class="kw">unsafe </span>{ alloc::alloc_zeroed(layout) };
         MiriAllocBytes::alloc_with(size, align, alloc_fn).ok()
     }
 
     <span class="kw">fn </span>as_mut_ptr(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">*mut </span>u8 {
+        <span class="self">self</span>.ptr
+    }
+
+    <span class="kw">fn </span>as_ptr(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">*const </span>u8 {
         <span class="self">self</span>.ptr
     }
 }

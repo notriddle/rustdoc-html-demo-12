@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["visibility_qualified"]};
+window.SIDEBAR_ITEMS = {"enum":["DelegationKind"],"fn":["visibility_qualified"]};

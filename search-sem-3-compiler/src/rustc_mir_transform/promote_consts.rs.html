@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/promote_consts.rs`."><title>promote_consts.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/promote_consts.rs`."><title>promote_consts.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1058,8 +1058,6 @@
 <a href="#1058" id="1058">1058</a>
 <a href="#1059" id="1059">1059</a>
 <a href="#1060" id="1060">1060</a>
-<a href="#1061" id="1061">1061</a>
-<a href="#1062" id="1062">1062</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! A pass that promotes borrows of constant rvalues.
 //!
 //! The rvalues considered constant are trees of temps,
@@ -1122,7 +1120,7 @@
         <span class="kw">let </span>ccx = ConstCx::new(tcx, body);
         <span class="kw">let </span>(<span class="kw-2">mut </span>temps, all_candidates) = collect_temps_and_candidates(<span class="kw-2">&amp;</span>ccx);
 
-        <span class="kw">let </span>promotable_candidates = validate_candidates(<span class="kw-2">&amp;</span>ccx, <span class="kw-2">&amp;mut </span>temps, <span class="kw-2">&amp;</span>all_candidates);
+        <span class="kw">let </span>promotable_candidates = validate_candidates(<span class="kw-2">&amp;</span>ccx, <span class="kw-2">&amp;mut </span>temps, all_candidates);
 
         <span class="kw">let </span>promoted = promote_candidates(body, tcx, temps, promotable_candidates);
         <span class="self">self</span>.promoted_fragments.set(promoted);
@@ -1160,8 +1158,8 @@
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; Visitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>Collector&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">fn </span>visit_local(<span class="kw-2">&amp;mut </span><span class="self">self</span>, index: Local, context: PlaceContext, location: Location) {
-        <span class="macro">debug!</span>(<span class="string">"visit_local: index={:?} context={:?} location={:?}"</span>, index, context, location);
+    <span class="attr">#[instrument(level = <span class="string">"debug"</span>, skip(<span class="self">self</span>))]
+    </span><span class="kw">fn </span>visit_local(<span class="kw-2">&amp;mut </span><span class="self">self</span>, index: Local, context: PlaceContext, location: Location) {
         <span class="comment">// We're only interested in temporaries and the return place
         </span><span class="kw">match </span><span class="self">self</span>.ccx.body.local_kind(index) {
             LocalKind::Arg =&gt; <span class="kw">return</span>,
@@ -1173,20 +1171,15 @@
         // then it's constant and thus drop is noop.
         // Non-uses are also irrelevant.
         </span><span class="kw">if </span>context.is_drop() || !context.is_use() {
-            <span class="macro">debug!</span>(
-                <span class="string">"visit_local: context.is_drop={:?} context.is_use={:?}"</span>,
-                context.is_drop(),
-                context.is_use(),
-            );
+            <span class="macro">debug!</span>(is_drop = context.is_drop(), is_use = context.is_use());
             <span class="kw">return</span>;
         }
 
         <span class="kw">let </span>temp = <span class="kw-2">&amp;mut </span><span class="self">self</span>.temps[index];
-        <span class="macro">debug!</span>(<span class="string">"visit_local: temp={:?}"</span>, temp);
+        <span class="macro">debug!</span>(<span class="question-mark">?</span>temp);
         <span class="kw-2">*</span>temp = <span class="kw">match </span><span class="kw-2">*</span>temp {
             TempState::Undefined =&gt; <span class="kw">match </span>context {
-                PlaceContext::MutatingUse(MutatingUseContext::Store)
-                | PlaceContext::MutatingUse(MutatingUseContext::Call) =&gt; {
+                PlaceContext::MutatingUse(MutatingUseContext::Store | MutatingUseContext::Call) =&gt; {
                     TempState::Defined { location, uses: <span class="number">0</span>, valid: <span class="prelude-val">Err</span>(()) }
                 }
                 <span class="kw">_ </span>=&gt; TempState::Unpromotable,
@@ -1199,7 +1192,7 @@
                     | PlaceContext::NonMutatingUse(<span class="kw">_</span>) =&gt; <span class="bool-val">true</span>,
                     PlaceContext::MutatingUse(<span class="kw">_</span>) | PlaceContext::NonUse(<span class="kw">_</span>) =&gt; <span class="bool-val">false</span>,
                 };
-                <span class="macro">debug!</span>(<span class="string">"visit_local: allowed_use={:?}"</span>, allowed_use);
+                <span class="macro">debug!</span>(<span class="question-mark">?</span>allowed_use);
                 <span class="kw">if </span>allowed_use {
                     <span class="kw-2">*</span>uses += <span class="number">1</span>;
                     <span class="kw">return</span>;
@@ -1208,6 +1201,7 @@
             }
             TempState::Unpromotable | TempState::PromotedOut =&gt; TempState::Unpromotable,
         };
+        <span class="macro">debug!</span>(<span class="question-mark">?</span>temp);
     }
 
     <span class="kw">fn </span>visit_rvalue(<span class="kw-2">&amp;mut </span><span class="self">self</span>, rvalue: <span class="kw-2">&amp;</span>Rvalue&lt;<span class="lifetime">'tcx</span>&gt;, location: Location) {
@@ -1757,15 +1751,12 @@
 <span class="kw">fn </span>validate_candidates(
     ccx: <span class="kw-2">&amp;</span>ConstCx&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;,
     temps: <span class="kw-2">&amp;mut </span>IndexSlice&lt;Local, TempState&gt;,
-    candidates: <span class="kw-2">&amp;</span>[Candidate],
+    <span class="kw-2">mut </span>candidates: Vec&lt;Candidate&gt;,
 ) -&gt; Vec&lt;Candidate&gt; {
     <span class="kw">let </span><span class="kw-2">mut </span>validator = Validator { ccx, temps, promotion_safe_blocks: <span class="prelude-val">None </span>};
 
+    candidates.retain(|<span class="kw-2">&amp;</span>candidate| validator.validate_candidate(candidate).is_ok());
     candidates
-        .iter()
-        .copied()
-        .filter(|<span class="kw-2">&amp;</span>candidate| validator.validate_candidate(candidate).is_ok())
-        .collect()
 }
 
 <span class="kw">struct </span>Promoter&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
@@ -1885,7 +1876,7 @@
                     <span class="kw-2">mut </span>func, <span class="kw-2">mut </span>args, call_source: desugar, fn_span, ..
                 } =&gt; {
                     <span class="comment">// This promoted involves a function call, so it may fail to evaluate.
-                    // Let's make sure it is added to `required_consts` so that that failure cannot get lost.
+                    // Let's make sure it is added to `required_consts` so that failure cannot get lost.
                     </span><span class="self">self</span>.add_to_required = <span class="bool-val">true</span>;
 
                     <span class="self">self</span>.visit_operand(<span class="kw-2">&amp;mut </span>func, loc);
@@ -2034,7 +2025,12 @@
     candidates: Vec&lt;Candidate&gt;,
 ) -&gt; IndexVec&lt;Promoted, Body&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
     <span class="comment">// Visit candidates in reverse, in case they're nested.
-    </span><span class="macro">debug!</span>(<span class="string">"promote_candidates({:?})"</span>, candidates);
+    </span><span class="macro">debug!</span>(promote_candidates = <span class="question-mark">?</span>candidates);
+
+    <span class="comment">// eagerly fail fast
+    </span><span class="kw">if </span>candidates.is_empty() {
+        <span class="kw">return </span>IndexVec::new();
+    }
 
     <span class="kw">let </span><span class="kw-2">mut </span>promotions = IndexVec::new();
 

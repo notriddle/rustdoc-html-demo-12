@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/tls.rs`."><title>tls.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/tls.rs`."><title>tls.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -384,6 +384,13 @@
 <a href="#384" id="384">384</a>
 <a href="#385" id="385">385</a>
 <a href="#386" id="386">386</a>
+<a href="#387" id="387">387</a>
+<a href="#388" id="388">388</a>
+<a href="#389" id="389">389</a>
+<a href="#390" id="390">390</a>
+<a href="#391" id="391">391</a>
+<a href="#392" id="392">392</a>
+<a href="#393" id="393">393</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Implement thread-local storage.
 
 </span><span class="kw">use </span>std::collections::btree_map::Entry <span class="kw">as </span>BTreeEntry;
@@ -422,9 +429,9 @@
     <span class="doccomment">/// pthreads-style thread-local storage.
     </span>keys: BTreeMap&lt;TlsKey, TlsEntry&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
 
-    <span class="doccomment">/// A single per thread destructor of the thread local storage (that's how
-    /// things work on macOS) with a data argument.
-    </span>macos_thread_dtors: BTreeMap&lt;ThreadId, (ty::Instance&lt;<span class="lifetime">'tcx</span>&gt;, Scalar)&gt;,
+    <span class="doccomment">/// On macOS, each thread holds a list of destructor functions with their
+    /// respective data arguments.
+    </span>macos_thread_dtors: BTreeMap&lt;ThreadId, Vec&lt;(ty::Instance&lt;<span class="lifetime">'tcx</span>&gt;, Scalar)&gt;&gt;,
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; Default <span class="kw">for </span>TlsData&lt;<span class="lifetime">'tcx</span>&gt; {
@@ -505,26 +512,15 @@
         }
     }
 
-    <span class="doccomment">/// Set the thread wide destructor of the thread local storage for the given
-    /// thread. This function is used to implement `_tlv_atexit` shim on MacOS.
-    ///
-    /// Thread wide dtors are available only on MacOS. There is one destructor
-    /// per thread as can be guessed from the following comment in the
-    /// [`_tlv_atexit`
-    /// implementation](https://github.com/opensource-apple/dyld/blob/195030646877261f0c8c7ad8b001f52d6a26f514/src/threadLocalVariables.c#L389):
-    ///
-    /// NOTE: this does not need locks because it only operates on current thread data
-    </span><span class="kw">pub fn </span>set_macos_thread_dtor(
+    <span class="doccomment">/// Add a thread local storage destructor for the given thread. This function
+    /// is used to implement the `_tlv_atexit` shim on MacOS.
+    </span><span class="kw">pub fn </span>add_macos_thread_dtor(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         thread: ThreadId,
         dtor: ty::Instance&lt;<span class="lifetime">'tcx</span>&gt;,
         data: Scalar,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
-        <span class="kw">if </span><span class="self">self</span>.macos_thread_dtors.insert(thread, (dtor, data)).is_some() {
-            <span class="macro">throw_unsup_format!</span>(
-                <span class="string">"setting more than one thread local storage destructor for the same thread is not supported"
-            </span>);
-        }
+        <span class="self">self</span>.macos_thread_dtors.entry(thread).or_default().push((dtor, data));
         <span class="prelude-val">Ok</span>(())
     }
 
@@ -588,6 +584,10 @@
         <span class="kw">for </span>TlsEntry { data, .. } <span class="kw">in </span><span class="self">self</span>.keys.values_mut() {
             data.remove(<span class="kw-2">&amp;</span>thread_id);
         }
+
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(dtors) = <span class="self">self</span>.macos_thread_dtors.remove(<span class="kw-2">&amp;</span>thread_id) {
+            <span class="macro">assert!</span>(dtors.is_empty(), <span class="string">"the destructors should have already been run"</span>);
+        }
     }
 }
 
@@ -598,7 +598,7 @@
         <span class="kw">for </span>scalar <span class="kw">in </span>keys.values().flat_map(|v| v.data.values()) {
             scalar.visit_provenance(visit);
         }
-        <span class="kw">for </span>(<span class="kw">_</span>, scalar) <span class="kw">in </span>macos_thread_dtors.values() {
+        <span class="kw">for </span>(<span class="kw">_</span>, scalar) <span class="kw">in </span>macos_thread_dtors.values().flatten() {
             scalar.visit_provenance(visit);
         }
     }
@@ -611,6 +611,7 @@
 </span><span class="kw">enum </span>TlsDtorsStatePriv&lt;<span class="lifetime">'tcx</span>&gt; {
     <span class="attr">#[default]
     </span>Init,
+    MacOsDtors,
     PthreadDtors(RunningDtorState),
     <span class="doccomment">/// For Windows Dtors, we store the list of functions that we still have to call.
     /// These are functions from the magic `.CRT$XLB` linker section.
@@ -629,11 +630,10 @@
                 Init =&gt; {
                     <span class="kw">match </span>this.tcx.sess.target.os.as_ref() {
                         <span class="string">"macos" </span>=&gt; {
-                            <span class="comment">// The macOS thread wide destructor runs "before any TLS slots get
-                            // freed", so do that first.
-                            </span>this.schedule_macos_tls_dtor()<span class="question-mark">?</span>;
-                            <span class="comment">// When that destructor is done, go on with the pthread dtors.
-                            </span><span class="kw">break </span><span class="lifetime">'new_state </span>PthreadDtors(Default::default());
+                            <span class="comment">// macOS has a _tlv_atexit function that allows
+                            // registering destructors without associated keys.
+                            // These are run first.
+                            </span><span class="kw">break </span><span class="lifetime">'new_state </span>MacOsDtors;
                         }
                         <span class="kw">_ if </span>this.target_os_is_unix() =&gt; {
                             <span class="comment">// All other Unixes directly jump to running the pthread dtors.
@@ -650,6 +650,14 @@
                             // FIXME: should we do something on wasi?
                             </span><span class="kw">break </span><span class="lifetime">'new_state </span>Done;
                         }
+                    }
+                }
+                MacOsDtors =&gt; {
+                    <span class="kw">match </span>this.schedule_macos_tls_dtor()<span class="question-mark">? </span>{
+                        Poll::Pending =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(Poll::Pending),
+                        <span class="comment">// After all macOS destructors are run, the system switches
+                        // to destroying the pthread destructors.
+                        </span>Poll::Ready(()) =&gt; <span class="kw">break </span><span class="lifetime">'new_state </span>PthreadDtors(Default::default()),
                     }
                 }
                 PthreadDtors(state) =&gt; {
@@ -714,12 +722,15 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Schedule the MacOS thread destructor of the thread local storage to be
-    /// executed.
-    </span><span class="kw">fn </span>schedule_macos_tls_dtor(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="doccomment">/// Schedule the macOS thread local storage destructors to be executed.
+    </span><span class="kw">fn </span>schedule_macos_tls_dtor(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Poll&lt;()&gt;&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
         <span class="kw">let </span>thread_id = this.active_thread();
-        <span class="kw">if let </span><span class="prelude-val">Some</span>((instance, data)) = this.machine.tls.macos_thread_dtors.remove(<span class="kw-2">&amp;</span>thread_id) {
+        <span class="comment">// macOS keeps track of TLS destructors in a stack. If a destructor
+        // registers another destructor, it will be run next.
+        // See https://github.com/apple-oss-distributions/dyld/blob/d552c40cd1de105f0ec95008e0e0c0972de43456/dyld/DyldRuntimeState.cpp#L2277
+        </span><span class="kw">let </span>dtor = this.machine.tls.macos_thread_dtors.get_mut(<span class="kw-2">&amp;</span>thread_id).and_then(Vec::pop);
+        <span class="kw">if let </span><span class="prelude-val">Some</span>((instance, data)) = dtor {
             <span class="macro">trace!</span>(<span class="string">"Running macos dtor {:?} on {:?} at {:?}"</span>, instance, data, thread_id);
 
             this.call_function(
@@ -729,8 +740,11 @@
                 <span class="prelude-val">None</span>,
                 StackPopCleanup::Root { cleanup: <span class="bool-val">true </span>},
             )<span class="question-mark">?</span>;
+
+            <span class="kw">return </span><span class="prelude-val">Ok</span>(Poll::Pending);
         }
-        <span class="prelude-val">Ok</span>(())
+
+        <span class="prelude-val">Ok</span>(Poll::Ready(()))
     }
 
     <span class="doccomment">/// Schedule a pthread TLS destructor. Returns `true` if found

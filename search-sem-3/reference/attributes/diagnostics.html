@@ -186,16 +186,19 @@ messages during compilation.</p>
 <h2 id="lint-check-attributes"><a class="header" href="#lint-check-attributes">Lint check attributes</a></h2>
 <p>A lint check names a potentially undesirable coding pattern, such as
 unreachable code or omitted documentation. The lint attributes <code>allow</code>,
-<code>warn</code>, <code>deny</code>, and <code>forbid</code> use the <a href="../attributes.html#meta-item-attribute-syntax"><em>MetaListPaths</em></a> syntax to specify a
-list of lint names to change the lint level for the entity to which the
-attribute applies.</p>
+<code>expect</code>, <code>warn</code>, <code>deny</code>, and <code>forbid</code> use the <a href="../attributes.html#meta-item-attribute-syntax"><em>MetaListPaths</em></a> syntax
+to specify a list of lint names to change the lint level for the entity
+to which the attribute applies.</p>
 <p>For any lint check <code>C</code>:</p>
 <ul>
-<li><code>allow(C)</code> overrides the check for <code>C</code> so that violations will go
-unreported,</li>
-<li><code>warn(C)</code> warns about violations of <code>C</code> but continues compilation.</li>
-<li><code>deny(C)</code> signals an error after encountering a violation of <code>C</code>,</li>
-<li><code>forbid(C)</code> is the same as <code>deny(C)</code>, but also forbids changing the lint
+<li><code>#[allow(C)]</code> overrides the check for <code>C</code> so that violations will go
+unreported.</li>
+<li><code>#[expect(C)]</code> indicates that lint <code>C</code> is expected to be emitted. The
+attribute will suppress the emission of <code>C</code> or issue a warning, if the
+expectation is unfulfilled.</li>
+<li><code>#[warn(C)]</code> warns about violations of <code>C</code> but continues compilation.</li>
+<li><code>#[deny(C)]</code> signals an error after encountering a violation of <code>C</code>,</li>
+<li><code>#[forbid(C)]</code> is the same as <code>deny(C)</code>, but also forbids changing the lint
 level afterwards,</li>
 </ul>
 <blockquote>
@@ -243,8 +246,8 @@ pub mod m2 {
     pub fn undocumented_too() -&gt; i32 { 3 }
 }
 <span class="boring">}</span></code></pre></pre>
-<p>This example shows how one can use <code>forbid</code> to disallow uses of <code>allow</code> for
-that lint check:</p>
+<p>This example shows how one can use <code>forbid</code> to disallow uses of <code>allow</code> or
+<code>expect</code> for that lint check:</p>
 <pre><pre class="playground"><code class="language-rust compile_fail edition2021"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
 </span>#[forbid(missing_docs)]
@@ -259,6 +262,115 @@ pub mod m3 {
 <p>Note: <code>rustc</code> allows setting lint levels on the
 <a href="../../rustc/lints/levels.html#via-compiler-flag">command-line</a>, and also supports <a href="../../rustc/lints/levels.html#capping-lints">setting
 caps</a> on the lints that are reported.</p>
+</blockquote>
+<h3 id="lint-reasons"><a class="header" href="#lint-reasons">Lint Reasons</a></h3>
+<p>All lint attributes support an additional <code>reason</code> parameter, to give context why
+a certain attribute was added. This reason will be displayed as part of the lint
+message if the lint is emitted at the defined level.</p>
+<pre><pre class="playground"><code class="language-rust edition2015 compile_fail"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// `keyword_idents` is allowed by default. Here we deny it to
+// avoid migration of identifiers when we update the edition.
+#![deny(
+    keyword_idents,
+    reason = "we want to avoid these idents to be future compatible"
+)]
+
+// This name was allowed in Rust's 2015 edition. We still aim to avoid
+// this to be future compatible and not confuse end users.
+fn dyn() {}
+<span class="boring">}</span></code></pre></pre>
+<p>Here is another example, where the lint is allowed with a reason:</p>
+<pre><pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>use std::path::PathBuf;
+
+pub fn get_path() -&gt; PathBuf {
+    // The `reason` parameter on `allow` attributes acts as documentation for the reader.
+    #[allow(unused_mut, reason = "this is only modified on some platforms")]
+    let mut file_name = PathBuf::from("git");
+
+    #[cfg(target_os = "windows")]
+    file_name.set_extension("exe");
+
+    file_name
+}
+<span class="boring">}</span></code></pre></pre>
+<h3 id="the-expect-attribute"><a class="header" href="#the-expect-attribute">The <code>#[expect]</code> attribute</a></h3>
+<p>The <code>#[expect(C)]</code> attribute creates a lint expectation for lint <code>C</code>. The
+expectation will be fulfilled, if a <code>#[warn(C)]</code> attribute at the same location
+would result in a lint emission. If the expectation is unfulfilled, because
+lint <code>C</code> would not be emitted, the <code>unfulfilled_lint_expectations</code> lint will
+be emitted at the attribute.</p>
+<pre><pre class="playground"><code class="language-rust edition2021">fn main() {
+    // This `#[expect]` attribute creates a lint expectation, that the `unused_variables`
+    // lint would be emitted by the following statement. This expectation is
+    // unfulfilled, since the `question` variable is used by the `println!` macro.
+    // Therefore, the `unfulfilled_lint_expectations` lint will be emitted at the
+    // attribute.
+    #[expect(unused_variables)]
+    let question = "who lives in a pineapple under the sea?";
+    println!("{question}");
+
+    // This `#[expect]` attribute creates a lint expectation that will be fulfilled, since
+    // the `answer` variable is never used. The `unused_variables` lint, that would usually
+    // be emitted, is suppressed. No warning will be issued for the statement or attribute.
+    #[expect(unused_variables)]
+    let answer = "SpongeBob SquarePants!";
+}</code></pre></pre>
+<p>The lint expectation is only fulfilled by lint emissions which have been suppressed by
+the <code>expect</code> attribute. If the lint level is modified in the scope with other level
+attributes like <code>allow</code> or <code>warn</code>, the lint emission will be handled accordingly and the
+expectation will remain unfulfilled.</p>
+<pre><pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>#[expect(unused_variables)]
+fn select_song() {
+    // This will emit the `unused_variables` lint at the warn level
+    // as defined by the `warn` attribute. This will not fulfill the
+    // expectation above the function.
+    #[warn(unused_variables)]
+    let song_name = "Crab Rave";
+
+    // The `allow` attribute suppresses the lint emission. This will not
+    // fulfill the expectation as it has been suppressed by the `allow`
+    // attribute and not the `expect` attribute above the function.
+    #[allow(unused_variables)]
+    let song_creator = "Noisestorm";
+
+    // This `expect` attribute will suppress the `unused_variables` lint emission
+    // at the variable. The `expect` attribute above the function will still not
+    // be fulfilled, since this lint emission has been suppressed by the local
+    // expect attribute.
+    #[expect(unused_variables)]
+    let song_version = "Monstercat Release";
+}
+<span class="boring">}</span></code></pre></pre>
+<p>If the <code>expect</code> attribute contains several lints, each one is expected separately. For a
+lint group it’s enough if one lint inside the group has been emitted:</p>
+<pre><pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>// This expectation will be fulfilled by the unused value inside the function
+// since the emitted `unused_variables` lint is inside the `unused` lint group.
+#[expect(unused)]
+pub fn thoughts() {
+    let unused = "I'm running out of examples";
+}
+
+pub fn another_example() {
+    // This attribute creates two lint expectations. The `unused_mut` lint will be
+    // suppressed and with that fulfill the first expectation. The `unused_variables`
+    // wouldn't be emitted, since the variable is used. That expectation will therefore
+    // be unsatisfied, and a warning will be emitted.
+    #[expect(unused_mut, unused_variables)]
+    let mut link = "https://www.rust-lang.org/";
+
+    println!("Welcome to our community: {link}");
+}
+<span class="boring">}</span></code></pre></pre>
+<blockquote>
+<p>Note: The behavior of <code>#[expect(unfulfilled_lint_expectations)]</code> is currently
+defined to always generate the <code>unfulfilled_lint_expectations</code> lint.</p>
 </blockquote>
 <h3 id="lint-groups"><a class="header" href="#lint-groups">Lint groups</a></h3>
 <p>Lints may be organized into named groups so that the level of related lints
@@ -280,8 +392,8 @@ fn example() {
     std::fs::remove_file("some_file"); // ERROR: unused `Result` that must be used
 }
 <span class="boring">}</span></code></pre></pre>
-<p>There is a special group named "warnings" which includes all lints at the
-"warn" level. The "warnings" group ignores attribute order and applies to all
+<p>There is a special group named “warnings” which includes all lints at the
+“warn” level. The “warnings” group ignores attribute order and applies to all
 lints that would otherwise warn within the entity.</p>
 <pre><pre class="playground"><code class="language-rust compile_fail edition2021"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -318,7 +430,7 @@ fn foo() {
     // ...
 }</code></pre></pre>
 <blockquote>
-<p>Note: <code>rustc</code> currently recognizes the tool lints for "<a href="https://github.com/rust-lang/rust-clippy">clippy</a>" and "<a href="../../rustdoc/lints.html">rustdoc</a>".</p>
+<p>Note: <code>rustc</code> currently recognizes the tool lints for “<a href="https://github.com/rust-lang/rust-clippy">clippy</a>” and “<a href="../../rustdoc/lints.html">rustdoc</a>”.</p>
 </blockquote>
 <h2 id="the-deprecated-attribute"><a class="header" href="#the-deprecated-attribute">The <code>deprecated</code> attribute</a></h2>
 <p>The <em><code>deprecated</code> attribute</em> marks an item as deprecated. <code>rustc</code> will issue
@@ -326,15 +438,15 @@ warnings on usage of <code>#[deprecated]</code> items. <code>rustdoc</code> will
 deprecation, including the <code>since</code> version and <code>note</code>, if available.</p>
 <p>The <code>deprecated</code> attribute has several forms:</p>
 <ul>
-<li><code>deprecated</code> — Issues a generic message.</li>
-<li><code>deprecated = "message"</code> — Includes the given string in the deprecation
+<li><code>deprecated</code> — Issues a generic message.</li>
+<li><code>deprecated = "message"</code> — Includes the given string in the deprecation
 message.</li>
 <li><a href="../attributes.html#meta-item-attribute-syntax"><em>MetaListNameValueStr</em></a> syntax with two optional fields:
 <ul>
-<li><code>since</code> — Specifies a version number when the item was deprecated. <code>rustc</code>
+<li><code>since</code> — Specifies a version number when the item was deprecated. <code>rustc</code>
 does not currently interpret the string, but external tools like <a href="https://github.com/rust-lang/rust-clippy">Clippy</a>
 may check the validity of the value.</li>
-<li><code>note</code> — Specifies a string that should be included in the deprecation
+<li><code>note</code> — Specifies a string that should be included in the deprecation
 message. This is typically used to provide an explanation about the
 deprecation and preferred alternatives.</li>
 </ul>
@@ -360,7 +472,7 @@ pub fn bar() {}
 <p>The <a href="https://github.com/rust-lang/rfcs/blob/master/text/1270-deprecation.md">RFC</a> contains motivations and more details.</p>
 <h2 id="the-must_use-attribute"><a class="header" href="#the-must_use-attribute">The <code>must_use</code> attribute</a></h2>
 <p>The <em><code>must_use</code> attribute</em> is used to issue a diagnostic warning when a value
-is not "used". It can be applied to user-defined composite types
+is not “used”. It can be applied to user-defined composite types
 (<a href="../items/structs.html"><code>struct</code>s</a>, <a href="../items/enumerations.html"><code>enum</code>s</a>, and <a href="../items/unions.html"><code>union</code>s</a>), <a href="../items/functions.html">functions</a>,
 and <a href="../items/traits.html">traits</a>.</p>
 <p>The <code>must_use</code> attribute may include a message by using the
@@ -483,7 +595,7 @@ For any other non-existing option a lint-warning is generated.</p>
 Format parameters with the given named parameter will be replaced with the following text:</p>
 <ul>
 <li><code>{Self}</code> — The name of the type implementing the trait.</li>
-<li><code>{</code> <em>GenericParameterName</em> <code>}</code> — The name of the generic argument's type for the given generic parameter.</li>
+<li><code>{</code> <em>GenericParameterName</em> <code>}</code> — The name of the generic argument’s type for the given generic parameter.</li>
 </ul>
 <p>Any other format parameter will generate a warning, but will otherwise be included in the string as-is.</p>
 <p>Invalid format strings may generate a warning, but are otherwise allowed, but may not display as intended.

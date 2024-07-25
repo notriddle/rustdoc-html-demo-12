@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["setup_callbacks"],"mod":["callbacks","errors","interface","passes","proc_macro_decls","queries","util"],"static":["DEFAULT_LOCALE_RESOURCE","DEFAULT_QUERY_PROVIDERS"],"struct":["Queries"]};
+window.SIDEBAR_ITEMS = {"fn":["setup_callbacks"],"mod":["callbacks","errors","interface","passes","proc_macro_decls","queries","util"],"static":["DEFAULT_LOCALE_RESOURCE"],"struct":["Linker","Queries"]};

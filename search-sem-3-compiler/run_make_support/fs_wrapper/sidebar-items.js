@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["copy","create_dir","create_dir_all","create_file","metadata","read","read_dir","read_to_string","remove_dir_all","remove_file","rename","set_permissions","write"]};

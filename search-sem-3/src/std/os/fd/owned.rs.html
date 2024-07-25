@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `library/std/src/os/fd/owned.rs`."><title>owned.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-0c9465bb72ad079c.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="std" data-themes="" data-resource-suffix="1.81.0" data-rustdoc-version="1.81.0-dev" data-channel="nightly" data-search-js="search-33e1eb393c958316.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files1.81.0.js"></script><script defer src="../../../../static.files/main-ffff35d1e1849984.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `library/std/src/os/fd/owned.rs`."><title>owned.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="std" data-themes="" data-resource-suffix="1.82.0" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files1.82.0.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -477,6 +477,16 @@
 <a href="#477" id="477">477</a>
 <a href="#478" id="478">478</a>
 <a href="#479" id="479">479</a>
+<a href="#480" id="480">480</a>
+<a href="#481" id="481">481</a>
+<a href="#482" id="482">482</a>
+<a href="#483" id="483">483</a>
+<a href="#484" id="484">484</a>
+<a href="#485" id="485">485</a>
+<a href="#486" id="486">486</a>
+<a href="#487" id="487">487</a>
+<a href="#488" id="488">488</a>
+<a href="#489" id="489">489</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Owned and borrowed Unix-like file descriptors.
 
 </span><span class="attr">#![stable(feature = <span class="string">"io_safety"</span>, since = <span class="string">"1.63.0"</span>)]
@@ -487,7 +497,7 @@
 <span class="kw">use </span><span class="kw">crate</span>::fs;
 <span class="kw">use </span><span class="kw">crate</span>::io;
 <span class="kw">use </span><span class="kw">crate</span>::marker::PhantomData;
-<span class="kw">use </span><span class="kw">crate</span>::mem::forget;
+<span class="kw">use </span><span class="kw">crate</span>::mem::ManuallyDrop;
 <span class="attr">#[cfg(not(any(target_arch = <span class="string">"wasm32"</span>, target_env = <span class="string">"sgx"</span>, target_os = <span class="string">"hermit"</span>)))]
 </span><span class="kw">use </span><span class="kw">crate</span>::sys::cvt;
 <span class="kw">use </span><span class="kw">crate</span>::sys_common::{AsInner, FromInner, IntoInner};
@@ -503,9 +513,14 @@
 /// passed as an argument, it is not captured or consumed, and it never has the
 /// value `-1`.
 ///
-/// This type's `.to_owned()` implementation returns another `BorrowedFd`
-/// rather than an `OwnedFd`. It just makes a trivial copy of the raw file
-/// descriptor, which is then borrowed under the same lifetime.
+/// This type does not have a [`ToOwned`][crate::borrow::ToOwned]
+/// implementation. Calling `.to_owned()` on a variable of this type will call
+/// it on `&amp;BorrowedFd` and use `Clone::clone()` like `ToOwned` does for all
+/// types implementing `Clone`. The result will be descriptor borrowed under
+/// the same lifetime.
+///
+/// To obtain an [`OwnedFd`], you can use [`BorrowedFd::try_clone_to_owned`]
+/// instead, but this is not supported on all platforms.
 </span><span class="attr">#[derive(Copy, Clone)]
 #[repr(transparent)]
 #[rustc_layout_scalar_valid_range_start(<span class="number">0</span>)]
@@ -529,6 +544,8 @@
 /// descriptor, so it can be used in FFI in places where a file descriptor is
 /// passed as a consumed argument or returned as an owned value, and it never
 /// has the value `-1`.
+///
+/// You can use [`AsFd::as_fd`] to obtain a [`BorrowedFd`].
 </span><span class="attr">#[repr(transparent)]
 #[rustc_layout_scalar_valid_range_start(<span class="number">0</span>)]
 </span><span class="comment">// libstd/os/raw/mod.rs assures me that every libstd-supported platform has a
@@ -620,9 +637,7 @@
 </span><span class="kw">impl </span>IntoRawFd <span class="kw">for </span>OwnedFd {
     <span class="attr">#[inline]
     </span><span class="kw">fn </span>into_raw_fd(<span class="self">self</span>) -&gt; RawFd {
-        <span class="kw">let </span>fd = <span class="self">self</span>.fd;
-        forget(<span class="self">self</span>);
-        fd
+        ManuallyDrop::new(<span class="self">self</span>).fd
     }
 }
 
@@ -654,6 +669,11 @@
             // the file descriptor was closed or not, and if we retried (for
             // something like EINTR), we might close another valid file descriptor
             // opened after we closed ours.
+            // However, this is usually justified, as some of the major Unices
+            // do make sure to always close the FD, even when `close()` is interrupted,
+            // and the scenario is rare to begin with.
+            // Helpful link to an epic discussion by POSIX workgroup:
+            // http://austingroupbugs.net/view.php?id=529
             </span><span class="attr">#[cfg(not(target_os = <span class="string">"hermit"</span>))]
             </span>{
                 <span class="attr">#[cfg(unix)]
