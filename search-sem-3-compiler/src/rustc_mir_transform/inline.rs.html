@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/inline.rs`."><title>inline.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/inline.rs`."><title>inline.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1152,9 +1152,18 @@
 <a href="#1152" id="1152">1152</a>
 <a href="#1153" id="1153">1153</a>
 <a href="#1154" id="1154">1154</a>
+<a href="#1155" id="1155">1155</a>
+<a href="#1156" id="1156">1156</a>
+<a href="#1157" id="1157">1157</a>
+<a href="#1158" id="1158">1158</a>
+<a href="#1159" id="1159">1159</a>
+<a href="#1160" id="1160">1160</a>
+<a href="#1161" id="1161">1161</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Inlining pass for MIR functions.
 
-</span><span class="kw">use </span><span class="kw">crate</span>::deref_separator::deref_finder;
+</span><span class="kw">use </span>std::iter;
+<span class="kw">use </span>std::ops::{Range, RangeFrom};
+
 <span class="kw">use </span>rustc_attr::InlineAttr;
 <span class="kw">use </span>rustc_hir::def::DefKind;
 <span class="kw">use </span>rustc_hir::def_id::DefId;
@@ -1164,8 +1173,9 @@
 <span class="kw">use </span>rustc_middle::middle::codegen_fn_attrs::{CodegenFnAttrFlags, CodegenFnAttrs};
 <span class="kw">use </span>rustc_middle::mir::visit::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
-<span class="kw">use </span>rustc_middle::ty::TypeVisitableExt;
-<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Instance, InstanceKind, ParamEnv, Ty, TyCtxt, TypeFlags};
+<span class="kw">use </span>rustc_middle::ty::{
+    <span class="self">self</span>, Instance, InstanceKind, ParamEnv, Ty, TyCtxt, TypeFlags, TypeVisitableExt,
+};
 <span class="kw">use </span>rustc_session::config::{DebugInfo, OptLevel};
 <span class="kw">use </span>rustc_span::source_map::Spanned;
 <span class="kw">use </span>rustc_span::sym;
@@ -1173,11 +1183,10 @@
 <span class="kw">use </span>rustc_target::spec::abi::Abi;
 
 <span class="kw">use </span><span class="kw">crate</span>::cost_checker::CostChecker;
+<span class="kw">use </span><span class="kw">crate</span>::deref_separator::deref_finder;
 <span class="kw">use </span><span class="kw">crate</span>::simplify::simplify_cfg;
 <span class="kw">use </span><span class="kw">crate</span>::util;
 <span class="kw">use </span><span class="kw">crate</span>::validate::validate_types;
-<span class="kw">use </span>std::iter;
-<span class="kw">use </span>std::ops::{Range, RangeFrom};
 
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod </span>cycle;
 
@@ -1631,7 +1640,9 @@
             <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">"incompatible instruction set"</span>);
         }
 
-        <span class="kw">if </span>callee_attrs.target_features != <span class="self">self</span>.codegen_fn_attrs.target_features {
+        <span class="kw">let </span>callee_feature_names = callee_attrs.target_features.iter().map(|f| f.name);
+        <span class="kw">let </span>this_feature_names = <span class="self">self</span>.codegen_fn_attrs.target_features.iter().map(|f| f.name);
+        <span class="kw">if </span>callee_feature_names.ne(this_feature_names) {
             <span class="comment">// In general it is not correct to inline a callee with target features that are a
             // subset of the caller. This is because the callee might contain calls, and the ABI of
             // those calls depends on the target features of the surrounding function. By moving a
@@ -1654,6 +1665,10 @@
         cross_crate_inlinable: bool,
     ) -&gt; <span class="prelude-ty">Result</span>&lt;(), <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str&gt; {
         <span class="kw">let </span>tcx = <span class="self">self</span>.tcx;
+
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw">_</span>) = callee_body.tainted_by_errors {
+            <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="string">"Body is tainted"</span>);
+        }
 
         <span class="kw">let </span><span class="kw-2">mut </span>threshold = <span class="kw">if </span><span class="self">self</span>.caller_is_inline_forwarder {
             <span class="self">self</span>.tcx.sess.opts.unstable_opts.inline_mir_forwarder_threshold.unwrap_or(<span class="number">30</span>)
@@ -1896,8 +1911,8 @@
         <span class="comment">// Copy required constants from the callee_body into the caller_body. Although we are only
         // pushing unevaluated consts to `required_consts`, here they may have been evaluated
         // because we are calling `instantiate_and_normalize_erasing_regions` -- so we filter again.
-        </span>caller_body.required_consts.extend(
-            callee_body.required_consts.into_iter().filter(|ct| ct.const_.is_required_const()),
+        </span>caller_body.required_consts.as_mut().unwrap().extend(
+            callee_body.required_consts().into_iter().filter(|ct| ct.const_.is_required_const()),
         );
         <span class="comment">// Now that we incorporated the callee's `required_consts`, we can remove the callee from
         // `mentioned_items` -- but we have to take their `mentioned_items` in return. This does
@@ -1907,12 +1922,11 @@
         // We need to reconstruct the `required_item` for the callee so that we can find and
         // remove it.
         </span><span class="kw">let </span>callee_item = MentionedItem::Fn(func.ty(caller_body, <span class="self">self</span>.tcx));
-        <span class="kw">if let </span><span class="prelude-val">Some</span>(idx) =
-            caller_body.mentioned_items.iter().position(|item| item.node == callee_item)
-        {
+        <span class="kw">let </span>caller_mentioned_items = caller_body.mentioned_items.as_mut().unwrap();
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(idx) = caller_mentioned_items.iter().position(|item| item.node == callee_item) {
             <span class="comment">// We found the callee, so remove it and add its items instead.
-            </span>caller_body.mentioned_items.remove(idx);
-            caller_body.mentioned_items.extend(callee_body.mentioned_items);
+            </span>caller_mentioned_items.remove(idx);
+            caller_mentioned_items.extend(callee_body.mentioned_items());
         } <span class="kw">else </span>{
             <span class="comment">// If we can't find the callee, there's no point in adding its items. Probably it
             // already got removed by being inlined elsewhere in the same function, so we already

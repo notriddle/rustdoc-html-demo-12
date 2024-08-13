@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["ExpectedValues"],"fn":["default_configuration"],"struct":["CheckCfg"],"type":["Cfg"]};
+window.SIDEBAR_ITEMS = {"enum":["ExpectedValues"],"fn":["default_configuration","disallow_cfgs"],"struct":["CheckCfg"],"type":["Cfg"]};

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `library/alloc/src/rc.rs`."><title>rc.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="alloc" data-themes="" data-resource-suffix="1.82.0" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files1.82.0.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `alloc/src/rc.rs`."><title>rc.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="alloc" data-themes="" data-resource-suffix="1.82.0" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files1.82.0.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -3783,6 +3783,15 @@
 <a href="#3783" id="3783">3783</a>
 <a href="#3784" id="3784">3784</a>
 <a href="#3785" id="3785">3785</a>
+<a href="#3786" id="3786">3786</a>
+<a href="#3787" id="3787">3787</a>
+<a href="#3788" id="3788">3788</a>
+<a href="#3789" id="3789">3789</a>
+<a href="#3790" id="3790">3790</a>
+<a href="#3791" id="3791">3791</a>
+<a href="#3792" id="3792">3792</a>
+<a href="#3793" id="3793">3793</a>
+<a href="#3794" id="3794">3794</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Single-threaded reference-counting pointers. 'Rc' stands for 'Reference
 //! Counted'.
 //!
@@ -4026,20 +4035,12 @@
 
 </span><span class="attr">#![stable(feature = <span class="string">"rust1"</span>, since = <span class="string">"1.0.0"</span>)]
 
-#[cfg(not(test))]
-</span><span class="kw">use </span><span class="kw">crate</span>::boxed::Box;
-<span class="attr">#[cfg(test)]
-</span><span class="kw">use </span>std::boxed::Box;
-
-<span class="kw">use </span>core::any::Any;
-<span class="kw">use </span>core::borrow;
+</span><span class="kw">use </span>core::any::Any;
 <span class="kw">use </span>core::cell::Cell;
 <span class="attr">#[cfg(not(no_global_oom_handling))]
 </span><span class="kw">use </span>core::clone::CloneToUninit;
 <span class="kw">use </span>core::cmp::Ordering;
-<span class="kw">use </span>core::fmt;
 <span class="kw">use </span>core::hash::{Hash, Hasher};
-<span class="kw">use </span>core::hint;
 <span class="kw">use </span>core::intrinsics::abort;
 <span class="attr">#[cfg(not(no_global_oom_handling))]
 </span><span class="kw">use </span>core::iter;
@@ -4049,14 +4050,20 @@
 <span class="kw">use </span>core::panic::{RefUnwindSafe, UnwindSafe};
 <span class="attr">#[cfg(not(no_global_oom_handling))]
 </span><span class="kw">use </span>core::pin::Pin;
+<span class="kw">use </span>core::pin::PinCoerceUnsized;
 <span class="kw">use </span>core::ptr::{<span class="self">self</span>, drop_in_place, NonNull};
 <span class="attr">#[cfg(not(no_global_oom_handling))]
 </span><span class="kw">use </span>core::slice::from_raw_parts_mut;
+<span class="kw">use </span>core::{borrow, fmt, hint};
+<span class="attr">#[cfg(test)]
+</span><span class="kw">use </span>std::boxed::Box;
 
 <span class="attr">#[cfg(not(no_global_oom_handling))]
 </span><span class="kw">use </span><span class="kw">crate</span>::alloc::handle_alloc_error;
 <span class="kw">use </span><span class="kw">crate</span>::alloc::{AllocError, Allocator, Global, Layout};
 <span class="kw">use </span><span class="kw">crate</span>::borrow::{Cow, ToOwned};
+<span class="attr">#[cfg(not(test))]
+</span><span class="kw">use </span><span class="kw">crate</span>::boxed::Box;
 <span class="attr">#[cfg(not(no_global_oom_handling))]
 </span><span class="kw">use </span><span class="kw">crate</span>::string::String;
 <span class="attr">#[cfg(not(no_global_oom_handling))]
@@ -4224,7 +4231,7 @@
     /// }
     ///
     /// impl Gadget {
-    ///     /// Construct a reference counted Gadget.
+    ///     /// Constructs a reference counted Gadget.
     ///     fn new() -&gt; Rc&lt;Self&gt; {
     ///         // `me` is a `Weak&lt;Gadget&gt;` pointing at the new allocation of the
     ///         // `Rc` we're constructing.
@@ -4234,7 +4241,7 @@
     ///         })
     ///     }
     ///
-    ///     /// Return a reference counted pointer to Self.
+    ///     /// Returns a reference counted pointer to Self.
     ///     fn me(&amp;self) -&gt; Rc&lt;Self&gt; {
     ///         self.me.upgrade().unwrap()
     ///     }
@@ -5160,7 +5167,8 @@
     /// let x = unsafe { Rc::from_raw_in(ptr, alloc) };
     /// assert_eq!(&amp;*x, "hello");
     /// ```
-    </span><span class="attr">#[unstable(feature = <span class="string">"allocator_api"</span>, issue = <span class="string">"32838"</span>)]
+    </span><span class="attr">#[must_use = <span class="string">"losing the pointer will leak memory"</span>]
+    #[unstable(feature = <span class="string">"allocator_api"</span>, issue = <span class="string">"32838"</span>)]
     </span><span class="kw">pub fn </span>into_raw_with_allocator(this: <span class="self">Self</span>) -&gt; (<span class="kw-2">*const </span>T, A) {
         <span class="kw">let </span>this = mem::ManuallyDrop::new(this);
         <span class="kw">let </span>ptr = <span class="self">Self</span>::as_ptr(<span class="kw-2">&amp;</span>this);
@@ -5685,7 +5693,7 @@
 }
 
 <span class="kw">impl</span>&lt;A: Allocator&gt; Rc&lt;<span class="kw">dyn </span>Any, A&gt; {
-    <span class="doccomment">/// Attempt to downcast the `Rc&lt;dyn Any&gt;` to a concrete type.
+    <span class="doccomment">/// Attempts to downcast the `Rc&lt;dyn Any&gt;` to a concrete type.
     ///
     /// # Examples
     ///
@@ -5963,6 +5971,12 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>.inner().value
     }
 }
+
+<span class="attr">#[unstable(feature = <span class="string">"pin_coerce_unsized_trait"</span>, issue = <span class="string">"123430"</span>)]
+</span><span class="kw">unsafe impl</span>&lt;T: <span class="question-mark">?</span>Sized, A: Allocator&gt; PinCoerceUnsized <span class="kw">for </span>Rc&lt;T, A&gt; {}
+
+<span class="attr">#[unstable(feature = <span class="string">"pin_coerce_unsized_trait"</span>, issue = <span class="string">"123430"</span>)]
+</span><span class="kw">unsafe impl</span>&lt;T: <span class="question-mark">?</span>Sized, A: Allocator&gt; PinCoerceUnsized <span class="kw">for </span>Weak&lt;T, A&gt; {}
 
 <span class="attr">#[unstable(feature = <span class="string">"deref_pure_trait"</span>, issue = <span class="string">"87121"</span>)]
 </span><span class="kw">unsafe impl</span>&lt;T: <span class="question-mark">?</span>Sized, A: Allocator&gt; DerefPure <span class="kw">for </span>Rc&lt;T, A&gt; {}
@@ -6371,7 +6385,7 @@
 <span class="attr">#[cfg(not(no_global_oom_handling))]
 #[stable(feature = <span class="string">"shared_from_slice"</span>, since = <span class="string">"1.21.0"</span>)]
 </span><span class="kw">impl</span>&lt;T: Clone&gt; From&lt;<span class="kw-2">&amp;</span>[T]&gt; <span class="kw">for </span>Rc&lt;[T]&gt; {
-    <span class="doccomment">/// Allocate a reference-counted slice and fill it by cloning `v`'s items.
+    <span class="doccomment">/// Allocates a reference-counted slice and fills it by cloning `v`'s items.
     ///
     /// # Example
     ///
@@ -6390,7 +6404,7 @@
 <span class="attr">#[cfg(not(no_global_oom_handling))]
 #[stable(feature = <span class="string">"shared_from_slice"</span>, since = <span class="string">"1.21.0"</span>)]
 </span><span class="kw">impl </span>From&lt;<span class="kw-2">&amp;</span>str&gt; <span class="kw">for </span>Rc&lt;str&gt; {
-    <span class="doccomment">/// Allocate a reference-counted string slice and copy `v` into it.
+    <span class="doccomment">/// Allocates a reference-counted string slice and copies `v` into it.
     ///
     /// # Example
     ///
@@ -6409,7 +6423,7 @@
 <span class="attr">#[cfg(not(no_global_oom_handling))]
 #[stable(feature = <span class="string">"shared_from_slice"</span>, since = <span class="string">"1.21.0"</span>)]
 </span><span class="kw">impl </span>From&lt;String&gt; <span class="kw">for </span>Rc&lt;str&gt; {
-    <span class="doccomment">/// Allocate a reference-counted string slice and copy `v` into it.
+    <span class="doccomment">/// Allocates a reference-counted string slice and copies `v` into it.
     ///
     /// # Example
     ///
@@ -6447,7 +6461,7 @@
 <span class="attr">#[cfg(not(no_global_oom_handling))]
 #[stable(feature = <span class="string">"shared_from_slice"</span>, since = <span class="string">"1.21.0"</span>)]
 </span><span class="kw">impl</span>&lt;T, A: Allocator&gt; From&lt;Vec&lt;T, A&gt;&gt; <span class="kw">for </span>Rc&lt;[T], A&gt; {
-    <span class="doccomment">/// Allocate a reference-counted slice and move `v`'s items into it.
+    <span class="doccomment">/// Allocates a reference-counted slice and moves `v`'s items into it.
     ///
     /// # Example
     ///
@@ -6480,8 +6494,8 @@
     </span>B: ToOwned + <span class="question-mark">?</span>Sized,
     Rc&lt;B&gt;: From&lt;<span class="kw-2">&amp;</span><span class="lifetime">'a </span>B&gt; + From&lt;B::Owned&gt;,
 {
-    <span class="doccomment">/// Create a reference-counted pointer from
-    /// a clone-on-write pointer by copying its content.
+    <span class="doccomment">/// Creates a reference-counted pointer from a clone-on-write pointer by
+    /// copying its content.
     ///
     /// # Example
     ///
@@ -6895,7 +6909,8 @@
     ///
     /// [`from_raw_in`]: Weak::from_raw_in
     /// [`as_ptr`]: Weak::as_ptr
-    </span><span class="attr">#[inline]
+    </span><span class="attr">#[must_use = <span class="string">"losing the pointer will leak memory"</span>]
+    #[inline]
     #[unstable(feature = <span class="string">"allocator_api"</span>, issue = <span class="string">"32838"</span>)]
     </span><span class="kw">pub fn </span>into_raw_with_allocator(<span class="self">self</span>) -&gt; (<span class="kw-2">*const </span>T, A) {
         <span class="kw">let </span>this = mem::ManuallyDrop::new(<span class="self">self</span>);
@@ -7311,7 +7326,7 @@
 <span class="attr">#[stable(feature = <span class="string">"pin"</span>, since = <span class="string">"1.33.0"</span>)]
 </span><span class="kw">impl</span>&lt;T: <span class="question-mark">?</span>Sized, A: Allocator&gt; Unpin <span class="kw">for </span>Rc&lt;T, A&gt; {}
 
-<span class="doccomment">/// Get the offset within an `RcBox` for the payload behind a pointer.
+<span class="doccomment">/// Gets the offset within an `RcBox` for the payload behind a pointer.
 ///
 /// # Safety
 ///
@@ -7477,6 +7492,9 @@
     }
 }
 
+<span class="attr">#[unstable(feature = <span class="string">"pin_coerce_unsized_trait"</span>, issue = <span class="string">"123430"</span>)]
+</span><span class="kw">unsafe impl</span>&lt;T: <span class="question-mark">?</span>Sized&gt; PinCoerceUnsized <span class="kw">for </span>UniqueRc&lt;T&gt; {}
+
 <span class="attr">#[unstable(feature = <span class="string">"unique_rc_arc"</span>, issue = <span class="string">"112566"</span>)]
 </span><span class="kw">impl</span>&lt;T: <span class="question-mark">?</span>Sized, A: Allocator&gt; DerefMut <span class="kw">for </span>UniqueRc&lt;T, A&gt; {
     <span class="kw">fn </span>deref_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>T {
@@ -7519,7 +7537,7 @@
 
 <span class="attr">#[cfg(not(no_global_oom_handling))]
 </span><span class="kw">impl</span>&lt;T: <span class="question-mark">?</span>Sized, A: Allocator&gt; UniqueRcUninit&lt;T, A&gt; {
-    <span class="doccomment">/// Allocate a RcBox with layout suitable to contain `for_value` or a clone of it.
+    <span class="doccomment">/// Allocates a RcBox with layout suitable to contain `for_value` or a clone of it.
     </span><span class="kw">fn </span>new(for_value: <span class="kw-2">&amp;</span>T, alloc: A) -&gt; UniqueRcUninit&lt;T, A&gt; {
         <span class="kw">let </span>layout = Layout::for_value(for_value);
         <span class="kw">let </span>ptr = <span class="kw">unsafe </span>{

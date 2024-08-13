@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/const_eval/machine.rs`."><title>machine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/const_eval/machine.rs`."><title>machine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -771,29 +771,20 @@
 <a href="#771" id="771">771</a>
 <a href="#772" id="772">772</a>
 <a href="#773" id="773">773</a>
-<a href="#774" id="774">774</a>
-<a href="#775" id="775">775</a>
-<a href="#776" id="776">776</a>
-<a href="#777" id="777">777</a>
-<a href="#778" id="778">778</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span>std::borrow::Borrow;
 <span class="kw">use </span>std::fmt;
 <span class="kw">use </span>std::hash::Hash;
 <span class="kw">use </span>std::ops::ControlFlow;
 
 <span class="kw">use </span>rustc_ast::Mutability;
-<span class="kw">use </span>rustc_data_structures::fx::FxIndexMap;
-<span class="kw">use </span>rustc_data_structures::fx::IndexEntry;
-<span class="kw">use </span>rustc_hir::def_id::DefId;
-<span class="kw">use </span>rustc_hir::def_id::LocalDefId;
-<span class="kw">use </span>rustc_hir::LangItem;
-<span class="kw">use </span>rustc_hir::{<span class="self">self </span><span class="kw">as </span>hir, CRATE_HIR_ID};
-<span class="kw">use </span>rustc_middle::bug;
-<span class="kw">use </span>rustc_middle::mir;
+<span class="kw">use </span>rustc_data_structures::fx::{FxIndexMap, IndexEntry};
+<span class="kw">use </span>rustc_hir::def_id::{DefId, LocalDefId};
+<span class="kw">use </span>rustc_hir::{<span class="self">self </span><span class="kw">as </span>hir, LangItem, CRATE_HIR_ID};
 <span class="kw">use </span>rustc_middle::mir::AssertMessage;
 <span class="kw">use </span>rustc_middle::query::TyCtxtAt;
 <span class="kw">use </span>rustc_middle::ty::layout::{FnAbiOf, TyAndLayout};
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, TyCtxt};
+<span class="kw">use </span>rustc_middle::{bug, mir};
 <span class="kw">use </span>rustc_session::lint::builtin::WRITES_THROUGH_IMMUTABLE_POINTER;
 <span class="kw">use </span>rustc_span::symbol::{sym, Symbol};
 <span class="kw">use </span>rustc_span::Span;
@@ -801,15 +792,15 @@
 <span class="kw">use </span>rustc_target::spec::abi::Abi <span class="kw">as </span>CallAbi;
 <span class="kw">use </span>tracing::debug;
 
+<span class="kw">use </span><span class="kw">super</span>::error::<span class="kw-2">*</span>;
 <span class="kw">use </span><span class="kw">crate</span>::errors::{LongRunning, LongRunningWarn};
 <span class="kw">use </span><span class="kw">crate</span>::fluent_generated <span class="kw">as </span>fluent;
 <span class="kw">use </span><span class="kw">crate</span>::interpret::{
     <span class="self">self</span>, compile_time_machine, err_ub, throw_exhaust, throw_inval, throw_ub_custom, throw_unsup,
-    throw_unsup_format, AllocId, AllocRange, ConstAllocation, CtfeProvenance, FnArg, FnVal, Frame,
+    throw_unsup_format, AllocId, AllocRange, ConstAllocation, CtfeProvenance, FnArg, Frame,
     GlobalAlloc, ImmTy, InterpCx, InterpResult, MPlaceTy, OpTy, Pointer, PointerArithmetic, Scalar,
+    StackPopCleanup,
 };
-
-<span class="kw">use </span><span class="kw">super</span>::error::<span class="kw-2">*</span>;
 
 <span class="doccomment">/// When hitting this many interpreted terminators we emit a deny by default lint
 /// that notfies the user that their constant takes a long time to evaluate. If that's
@@ -979,7 +970,8 @@
         <span class="kw">let </span>topmost = span.ctxt().outer_expn().expansion_cause().unwrap_or(span);
         <span class="kw">let </span>caller = <span class="self">self</span>.tcx.sess.source_map().lookup_char_pos(topmost.lo());
 
-        <span class="kw">use </span>rustc_session::{config::RemapPathScopeComponents, RemapFileNameExt};
+        <span class="kw">use </span>rustc_session::config::RemapPathScopeComponents;
+        <span class="kw">use </span>rustc_session::RemapFileNameExt;
         (
             Symbol::intern(
                 <span class="kw-2">&amp;</span>caller
@@ -1077,7 +1069,7 @@
             );
         }
 
-        <span class="kw">match </span><span class="self">self</span>.ptr_try_get_alloc_id(ptr) {
+        <span class="kw">match </span><span class="self">self</span>.ptr_try_get_alloc_id(ptr, <span class="number">0</span>) {
             <span class="prelude-val">Ok</span>((alloc_id, offset, _extra)) =&gt; {
                 <span class="kw">let </span>(_size, alloc_align, _kind) = <span class="self">self</span>.get_alloc_info(alloc_id);
 
@@ -1088,17 +1080,15 @@
                     <span class="kw">let </span>align = ImmTy::from_uint(target_align, args[<span class="number">1</span>].layout).into();
                     <span class="kw">let </span>fn_abi = <span class="self">self</span>.fn_abi_of_instance(instance, ty::List::empty())<span class="question-mark">?</span>;
 
-                    <span class="comment">// We replace the entire function call with a "tail call".
-                    // Note that this happens before the frame of the original function
-                    // is pushed on the stack.
-                    </span><span class="self">self</span>.eval_fn_call(
-                        FnVal::Instance(instance),
-                        (CallAbi::Rust, fn_abi),
+                    <span class="comment">// Push the stack frame with our own adjusted arguments.
+                    </span><span class="self">self</span>.init_stack_frame(
+                        instance,
+                        <span class="self">self</span>.load_mir(instance.def, <span class="prelude-val">None</span>)<span class="question-mark">?</span>,
+                        fn_abi,
                         <span class="kw-2">&amp;</span>[FnArg::Copy(addr), FnArg::Copy(align)],
                         <span class="comment">/* with_caller_location = */ </span><span class="bool-val">false</span>,
                         dest,
-                        ret,
-                        mir::UnwindAction::Unreachable,
+                        StackPopCleanup::Goto { ret, unwind: mir::UnwindAction::Unreachable },
                     )<span class="question-mark">?</span>;
                     <span class="prelude-val">Ok</span>(ControlFlow::Break(()))
                 } <span class="kw">else </span>{
@@ -1240,7 +1230,7 @@
         _unwind: mir::UnwindAction,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;ty::Instance&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt; {
         <span class="comment">// Shared intrinsics.
-        </span><span class="kw">if </span>ecx.emulate_intrinsic(instance, args, dest, target)<span class="question-mark">? </span>{
+        </span><span class="kw">if </span>ecx.eval_intrinsic(instance, args, dest, target)<span class="question-mark">? </span>{
             <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
         }
         <span class="kw">let </span>intrinsic_name = ecx.tcx.item_name(instance.def_id());
@@ -1292,7 +1282,7 @@
 
                 <span class="comment">// If an allocation is created in an another const,
                 // we don't deallocate it.
-                </span><span class="kw">let </span>(alloc_id, <span class="kw">_</span>, <span class="kw">_</span>) = ecx.ptr_get_alloc_id(ptr)<span class="question-mark">?</span>;
+                </span><span class="kw">let </span>(alloc_id, <span class="kw">_</span>, <span class="kw">_</span>) = ecx.ptr_get_alloc_id(ptr, <span class="number">0</span>)<span class="question-mark">?</span>;
                 <span class="kw">let </span>is_allocated_in_another_const = <span class="macro">matches!</span>(
                     ecx.tcx.try_get_global_alloc(alloc_id),
                     <span class="prelude-val">Some</span>(interpret::GlobalAlloc::Memory(<span class="kw">_</span>))

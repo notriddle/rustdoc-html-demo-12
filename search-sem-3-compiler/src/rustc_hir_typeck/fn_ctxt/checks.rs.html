@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_typeck/src/fn_ctxt/checks.rs`."><title>checks.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_typeck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_typeck/src/fn_ctxt/checks.rs`."><title>checks.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_typeck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -2617,29 +2617,17 @@
 <a href="#2617" id="2617">2617</a>
 <a href="#2618" id="2618">2618</a>
 <a href="#2619" id="2619">2619</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::coercion::CoerceMany;
-<span class="kw">use </span><span class="kw">crate</span>::errors::SuggestPtrNullMut;
-<span class="kw">use </span><span class="kw">crate</span>::fn_ctxt::arg_matrix::{ArgMatrix, Compatibility, Error, ExpectedIdx, ProvidedIdx};
-<span class="kw">use </span><span class="kw">crate</span>::fn_ctxt::infer::FnCall;
-<span class="kw">use </span><span class="kw">crate</span>::gather_locals::Declaration;
-<span class="kw">use </span><span class="kw">crate</span>::method::probe::IsSuggestion;
-<span class="kw">use </span><span class="kw">crate</span>::method::probe::Mode::MethodCall;
-<span class="kw">use </span><span class="kw">crate</span>::method::probe::ProbeScope::TraitsInScope;
-<span class="kw">use </span><span class="kw">crate</span>::method::MethodCallee;
-<span class="kw">use </span><span class="kw">crate</span>::TupleArgumentsFlag::<span class="kw-2">*</span>;
-<span class="kw">use crate</span>::{errors, Expectation::<span class="kw-2">*</span>};
-<span class="kw">use crate</span>::{
-    struct_span_code_err, BreakableCtxt, Diverges, Expectation, FnCtxt, LoweredTy, Needs,
-    TupleArgumentsFlag,
-};
+<a href="#2620" id="2620">2620</a>
+<a href="#2621" id="2621">2621</a>
+</pre></div><pre class="rust"><code><span class="kw">use </span>std::{iter, mem};
+
 <span class="kw">use </span>itertools::Itertools;
-<span class="kw">use </span>rustc_ast <span class="kw">as </span>ast;
 <span class="kw">use </span>rustc_data_structures::fx::FxIndexSet;
+<span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_errors::{
-    a_or_an, codes::<span class="kw-2">*</span>, display_list_with_comma_and, pluralize, Applicability, Diag,
-    ErrorGuaranteed, MultiSpan, StashKey,
+    a_or_an, display_list_with_comma_and, pluralize, Applicability, Diag, ErrorGuaranteed,
+    MultiSpan, StashKey,
 };
-<span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
 <span class="kw">use </span>rustc_hir::def::{CtorOf, DefKind, Res};
 <span class="kw">use </span>rustc_hir::def_id::DefId;
 <span class="kw">use </span>rustc_hir::intravisit::Visitor;
@@ -2648,21 +2636,34 @@
 <span class="kw">use </span>rustc_hir_analysis::check::potentially_plural_count;
 <span class="kw">use </span>rustc_hir_analysis::hir_ty_lowering::HirTyLowerer;
 <span class="kw">use </span>rustc_index::IndexVec;
-<span class="kw">use </span>rustc_infer::infer::TypeTrace;
-<span class="kw">use </span>rustc_infer::infer::{DefineOpaqueTypes, InferOk};
+<span class="kw">use </span>rustc_infer::infer::{DefineOpaqueTypes, InferOk, TypeTrace};
 <span class="kw">use </span>rustc_middle::ty::adjustment::AllowTwoPhase;
 <span class="kw">use </span>rustc_middle::ty::visit::TypeVisitableExt;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, IsSuggestable, Ty, TyCtxt};
 <span class="kw">use </span>rustc_middle::{bug, span_bug};
 <span class="kw">use </span>rustc_session::Session;
 <span class="kw">use </span>rustc_span::symbol::{kw, Ident};
-<span class="kw">use </span>rustc_span::{sym, BytePos, Span, DUMMY_SP};
+<span class="kw">use </span>rustc_span::{sym, Span, DUMMY_SP};
 <span class="kw">use </span>rustc_trait_selection::error_reporting::infer::{FailureCode, ObligationCauseExt};
 <span class="kw">use </span>rustc_trait_selection::infer::InferCtxtExt;
 <span class="kw">use </span>rustc_trait_selection::traits::{<span class="self">self</span>, ObligationCauseCode, SelectionContext};
+<span class="kw">use </span>{rustc_ast <span class="kw">as </span>ast, rustc_hir <span class="kw">as </span>hir};
 
-<span class="kw">use </span>std::iter;
-<span class="kw">use </span>std::mem;
+<span class="kw">use </span><span class="kw">crate</span>::coercion::CoerceMany;
+<span class="kw">use </span><span class="kw">crate</span>::errors::SuggestPtrNullMut;
+<span class="kw">use </span><span class="kw">crate</span>::fn_ctxt::arg_matrix::{ArgMatrix, Compatibility, Error, ExpectedIdx, ProvidedIdx};
+<span class="kw">use </span><span class="kw">crate</span>::fn_ctxt::infer::FnCall;
+<span class="kw">use </span><span class="kw">crate</span>::gather_locals::Declaration;
+<span class="kw">use </span><span class="kw">crate</span>::method::probe::IsSuggestion;
+<span class="kw">use </span><span class="kw">crate</span>::method::probe::Mode::MethodCall;
+<span class="kw">use </span><span class="kw">crate</span>::method::probe::ProbeScope::TraitsInScope;
+<span class="kw">use </span><span class="kw">crate</span>::method::MethodCallee;
+<span class="kw">use </span><span class="kw">crate</span>::Expectation::<span class="kw-2">*</span>;
+<span class="kw">use </span><span class="kw">crate</span>::TupleArgumentsFlag::<span class="kw-2">*</span>;
+<span class="kw">use crate</span>::{
+    errors, struct_span_code_err, BreakableCtxt, Diverges, Expectation, FnCtxt, LoweredTy, Needs,
+    TupleArgumentsFlag,
+};
 
 <span class="attr">#[derive(Clone, Copy, Default)]
 </span><span class="kw">pub enum </span>DivergingBlockBehavior {
@@ -3760,8 +3761,11 @@
                                 .get(arg_idx + <span class="number">1</span>)
                                 .map(|<span class="kw-2">&amp;</span>(<span class="kw">_</span>, sp)| sp)
                                 .unwrap_or_else(|| {
-                                    <span class="comment">// Subtract one to move before `)`
-                                    </span>call_expr.span.with_lo(call_expr.span.hi() - BytePos(<span class="number">1</span>))
+                                    <span class="comment">// Try to move before `)`. Note that `)` here is not necessarily
+                                    // the latin right paren, it could be a Unicode-confusable that
+                                    // looks like a `)`, so we must not use `- BytePos(1)`
+                                    // manipulations here.
+                                    </span><span class="self">self</span>.tcx().sess.source_map().end_point(call_expr.span)
                                 });
 
                             <span class="comment">// Include next comma

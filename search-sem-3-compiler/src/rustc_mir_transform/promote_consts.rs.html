@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/promote_consts.rs`."><title>promote_consts.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/promote_consts.rs`."><title>promote_consts.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1058,6 +1058,8 @@
 <a href="#1058" id="1058">1058</a>
 <a href="#1059" id="1059">1059</a>
 <a href="#1060" id="1060">1060</a>
+<a href="#1061" id="1061">1061</a>
+<a href="#1062" id="1062">1062</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! A pass that promotes borrows of constant rvalues.
 //!
 //! The rvalues considered constant are trees of temps,
@@ -1072,25 +1074,21 @@
 //! initialization and can otherwise silence errors, if
 //! move analysis runs after promotion on broken MIR.
 
-</span><span class="kw">use </span>either::{Left, Right};
-<span class="kw">use </span>rustc_data_structures::fx::FxHashSet;
-<span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
-<span class="kw">use </span>rustc_middle::mir;
-<span class="kw">use </span>rustc_middle::mir::visit::{MutVisitor, MutatingUseContext, PlaceContext, Visitor};
-<span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
-<span class="kw">use </span>rustc_middle::ty::GenericArgs;
-<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, List, Ty, TyCtxt, TypeVisitableExt};
-<span class="kw">use </span>rustc_middle::{bug, span_bug};
-<span class="kw">use </span>rustc_span::Span;
-
-<span class="kw">use </span>rustc_index::{Idx, IndexSlice, IndexVec};
-<span class="kw">use </span>rustc_span::source_map::Spanned;
-
-<span class="kw">use </span>std::assert_matches::assert_matches;
+</span><span class="kw">use </span>std::assert_matches::assert_matches;
 <span class="kw">use </span>std::cell::Cell;
 <span class="kw">use </span>std::{cmp, iter, mem};
 
+<span class="kw">use </span>either::{Left, Right};
 <span class="kw">use </span>rustc_const_eval::check_consts::{qualifs, ConstCx};
+<span class="kw">use </span>rustc_data_structures::fx::FxHashSet;
+<span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
+<span class="kw">use </span>rustc_index::{Idx, IndexSlice, IndexVec};
+<span class="kw">use </span>rustc_middle::mir::visit::{MutVisitor, MutatingUseContext, PlaceContext, Visitor};
+<span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
+<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, GenericArgs, List, Ty, TyCtxt, TypeVisitableExt};
+<span class="kw">use </span>rustc_middle::{bug, mir, span_bug};
+<span class="kw">use </span>rustc_span::source_map::Spanned;
+<span class="kw">use </span>rustc_span::Span;
 
 <span class="doccomment">/// A `MirPass` for promotion.
 ///
@@ -1532,7 +1530,7 @@
 
                 <span class="kw">if let </span>ty::RawPtr(<span class="kw">_</span>, <span class="kw">_</span>) | ty::FnPtr(..) = lhs_ty.kind() {
                     <span class="comment">// Raw and fn pointer operations are not allowed inside consts and thus not promotable.
-                    </span><span class="macro">assert!</span>(<span class="macro">matches!</span>(
+                    </span><span class="macro">assert_matches!</span>(
                         op,
                         BinOp::Eq
                             | BinOp::Ne
@@ -1541,7 +1539,7 @@
                             | BinOp::Ge
                             | BinOp::Gt
                             | BinOp::Offset
-                    ));
+                    );
                     <span class="kw">return </span><span class="prelude-val">Err</span>(Unpromotable);
                 }
 
@@ -1766,6 +1764,9 @@
     temps: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>IndexVec&lt;Local, TempState&gt;,
     extra_statements: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>Vec&lt;(Location, Statement&lt;<span class="lifetime">'tcx</span>&gt;)&gt;,
 
+    <span class="doccomment">/// Used to assemble the required_consts list while building the promoted.
+    </span>required_consts: Vec&lt;ConstOperand&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+
     <span class="doccomment">/// If true, all nested temps are also kept in the
     /// source MIR, not moved to the promoted MIR.
     </span>keep_original: bool,
@@ -1988,10 +1989,13 @@
         <span class="kw">let </span>span = <span class="self">self</span>.promoted.span;
         <span class="self">self</span>.assign(RETURN_PLACE, rvalue, span);
 
-        <span class="comment">// Now that we did promotion, we know whether we'll want to add this to `required_consts`.
+        <span class="comment">// Now that we did promotion, we know whether we'll want to add this to `required_consts` of
+        // the surrounding MIR body.
         </span><span class="kw">if </span><span class="self">self</span>.add_to_required {
-            <span class="self">self</span>.source.required_consts.push(promoted_op);
+            <span class="self">self</span>.source.required_consts.as_mut().unwrap().push(promoted_op);
         }
+
+        <span class="self">self</span>.promoted.set_required_consts(<span class="self">self</span>.required_consts);
 
         <span class="self">self</span>.promoted
     }
@@ -2011,7 +2015,7 @@
 
     <span class="kw">fn </span>visit_const_operand(<span class="kw-2">&amp;mut </span><span class="self">self</span>, constant: <span class="kw-2">&amp;mut </span>ConstOperand&lt;<span class="lifetime">'tcx</span>&gt;, _location: Location) {
         <span class="kw">if </span>constant.const_.is_required_const() {
-            <span class="self">self</span>.promoted.required_consts.push(<span class="kw-2">*</span>constant);
+            <span class="self">self</span>.required_consts.push(<span class="kw-2">*</span>constant);
         }
 
         <span class="comment">// Skipping `super_constant` as the visitor is otherwise only looking for locals.
@@ -2075,10 +2079,10 @@
             extra_statements: <span class="kw-2">&amp;mut </span>extra_statements,
             keep_original: <span class="bool-val">false</span>,
             add_to_required: <span class="bool-val">false</span>,
+            required_consts: Vec::new(),
         };
 
-        <span class="comment">// `required_consts` of the promoted itself gets filled while building the MIR body.
-        </span><span class="kw">let </span><span class="kw-2">mut </span>promoted = promoter.promote_candidate(candidate, promotions.len());
+        <span class="kw">let </span><span class="kw-2">mut </span>promoted = promoter.promote_candidate(candidate, promotions.len());
         promoted.source.promoted = <span class="prelude-val">Some</span>(promotions.next_index());
         promotions.push(promoted);
     }

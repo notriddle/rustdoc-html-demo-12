@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/builder.rs`."><title>builder.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/builder.rs`."><title>builder.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1827,15 +1827,42 @@
 <a href="#1827" id="1827">1827</a>
 <a href="#1828" id="1828">1828</a>
 <a href="#1829" id="1829">1829</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::abi::FnAbiLlvmExt;
-<span class="kw">use </span><span class="kw">crate</span>::attributes;
-<span class="kw">use </span><span class="kw">crate</span>::common::Funclet;
-<span class="kw">use </span><span class="kw">crate</span>::context::CodegenCx;
-<span class="kw">use </span><span class="kw">crate</span>::llvm::{<span class="self">self</span>, AtomicOrdering, AtomicRmwBinOp, BasicBlock, False, True};
-<span class="kw">use </span><span class="kw">crate</span>::llvm_util;
-<span class="kw">use </span><span class="kw">crate</span>::type_::Type;
-<span class="kw">use </span><span class="kw">crate</span>::type_of::LayoutLlvmExt;
-<span class="kw">use </span><span class="kw">crate</span>::value::Value;
+<a href="#1830" id="1830">1830</a>
+<a href="#1831" id="1831">1831</a>
+<a href="#1832" id="1832">1832</a>
+<a href="#1833" id="1833">1833</a>
+<a href="#1834" id="1834">1834</a>
+<a href="#1835" id="1835">1835</a>
+<a href="#1836" id="1836">1836</a>
+<a href="#1837" id="1837">1837</a>
+<a href="#1838" id="1838">1838</a>
+<a href="#1839" id="1839">1839</a>
+<a href="#1840" id="1840">1840</a>
+<a href="#1841" id="1841">1841</a>
+<a href="#1842" id="1842">1842</a>
+<a href="#1843" id="1843">1843</a>
+<a href="#1844" id="1844">1844</a>
+<a href="#1845" id="1845">1845</a>
+<a href="#1846" id="1846">1846</a>
+<a href="#1847" id="1847">1847</a>
+<a href="#1848" id="1848">1848</a>
+<a href="#1849" id="1849">1849</a>
+<a href="#1850" id="1850">1850</a>
+<a href="#1851" id="1851">1851</a>
+<a href="#1852" id="1852">1852</a>
+<a href="#1853" id="1853">1853</a>
+<a href="#1854" id="1854">1854</a>
+<a href="#1855" id="1855">1855</a>
+<a href="#1856" id="1856">1856</a>
+<a href="#1857" id="1857">1857</a>
+<a href="#1858" id="1858">1858</a>
+<a href="#1859" id="1859">1859</a>
+<a href="#1860" id="1860">1860</a>
+<a href="#1861" id="1861">1861</a>
+</pre></div><pre class="rust"><code><span class="kw">use </span>std::borrow::Cow;
+<span class="kw">use </span>std::ops::Deref;
+<span class="kw">use </span>std::{iter, ptr};
+
 <span class="kw">use </span>libc::{c_char, c_uint};
 <span class="kw">use </span>rustc_codegen_ssa::common::{IntPredicate, RealPredicate, SynchronizationScope, TypeKind};
 <span class="kw">use </span>rustc_codegen_ssa::mir::operand::{OperandRef, OperandValue};
@@ -1846,20 +1873,27 @@
 <span class="kw">use </span>rustc_hir::def_id::DefId;
 <span class="kw">use </span>rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrs;
 <span class="kw">use </span>rustc_middle::ty::layout::{
-    FnAbiError, FnAbiOfHelpers, FnAbiRequest, LayoutError, LayoutOfHelpers, TyAndLayout,
+    FnAbiError, FnAbiOfHelpers, FnAbiRequest, HasParamEnv, LayoutError, LayoutOfHelpers,
+    TyAndLayout,
 };
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Instance, Ty, TyCtxt};
 <span class="kw">use </span>rustc_sanitizers::{cfi, kcfi};
 <span class="kw">use </span>rustc_session::config::OptLevel;
 <span class="kw">use </span>rustc_span::Span;
-<span class="kw">use </span>rustc_target::abi::{<span class="self">self</span>, call::FnAbi, Align, Size, WrappingRange};
+<span class="kw">use </span>rustc_target::abi::call::FnAbi;
+<span class="kw">use </span>rustc_target::abi::{<span class="self">self</span>, Align, Size, WrappingRange};
 <span class="kw">use </span>rustc_target::spec::{HasTargetSpec, SanitizerSet, Target};
 <span class="kw">use </span>smallvec::SmallVec;
-<span class="kw">use </span>std::borrow::Cow;
-<span class="kw">use </span>std::iter;
-<span class="kw">use </span>std::ops::Deref;
-<span class="kw">use </span>std::ptr;
 <span class="kw">use </span>tracing::{debug, instrument};
+
+<span class="kw">use </span><span class="kw">crate</span>::abi::FnAbiLlvmExt;
+<span class="kw">use </span><span class="kw">crate</span>::common::Funclet;
+<span class="kw">use </span><span class="kw">crate</span>::context::CodegenCx;
+<span class="kw">use </span><span class="kw">crate</span>::llvm::{<span class="self">self</span>, AtomicOrdering, AtomicRmwBinOp, BasicBlock, False, True};
+<span class="kw">use </span><span class="kw">crate</span>::type_::Type;
+<span class="kw">use </span><span class="kw">crate</span>::type_of::LayoutLlvmExt;
+<span class="kw">use </span><span class="kw">crate</span>::value::Value;
+<span class="kw">use crate</span>::{attributes, llvm_util};
 
 <span class="comment">// All Builders must have an llfn associated with them
 </span><span class="attr">#[must_use]
@@ -2219,8 +2253,9 @@
         lhs: <span class="self">Self</span>::Value,
         rhs: <span class="self">Self</span>::Value,
     ) -&gt; (<span class="self">Self</span>::Value, <span class="self">Self</span>::Value) {
+        <span class="kw">use </span>rustc_middle::ty::IntTy::<span class="kw-2">*</span>;
+        <span class="kw">use </span>rustc_middle::ty::UintTy::<span class="kw-2">*</span>;
         <span class="kw">use </span>rustc_middle::ty::{Int, Uint};
-        <span class="kw">use </span>rustc_middle::ty::{IntTy::<span class="kw-2">*</span>, UintTy::<span class="kw-2">*</span>};
 
         <span class="kw">let </span>new_kind = <span class="kw">match </span>ty.kind() {
             Int(t @ Isize) =&gt; Int(t.normalize(<span class="self">self</span>.tcx.sess.target.pointer_width)),
@@ -2358,7 +2393,7 @@
     <span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>))]
     </span><span class="kw">fn </span>load_operand(<span class="kw-2">&amp;mut </span><span class="self">self</span>, place: PlaceRef&lt;<span class="lifetime">'tcx</span>, <span class="kw-2">&amp;</span><span class="lifetime">'ll </span>Value&gt;) -&gt; OperandRef&lt;<span class="lifetime">'tcx</span>, <span class="kw-2">&amp;</span><span class="lifetime">'ll </span>Value&gt; {
         <span class="kw">if </span>place.layout.is_unsized() {
-            <span class="kw">let </span>tail = <span class="self">self</span>.tcx.struct_tail_with_normalize(place.layout.ty, |ty| ty, || {});
+            <span class="kw">let </span>tail = <span class="self">self</span>.tcx.struct_tail_for_codegen(place.layout.ty, <span class="self">self</span>.param_env());
             <span class="kw">if </span><span class="macro">matches!</span>(tail.kind(), ty::Foreign(..)) {
                 <span class="comment">// Unsized locals and, at least conceptually, even unsized arguments must be copied
                 // around, which requires dynamically determining their size. Therefore, we cannot
@@ -2554,13 +2589,32 @@
                 llvm::LLVMSetVolatile(store, llvm::True);
             }
             <span class="kw">if </span>flags.contains(MemFlags::NONTEMPORAL) {
-                <span class="comment">// According to LLVM [1] building a nontemporal store must
-                // *always* point to a metadata value of the integer 1.
-                //
-                // [1]: https://llvm.org/docs/LangRef.html#store-instruction
-                </span><span class="kw">let </span>one = <span class="self">self</span>.cx.const_i32(<span class="number">1</span>);
-                <span class="kw">let </span>node = llvm::LLVMMDNodeInContext(<span class="self">self</span>.cx.llcx, <span class="kw-2">&amp;</span>one, <span class="number">1</span>);
-                llvm::LLVMSetMetadata(store, llvm::MD_nontemporal <span class="kw">as </span>c_uint, node);
+                <span class="comment">// Make sure that the current target architectures supports "sane" non-temporal
+                // stores, i.e., non-temporal stores that are equivalent to regular stores except
+                // for performance. LLVM doesn't seem to care about this, and will happily treat
+                // `!nontemporal` stores as-if they were normal stores (for reordering optimizations
+                // etc) even on x86, despite later lowering them to MOVNT which do *not* behave like
+                // regular stores but require special fences.
+                // So we keep a list of architectures where `!nontemporal` is known to be truly just
+                // a hint, and use regular stores everywhere else.
+                // (In the future, we could alternatively ensure that an sfence gets emitted after a sequence of movnt
+                // before any kind of synchronizing operation. But it's not clear how to do that with LLVM.)
+                // For more context, see &lt;https://github.com/rust-lang/rust/issues/114582&gt; and
+                // &lt;https://github.com/llvm/llvm-project/issues/64521&gt;.
+                </span><span class="kw">const </span>WELL_BEHAVED_NONTEMPORAL_ARCHS: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>str] =
+                    <span class="kw-2">&amp;</span>[<span class="string">"aarch64"</span>, <span class="string">"arm"</span>, <span class="string">"riscv32"</span>, <span class="string">"riscv64"</span>];
+
+                <span class="kw">let </span>use_nontemporal =
+                    WELL_BEHAVED_NONTEMPORAL_ARCHS.contains(&amp;&amp;<span class="kw-2">*</span><span class="self">self</span>.cx.tcx.sess.target.arch);
+                <span class="kw">if </span>use_nontemporal {
+                    <span class="comment">// According to LLVM [1] building a nontemporal store must
+                    // *always* point to a metadata value of the integer 1.
+                    //
+                    // [1]: https://llvm.org/docs/LangRef.html#store-instruction
+                    </span><span class="kw">let </span>one = <span class="self">self</span>.cx.const_i32(<span class="number">1</span>);
+                    <span class="kw">let </span>node = llvm::LLVMMDNodeInContext(<span class="self">self</span>.cx.llcx, <span class="kw-2">&amp;</span>one, <span class="number">1</span>);
+                    llvm::LLVMSetMetadata(store, llvm::MD_nontemporal <span class="kw">as </span>c_uint, node);
+                }
             }
             store
         }
@@ -3177,6 +3231,16 @@
             llvm::LLVMSetMetadata(
                 load,
                 llvm::MD_noundef <span class="kw">as </span>c_uint,
+                llvm::LLVMMDNodeInContext(<span class="self">self</span>.cx.llcx, ptr::null(), <span class="number">0</span>),
+            );
+        }
+    }
+
+    <span class="kw">pub fn </span>set_unpredictable(<span class="kw-2">&amp;mut </span><span class="self">self</span>, inst: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span>Value) {
+        <span class="kw">unsafe </span>{
+            llvm::LLVMSetMetadata(
+                inst,
+                llvm::MD_unpredictable <span class="kw">as </span>c_uint,
                 llvm::LLVMMDNodeInContext(<span class="self">self</span>.cx.llcx, ptr::null(), <span class="number">0</span>),
             );
         }

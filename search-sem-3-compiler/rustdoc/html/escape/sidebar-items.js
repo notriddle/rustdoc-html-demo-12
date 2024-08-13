@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["Escape","EscapeBodyText"]};
+window.SIDEBAR_ITEMS = {"struct":["Escape","EscapeBodyText","EscapeBodyTextWithWbr"]};

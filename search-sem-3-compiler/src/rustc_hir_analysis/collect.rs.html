@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/collect.rs`."><title>collect.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/collect.rs`."><title>collect.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1903,6 +1903,13 @@
 <a href="#1903" id="1903">1903</a>
 <a href="#1904" id="1904">1904</a>
 <a href="#1905" id="1905">1905</a>
+<a href="#1906" id="1906">1906</a>
+<a href="#1907" id="1907">1907</a>
+<a href="#1908" id="1908">1908</a>
+<a href="#1909" id="1909">1909</a>
+<a href="#1910" id="1910">1910</a>
+<a href="#1911" id="1911">1911</a>
+<a href="#1912" id="1912">1912</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! "Collection" is the process of determining the type and other external
 //! details of each item in Rust. Collection is specifically concerned
 //! with *inter-procedural* things -- for example, for a function
@@ -1919,7 +1926,11 @@
 //! At present, however, we do run collection across all items in the
 //! crate as a kind of pass. This should eventually be factored away.
 
-</span><span class="kw">use </span>rustc_ast::Recovered;
+</span><span class="kw">use </span>std::cell::Cell;
+<span class="kw">use </span>std::iter;
+<span class="kw">use </span>std::ops::Bound;
+
+<span class="kw">use </span>rustc_ast::Recovered;
 <span class="kw">use </span>rustc_data_structures::captures::Captures;
 <span class="kw">use </span>rustc_data_structures::fx::{FxHashSet, FxIndexMap};
 <span class="kw">use </span>rustc_data_structures::unord::UnordMap;
@@ -1929,8 +1940,7 @@
 <span class="kw">use </span>rustc_hir::def::DefKind;
 <span class="kw">use </span>rustc_hir::def_id::{DefId, LocalDefId};
 <span class="kw">use </span>rustc_hir::intravisit::{<span class="self">self</span>, walk_generics, Visitor};
-<span class="kw">use </span>rustc_hir::{<span class="self">self </span><span class="kw">as </span>hir};
-<span class="kw">use </span>rustc_hir::{GenericParamKind, Node};
+<span class="kw">use </span>rustc_hir::{<span class="self">self </span><span class="kw">as </span>hir, GenericParamKind, Node};
 <span class="kw">use </span>rustc_infer::infer::{InferCtxt, TyCtxtInferExt};
 <span class="kw">use </span>rustc_infer::traits::ObligationCause;
 <span class="kw">use </span>rustc_middle::hir::nested_filter;
@@ -1944,9 +1954,6 @@
 <span class="kw">use </span>rustc_trait_selection::error_reporting::traits::suggestions::NextTypeParamName;
 <span class="kw">use </span>rustc_trait_selection::infer::InferCtxtExt;
 <span class="kw">use </span>rustc_trait_selection::traits::ObligationCtxt;
-<span class="kw">use </span>std::cell::Cell;
-<span class="kw">use </span>std::iter;
-<span class="kw">use </span>std::ops::Bound;
 
 <span class="kw">use </span><span class="kw">crate</span>::check::intrinsic::intrinsic_operation_unsafety;
 <span class="kw">use </span><span class="kw">crate</span>::errors;
@@ -1972,6 +1979,7 @@
         item_super_predicates: item_bounds::item_super_predicates,
         explicit_item_super_predicates: item_bounds::explicit_item_super_predicates,
         item_non_self_assumptions: item_bounds::item_non_self_assumptions,
+        impl_super_outlives: item_bounds::impl_super_outlives,
         generics_of: generics_of::generics_of,
         predicates_of: predicates_of::predicates_of,
         predicates_defined_on,
@@ -3112,25 +3120,29 @@
 <span class="kw">fn </span>trait_def(tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;, def_id: LocalDefId) -&gt; ty::TraitDef {
     <span class="kw">let </span>item = tcx.hir().expect_item(def_id);
 
-    <span class="kw">let </span>(is_auto, safety, items) = <span class="kw">match </span>item.kind {
+    <span class="kw">let </span>(is_alias, is_auto, safety, items) = <span class="kw">match </span>item.kind {
         hir::ItemKind::Trait(is_auto, safety, .., items) =&gt; {
-            (is_auto == hir::IsAuto::Yes, safety, items)
+            (<span class="bool-val">false</span>, is_auto == hir::IsAuto::Yes, safety, items)
         }
-        hir::ItemKind::TraitAlias(..) =&gt; (<span class="bool-val">false</span>, hir::Safety::Safe, <span class="kw-2">&amp;</span>[][..]),
+        hir::ItemKind::TraitAlias(..) =&gt; (<span class="bool-val">true</span>, <span class="bool-val">false</span>, hir::Safety::Safe, <span class="kw-2">&amp;</span>[][..]),
         <span class="kw">_ </span>=&gt; <span class="macro">span_bug!</span>(item.span, <span class="string">"trait_def_of_item invoked on non-trait"</span>),
     };
 
-    <span class="kw">let </span>constness = <span class="kw">if </span>tcx.has_attr(def_id, sym::const_trait) {
+    <span class="comment">// Only regular traits can be const.
+    </span><span class="kw">let </span>constness = <span class="kw">if </span>!is_alias &amp;&amp; tcx.has_attr(def_id, sym::const_trait) {
         hir::Constness::Const
     } <span class="kw">else </span>{
         hir::Constness::NotConst
     };
+
     <span class="kw">let </span>paren_sugar = tcx.has_attr(def_id, sym::rustc_paren_sugar);
     <span class="kw">if </span>paren_sugar &amp;&amp; !tcx.features().unboxed_closures {
         tcx.dcx().emit_err(errors::ParenSugarAttribute { span: item.span });
     }
 
-    <span class="kw">let </span>is_marker = tcx.has_attr(def_id, sym::marker);
+    <span class="comment">// Only regular traits can be marker.
+    </span><span class="kw">let </span>is_marker = !is_alias &amp;&amp; tcx.has_attr(def_id, sym::marker);
+
     <span class="kw">let </span>rustc_coinductive = tcx.has_attr(def_id, sym::rustc_coinductive);
     <span class="kw">let </span>is_fundamental = tcx.has_attr(def_id, sym::fundamental);
 
@@ -3600,6 +3612,8 @@
             trait_ref: ty::EarlyBinder::bind(trait_ref),
             safety: impl_.safety,
             polarity: polarity_of_impl(tcx, def_id, impl_, item.span),
+            do_not_recommend: tcx.features().do_not_recommend
+                &amp;&amp; tcx.has_attrs_with_path(def_id, <span class="kw-2">&amp;</span>[sym::diagnostic, sym::do_not_recommend]),
         }
     })
 }

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["publish","transmit","verify_dependencies","wait_for_publish"],"struct":["PublishOpts"]};
+window.SIDEBAR_ITEMS = {"fn":["prepare_transmit","publish","transmit","verify_dependencies","wait_for_publish"],"struct":["PublishOpts"]};

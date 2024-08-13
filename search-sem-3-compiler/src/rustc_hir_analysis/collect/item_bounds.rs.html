@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/collect/item_bounds.rs`."><title>item_bounds.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/collect/item_bounds.rs`."><title>item_bounds.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -246,17 +246,42 @@
 <a href="#246" id="246">246</a>
 <a href="#247" id="247">247</a>
 <a href="#248" id="248">248</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">super</span>::ItemCtxt;
-<span class="kw">use </span><span class="kw">crate</span>::hir_ty_lowering::{HirTyLowerer, PredicateFilter};
-<span class="kw">use </span>rustc_data_structures::fx::FxIndexSet;
+<a href="#249" id="249">249</a>
+<a href="#250" id="250">250</a>
+<a href="#251" id="251">251</a>
+<a href="#252" id="252">252</a>
+<a href="#253" id="253">253</a>
+<a href="#254" id="254">254</a>
+<a href="#255" id="255">255</a>
+<a href="#256" id="256">256</a>
+<a href="#257" id="257">257</a>
+<a href="#258" id="258">258</a>
+<a href="#259" id="259">259</a>
+<a href="#260" id="260">260</a>
+<a href="#261" id="261">261</a>
+<a href="#262" id="262">262</a>
+<a href="#263" id="263">263</a>
+<a href="#264" id="264">264</a>
+<a href="#265" id="265">265</a>
+<a href="#266" id="266">266</a>
+<a href="#267" id="267">267</a>
+<a href="#268" id="268">268</a>
+<a href="#269" id="269">269</a>
+<a href="#270" id="270">270</a>
+<a href="#271" id="271">271</a>
+</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_data_structures::fx::FxIndexSet;
 <span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
 <span class="kw">use </span>rustc_infer::traits::util;
-<span class="kw">use </span>rustc_middle::ty::GenericArgs;
-<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Ty, TyCtxt, TypeFoldable, TypeFolder, TypeSuperFoldable};
+<span class="kw">use </span>rustc_middle::ty::{
+    <span class="self">self</span>, GenericArgs, Ty, TyCtxt, TypeFoldable, TypeFolder, TypeSuperFoldable,
+};
 <span class="kw">use </span>rustc_middle::{bug, span_bug};
 <span class="kw">use </span>rustc_span::def_id::{DefId, LocalDefId};
 <span class="kw">use </span>rustc_span::Span;
 <span class="kw">use </span>rustc_type_ir::Upcast;
+
+<span class="kw">use </span><span class="kw">super</span>::ItemCtxt;
+<span class="kw">use </span><span class="kw">crate</span>::hir_ty_lowering::{HirTyLowerer, PredicateFilter};
 
 <span class="doccomment">/// For associated types we include both bounds written on the type
 /// (`type X: Trait`) and predicates from the trait: `where Self::X: Trait`.
@@ -458,7 +483,9 @@
     })
 }
 
-<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>item_non_self_assumptions(
+<span class="doccomment">/// This exists as an optimization to compute only the item bounds of the item
+/// that are not `Self` bounds.
+</span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>item_non_self_assumptions(
     tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;,
     def_id: DefId,
 ) -&gt; ty::EarlyBinder&lt;<span class="lifetime">'_</span>, ty::Clauses&lt;<span class="lifetime">'_</span>&gt;&gt; {
@@ -470,6 +497,25 @@
     } <span class="kw">else </span>{
         ty::EarlyBinder::bind(tcx.mk_clauses_from_iter(all_bounds.difference(<span class="kw-2">&amp;</span>own_bounds).copied()))
     }
+}
+
+<span class="doccomment">/// This exists as an optimization to compute only the supertraits of this impl's
+/// trait that are outlives bounds.
+</span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>impl_super_outlives(
+    tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;,
+    def_id: DefId,
+) -&gt; ty::EarlyBinder&lt;<span class="lifetime">'_</span>, ty::Clauses&lt;<span class="lifetime">'_</span>&gt;&gt; {
+    tcx.impl_trait_header(def_id).expect(<span class="string">"expected an impl of trait"</span>).trait_ref.map_bound(
+        |trait_ref| {
+            <span class="kw">let </span>clause: ty::Clause&lt;<span class="lifetime">'_</span>&gt; = trait_ref.upcast(tcx);
+            tcx.mk_clauses_from_iter(util::elaborate(tcx, [clause]).filter(|clause| {
+                <span class="macro">matches!</span>(
+                    clause.kind().skip_binder(),
+                    ty::ClauseKind::TypeOutlives(<span class="kw">_</span>) | ty::ClauseKind::RegionOutlives(<span class="kw">_</span>)
+                )
+            }))
+        },
+    )
 }
 
 <span class="kw">struct </span>AssocTyToOpaque&lt;<span class="lifetime">'tcx</span>&gt; {

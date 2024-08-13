@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/eval.rs`."><title>eval.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/eval.rs`."><title>eval.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -588,6 +588,20 @@
 <a href="#588" id="588">588</a>
 <a href="#589" id="589">589</a>
 <a href="#590" id="590">590</a>
+<a href="#591" id="591">591</a>
+<a href="#592" id="592">592</a>
+<a href="#593" id="593">593</a>
+<a href="#594" id="594">594</a>
+<a href="#595" id="595">595</a>
+<a href="#596" id="596">596</a>
+<a href="#597" id="597">597</a>
+<a href="#598" id="598">598</a>
+<a href="#599" id="599">599</a>
+<a href="#600" id="600">600</a>
+<a href="#601" id="601">601</a>
+<a href="#602" id="602">602</a>
+<a href="#603" id="603">603</a>
+<a href="#604" id="604">604</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Main evaluator loop and setting up the initial stack frame.
 
 </span><span class="kw">use </span>std::ffi::{OsStr, OsString};
@@ -658,7 +672,7 @@
     </span>Allow,
 }
 
-<span class="attr">#[derive(Copy, Clone, PartialEq, Eq)]
+<span class="attr">#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 </span><span class="kw">pub enum </span>BacktraceStyle {
     <span class="doccomment">/// Prints a terser backtrace which ideally only contains relevant information.
     </span>Short,
@@ -668,6 +682,16 @@
     </span>Off,
 }
 
+<span class="attr">#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+</span><span class="kw">pub enum </span>ValidationMode {
+    <span class="doccomment">/// Do not perform any kind of validation.
+    </span>No,
+    <span class="doccomment">/// Validate the interior of the value, but not things behind references.
+    </span>Shallow,
+    <span class="doccomment">/// Fully recursively validate references.
+    </span>Deep,
+}
+
 <span class="doccomment">/// Configuration needed to spawn a Miri instance.
 </span><span class="attr">#[derive(Clone)]
 </span><span class="kw">pub struct </span>MiriConfig {
@@ -675,7 +699,7 @@
     /// (This is still subject to isolation as well as `forwarded_env_vars`.)
     </span><span class="kw">pub </span>env: Vec&lt;(OsString, OsString)&gt;,
     <span class="doccomment">/// Determine if validity checking is enabled.
-    </span><span class="kw">pub </span>validate: bool,
+    </span><span class="kw">pub </span>validation: ValidationMode,
     <span class="doccomment">/// Determines if Stacked Borrows or Tree Borrows is enabled.
     </span><span class="kw">pub </span>borrow_tracker: <span class="prelude-ty">Option</span>&lt;BorrowTrackerMethod&gt;,
     <span class="doccomment">/// Whether `core::ptr::Unique` receives special treatment.
@@ -752,7 +776,7 @@
     <span class="kw">fn </span>default() -&gt; MiriConfig {
         MiriConfig {
             env: <span class="macro">vec!</span>[],
-            validate: <span class="bool-val">true</span>,
+            validation: ValidationMode::Shallow,
             borrow_tracker: <span class="prelude-val">Some</span>(BorrowTrackerMethod::StackedBorrows),
             unique_is_unique: <span class="bool-val">false</span>,
             check_alignment: AlignmentCheck::Int,
@@ -887,7 +911,8 @@
     <span class="comment">// First argument is constructed later, because it's skipped if the entry function uses #[start].
 
     // Second argument (argc): length of `config.args`.
-    </span><span class="kw">let </span>argc = Scalar::from_target_usize(u64::try_from(config.args.len()).unwrap(), <span class="kw-2">&amp;</span>ecx);
+    </span><span class="kw">let </span>argc =
+        ImmTy::from_int(i64::try_from(config.args.len()).unwrap(), ecx.machine.layouts.isize);
     <span class="comment">// Third argument (`argv`): created from `config.args`.
     </span><span class="kw">let </span>argv = {
         <span class="comment">// Put each argument in memory, collect pointers.
@@ -914,13 +939,11 @@
             ecx.write_immediate(arg, <span class="kw-2">&amp;</span>place)<span class="question-mark">?</span>;
         }
         ecx.mark_immutable(<span class="kw-2">&amp;</span>argvs_place);
-        <span class="comment">// A pointer to that place is the 3rd argument for main.
-        </span><span class="kw">let </span>argv = argvs_place.to_ref(<span class="kw-2">&amp;</span>ecx);
         <span class="comment">// Store `argc` and `argv` for macOS `_NSGetArg{c,v}`.
         </span>{
             <span class="kw">let </span>argc_place =
                 ecx.allocate(ecx.machine.layouts.isize, MiriMemoryKind::Machine.into())<span class="question-mark">?</span>;
-            ecx.write_scalar(argc, <span class="kw-2">&amp;</span>argc_place)<span class="question-mark">?</span>;
+            ecx.write_immediate(<span class="kw-2">*</span>argc, <span class="kw-2">&amp;</span>argc_place)<span class="question-mark">?</span>;
             ecx.mark_immutable(<span class="kw-2">&amp;</span>argc_place);
             ecx.machine.argc = <span class="prelude-val">Some</span>(argc_place.ptr());
 
@@ -928,7 +951,7 @@
                 ecx.layout_of(Ty::new_imm_ptr(tcx, tcx.types.unit))<span class="question-mark">?</span>,
                 MiriMemoryKind::Machine.into(),
             )<span class="question-mark">?</span>;
-            ecx.write_immediate(argv, <span class="kw-2">&amp;</span>argv_place)<span class="question-mark">?</span>;
+            ecx.write_pointer(argvs_place.ptr(), <span class="kw-2">&amp;</span>argv_place)<span class="question-mark">?</span>;
             ecx.mark_immutable(<span class="kw-2">&amp;</span>argv_place);
             ecx.machine.argv = <span class="prelude-val">Some</span>(argv_place.ptr());
         }
@@ -949,8 +972,8 @@
             }
             ecx.mark_immutable(<span class="kw-2">&amp;</span>cmd_place);
         }
-        argv
-    };
+        ecx.mplace_to_ref(<span class="kw-2">&amp;</span>argvs_place)<span class="question-mark">?
+    </span>};
 
     <span class="comment">// Return place (in static memory so that it does not count as leak).
     </span><span class="kw">let </span>ret_place = ecx.allocate(ecx.machine.layouts.isize, MiriMemoryKind::Machine.into())<span class="question-mark">?</span>;
@@ -985,10 +1008,14 @@
                 start_instance,
                 Abi::Rust,
                 <span class="kw-2">&amp;</span>[
-                    Scalar::from_pointer(main_ptr, <span class="kw-2">&amp;</span>ecx).into(),
-                    argc.into(),
+                    ImmTy::from_scalar(
+                        Scalar::from_pointer(main_ptr, <span class="kw-2">&amp;</span>ecx),
+                        <span class="comment">// FIXME use a proper fn ptr type
+                        </span>ecx.machine.layouts.const_raw_ptr,
+                    ),
+                    argc,
                     argv,
-                    Scalar::from_u8(sigpipe).into(),
+                    ImmTy::from_uint(sigpipe, ecx.machine.layouts.u8),
                 ],
                 <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>ret_place),
                 StackPopCleanup::Root { cleanup: <span class="bool-val">true </span>},
@@ -998,7 +1025,7 @@
             ecx.call_function(
                 entry_instance,
                 Abi::Rust,
-                <span class="kw-2">&amp;</span>[argc.into(), argv],
+                <span class="kw-2">&amp;</span>[argc, argv],
                 <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>ret_place),
                 StackPopCleanup::Root { cleanup: <span class="bool-val">true </span>},
             )<span class="question-mark">?</span>;
@@ -1040,6 +1067,7 @@
     <span class="kw">let </span>res = <span class="kw">match </span>res {
         <span class="prelude-val">Err</span>(res) =&gt; res,
         <span class="comment">// `Ok` can never happen
+        </span><span class="attr">#[cfg(bootstrap)]
         </span><span class="prelude-val">Ok</span>(never) =&gt; <span class="kw">match </span>never {},
     };
 

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_resolve/src/imports.rs`."><title>imports.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_resolve" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_resolve/src/imports.rs`."><title>imports.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_resolve" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1517,38 +1517,23 @@
 <a href="#1517" id="1517">1517</a>
 <a href="#1518" id="1518">1518</a>
 <a href="#1519" id="1519">1519</a>
-<a href="#1520" id="1520">1520</a>
-<a href="#1521" id="1521">1521</a>
-<a href="#1522" id="1522">1522</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! A bunch of methods and structures more or less related to resolving imports.
 
-</span><span class="kw">use </span><span class="kw">crate</span>::diagnostics::{import_candidates, DiagMode, Suggestion};
-<span class="kw">use </span><span class="kw">crate</span>::errors::{
-    CannotBeReexportedCratePublic, CannotBeReexportedCratePublicNS, CannotBeReexportedPrivate,
-    CannotBeReexportedPrivateNS, CannotDetermineImportResolution, CannotGlobImportAllCrates,
-    ConsiderAddingMacroExport, ConsiderMarkingAsPub, IsNotDirectlyImportable,
-    ItemsInTraitsAreNotImportable,
-};
-<span class="kw">use </span><span class="kw">crate</span>::Determinacy::{<span class="self">self</span>, <span class="kw-2">*</span>};
-<span class="kw">use crate</span>::{module_to_string, names_to_string, ImportSuggestion};
-<span class="kw">use crate</span>::{AmbiguityError, Namespace::<span class="kw-2">*</span>};
-<span class="kw">use crate</span>::{AmbiguityKind, BindingKey, ResolutionError, Resolver, Segment};
-<span class="kw">use crate</span>::{Finalize, Module, ModuleOrUniformRoot, ParentScope, PerNS, ScopeSet};
-<span class="kw">use crate</span>::{NameBinding, NameBindingData, NameBindingKind, PathResult, Used};
+</span><span class="kw">use </span>std::cell::Cell;
+<span class="kw">use </span>std::mem;
 
 <span class="kw">use </span>rustc_ast::NodeId;
 <span class="kw">use </span>rustc_data_structures::fx::FxHashSet;
 <span class="kw">use </span>rustc_data_structures::intern::Interned;
-<span class="kw">use </span>rustc_errors::{codes::<span class="kw-2">*</span>, pluralize, struct_span_code_err, Applicability, MultiSpan};
+<span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
+<span class="kw">use </span>rustc_errors::{pluralize, struct_span_code_err, Applicability, MultiSpan};
 <span class="kw">use </span>rustc_hir::def::{<span class="self">self</span>, DefKind, PartialRes};
 <span class="kw">use </span>rustc_hir::def_id::DefId;
-<span class="kw">use </span>rustc_middle::metadata::ModChild;
-<span class="kw">use </span>rustc_middle::metadata::Reexport;
-<span class="kw">use </span>rustc_middle::span_bug;
-<span class="kw">use </span>rustc_middle::ty;
+<span class="kw">use </span>rustc_middle::metadata::{ModChild, Reexport};
+<span class="kw">use </span>rustc_middle::{span_bug, ty};
 <span class="kw">use </span>rustc_session::lint::builtin::{
     AMBIGUOUS_GLOB_REEXPORTS, HIDDEN_GLOB_REEXPORTS, PUB_USE_OF_PRIVATE_EXTERN_CRATE,
-    UNUSED_IMPORTS,
+    REDUNDANT_IMPORTS, UNUSED_IMPORTS,
 };
 <span class="kw">use </span>rustc_session::lint::BuiltinLintDiag;
 <span class="kw">use </span>rustc_span::edit_distance::find_best_match_for_name;
@@ -1558,8 +1543,20 @@
 <span class="kw">use </span>smallvec::SmallVec;
 <span class="kw">use </span>tracing::debug;
 
-<span class="kw">use </span>std::cell::Cell;
-<span class="kw">use </span>std::mem;
+<span class="kw">use </span><span class="kw">crate</span>::diagnostics::{import_candidates, DiagMode, Suggestion};
+<span class="kw">use </span><span class="kw">crate</span>::errors::{
+    CannotBeReexportedCratePublic, CannotBeReexportedCratePublicNS, CannotBeReexportedPrivate,
+    CannotBeReexportedPrivateNS, CannotDetermineImportResolution, CannotGlobImportAllCrates,
+    ConsiderAddingMacroExport, ConsiderMarkingAsPub, IsNotDirectlyImportable,
+    ItemsInTraitsAreNotImportable,
+};
+<span class="kw">use </span><span class="kw">crate</span>::Determinacy::{<span class="self">self</span>, <span class="kw-2">*</span>};
+<span class="kw">use </span><span class="kw">crate</span>::Namespace::<span class="kw-2">*</span>;
+<span class="kw">use crate</span>::{
+    module_to_string, names_to_string, AmbiguityError, AmbiguityKind, BindingKey, Finalize,
+    ImportSuggestion, Module, ModuleOrUniformRoot, NameBinding, NameBindingData, NameBindingKind,
+    ParentScope, PathResult, PerNS, ResolutionError, Resolver, ScopeSet, Segment, Used,
+};
 
 <span class="kw">type </span>Res = def::Res&lt;NodeId&gt;;
 
@@ -1570,6 +1567,7 @@
         <span class="doccomment">/// `source` in `use prefix::source as target`.
         </span>source: Ident,
         <span class="doccomment">/// `target` in `use prefix::source as target`.
+        /// It will directly use `source` when the format is `use prefix::source`.
         </span>target: Ident,
         <span class="doccomment">/// Bindings to which `source` refers to.
         </span>source_bindings: PerNS&lt;Cell&lt;<span class="prelude-ty">Result</span>&lt;NameBinding&lt;<span class="lifetime">'a</span>&gt;, Determinacy&gt;&gt;&gt;,
@@ -1696,8 +1694,7 @@
     <span class="kw">pub </span>module_path: Vec&lt;Segment&gt;,
     <span class="doccomment">/// The resolution of `module_path`.
     </span><span class="kw">pub </span>imported_module: Cell&lt;<span class="prelude-ty">Option</span>&lt;ModuleOrUniformRoot&lt;<span class="lifetime">'a</span>&gt;&gt;&gt;,
-    <span class="kw">pub </span>vis: Cell&lt;<span class="prelude-ty">Option</span>&lt;ty::Visibility&gt;&gt;,
-    <span class="kw">pub </span>used: Cell&lt;<span class="prelude-ty">Option</span>&lt;Used&gt;&gt;,
+    <span class="kw">pub </span>vis: ty::Visibility,
 }
 
 <span class="doccomment">/// All imports are unique and allocated on a same arena,
@@ -1714,10 +1711,6 @@
             ImportKind::Single { nested, .. } =&gt; nested,
             <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
         }
-    }
-
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>expect_vis(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; ty::Visibility {
-        <span class="self">self</span>.vis.get().expect(<span class="string">"encountered cleared import visibility"</span>)
     }
 
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>id(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;NodeId&gt; {
@@ -1788,7 +1781,7 @@
     <span class="kw">match </span>(<span class="kw-2">&amp;</span>import.kind, <span class="kw-2">&amp;</span>binding.kind) {
         (ImportKind::Single { .. }, NameBindingKind::Import { import: binding_import, .. })
             <span class="kw">if let </span>ImportKind::ExternCrate { id, .. } = binding_import.kind
-                &amp;&amp; import.expect_vis().is_public() =&gt;
+                &amp;&amp; import.vis.is_public() =&gt;
         {
             <span class="prelude-val">Some</span>(id)
         }
@@ -1800,7 +1793,7 @@
     <span class="doccomment">/// Given a binding and an import that resolves to it,
     /// return the corresponding binding defined by the import.
     </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>import(<span class="kw-2">&amp;</span><span class="self">self</span>, binding: NameBinding&lt;<span class="lifetime">'a</span>&gt;, import: Import&lt;<span class="lifetime">'a</span>&gt;) -&gt; NameBinding&lt;<span class="lifetime">'a</span>&gt; {
-        <span class="kw">let </span>import_vis = import.expect_vis().to_def_id();
+        <span class="kw">let </span>import_vis = import.vis.to_def_id();
         <span class="kw">let </span>vis = <span class="kw">if </span>binding.vis.is_at_least(import_vis, <span class="self">self</span>.tcx)
             || pub_use_of_private_extern_crate_hack(import, binding).is_some()
         {
@@ -2009,7 +2002,7 @@
             });
             <span class="self">self</span>.record_use(target, dummy_binding, Used::Other);
         } <span class="kw">else if </span>import.imported_module.get().is_none() {
-            import.used.set(<span class="prelude-val">Some</span>(Used::Other));
+            <span class="self">self</span>.import_use_map.insert(import, Used::Other);
             <span class="kw">if let </span><span class="prelude-val">Some</span>(id) = import.id() {
                 <span class="self">self</span>.used_imports.insert(id);
             }
@@ -2294,11 +2287,12 @@
         <span class="kw">let </span>module = <span class="kw">if let </span><span class="prelude-val">Some</span>(module) = import.imported_module.get() {
             module
         } <span class="kw">else </span>{
-            <span class="comment">// For better failure detection, pretend that the import will
-            // not define any names while resolving its module path.
-            </span><span class="kw">let </span>orig_vis = import.vis.take();
-            <span class="kw">let </span>path_res = <span class="self">self</span>.maybe_resolve_path(<span class="kw-2">&amp;</span>import.module_path, <span class="prelude-val">None</span>, <span class="kw-2">&amp;</span>import.parent_scope);
-            import.vis.set(orig_vis);
+            <span class="kw">let </span>path_res = <span class="self">self</span>.maybe_resolve_path(
+                <span class="kw-2">&amp;</span>import.module_path,
+                <span class="prelude-val">None</span>,
+                <span class="kw-2">&amp;</span>import.parent_scope,
+                <span class="prelude-val">Some</span>(import),
+            );
 
             <span class="kw">match </span>path_res {
                 PathResult::Module(module) =&gt; module,
@@ -2328,16 +2322,13 @@
         <span class="self">self</span>.per_ns(|this, ns| {
             <span class="kw">if </span>!type_ns_only || ns == TypeNS {
                 <span class="kw">if let </span><span class="prelude-val">Err</span>(Undetermined) = source_bindings[ns].get() {
-                    <span class="comment">// For better failure detection, pretend that the import will
-                    // not define any names while resolving its module path.
-                    </span><span class="kw">let </span>orig_vis = import.vis.take();
                     <span class="kw">let </span>binding = this.maybe_resolve_ident_in_module(
                         module,
                         source,
                         ns,
                         <span class="kw-2">&amp;</span>import.parent_scope,
+                        <span class="prelude-val">Some</span>(import),
                     );
-                    import.vis.set(orig_vis);
                     source_bindings[ns].set(binding);
                 } <span class="kw">else </span>{
                     <span class="kw">return</span>;
@@ -2376,7 +2367,6 @@
     /// Optionally returns an unresolved import error. This error is buffered and used to
     /// consolidate multiple unresolved import errors into a single diagnostic.
     </span><span class="kw">fn </span>finalize_import(<span class="kw-2">&amp;mut </span><span class="self">self</span>, import: Import&lt;<span class="lifetime">'a</span>&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;UnresolvedImportError&gt; {
-        <span class="kw">let </span>orig_vis = import.vis.take();
         <span class="kw">let </span>ignore_binding = <span class="kw">match </span><span class="kw-2">&amp;</span>import.kind {
             ImportKind::Single { target_bindings, .. } =&gt; target_bindings[TypeNS].get(),
             <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
@@ -2395,11 +2385,12 @@
             <span class="kw-2">&amp;</span>import.parent_scope,
             <span class="prelude-val">Some</span>(finalize),
             ignore_binding,
+            <span class="prelude-val">Some</span>(import),
         );
 
         <span class="kw">let </span>no_ambiguity =
             ambiguity_errors_len(<span class="kw-2">&amp;</span><span class="self">self</span>.ambiguity_errors) == prev_ambiguity_errors_len;
-        import.vis.set(orig_vis);
+
         <span class="kw">let </span>module = <span class="kw">match </span>path_res {
             PathResult::Module(module) =&gt; {
                 <span class="comment">// Consistency checks, analogous to `finalize_macro_resolutions`.
@@ -2534,8 +2525,7 @@
                     }
                     <span class="kw">if </span>!is_prelude
                         &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(max_vis) = max_vis.get()
-                        &amp;&amp; <span class="kw">let </span>import_vis = import.expect_vis()
-                        &amp;&amp; !max_vis.is_at_least(import_vis, <span class="self">self</span>.tcx)
+                        &amp;&amp; !max_vis.is_at_least(import.vis, <span class="self">self</span>.tcx)
                     {
                         <span class="kw">let </span>def_id = <span class="self">self</span>.local_def_id(id);
                         <span class="self">self</span>.lint_buffer.buffer_lint(
@@ -2544,7 +2534,7 @@
                             import.span,
                             BuiltinLintDiag::RedundantImportVisibility {
                                 max_vis: max_vis.to_string(def_id, <span class="self">self</span>.tcx),
-                                import_vis: import_vis.to_string(def_id, <span class="self">self</span>.tcx),
+                                import_vis: import.vis.to_string(def_id, <span class="self">self</span>.tcx),
                                 span: import.span,
                             },
                         );
@@ -2559,9 +2549,14 @@
             // importing it if available.
             </span><span class="kw">let </span><span class="kw-2">mut </span>path = import.module_path.clone();
             path.push(Segment::from_ident(ident));
-            <span class="kw">if let </span>PathResult::Module(ModuleOrUniformRoot::Module(module)) =
-                <span class="self">self</span>.resolve_path(<span class="kw-2">&amp;</span>path, <span class="prelude-val">None</span>, <span class="kw-2">&amp;</span>import.parent_scope, <span class="prelude-val">Some</span>(finalize), ignore_binding)
-            {
+            <span class="kw">if let </span>PathResult::Module(ModuleOrUniformRoot::Module(module)) = <span class="self">self</span>.resolve_path(
+                <span class="kw-2">&amp;</span>path,
+                <span class="prelude-val">None</span>,
+                <span class="kw-2">&amp;</span>import.parent_scope,
+                <span class="prelude-val">Some</span>(finalize),
+                ignore_binding,
+                <span class="prelude-val">None</span>,
+            ) {
                 <span class="kw">let </span>res = module.res().map(|r| (r, ident));
                 <span class="kw">for </span>error <span class="kw">in </span><span class="kw-2">&amp;mut </span><span class="self">self</span>.privacy_errors[privacy_errors_len..] {
                     error.outermost_res = res;
@@ -2572,7 +2567,6 @@
         <span class="kw">let </span><span class="kw-2">mut </span>all_ns_err = <span class="bool-val">true</span>;
         <span class="self">self</span>.per_ns(|this, ns| {
             <span class="kw">if </span>!type_ns_only || ns == TypeNS {
-                <span class="kw">let </span>orig_vis = import.vis.take();
                 <span class="kw">let </span>binding = this.resolve_ident_in_module(
                     module,
                     ident,
@@ -2580,8 +2574,8 @@
                     <span class="kw-2">&amp;</span>import.parent_scope,
                     <span class="prelude-val">Some</span>(Finalize { report_private: <span class="bool-val">false</span>, ..finalize }),
                     target_bindings[ns].get(),
+                    <span class="prelude-val">Some</span>(import),
                 );
-                import.vis.set(orig_vis);
 
                 <span class="kw">match </span>binding {
                     <span class="prelude-val">Ok</span>(binding) =&gt; {
@@ -2643,6 +2637,7 @@
                         ns,
                         <span class="kw-2">&amp;</span>import.parent_scope,
                         <span class="prelude-val">Some</span>(finalize),
+                        <span class="prelude-val">None</span>,
                         <span class="prelude-val">None</span>,
                     );
                     <span class="kw">if </span>binding.is_ok() {
@@ -2754,7 +2749,7 @@
         <span class="kw">let </span><span class="kw-2">mut </span>crate_private_reexport = <span class="bool-val">false</span>;
         <span class="self">self</span>.per_ns(|this, ns| {
             <span class="kw">if let </span><span class="prelude-val">Ok</span>(binding) = source_bindings[ns].get() {
-                <span class="kw">if </span>!binding.vis.is_at_least(import.expect_vis(), this.tcx) {
+                <span class="kw">if </span>!binding.vis.is_at_least(import.vis, this.tcx) {
                     reexport_error = <span class="prelude-val">Some</span>((ns, binding));
                     <span class="kw">if let </span>ty::Visibility::Restricted(binding_def_id) = binding.vis {
                         <span class="kw">if </span>binding_def_id.is_top_level_module() {
@@ -2870,7 +2865,7 @@
         // module defined by a block).
         // Skip if the import is public or was used through non scope-based resolution,
         // e.g. through a module-relative path.
-        </span><span class="kw">if </span>import.used.get() == <span class="prelude-val">Some</span>(Used::Other)
+        </span><span class="kw">if </span><span class="self">self</span>.import_use_map.get(<span class="kw-2">&amp;</span>import) == <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>Used::Other)
             || <span class="self">self</span>.effective_visibilities.is_exported(<span class="self">self</span>.local_def_id(id))
         {
             <span class="kw">return </span><span class="bool-val">false</span>;
@@ -2891,6 +2886,7 @@
                     <span class="prelude-val">None</span>,
                     <span class="bool-val">false</span>,
                     target_bindings[ns].get(),
+                    <span class="prelude-val">None</span>,
                 ) {
                     <span class="prelude-val">Ok</span>(other_binding) =&gt; {
                         is_redundant = binding.res() == other_binding.res()
@@ -2909,15 +2905,13 @@
             <span class="kw">let </span><span class="kw-2">mut </span>redundant_spans: Vec&lt;<span class="kw">_</span>&gt; = redundant_span.present_items().collect();
             redundant_spans.sort();
             redundant_spans.dedup();
-            <span class="comment">/* FIXME(unused_imports): Add this back as a new lint
-            self.lint_buffer.buffer_lint_with_diagnostic(
-                UNUSED_IMPORTS,
+            <span class="self">self</span>.lint_buffer.buffer_lint(
+                REDUNDANT_IMPORTS,
                 id,
                 import.span,
                 BuiltinLintDiag::RedundantImport(redundant_spans, source),
             );
-            */
-            </span><span class="kw">return </span><span class="bool-val">true</span>;
+            <span class="kw">return </span><span class="bool-val">true</span>;
         }
 
         <span class="bool-val">false

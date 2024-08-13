@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/error_reporting/traits/fulfillment_errors.rs`."><title>fulfillment_errors.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/error_reporting/traits/fulfillment_errors.rs`."><title>fulfillment_errors.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -2925,34 +2925,93 @@
 <a href="#2925" id="2925">2925</a>
 <a href="#2926" id="2926">2926</a>
 <a href="#2927" id="2927">2927</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">super</span>::on_unimplemented::{AppendConstMessage, OnUnimplementedNote};
-<span class="kw">use </span><span class="kw">super</span>::suggestions::get_explanation_based_on_obligation;
-<span class="kw">use </span><span class="kw">crate</span>::error_reporting::infer::TyCategory;
-<span class="kw">use </span><span class="kw">crate</span>::error_reporting::traits::report_object_safety_error;
-<span class="kw">use </span><span class="kw">crate</span>::error_reporting::TypeErrCtxt;
-<span class="kw">use </span><span class="kw">crate</span>::errors::{
-    AsyncClosureNotFn, ClosureFnMutLabel, ClosureFnOnceLabel, ClosureKindMismatch,
-};
-<span class="kw">use </span><span class="kw">crate</span>::infer::InferCtxtExt <span class="kw">as _</span>;
-<span class="kw">use </span><span class="kw">crate</span>::infer::{<span class="self">self</span>, InferCtxt};
-<span class="kw">use </span><span class="kw">crate</span>::traits::query::evaluate_obligation::InferCtxtExt <span class="kw">as _</span>;
-<span class="kw">use </span><span class="kw">crate</span>::traits::NormalizeExt;
-<span class="kw">use </span><span class="kw">crate</span>::traits::{
-    elaborate, MismatchedProjectionTypes, Obligation, ObligationCause, ObligationCauseCode,
-    ObligationCtxt, Overflow, PredicateObligation, SelectionError, SignatureMismatch,
-    TraitNotObjectSafe,
-};
-<span class="kw">use </span>core::ops::ControlFlow;
+<a href="#2928" id="2928">2928</a>
+<a href="#2929" id="2929">2929</a>
+<a href="#2930" id="2930">2930</a>
+<a href="#2931" id="2931">2931</a>
+<a href="#2932" id="2932">2932</a>
+<a href="#2933" id="2933">2933</a>
+<a href="#2934" id="2934">2934</a>
+<a href="#2935" id="2935">2935</a>
+<a href="#2936" id="2936">2936</a>
+<a href="#2937" id="2937">2937</a>
+<a href="#2938" id="2938">2938</a>
+<a href="#2939" id="2939">2939</a>
+<a href="#2940" id="2940">2940</a>
+<a href="#2941" id="2941">2941</a>
+<a href="#2942" id="2942">2942</a>
+<a href="#2943" id="2943">2943</a>
+<a href="#2944" id="2944">2944</a>
+<a href="#2945" id="2945">2945</a>
+<a href="#2946" id="2946">2946</a>
+<a href="#2947" id="2947">2947</a>
+<a href="#2948" id="2948">2948</a>
+<a href="#2949" id="2949">2949</a>
+<a href="#2950" id="2950">2950</a>
+<a href="#2951" id="2951">2951</a>
+<a href="#2952" id="2952">2952</a>
+<a href="#2953" id="2953">2953</a>
+<a href="#2954" id="2954">2954</a>
+<a href="#2955" id="2955">2955</a>
+<a href="#2956" id="2956">2956</a>
+<a href="#2957" id="2957">2957</a>
+<a href="#2958" id="2958">2958</a>
+<a href="#2959" id="2959">2959</a>
+<a href="#2960" id="2960">2960</a>
+<a href="#2961" id="2961">2961</a>
+<a href="#2962" id="2962">2962</a>
+<a href="#2963" id="2963">2963</a>
+<a href="#2964" id="2964">2964</a>
+<a href="#2965" id="2965">2965</a>
+<a href="#2966" id="2966">2966</a>
+<a href="#2967" id="2967">2967</a>
+<a href="#2968" id="2968">2968</a>
+<a href="#2969" id="2969">2969</a>
+<a href="#2970" id="2970">2970</a>
+<a href="#2971" id="2971">2971</a>
+<a href="#2972" id="2972">2972</a>
+<a href="#2973" id="2973">2973</a>
+<a href="#2974" id="2974">2974</a>
+<a href="#2975" id="2975">2975</a>
+<a href="#2976" id="2976">2976</a>
+<a href="#2977" id="2977">2977</a>
+<a href="#2978" id="2978">2978</a>
+<a href="#2979" id="2979">2979</a>
+<a href="#2980" id="2980">2980</a>
+<a href="#2981" id="2981">2981</a>
+<a href="#2982" id="2982">2982</a>
+<a href="#2983" id="2983">2983</a>
+<a href="#2984" id="2984">2984</a>
+<a href="#2985" id="2985">2985</a>
+<a href="#2986" id="2986">2986</a>
+<a href="#2987" id="2987">2987</a>
+<a href="#2988" id="2988">2988</a>
+<a href="#2989" id="2989">2989</a>
+<a href="#2990" id="2990">2990</a>
+<a href="#2991" id="2991">2991</a>
+<a href="#2992" id="2992">2992</a>
+<a href="#2993" id="2993">2993</a>
+<a href="#2994" id="2994">2994</a>
+<a href="#2995" id="2995">2995</a>
+<a href="#2996" id="2996">2996</a>
+<a href="#2997" id="2997">2997</a>
+<a href="#2998" id="2998">2998</a>
+<a href="#2999" id="2999">2999</a>
+<a href="#3000" id="3000">3000</a>
+</pre></div><pre class="rust"><code><span class="kw">use </span>core::ops::ControlFlow;
+<span class="kw">use </span>std::borrow::Cow;
+
 <span class="kw">use </span>rustc_data_structures::fx::FxHashMap;
 <span class="kw">use </span>rustc_data_structures::unord::UnordSet;
 <span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
-<span class="kw">use </span>rustc_errors::{pluralize, struct_span_code_err, Applicability, StringPart};
-<span class="kw">use </span>rustc_errors::{Diag, ErrorGuaranteed, StashKey};
+<span class="kw">use </span>rustc_errors::{
+    pluralize, struct_span_code_err, Applicability, Diag, ErrorGuaranteed, MultiSpan, StashKey,
+    StringPart,
+};
 <span class="kw">use </span>rustc_hir::def::Namespace;
-<span class="kw">use </span>rustc_hir::def_id::{DefId, LocalDefId};
+<span class="kw">use </span>rustc_hir::def_id::{DefId, LocalDefId, LOCAL_CRATE};
 <span class="kw">use </span>rustc_hir::intravisit::Visitor;
-<span class="kw">use </span>rustc_hir::Node;
-<span class="kw">use </span>rustc_hir::{<span class="self">self </span><span class="kw">as </span>hir, LangItem};
+<span class="kw">use </span>rustc_hir::{<span class="self">self </span><span class="kw">as </span>hir, LangItem, Node};
 <span class="kw">use </span>rustc_infer::infer::{InferOk, TypeTrace};
 <span class="kw">use </span>rustc_middle::traits::select::OverflowError;
 <span class="kw">use </span>rustc_middle::traits::SignatureMismatchData;
@@ -2969,10 +3028,24 @@
 <span class="kw">use </span>rustc_middle::{bug, span_bug};
 <span class="kw">use </span>rustc_span::symbol::sym;
 <span class="kw">use </span>rustc_span::{BytePos, Span, Symbol, DUMMY_SP};
-<span class="kw">use </span>std::borrow::Cow;
 
+<span class="kw">use </span><span class="kw">super</span>::on_unimplemented::{AppendConstMessage, OnUnimplementedNote};
+<span class="kw">use </span><span class="kw">super</span>::suggestions::get_explanation_based_on_obligation;
 <span class="kw">use super</span>::{
     ArgKind, CandidateSimilarity, GetSafeTransmuteErrorAndReason, ImplCandidate, UnsatisfiedConst,
+};
+<span class="kw">use </span><span class="kw">crate</span>::error_reporting::infer::TyCategory;
+<span class="kw">use </span><span class="kw">crate</span>::error_reporting::traits::report_object_safety_error;
+<span class="kw">use </span><span class="kw">crate</span>::error_reporting::TypeErrCtxt;
+<span class="kw">use </span><span class="kw">crate</span>::errors::{
+    AsyncClosureNotFn, ClosureFnMutLabel, ClosureFnOnceLabel, ClosureKindMismatch,
+};
+<span class="kw">use </span><span class="kw">crate</span>::infer::{<span class="self">self</span>, InferCtxt, InferCtxtExt <span class="kw">as _</span>};
+<span class="kw">use </span><span class="kw">crate</span>::traits::query::evaluate_obligation::InferCtxtExt <span class="kw">as _</span>;
+<span class="kw">use </span><span class="kw">crate</span>::traits::{
+    elaborate, MismatchedProjectionTypes, NormalizeExt, Obligation, ObligationCause,
+    ObligationCauseCode, ObligationCtxt, Overflow, PredicateObligation, SelectionError,
+    SignatureMismatch, TraitNotObjectSafe,
 };
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; TypeErrCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
@@ -3614,10 +3687,7 @@
         <span class="kw">let </span><span class="kw-2">mut </span>applied_do_not_recommend = <span class="bool-val">false</span>;
         <span class="kw">loop </span>{
             <span class="kw">if let </span>ObligationCauseCode::ImplDerived(<span class="kw-2">ref </span>c) = base_cause {
-                <span class="kw">if </span><span class="self">self</span>.tcx.has_attrs_with_path(
-                    c.impl_or_alias_def_id,
-                    <span class="kw-2">&amp;</span>[sym::diagnostic, sym::do_not_recommend],
-                ) {
+                <span class="kw">if </span><span class="self">self</span>.tcx.do_not_recommend_impl(c.impl_or_alias_def_id) {
                     <span class="kw">let </span>code = (<span class="kw-2">*</span>c.derived.parent_code).clone();
                     obligation.cause.map_code(|<span class="kw">_</span>| code);
                     obligation.predicate = c.derived.parent_trait_pred.upcast(<span class="self">self</span>.tcx);
@@ -3871,8 +3941,7 @@
                 <span class="comment">// The current method call returns `Result&lt;_, ()&gt;`
                 </span>&amp;&amp; <span class="self">self</span>.can_eq(obligation.param_env, ty, found_ty)
                 <span class="comment">// There's a single argument in the method call and it is a closure
-                </span>&amp;&amp; args.len() == <span class="number">1
-                </span>&amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(arg) = args.get(<span class="number">0</span>)
+                </span>&amp;&amp; <span class="kw">let </span>[arg] = args
                 &amp;&amp; <span class="kw">let </span>hir::ExprKind::Closure(closure) = arg.kind
                 <span class="comment">// The closure has a block for its body with no tail expression
                 </span>&amp;&amp; <span class="kw">let </span>body = <span class="self">self</span>.tcx.hir().body(closure.body)
@@ -4552,10 +4621,128 @@
         other: bool,
         param_env: ty::ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
     ) -&gt; bool {
-        <span class="comment">// If we have a single implementation, try to unify it with the trait ref
-        // that failed. This should uncover a better hint for what *is* implemented.
-        </span><span class="kw">if let </span>[single] = <span class="kw-2">&amp;</span>impl_candidates {
-            <span class="kw">if </span><span class="self">self</span>.probe(|<span class="kw">_</span>| {
+        <span class="kw">let </span>alternative_candidates = |def_id: DefId| {
+            <span class="kw">let </span><span class="kw-2">mut </span>impl_candidates: Vec&lt;<span class="kw">_</span>&gt; = <span class="self">self
+                </span>.tcx
+                .all_impls(def_id)
+                <span class="comment">// ignore `do_not_recommend` items
+                </span>.filter(|def_id| !<span class="self">self</span>.tcx.do_not_recommend_impl(<span class="kw-2">*</span>def_id))
+                <span class="comment">// Ignore automatically derived impls and `!Trait` impls.
+                </span>.filter_map(|def_id| <span class="self">self</span>.tcx.impl_trait_header(def_id))
+                .filter_map(|header| {
+                    (header.polarity != ty::ImplPolarity::Negative
+                        || <span class="self">self</span>.tcx.is_automatically_derived(def_id))
+                    .then(|| header.trait_ref.instantiate_identity())
+                })
+                .filter(|trait_ref| {
+                    <span class="kw">let </span>self_ty = trait_ref.self_ty();
+                    <span class="comment">// Avoid mentioning type parameters.
+                    </span><span class="kw">if let </span>ty::Param(<span class="kw">_</span>) = self_ty.kind() {
+                        <span class="bool-val">false
+                    </span>}
+                    <span class="comment">// Avoid mentioning types that are private to another crate
+                    </span><span class="kw">else if let </span>ty::Adt(def, <span class="kw">_</span>) = self_ty.peel_refs().kind() {
+                        <span class="comment">// FIXME(compiler-errors): This could be generalized, both to
+                        // be more granular, and probably look past other `#[fundamental]`
+                        // types, too.
+                        </span><span class="self">self</span>.tcx.visibility(def.did()).is_accessible_from(body_def_id, <span class="self">self</span>.tcx)
+                    } <span class="kw">else </span>{
+                        <span class="bool-val">true
+                    </span>}
+                })
+                .collect();
+
+            impl_candidates.sort_by_key(|tr| tr.to_string());
+            impl_candidates.dedup();
+            impl_candidates
+        };
+
+        <span class="comment">// We'll check for the case where the reason for the mismatch is that the trait comes from
+        // one crate version and the type comes from another crate version, even though they both
+        // are from the same crate.
+        </span><span class="kw">let </span>trait_def_id = trait_ref.def_id();
+        <span class="kw">if let </span>ty::Adt(def, <span class="kw">_</span>) = trait_ref.self_ty().skip_binder().peel_refs().kind()
+            &amp;&amp; <span class="kw">let </span>found_type = def.did()
+            &amp;&amp; trait_def_id.krate != found_type.krate
+            &amp;&amp; <span class="self">self</span>.tcx.crate_name(trait_def_id.krate) == <span class="self">self</span>.tcx.crate_name(found_type.krate)
+        {
+            <span class="kw">let </span>name = <span class="self">self</span>.tcx.crate_name(trait_def_id.krate);
+            <span class="kw">let </span>spans: Vec&lt;<span class="kw">_</span>&gt; = [trait_def_id, found_type]
+                .into_iter()
+                .filter_map(|def_id| <span class="self">self</span>.tcx.extern_crate(def_id))
+                .map(|data| {
+                    <span class="kw">let </span>dependency = <span class="kw">if </span>data.dependency_of == LOCAL_CRATE {
+                        <span class="string">"direct dependency of the current crate"</span>.to_string()
+                    } <span class="kw">else </span>{
+                        <span class="kw">let </span>dep = <span class="self">self</span>.tcx.crate_name(data.dependency_of);
+                        <span class="macro">format!</span>(<span class="string">"dependency of crate `{dep}`"</span>)
+                    };
+                    (
+                        data.span,
+                        <span class="macro">format!</span>(<span class="string">"one version of crate `{name}` is used here, as a {dependency}"</span>),
+                    )
+                })
+                .collect();
+            <span class="kw">let </span><span class="kw-2">mut </span>span: MultiSpan = spans.iter().map(|(sp, <span class="kw">_</span>)| <span class="kw-2">*</span>sp).collect::&lt;Vec&lt;Span&gt;&gt;().into();
+            <span class="kw">for </span>(sp, label) <span class="kw">in </span>spans.into_iter() {
+                span.push_span_label(sp, label);
+            }
+            err.highlighted_span_help(
+                span,
+                <span class="macro">vec!</span>[
+                    StringPart::normal(<span class="string">"you have "</span>.to_string()),
+                    StringPart::highlighted(<span class="string">"multiple different versions"</span>.to_string()),
+                    StringPart::normal(<span class="string">" of crate `"</span>.to_string()),
+                    StringPart::highlighted(<span class="macro">format!</span>(<span class="string">"{name}"</span>)),
+                    StringPart::normal(<span class="string">"` in your dependency graph"</span>.to_string()),
+                ],
+            );
+            <span class="kw">let </span>candidates = <span class="kw">if </span>impl_candidates.is_empty() {
+                alternative_candidates(trait_def_id)
+            } <span class="kw">else </span>{
+                impl_candidates.into_iter().map(|cand| cand.trait_ref).collect()
+            };
+            <span class="kw">if let </span><span class="prelude-val">Some</span>((sp_candidate, sp_found)) = candidates.iter().find_map(|trait_ref| {
+                <span class="kw">if let </span>ty::Adt(def, <span class="kw">_</span>) = trait_ref.self_ty().peel_refs().kind()
+                    &amp;&amp; <span class="kw">let </span>candidate_def_id = def.did()
+                    &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(name) = <span class="self">self</span>.tcx.opt_item_name(candidate_def_id)
+                    &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(found) = <span class="self">self</span>.tcx.opt_item_name(found_type)
+                    &amp;&amp; name == found
+                    &amp;&amp; candidate_def_id.krate != found_type.krate
+                    &amp;&amp; <span class="self">self</span>.tcx.crate_name(candidate_def_id.krate)
+                        == <span class="self">self</span>.tcx.crate_name(found_type.krate)
+                {
+                    <span class="comment">// A candidate was found of an item with the same name, from two separate
+                    // versions of the same crate, let's clarify.
+                    </span><span class="prelude-val">Some</span>((<span class="self">self</span>.tcx.def_span(candidate_def_id), <span class="self">self</span>.tcx.def_span(found_type)))
+                } <span class="kw">else </span>{
+                    <span class="prelude-val">None
+                </span>}
+            }) {
+                <span class="kw">let </span><span class="kw-2">mut </span>span: MultiSpan = <span class="macro">vec!</span>[sp_candidate, sp_found].into();
+                span.push_span_label(<span class="self">self</span>.tcx.def_span(trait_def_id), <span class="string">"this is the required trait"</span>);
+                span.push_span_label(sp_candidate, <span class="string">"this type implements the required trait"</span>);
+                span.push_span_label(sp_found, <span class="string">"this type doesn't implement the required trait"</span>);
+                err.highlighted_span_note(
+                    span,
+                    <span class="macro">vec!</span>[
+                        StringPart::normal(
+                            <span class="string">"two types coming from two different versions of the same crate are \
+                             different types "
+                                </span>.to_string(),
+                        ),
+                        StringPart::highlighted(<span class="string">"even if they look the same"</span>.to_string()),
+                    ],
+                );
+            }
+            err.help(<span class="string">"you can use `cargo tree` to explore your dependency tree"</span>);
+            <span class="kw">return </span><span class="bool-val">true</span>;
+        }
+
+        <span class="kw">if let </span>[single] = <span class="kw-2">&amp;</span>impl_candidates {
+            <span class="comment">// If we have a single implementation, try to unify it with the trait ref
+            // that failed. This should uncover a better hint for what *is* implemented.
+            </span><span class="kw">if </span><span class="self">self</span>.probe(|<span class="kw">_</span>| {
                 <span class="kw">let </span>ocx = ObligationCtxt::new(<span class="self">self</span>);
 
                 <span class="self">self</span>.enter_forall(trait_ref, |obligation_trait_ref| {
@@ -4709,12 +4896,7 @@
         </span><span class="kw">let </span>impl_candidates = impl_candidates
             .into_iter()
             .cloned()
-            .filter(|cand| {
-                !<span class="self">self</span>.tcx.has_attrs_with_path(
-                    cand.impl_def_id,
-                    <span class="kw-2">&amp;</span>[sym::diagnostic, sym::do_not_recommend],
-                )
-            })
+            .filter(|cand| !<span class="self">self</span>.tcx.do_not_recommend_impl(cand.impl_def_id))
             .collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;();
 
         <span class="kw">let </span>def_id = trait_ref.def_id();
@@ -4726,43 +4908,7 @@
                 <span class="comment">// Mentioning implementers of `Copy`, `Debug` and friends is not useful.
                 </span><span class="kw">return </span><span class="bool-val">false</span>;
             }
-            <span class="kw">let </span><span class="kw-2">mut </span>impl_candidates: Vec&lt;<span class="kw">_</span>&gt; = <span class="self">self
-                </span>.tcx
-                .all_impls(def_id)
-                <span class="comment">// ignore `do_not_recommend` items
-                </span>.filter(|def_id| {
-                    !<span class="self">self
-                        </span>.tcx
-                        .has_attrs_with_path(<span class="kw-2">*</span>def_id, <span class="kw-2">&amp;</span>[sym::diagnostic, sym::do_not_recommend])
-                })
-                <span class="comment">// Ignore automatically derived impls and `!Trait` impls.
-                </span>.filter_map(|def_id| <span class="self">self</span>.tcx.impl_trait_header(def_id))
-                .filter_map(|header| {
-                    (header.polarity != ty::ImplPolarity::Negative
-                        || <span class="self">self</span>.tcx.is_automatically_derived(def_id))
-                    .then(|| header.trait_ref.instantiate_identity())
-                })
-                .filter(|trait_ref| {
-                    <span class="kw">let </span>self_ty = trait_ref.self_ty();
-                    <span class="comment">// Avoid mentioning type parameters.
-                    </span><span class="kw">if let </span>ty::Param(<span class="kw">_</span>) = self_ty.kind() {
-                        <span class="bool-val">false
-                    </span>}
-                    <span class="comment">// Avoid mentioning types that are private to another crate
-                    </span><span class="kw">else if let </span>ty::Adt(def, <span class="kw">_</span>) = self_ty.peel_refs().kind() {
-                        <span class="comment">// FIXME(compiler-errors): This could be generalized, both to
-                        // be more granular, and probably look past other `#[fundamental]`
-                        // types, too.
-                        </span><span class="self">self</span>.tcx.visibility(def.did()).is_accessible_from(body_def_id, <span class="self">self</span>.tcx)
-                    } <span class="kw">else </span>{
-                        <span class="bool-val">true
-                    </span>}
-                })
-                .collect();
-
-            impl_candidates.sort_by_key(|tr| tr.to_string());
-            impl_candidates.dedup();
-            <span class="kw">return </span>report(impl_candidates, err);
+            <span class="kw">return </span>report(alternative_candidates(def_id), err);
         }
 
         <span class="comment">// Sort impl candidates so that ordering is consistent for UI tests.

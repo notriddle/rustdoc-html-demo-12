@@ -1,1 +1,1 @@
-searchState.loadedDescShard("cargo_test_macro", 0, "Cargo test macro.")
+searchState.loadedDescShard("cargo_test_macro", 0, "Cargo test macro.\nReplacement for <code>#[test]</code>")

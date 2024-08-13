@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["InnerAttrForbiddenReason","InnerAttrPolicy","OuterAttributeType"],"fn":["is_complete"]};
+window.SIDEBAR_ITEMS = {"enum":["AllowLeadingUnsafe","InnerAttrForbiddenReason","InnerAttrPolicy","OuterAttributeType"]};

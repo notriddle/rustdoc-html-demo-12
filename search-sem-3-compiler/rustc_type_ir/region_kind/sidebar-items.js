@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["RegionKind"],"fn":["regionkind_discriminant"],"struct":["RegionVid"]};
+window.SIDEBAR_ITEMS = {"enum":["RegionKind"],"struct":["RegionVid"]};

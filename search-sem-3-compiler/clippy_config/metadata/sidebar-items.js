@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["parse_config_field_doc","to_kebab"],"struct":["ClippyConfiguration"]};
+window.SIDEBAR_ITEMS = {"struct":["ClippyConfiguration"]};

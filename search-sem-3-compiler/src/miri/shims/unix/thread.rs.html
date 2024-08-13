@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/unix/thread.rs`."><title>thread.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/unix/thread.rs`."><title>thread.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -116,13 +116,7 @@
 <a href="#116" id="116">116</a>
 <a href="#117" id="117">117</a>
 <a href="#118" id="118">118</a>
-<a href="#119" id="119">119</a>
-<a href="#120" id="120">120</a>
-<a href="#121" id="121">121</a>
-<a href="#122" id="122">122</a>
-<a href="#123" id="123">123</a>
 </pre></div><pre class="rust"><code><span class="kw">use crate</span>::<span class="kw-2">*</span>;
-<span class="kw">use </span>rustc_middle::ty::layout::LayoutOf;
 <span class="kw">use </span>rustc_target::spec::abi::Abi;
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; EvalContextExt&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><span class="kw">crate</span>::MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt; {}
@@ -133,7 +127,7 @@
         _attr: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
         start_routine: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
         arg: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, i32&gt; {
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ()&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
         <span class="kw">let </span>thread_info_place = this.deref_pointer_as(thread, this.libc_ty_layout(<span class="string">"pthread_t"</span>))<span class="question-mark">?</span>;
@@ -147,17 +141,13 @@
             start_routine,
             Abi::C { unwind: <span class="bool-val">false </span>},
             func_arg,
-            this.layout_of(this.tcx.types.usize)<span class="question-mark">?</span>,
+            this.machine.layouts.mut_raw_ptr,
         )<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+        <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn </span>pthread_join(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        thread: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
-        retval: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, i32&gt; {
+    <span class="kw">fn </span>pthread_join(<span class="kw-2">&amp;mut </span><span class="self">self</span>, thread: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;, retval: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ()&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
         <span class="kw">if </span>!this.ptr_is_null(this.read_pointer(retval)<span class="question-mark">?</span>)<span class="question-mark">? </span>{
@@ -168,10 +158,10 @@
         <span class="kw">let </span>thread_id = this.read_scalar(thread)<span class="question-mark">?</span>.to_int(this.libc_ty_layout(<span class="string">"pthread_t"</span>).size)<span class="question-mark">?</span>;
         this.join_thread_exclusive(thread_id.try_into().expect(<span class="string">"thread ID should fit in u32"</span>))<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+        <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn </span>pthread_detach(<span class="kw-2">&amp;mut </span><span class="self">self</span>, thread: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, i32&gt; {
+    <span class="kw">fn </span>pthread_detach(<span class="kw-2">&amp;mut </span><span class="self">self</span>, thread: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ()&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
         <span class="kw">let </span>thread_id = this.read_scalar(thread)<span class="question-mark">?</span>.to_int(this.libc_ty_layout(<span class="string">"pthread_t"</span>).size)<span class="question-mark">?</span>;
@@ -180,7 +170,7 @@
             <span class="comment">/*allow_terminated_joined*/ </span><span class="bool-val">false</span>,
         )<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+        <span class="prelude-val">Ok</span>(())
     }
 
     <span class="kw">fn </span>pthread_self(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
@@ -236,12 +226,12 @@
         <span class="prelude-val">Ok</span>(<span class="kw">if </span>success { Scalar::from_u32(<span class="number">0</span>) } <span class="kw">else </span>{ this.eval_libc(<span class="string">"ERANGE"</span>) })
     }
 
-    <span class="kw">fn </span>sched_yield(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, i32&gt; {
+    <span class="kw">fn </span>sched_yield(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ()&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
         this.yield_active_thread();
 
-        <span class="prelude-val">Ok</span>(<span class="number">0</span>)
+        <span class="prelude-val">Ok</span>(())
     }
 }
 </code></pre></div></section></main></body></html>

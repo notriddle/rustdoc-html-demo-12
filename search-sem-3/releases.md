@@ -1,6 +1,6 @@
 % Rust Release Notes
 
-Version 1.80 (2024-07-25)
+Version 1.80.0 (2024-07-25)
 ==========================
 
 <a id="1.80-Language"></a>

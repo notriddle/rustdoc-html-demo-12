@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/stacked_borrows/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/stacked_borrows/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1038,6 +1038,20 @@
 <a href="#1038" id="1038">1038</a>
 <a href="#1039" id="1039">1039</a>
 <a href="#1040" id="1040">1040</a>
+<a href="#1041" id="1041">1041</a>
+<a href="#1042" id="1042">1042</a>
+<a href="#1043" id="1043">1043</a>
+<a href="#1044" id="1044">1044</a>
+<a href="#1045" id="1045">1045</a>
+<a href="#1046" id="1046">1046</a>
+<a href="#1047" id="1047">1047</a>
+<a href="#1048" id="1048">1048</a>
+<a href="#1049" id="1049">1049</a>
+<a href="#1050" id="1050">1050</a>
+<a href="#1051" id="1051">1051</a>
+<a href="#1052" id="1052">1052</a>
+<a href="#1053" id="1053">1053</a>
+<a href="#1054" id="1054">1054</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Implements "Stacked Borrows".  See &lt;https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md&gt;
 //! for further information.
 
@@ -1045,6 +1059,7 @@
 <span class="kw">mod </span>item;
 <span class="kw">mod </span>stack;
 
+<span class="kw">use </span>std::cell::RefCell;
 <span class="kw">use </span>std::cmp;
 <span class="kw">use </span>std::fmt::Write;
 <span class="kw">use </span>std::mem;
@@ -1712,7 +1727,8 @@
             // attempt to use it for a non-zero-sized access.
             // Dangling slices are a common case here; it's valid to get their length but with raw
             // pointer tagging for example all calls to get_unchecked on them are invalid.
-            </span><span class="kw">if let </span><span class="prelude-val">Ok</span>((alloc_id, base_offset, orig_tag)) = this.ptr_try_get_alloc_id(place.ptr()) {
+            </span><span class="kw">if let </span><span class="prelude-val">Ok</span>((alloc_id, base_offset, orig_tag)) = this.ptr_try_get_alloc_id(place.ptr(), <span class="number">0</span>)
+            {
                 log_creation(this, <span class="prelude-val">Some</span>((alloc_id, base_offset, orig_tag)))<span class="question-mark">?</span>;
                 <span class="comment">// Still give it the new provenance, it got retagged after all.
                 </span><span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(Provenance::Concrete { alloc_id, tag: new_tag }));
@@ -1724,7 +1740,7 @@
             }
         }
 
-        <span class="kw">let </span>(alloc_id, base_offset, orig_tag) = this.ptr_get_alloc_id(place.ptr())<span class="question-mark">?</span>;
+        <span class="kw">let </span>(alloc_id, base_offset, orig_tag) = this.ptr_get_alloc_id(place.ptr(), <span class="number">0</span>)<span class="question-mark">?</span>;
         log_creation(this, <span class="prelude-val">Some</span>((alloc_id, base_offset, orig_tag)))<span class="question-mark">?</span>;
 
         <span class="macro">trace!</span>(
@@ -1860,7 +1876,19 @@
         // See https://github.com/rust-lang/unsafe-code-guidelines/issues/276.
         </span><span class="kw">let </span>size = <span class="kw">match </span>size {
             <span class="prelude-val">Some</span>(size) =&gt; size,
-            <span class="prelude-val">None </span>=&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(place.clone()),
+            <span class="prelude-val">None </span>=&gt; {
+                <span class="comment">// The first time this happens, show a warning.
+                </span><span class="macro">thread_local!</span> { <span class="kw">static </span>WARNING_SHOWN: RefCell&lt;bool&gt; = <span class="kw">const </span>{ RefCell::new(<span class="bool-val">false</span>) }; }
+                WARNING_SHOWN.with_borrow_mut(|shown| {
+                    <span class="kw">if </span><span class="kw-2">*</span>shown {
+                        <span class="kw">return</span>;
+                    }
+                    <span class="comment">// Not yet shown. Show it!
+                    </span><span class="kw-2">*</span>shown = <span class="bool-val">true</span>;
+                    this.emit_diagnostic(NonHaltingDiagnostic::ExternTypeReborrow);
+                });
+                <span class="kw">return </span><span class="prelude-val">Ok</span>(place.clone());
+            }
         };
 
         <span class="comment">// Compute new borrow.

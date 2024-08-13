@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/place.rs`."><title>place.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/place.rs`."><title>place.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1044,6 +1044,9 @@
 <a href="#1044" id="1044">1044</a>
 <a href="#1045" id="1045">1045</a>
 <a href="#1046" id="1046">1046</a>
+<a href="#1047" id="1047">1047</a>
+<a href="#1048" id="1048">1048</a>
+<a href="#1049" id="1049">1049</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Computations on places -- field projections, going from mir::Place, and writing
 //! into a place.
 //! All high-level functions to write to memory work on places as destinations.
@@ -1051,20 +1054,17 @@
 </span><span class="kw">use </span>std::assert_matches::assert_matches;
 
 <span class="kw">use </span>either::{Either, Left, Right};
-<span class="kw">use </span>tracing::{instrument, trace};
-
 <span class="kw">use </span>rustc_ast::Mutability;
-<span class="kw">use </span>rustc_middle::mir;
 <span class="kw">use </span>rustc_middle::ty::layout::{LayoutOf, TyAndLayout};
 <span class="kw">use </span>rustc_middle::ty::Ty;
-<span class="kw">use </span>rustc_middle::{bug, span_bug};
+<span class="kw">use </span>rustc_middle::{bug, mir, span_bug};
 <span class="kw">use </span>rustc_target::abi::{Abi, Align, HasDataLayout, Size};
+<span class="kw">use </span>tracing::{instrument, trace};
 
 <span class="kw">use super</span>::{
-    alloc_range, mir_assign_valid_types, throw_ub, AllocRef, AllocRefMut, CheckAlignMsg,
-    CtfeProvenance, ImmTy, Immediate, InterpCx, InterpResult, Machine, MemoryKind, Misalignment,
-    OffsetMode, OpTy, Operand, Pointer, PointerArithmetic, Projectable, Provenance, Readable,
-    Scalar,
+    alloc_range, mir_assign_valid_types, AllocRef, AllocRefMut, CheckAlignMsg, CtfeProvenance,
+    ImmTy, Immediate, InterpCx, InterpResult, Machine, MemoryKind, Misalignment, OffsetMode, OpTy,
+    Operand, Pointer, Projectable, Provenance, Readable, Scalar,
 };
 
 <span class="attr">#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
@@ -1133,9 +1133,6 @@
             !meta.has_meta() || <span class="self">self</span>.meta.has_meta(),
             <span class="string">"cannot use `offset_with_meta` to add metadata to a place"
         </span>);
-        <span class="kw">if </span>offset &gt; ecx.data_layout().max_size_of_val() {
-            <span class="macro">throw_ub!</span>(PointerArithOverflow);
-        }
         <span class="kw">let </span>ptr = <span class="kw">match </span>mode {
             OffsetMode::Inbounds =&gt; {
                 ecx.ptr_offset_inbounds(<span class="self">self</span>.ptr, offset.bytes().try_into().unwrap())<span class="question-mark">?
@@ -1337,10 +1334,8 @@
                 // projections are type-checked and bounds-checked.
                 </span><span class="macro">assert!</span>(offset + layout.size &lt;= <span class="self">self</span>.layout.size);
 
-                <span class="kw">let </span>new_offset = Size::from_bytes(
-                    ecx.data_layout()
-                        .offset(old_offset.unwrap_or(Size::ZERO).bytes(), offset.bytes())<span class="question-mark">?</span>,
-                );
+                <span class="comment">// Size `+`, ensures no overflow.
+                </span><span class="kw">let </span>new_offset = old_offset.unwrap_or(Size::ZERO) + offset;
 
                 PlaceTy {
                     place: Place::Local { local, offset: <span class="prelude-val">Some</span>(new_offset), locals_addr },
@@ -1626,7 +1621,10 @@
 
         <span class="kw">if </span>M::enforce_validity(<span class="self">self</span>, dest.layout()) {
             <span class="comment">// Data got changed, better make sure it matches the type!
-            </span><span class="self">self</span>.validate_operand(<span class="kw-2">&amp;</span>dest.to_op(<span class="self">self</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+            </span><span class="self">self</span>.validate_operand(
+                <span class="kw-2">&amp;</span>dest.to_op(<span class="self">self</span>)<span class="question-mark">?</span>,
+                M::enforce_validity_recursively(<span class="self">self</span>, dest.layout()),
+            )<span class="question-mark">?</span>;
         }
 
         <span class="prelude-val">Ok</span>(())
@@ -1865,7 +1863,10 @@
         <span class="comment">// Generally for transmutation, data must be valid both at the old and new type.
         // But if the types are the same, the 2nd validation below suffices.
         </span><span class="kw">if </span>src.layout().ty != dest.layout().ty &amp;&amp; M::enforce_validity(<span class="self">self</span>, src.layout()) {
-            <span class="self">self</span>.validate_operand(<span class="kw-2">&amp;</span>src.to_op(<span class="self">self</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+            <span class="self">self</span>.validate_operand(
+                <span class="kw-2">&amp;</span>src.to_op(<span class="self">self</span>)<span class="question-mark">?</span>,
+                M::enforce_validity_recursively(<span class="self">self</span>, src.layout()),
+            )<span class="question-mark">?</span>;
         }
 
         <span class="comment">// Do the actual copy.
@@ -1873,7 +1874,10 @@
 
         <span class="kw">if </span>validate_dest &amp;&amp; M::enforce_validity(<span class="self">self</span>, dest.layout()) {
             <span class="comment">// Data got changed, better make sure it matches the type!
-            </span><span class="self">self</span>.validate_operand(<span class="kw-2">&amp;</span>dest.to_op(<span class="self">self</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+            </span><span class="self">self</span>.validate_operand(
+                <span class="kw-2">&amp;</span>dest.to_op(<span class="self">self</span>)<span class="question-mark">?</span>,
+                M::enforce_validity_recursively(<span class="self">self</span>, dest.layout()),
+            )<span class="question-mark">?</span>;
         }
 
         <span class="prelude-val">Ok</span>(())
@@ -2053,7 +2057,8 @@
         <span class="comment">// Use cache for immutable strings.
         </span><span class="kw">let </span>ptr = <span class="kw">if </span>mutbl.is_not() {
             <span class="comment">// Use dedup'd allocation function.
-            </span><span class="kw">let </span>id = tcx.allocate_bytes_dedup(str.as_bytes());
+            </span><span class="kw">let </span>salt = M::get_global_alloc_salt(<span class="self">self</span>, <span class="prelude-val">None</span>);
+            <span class="kw">let </span>id = tcx.allocate_bytes_dedup(str.as_bytes(), salt);
 
             <span class="comment">// Turn untagged "global" pointers (obtained via `tcx`) into the machine pointer to the allocation.
             </span>M::adjust_alloc_root_pointer(<span class="kw-2">&amp;</span><span class="self">self</span>, Pointer::from(id), <span class="prelude-val">Some</span>(kind))<span class="question-mark">?
@@ -2080,8 +2085,9 @@
 <span class="comment">// Some nodes are used a lot. Make sure they don't unintentionally get bigger.
 </span><span class="attr">#[cfg(target_pointer_width = <span class="string">"64"</span>)]
 </span><span class="kw">mod </span>size_asserts {
-    <span class="kw">use super</span>::<span class="kw-2">*</span>;
     <span class="kw">use </span>rustc_data_structures::static_assert_size;
+
+    <span class="kw">use super</span>::<span class="kw-2">*</span>;
     <span class="comment">// tidy-alphabetical-start
     </span><span class="macro">static_assert_size!</span>(MemPlace, <span class="number">48</span>);
     <span class="macro">static_assert_size!</span>(MemPlaceMeta, <span class="number">24</span>);

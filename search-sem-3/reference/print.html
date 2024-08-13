@@ -454,7 +454,8 @@ fn invalid_lifetime_parameter&lt;'static&gt;(s: &amp;'static str) -&gt; &amp;'st
 </li>
 <li>
 <p>In the 2015 edition, <a href="types/trait-object.html"><code>dyn</code></a> is a keyword when used in a type position
-followed by a path that does not start with <code>::</code>.</p>
+followed by a path that does not start with <code>::</code> or <code>&lt;</code>, a lifetime, a question mark, a <code>for</code>
+keyword or an opening parenthesis.</p>
 <p>Beginning in the 2018 edition, <code>dyn</code> has been promoted to a strict keyword.</p>
 </li>
 </ul>
@@ -1220,6 +1221,8 @@ LIFETIME_TOKEN :<br />
 <em>(not immediately followed by <code>'</code>)</em></p>
 <p>LIFETIME_OR_LABEL :<br />
       <code>'</code> <a href="identifiers.html">NON_KEYWORD_IDENTIFIER</a>
+<em>(not immediately followed by <code>'</code>)</em><br />
+   | <code>'_</code>
 <em>(not immediately followed by <code>'</code>)</em></p>
 </blockquote>
 <p>Lifetime parameters and <a href="expressions/loop-expr.html">loop labels</a> use LIFETIME_OR_LABEL tokens. Any
@@ -2267,39 +2270,26 @@ in the Owens and Flatt module system, or a <em>configuration</em> in Mesa.</p>
 <p><em>ConfigurationPredicateList</em><br />
    <em>ConfigurationPredicate</em> (<code>,</code> <em>ConfigurationPredicate</em>)<sup>*</sup> <code>,</code><sup>?</sup></p>
 </blockquote>
-<p><em>Conditionally compiled source code</em> is source code that may or may not be
-considered a part of the source code depending on certain conditions. <!-- This
-definition is sort of vacuous --> Source code can be conditionally compiled
-using the <a href="attributes.html">attributes</a> <a href="conditional-compilation.html#the-cfg-attribute"><code>cfg</code></a> and <a href="conditional-compilation.html#the-cfg_attr-attribute"><code>cfg_attr</code></a> and the built-in <a href="conditional-compilation.html#the-cfg-macro"><code>cfg</code> macro</a>.
-These conditions are based on the target architecture of the compiled crate,
-arbitrary values passed to the compiler, and a few other miscellaneous things
-further described below in detail.</p>
+<p><em>Conditionally compiled source code</em> is source code that is compiled only under certain conditions. Source code can be made conditionally compiled using the <a href="conditional-compilation.html#the-cfg-attribute"><code>cfg</code></a> and <a href="conditional-compilation.html#the-cfg_attr-attribute"><code>cfg_attr</code></a> <a href="attributes.html">attributes</a> and the built-in <a href="conditional-compilation.html#the-cfg-macro"><code>cfg</code> macro</a>. Whether to compile can depend on the target architecture of the compiled crate, arbitrary values passed to the compiler, and other things further described below.</p>
 <p>Each form of conditional compilation takes a <em>configuration predicate</em> that
 evaluates to true or false. The predicate is one of the following:</p>
 <ul>
-<li>A configuration option. It is true if the option is set and false if it is
-unset.</li>
-<li><code>all()</code> with a comma separated list of configuration predicates. It is false
-if at least one predicate is false. If there are no predicates, it is true.</li>
-<li><code>any()</code> with a comma separated list of configuration predicates. It is true
-if at least one predicate is true. If there are no predicates, it is false.</li>
-<li><code>not()</code> with a configuration predicate. It is true if its predicate is false
-and false if its predicate is true.</li>
+<li>A configuration option. The predicate is true if the option is set, and false if it is unset.</li>
+<li><code>all()</code> with a comma-separated list of configuration predicates. It is true if all of the given predicates are true, or if the list is empty.</li>
+<li><code>any()</code> with a comma-separated list of configuration predicates. It is true if at least one of the given predicates is true. If there are no predicates, it is false.</li>
+<li><code>not()</code> with a configuration predicate. It is true if its predicate is false and false if its predicate is true.</li>
 </ul>
-<p><em>Configuration options</em> are names and key-value pairs that are either set or
-unset. Names are written as a single identifier such as, for example, <code>unix</code>.
-Key-value pairs are written as an identifier, <code>=</code>, and then a string. For
-example, <code>target_arch = "x86_64"</code> is a configuration option.</p>
+<p><em>Configuration options</em> are either names or key-value pairs, and are either set or unset.
+Names are written as a single identifier, such as <code>unix</code>.
+Key-value pairs are written as an identifier, <code>=</code>, and then a string, such as <code>target_arch = "x86_64"</code>.</p>
 <blockquote>
-<p><strong>Note</strong>: Whitespace around the <code>=</code> is ignored. <code>foo="bar"</code> and <code>foo = "bar"</code>
-are equivalent configuration options.</p>
+<p><strong>Note</strong>: Whitespace around the <code>=</code> is ignored, so <code>foo="bar"</code> and <code>foo = "bar"</code> are equivalent.</p>
 </blockquote>
-<p>Keys are not unique in the set of key-value configuration options. For example,
-both <code>feature = "std"</code> and <code>feature = "serde"</code> can be set at the same time.</p>
+<p>Keys do not need to be unique. For example, both <code>feature = "std"</code> and <code>feature = "serde"</code> can be set at the same time.</p>
 <h2 id="set-configuration-options"><a class="header" href="#set-configuration-options">Set Configuration Options</a></h2>
 <p>Which configuration options are set is determined statically during the
-compilation of the crate. Certain options are <em>compiler-set</em> based on data
-about the compilation. Other options are <em>arbitrarily-set</em>, set based on input
+compilation of the crate. Some options are <em>compiler-set</em> based on data
+about the compilation. Other options are <em>arbitrarily-set</em> based on input
 passed to the compiler outside of the code. It is not possible to set a
 configuration option from within the source code of the crate being compiled.</p>
 <blockquote>
@@ -2312,11 +2302,7 @@ by <a href="../cargo/reference/features.html">Cargo</a> for specifying compile-t
 dependencies.</p>
 </blockquote>
 <div class="warning">
-<p>Warning: It is possible for arbitrarily-set configuration options to have the
-same value as compiler-set configuration options. For example, it is possible
-to do <code>rustc --cfg "unix" program.rs</code> while compiling to a Windows target, and
-have both <code>unix</code> and <code>windows</code> configuration options set at the same time. It
-is unwise to actually do this.</p>
+<p>Warning: Arbitrarily-set configuration options can clash with compiler-set configuration options. For example, it is possible to do <code>rustc --cfg "unix" program.rs</code> while compiling to a Windows target, and have both <code>unix</code> and <code>windows</code> configuration options set at the same time. Doing this would be unwise.</p>
 </div>
 <h3 id="target_arch"><a class="header" href="#target_arch"><code>target_arch</code></a></h3>
 <p>Key-value option set once with the target’s CPU architecture. The value is
@@ -3318,7 +3304,7 @@ type TypeAlias = MyStruct;
 let _ = UseAlias(5); // OK
 let _ = TypeAlias(5); // Doesn't work
 <span class="boring">}</span></code></pre></pre>
-<p>A type alias, when not used as an associated type, must include a <a href="items/../types.html#type-expressions"><em>Type</em></a> and
+<p>A type alias, when not used as an <a href="items/associated-items.html#associated-types">associated type</a>, must include a <a href="items/../types.html#type-expressions"><em>Type</em></a> and
 may not include <a href="items/../trait-bounds.html"><em>TypeParamBounds</em></a>.</p>
 <p>A type alias, when used as an <a href="items/associated-items.html#associated-types">associated type</a> in a <a href="items/traits.html">trait</a>, must not include a
 <a href="items/../types.html#type-expressions"><em>Type</em></a> specification but may include <a href="items/../trait-bounds.html"><em>TypeParamBounds</em></a>.</p>
@@ -3984,23 +3970,30 @@ running in the same process.</p>
 libraries and can also be bound from C libraries in an <code>extern</code> block.</p>
 <pre><pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span><span class="boring">fn atomic_add(_: &amp;mut u32, _: u32) -&gt; u32 { 2 }
+</span><span class="boring">fn atomic_add(_: *mut u32, _: u32) -&gt; u32 { 2 }
 </span>
 static mut LEVELS: u32 = 0;
 
 // This violates the idea of no shared state, and this doesn't internally
 // protect against races, so this function is `unsafe`
-unsafe fn bump_levels_unsafe1() -&gt; u32 {
-    let ret = LEVELS;
-    LEVELS += 1;
-    return ret;
+unsafe fn bump_levels_unsafe() -&gt; u32 {
+    unsafe {
+        let ret = LEVELS;
+        LEVELS += 1;
+        return ret;
+    }
 }
 
-// Assuming that we have an atomic_add function which returns the old value,
-// this function is "safe" but the meaning of the return value may not be what
-// callers expect, so it's still marked as `unsafe`
-unsafe fn bump_levels_unsafe2() -&gt; u32 {
-    return atomic_add(&amp;mut LEVELS, 1);
+// As an alternative to `bump_levels_unsafe`, this function is safe, assuming
+// that we have an atomic_add function which returns the old value. This
+// function is safe only if no other code accesses the static in a non-atomic
+// fashion. If such accesses are possible (such as in `bump_levels_unsafe`),
+// then this would need to be `unsafe` to indicate to the caller that they
+// must still guard against concurrent access.
+fn bump_levels_safe() -&gt; u32 {
+    unsafe {
+        return atomic_add(std::ptr::addr_of_mut!(LEVELS), 1);
+    }
 }
 <span class="boring">}</span></code></pre></pre>
 <p>Mutable statics have the same restrictions as normal statics, except that the
@@ -4851,6 +4844,7 @@ See <a href="items/../names/scopes.html#generic-parameter-scopes">generic parame
 <p><a href="items/../types/pointer.html#shared-references-">References</a>, <a href="items/../types/pointer.html#raw-pointers-const-and-mut">raw pointers</a>, <a href="items/../types/array.html">arrays</a>, <a href="items/../types/slice.html">slices</a>, <a href="items/../types/tuple.html">tuples</a>, and
 <a href="items/../types/function-pointer.html">function pointers</a> have lifetime or type parameters as well, but are not
 referred to with path syntax.</p>
+<p><code>'_</code> is not a valid lifetime parameter.</p>
 <h3 id="const-generics"><a class="header" href="#const-generics">Const generics</a></h3>
 <p><em>Const generic parameters</em> allow items to be generic over constant values. The
 const identifier introduces a name for the constant parameter, and all
@@ -7962,7 +7956,7 @@ For example, this code:</p>
 <em>UnsafeBlockExpression</em> :<br />
    <code>unsafe</code> <em>BlockExpression</em></p>
 </blockquote>
-<p><em>See <a href="expressions/../unsafe-blocks.html"><code>unsafe</code> block</a> for more information on when to use <code>unsafe</code></em></p>
+<p><em>See <a href="expressions/../unsafe-keyword.html#unsafe-blocks-unsafe-"><code>unsafe</code> blocks</a> for more information on when to use <code>unsafe</code></em>.</p>
 <p>A block of code can be prefixed with the <code>unsafe</code> keyword to permit <a href="expressions/../unsafety.html">unsafe operations</a>.
 Examples:</p>
 <pre><pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
@@ -9287,6 +9281,7 @@ See <a href="expressions/loop-expr.html#break-expressions">break expressions</a>
     break 'a;
 }
 <span class="boring">}</span></code></pre></pre>
+<p><code>'_</code> is not a valid loop label.</p>
 <h2 id="break-expressions"><a class="header" href="#break-expressions"><code>break</code> expressions</a></h2>
 <blockquote>
 <p><strong><sup>Syntax</sup></strong><br />
@@ -12205,8 +12200,7 @@ fn takes_fn_ptr&lt;'short, 'middle: 'short&gt;(
    ( <em>Lifetime</em> <code>+</code> )<sup>*</sup> <em>Lifetime</em><sup>?</sup></p>
 <p><em>Lifetime</em> :<br />
       <a href="tokens.html#lifetimes-and-loop-labels">LIFETIME_OR_LABEL</a><br />
-   | <code>'static</code><br />
-   | <code>'_</code></p>
+   | <code>'static</code></p>
 </blockquote>
 <p><a href="items/traits.html#trait-bounds">Trait</a> and lifetime bounds provide a way for <a href="items/generics.html">generic items</a> to
 restrict which types and lifetimes are used as their parameters. Bounds can be
@@ -14514,6 +14508,15 @@ have dynamic dependencies on other Rust code.</p>
 dependencies on system libraries, or dependencies on Rust libraries that are
 compiled as dynamic libraries) will have to be specified manually when
 linking that static library from somewhere. The <code>--print=native-static-libs</code> flag may help with this.</p>
+<p>Note that, because the resulting static library contains the code of all the
+dependencies, including the standard library, and also exports all public
+symbols of them, linking the static library into an executable or shared
+library may need special care. In case of a shared library the list of
+exported symbols will have to be limited via e.g. a linker or symbol version
+script, exported symbols list (macOS), or module definition file (Windows).
+Additionally, unused sections can be removed to remove all code of
+dependencies that is not actually used (e.g. <code>--gc-sections</code> or <code>-dead_strip</code>
+for macOS).</p>
 </li>
 <li>
 <p><code>--crate-type=cdylib</code>, <code>#![crate_type = "cdylib"]</code> - A dynamic system
@@ -15477,56 +15480,10 @@ does not support (see <a href="attributes/codegen.html#the-target_feature-attrib
 <p>Calling a function with the wrong call ABI or unwinding from a function with the wrong unwind ABI.</p>
 </li>
 <li>
-<p>Producing an invalid value, even in private fields and locals. “Producing” a
+<p>Producing an <a href="behavior-considered-undefined.html#invalid-values">invalid value</a>. “Producing” a
 value happens any time a value is assigned to or read from a place, passed to
 a function/primitive operation or returned from a function/primitive
-operation.
-The following values are invalid (at their respective type):</p>
-<ul>
-<li>
-<p>A value other than <code>false</code> (<code>0</code>) or <code>true</code> (<code>1</code>) in a <a href="types/boolean.html"><code>bool</code></a>.</p>
-</li>
-<li>
-<p>A discriminant in an <code>enum</code> not included in the type definition.</p>
-</li>
-<li>
-<p>A null <code>fn</code> pointer.</p>
-</li>
-<li>
-<p>A value in a <code>char</code> which is a surrogate or above <code>char::MAX</code>.</p>
-</li>
-<li>
-<p>A <code>!</code> (all values are invalid for this type).</p>
-</li>
-<li>
-<p>An integer (<code>i*</code>/<code>u*</code>), floating point value (<code>f*</code>), or raw pointer obtained
-from <a href="http://llvm.org/docs/LangRef.html#undefined-values">uninitialized memory</a>, or uninitialized memory in a <code>str</code>.</p>
-</li>
-<li>
-<p>A reference or <code>Box&lt;T&gt;</code> that is <a href="behavior-considered-undefined.html#dangling-pointers">dangling</a>, misaligned, or points to an invalid value
-(in case of dynamically sized types, using the actual dynamic type of the
-pointee as determined by the metadata).</p>
-</li>
-<li>
-<p>Invalid metadata in a wide reference, <code>Box&lt;T&gt;</code>, or raw pointer. The requirement
-for the metadata is determined by the type of the unsized tail:</p>
-<ul>
-<li><code>dyn Trait</code> metadata is invalid if it is not a pointer to a vtable for <code>Trait</code>.</li>
-<li>Slice (<code>[T]</code>) metadata is invalid if the length is not a valid <code>usize</code>
-(i.e., it must not be read from uninitialized memory).
-Furthermore, for wide references and <code>Box&lt;T&gt;</code>, slice metadata is invalid
-if it makes the total size of the pointed-to value bigger than <code>isize::MAX</code>.</li>
-</ul>
-</li>
-<li>
-<p>Invalid values for a type with a custom definition of invalid values.
-In the standard library, this affects <a href="../core/ptr/struct.NonNull.html"><code>NonNull&lt;T&gt;</code></a> and <a href="../core/num/index.html"><code>NonZero*</code></a>.</p>
-<blockquote>
-<p><strong>Note</strong>: <code>rustc</code> achieves this with the unstable
-<code>rustc_layout_scalar_valid_range_*</code> attributes.</p>
-</blockquote>
-</li>
-</ul>
+operation.</p>
 </li>
 <li>
 <p>Incorrect use of inline assembly. For more details, refer to the <a href="inline-assembly.html#rules-for-inline-assembly">rules</a> to
@@ -15540,10 +15497,6 @@ some allocated object as a non-pointer type (such as integers).
 cast, e.g. by doing raw pointer casts or using a union.</p>
 </li>
 </ul>
-<p><strong>Note:</strong> Uninitialized memory is also implicitly invalid for any type that has
-a restricted set of valid values. In other words, the only cases in which
-reading uninitialized memory is permitted are inside <code>union</code>s and in “padding”
-(the gaps between the fields/elements of a type).</p>
 <blockquote>
 <p><strong>Note</strong>: Undefined behavior affects the entire program. For example, calling
 a function in C that exhibits undefined behavior of C means your entire
@@ -15579,16 +15532,82 @@ more aligned than the type that contains it, i.e., <code>repr(packed)</code>. Th
 that being based on an aligned pointer is always sufficient to ensure that the
 new reference is aligned, but it is not always necessary.</p>
 <h3 id="dangling-pointers"><a class="header" href="#dangling-pointers">Dangling pointers</a></h3>
-<p>A reference/pointer is “dangling” if it is null or not all of the bytes it
+<p>A reference/pointer is “dangling” if not all of the bytes it
 <a href="behavior-considered-undefined.html#pointed-to-bytes">points to</a> are part of the same live allocation (so in particular they all have to be
 part of <em>some</em> allocation).</p>
-<p>If the size is 0, then the pointer must either point inside of a live allocation
-(including pointing just after the last byte of the allocation), or it must be
-directly constructed from a non-zero integer literal.</p>
+<p>If the size is 0, then the pointer is trivially never “dangling”
+(even if it is a null pointer).</p>
 <p>Note that dynamically sized types (such as slices and strings) point to their
 entire range, so it is important that the length metadata is never too large. In
 particular, the dynamic size of a Rust value (as determined by <code>size_of_val</code>)
-must never exceed <code>isize::MAX</code>.</p>
+must never exceed <code>isize::MAX</code>, since it is impossible for a single allocation
+to be larger than <code>isize::MAX</code>.</p>
+<h3 id="invalid-values"><a class="header" href="#invalid-values">Invalid values</a></h3>
+<p>The Rust compiler assumes that all values produced during program execution are
+“valid”, and producing an invalid value is hence immediate UB.</p>
+<p>Whether a value is valid depends on the type:</p>
+<ul>
+<li>
+<p>A <a href="types/boolean.html"><code>bool</code></a> value must be <code>false</code> (<code>0</code>) or <code>true</code> (<code>1</code>).</p>
+</li>
+<li>
+<p>A <code>fn</code> pointer value must be non-null.</p>
+</li>
+<li>
+<p>A <code>char</code> value must not be a surrogate (i.e., must not be in the range <code>0xD800..=0xDFFF</code>) and must be equal to or less than <code>char::MAX</code>.</p>
+</li>
+<li>
+<p>A <code>!</code> value must never exist.</p>
+</li>
+<li>
+<p>An integer (<code>i*</code>/<code>u*</code>), floating point value (<code>f*</code>), or raw pointer must be
+initialized, i.e., must not be obtained from <a href="http://llvm.org/docs/LangRef.html#undefined-values">uninitialized memory</a>.</p>
+</li>
+<li>
+<p>A <code>str</code> value is treated like <code>[u8]</code>, i.e. it must be initialized.</p>
+</li>
+<li>
+<p>An <code>enum</code> must have a valid discriminant, and all fields of the variant indicated by that discriminant must be valid at their respective type.</p>
+</li>
+<li>
+<p>A <code>struct</code>, tuple, and array requires all fields/elements to be valid at their respective type.</p>
+</li>
+<li>
+<p>For a <code>union</code>, the exact validity requirements are not decided yet.
+Obviously, all values that can be created entirely in safe code are valid.
+If the union has a zero-sized field, then every possible value is valid.
+Further details are <a href="https://github.com/rust-lang/unsafe-code-guidelines/issues/438">still being debated</a>.</p>
+</li>
+<li>
+<p>A reference or <a href="../alloc/boxed/struct.Box.html"><code>Box&lt;T&gt;</code></a> must be aligned, it cannot be <a href="behavior-considered-undefined.html#dangling-pointers">dangling</a>, and it must point to a valid value
+(in case of dynamically sized types, using the actual dynamic type of the
+pointee as determined by the metadata).
+Note that the last point (about pointing to a valid value) remains a subject of some debate.</p>
+</li>
+<li>
+<p>The metadata of a wide reference, <a href="../alloc/boxed/struct.Box.html"><code>Box&lt;T&gt;</code></a>, or raw pointer must match
+the type of the unsized tail:</p>
+<ul>
+<li><code>dyn Trait</code> metadata must be a pointer to a compiler-generated vtable for <code>Trait</code>.
+(For raw pointers, this requirement remains a subject of some debate.)</li>
+<li>Slice (<code>[T]</code>) metadata must be a valid <code>usize</code>.
+Furthermore, for wide references and <a href="../alloc/boxed/struct.Box.html"><code>Box&lt;T&gt;</code></a>, slice metadata is invalid
+if it makes the total size of the pointed-to value bigger than <code>isize::MAX</code>.</li>
+</ul>
+</li>
+<li>
+<p>If a type has a custom range of a valid values, then a valid value must be in that range.
+In the standard library, this affects <a href="../core/ptr/struct.NonNull.html"><code>NonNull&lt;T&gt;</code></a> and <a href="../core/num/struct.NonZero.html"><code>NonZero&lt;T&gt;</code></a>.</p>
+<blockquote>
+<p><strong>Note</strong>: <code>rustc</code> achieves this with the unstable
+<code>rustc_layout_scalar_valid_range_*</code> attributes.</p>
+</blockquote>
+</li>
+</ul>
+<p><strong>Note:</strong> Uninitialized memory is also implicitly invalid for any type that has
+a restricted set of valid values. In other words, the only cases in which
+reading uninitialized memory is permitted are inside <code>union</code>s and in “padding”
+(the gaps between the fields of a type).</p>
 <div style="break-before: page; page-break-before: always;"></div><h2 id="behavior-not-considered-unsafe"><a class="header" href="#behavior-not-considered-unsafe">Behavior not considered <code>unsafe</code></a></h2>
 <p>The Rust compiler does not consider the following behaviors <em>unsafe</em>,
 though a programmer may (should) find them undesirable, unexpected,

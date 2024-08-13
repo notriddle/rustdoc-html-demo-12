@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/core/build_steps/llvm.rs`."><title>llvm.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="bootstrap" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/core/build_steps/llvm.rs`."><title>llvm.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="bootstrap" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1408,6 +1408,18 @@
 <a href="#1408" id="1408">1408</a>
 <a href="#1409" id="1409">1409</a>
 <a href="#1410" id="1410">1410</a>
+<a href="#1411" id="1411">1411</a>
+<a href="#1412" id="1412">1412</a>
+<a href="#1413" id="1413">1413</a>
+<a href="#1414" id="1414">1414</a>
+<a href="#1415" id="1415">1415</a>
+<a href="#1416" id="1416">1416</a>
+<a href="#1417" id="1417">1417</a>
+<a href="#1418" id="1418">1418</a>
+<a href="#1419" id="1419">1419</a>
+<a href="#1420" id="1420">1420</a>
+<a href="#1421" id="1421">1421</a>
+<a href="#1422" id="1422">1422</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Compilation of native dependencies like LLVM.
 //!
 //! Native projects like LLVM unfortunately aren't suited just yet for
@@ -1418,24 +1430,23 @@
 //! LLVM and compiler-rt are essentially just wired up to everything else to
 //! ensure that they're always in place if needed.
 
-</span><span class="kw">use </span>std::env;
-<span class="kw">use </span>std::env::consts::EXE_EXTENSION;
+</span><span class="kw">use </span>std::env::consts::EXE_EXTENSION;
 <span class="kw">use </span>std::ffi::{OsStr, OsString};
 <span class="kw">use </span>std::fs::{<span class="self">self</span>, File};
-<span class="kw">use </span>std::io;
 <span class="kw">use </span>std::path::{Path, PathBuf};
 <span class="kw">use </span>std::sync::OnceLock;
+<span class="kw">use </span>std::{env, io};
+
+<span class="kw">use </span>build_helper::ci::CiEnv;
 
 <span class="kw">use </span><span class="kw">crate</span>::core::builder::{Builder, RunConfig, ShouldRun, Step};
 <span class="kw">use </span><span class="kw">crate</span>::core::config::{Config, TargetSelection};
 <span class="kw">use </span><span class="kw">crate</span>::utils::channel;
+<span class="kw">use </span><span class="kw">crate</span>::utils::exec::command;
 <span class="kw">use </span><span class="kw">crate</span>::utils::helpers::{
     <span class="self">self</span>, exe, get_clang_cl_resource_dir, output, t, unhashed_basename, up_to_date,
 };
 <span class="kw">use crate</span>::{generate_smart_stamp_hash, CLang, GitRepo, Kind};
-
-<span class="kw">use </span><span class="kw">crate</span>::utils::exec::command;
-<span class="kw">use </span>build_helper::ci::CiEnv;
 
 <span class="attr">#[derive(Clone)]
 </span><span class="kw">pub struct </span>LlvmResult {
@@ -1499,7 +1510,7 @@
 /// if not).
 </span><span class="kw">pub fn </span>prebuilt_llvm_config(builder: <span class="kw-2">&amp;</span>Builder&lt;<span class="lifetime">'_</span>&gt;, target: TargetSelection) -&gt; LlvmBuildStatus {
     <span class="comment">// If we have llvm submodule initialized already, sync it.
-    </span>builder.update_existing_submodule(<span class="kw-2">&amp;</span>Path::new(<span class="string">"src"</span>).join(<span class="string">"llvm-project"</span>));
+    </span>builder.update_existing_submodule(<span class="string">"src/llvm-project"</span>);
 
     builder.config.maybe_download_ci_llvm();
 
@@ -1520,7 +1531,8 @@
     }
 
     <span class="comment">// Initialize the llvm submodule if not initialized already.
-    </span>builder.update_submodule(<span class="kw-2">&amp;</span>Path::new(<span class="string">"src"</span>).join(<span class="string">"llvm-project"</span>));
+    // If submodules are disabled, this does nothing.
+    </span>builder.update_submodule(<span class="string">"src/llvm-project"</span>);
 
     <span class="kw">let </span>root = <span class="string">"src/llvm-project/llvm"</span>;
     <span class="kw">let </span>out_dir = builder.llvm_out(target);
@@ -1604,6 +1616,7 @@
     </span><span class="kw">let </span>supported_platforms = [
         <span class="comment">// tier 1
         </span>(<span class="string">"aarch64-unknown-linux-gnu"</span>, <span class="bool-val">false</span>),
+        (<span class="string">"aarch64-apple-darwin"</span>, <span class="bool-val">false</span>),
         (<span class="string">"i686-pc-windows-gnu"</span>, <span class="bool-val">false</span>),
         (<span class="string">"i686-pc-windows-msvc"</span>, <span class="bool-val">false</span>),
         (<span class="string">"i686-unknown-linux-gnu"</span>, <span class="bool-val">false</span>),
@@ -1612,8 +1625,7 @@
         (<span class="string">"x86_64-pc-windows-gnu"</span>, <span class="bool-val">true</span>),
         (<span class="string">"x86_64-pc-windows-msvc"</span>, <span class="bool-val">true</span>),
         <span class="comment">// tier 2 with host tools
-        </span>(<span class="string">"aarch64-apple-darwin"</span>, <span class="bool-val">false</span>),
-        (<span class="string">"aarch64-pc-windows-msvc"</span>, <span class="bool-val">false</span>),
+        </span>(<span class="string">"aarch64-pc-windows-msvc"</span>, <span class="bool-val">false</span>),
         (<span class="string">"aarch64-unknown-linux-musl"</span>, <span class="bool-val">false</span>),
         (<span class="string">"arm-unknown-linux-gnueabi"</span>, <span class="bool-val">false</span>),
         (<span class="string">"arm-unknown-linux-gnueabihf"</span>, <span class="bool-val">false</span>),
@@ -1778,10 +1790,8 @@
             cfg.define(<span class="string">"LLVM_PROFDATA_FILE"</span>, path);
         }
 
-        <span class="comment">// Disable zstd to avoid a dependency on libzstd.so.
-        </span>cfg.define(<span class="string">"LLVM_ENABLE_ZSTD"</span>, <span class="string">"OFF"</span>);
-
-        <span class="kw">if </span>!target.is_windows() {
+        <span class="comment">// Libraries for ELF section compression.
+        </span><span class="kw">if </span>!target.is_windows() {
             cfg.define(<span class="string">"LLVM_ENABLE_ZLIB"</span>, <span class="string">"ON"</span>);
         } <span class="kw">else </span>{
             cfg.define(<span class="string">"LLVM_ENABLE_ZLIB"</span>, <span class="string">"OFF"</span>);
@@ -1881,7 +1891,7 @@
                 builder.ensure(Llvm { target: builder.config.build });
             <span class="kw">if </span>!builder.config.dry_run() {
                 <span class="kw">let </span>llvm_bindir =
-                    command(<span class="kw-2">&amp;</span>llvm_config).capture_stdout().arg(<span class="string">"--bindir"</span>).run(builder).stdout();
+                    command(<span class="kw-2">&amp;</span>llvm_config).arg(<span class="string">"--bindir"</span>).run_capture_stdout(builder).stdout();
                 <span class="kw">let </span>host_bin = Path::new(llvm_bindir.trim());
                 cfg.define(
                     <span class="string">"LLVM_TABLEGEN"</span>,
@@ -1932,7 +1942,7 @@
         <span class="comment">// Helper to find the name of LLVM's shared library on darwin and linux.
         </span><span class="kw">let </span>find_llvm_lib_name = |extension| {
             <span class="kw">let </span>version =
-                command(<span class="kw-2">&amp;</span>res.llvm_config).capture_stdout().arg(<span class="string">"--version"</span>).run(builder).stdout();
+                command(<span class="kw-2">&amp;</span>res.llvm_config).arg(<span class="string">"--version"</span>).run_capture_stdout(builder).stdout();
             <span class="kw">let </span>major = version.split(<span class="string">'.'</span>).next().unwrap();
 
             <span class="kw">match </span><span class="kw-2">&amp;</span>llvm_version_suffix {
@@ -1988,7 +1998,7 @@
         <span class="kw">return</span>;
     }
 
-    <span class="kw">let </span>version = command(llvm_config).capture_stdout().arg(<span class="string">"--version"</span>).run(builder).stdout();
+    <span class="kw">let </span>version = command(llvm_config).arg(<span class="string">"--version"</span>).run_capture_stdout(builder).stdout();
     <span class="kw">let </span><span class="kw-2">mut </span>parts = version.split(<span class="string">'.'</span>).take(<span class="number">2</span>).filter_map(|s| s.parse::&lt;u32&gt;().ok());
     <span class="kw">if let </span>(<span class="prelude-val">Some</span>(major), <span class="prelude-val">Some</span>(_minor)) = (parts.next(), parts.next()) {
         <span class="kw">if </span>major &gt;= <span class="number">17 </span>{
@@ -2232,6 +2242,14 @@
         <span class="kw">if </span>!target.contains(<span class="string">"apple"</span>) {
             cfg.define(<span class="string">"LLVM_ENABLE_LLD"</span>, <span class="string">"ON"</span>);
         }
+    }
+
+    <span class="comment">// Libraries for ELF section compression.
+    </span><span class="kw">if </span>builder.config.llvm_libzstd {
+        cfg.define(<span class="string">"LLVM_ENABLE_ZSTD"</span>, <span class="string">"FORCE_ON"</span>);
+        cfg.define(<span class="string">"LLVM_USE_STATIC_ZSTD"</span>, <span class="string">"TRUE"</span>);
+    } <span class="kw">else </span>{
+        cfg.define(<span class="string">"LLVM_ENABLE_ZSTD"</span>, <span class="string">"OFF"</span>);
     }
 
     <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">ref </span>linker) = builder.config.llvm_use_linker {
@@ -2607,7 +2625,10 @@
 
     <span class="doccomment">/// Build crtbegin.o/crtend.o for musl target.
     </span><span class="kw">fn </span>run(<span class="self">self</span>, builder: <span class="kw-2">&amp;</span>Builder&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="self">Self</span>::Output {
-        builder.update_submodule(Path::new(<span class="string">"src/llvm-project"</span>));
+        builder.require_submodule(
+            <span class="string">"src/llvm-project"</span>,
+            <span class="prelude-val">Some</span>(<span class="string">"The LLVM sources are required for the CRT from `compiler-rt`."</span>),
+        );
 
         <span class="kw">let </span>out_dir = builder.native_dir(<span class="self">self</span>.target).join(<span class="string">"crt"</span>);
 
@@ -2680,7 +2701,10 @@
 
     <span class="doccomment">/// Build libunwind.a
     </span><span class="kw">fn </span>run(<span class="self">self</span>, builder: <span class="kw-2">&amp;</span>Builder&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="self">Self</span>::Output {
-        builder.update_submodule(Path::new(<span class="string">"src/llvm-project"</span>));
+        builder.require_submodule(
+            <span class="string">"src/llvm-project"</span>,
+            <span class="prelude-val">Some</span>(<span class="string">"The LLVM sources are required for libunwind."</span>),
+        );
 
         <span class="kw">if </span>builder.config.dry_run() {
             <span class="kw">return </span>PathBuf::new();

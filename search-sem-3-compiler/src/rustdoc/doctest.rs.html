@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/librustdoc/doctest.rs`."><title>doctest.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustdoc" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/librustdoc/doctest.rs`."><title>doctest.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustdoc" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -812,17 +812,20 @@
 <a href="#812" id="812">812</a>
 <a href="#813" id="813">813</a>
 <a href="#814" id="814">814</a>
-<a href="#815" id="815">815</a>
-<a href="#816" id="816">816</a>
-<a href="#817" id="817">817</a>
-<a href="#818" id="818">818</a>
 </pre></div><pre class="rust"><code><span class="kw">mod </span>make;
 <span class="kw">mod </span>markdown;
 <span class="kw">mod </span>rust;
 
+<span class="kw">use </span>std::fs::File;
+<span class="kw">use </span>std::io::{<span class="self">self</span>, Write};
+<span class="kw">use </span>std::path::{Path, PathBuf};
+<span class="kw">use </span>std::process::{<span class="self">self</span>, Command, Stdio};
+<span class="kw">use </span>std::sync::atomic::{AtomicUsize, Ordering};
+<span class="kw">use </span>std::sync::{Arc, Mutex};
+<span class="kw">use </span>std::{panic, str};
+
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use </span>make::make_test;
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use </span>markdown::test <span class="kw">as </span>test_markdown;
-
 <span class="kw">use </span>rustc_ast <span class="kw">as </span>ast;
 <span class="kw">use </span>rustc_data_structures::fx::{FxHashMap, FxHashSet};
 <span class="kw">use </span>rustc_errors::{ColorConfig, DiagCtxtHandle, ErrorGuaranteed, FatalError};
@@ -835,23 +838,12 @@
 <span class="kw">use </span>rustc_span::symbol::sym;
 <span class="kw">use </span>rustc_span::FileName;
 <span class="kw">use </span>rustc_target::spec::{Target, TargetTriple};
-
-<span class="kw">use </span>std::fs::File;
-<span class="kw">use </span>std::io::{<span class="self">self</span>, Write};
-<span class="kw">use </span>std::panic;
-<span class="kw">use </span>std::path::{Path, PathBuf};
-<span class="kw">use </span>std::process::{<span class="self">self</span>, Command, Stdio};
-<span class="kw">use </span>std::str;
-<span class="kw">use </span>std::sync::atomic::{AtomicUsize, Ordering};
-<span class="kw">use </span>std::sync::{Arc, Mutex};
-
 <span class="kw">use </span>tempfile::{Builder <span class="kw">as </span>TempFileBuilder, TempDir};
 
+<span class="kw">use </span><span class="self">self</span>::rust::HirCollector;
 <span class="kw">use </span><span class="kw">crate</span>::config::Options <span class="kw">as </span>RustdocOptions;
 <span class="kw">use </span><span class="kw">crate</span>::html::markdown::{ErrorCodes, Ignore, LangString, MdRelLine};
 <span class="kw">use </span><span class="kw">crate</span>::lint::init_lints;
-
-<span class="kw">use </span><span class="self">self</span>::rust::HirCollector;
 
 <span class="doccomment">/// Options that apply to all doctests in a crate or Markdown file (for `rustdoc foo.md`).
 </span><span class="attr">#[derive(Clone)]
@@ -1244,8 +1236,8 @@
             path_for_rustdoc.to_str().expect(<span class="string">"target path must be valid unicode"</span>)
         }
     });
-    <span class="kw">if let </span>ErrorOutputType::HumanReadable(kind) = rustdoc_options.error_format {
-        <span class="kw">let </span>(short, color_config) = kind.unzip();
+    <span class="kw">if let </span>ErrorOutputType::HumanReadable(kind, color_config) = rustdoc_options.error_format {
+        <span class="kw">let </span>short = kind.short();
 
         <span class="kw">if </span>short {
             compiler.arg(<span class="string">"--error-format"</span>).arg(<span class="string">"short"</span>);

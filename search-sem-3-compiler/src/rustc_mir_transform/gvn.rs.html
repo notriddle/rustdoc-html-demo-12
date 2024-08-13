@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/gvn.rs`."><title>gvn.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/gvn.rs`."><title>gvn.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1545,6 +1545,30 @@
 <a href="#1545" id="1545">1545</a>
 <a href="#1546" id="1546">1546</a>
 <a href="#1547" id="1547">1547</a>
+<a href="#1548" id="1548">1548</a>
+<a href="#1549" id="1549">1549</a>
+<a href="#1550" id="1550">1550</a>
+<a href="#1551" id="1551">1551</a>
+<a href="#1552" id="1552">1552</a>
+<a href="#1553" id="1553">1553</a>
+<a href="#1554" id="1554">1554</a>
+<a href="#1555" id="1555">1555</a>
+<a href="#1556" id="1556">1556</a>
+<a href="#1557" id="1557">1557</a>
+<a href="#1558" id="1558">1558</a>
+<a href="#1559" id="1559">1559</a>
+<a href="#1560" id="1560">1560</a>
+<a href="#1561" id="1561">1561</a>
+<a href="#1562" id="1562">1562</a>
+<a href="#1563" id="1563">1563</a>
+<a href="#1564" id="1564">1564</a>
+<a href="#1565" id="1565">1565</a>
+<a href="#1566" id="1566">1566</a>
+<a href="#1567" id="1567">1567</a>
+<a href="#1568" id="1568">1568</a>
+<a href="#1569" id="1569">1569</a>
+<a href="#1570" id="1570">1570</a>
+<a href="#1571" id="1571">1571</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Global value numbering.
 //!
 //! MIR may contain repeated and/or redundant computations. The objective of this pass is to detect
@@ -1629,15 +1653,19 @@
 //! Second, when writing constants in MIR, we do not write `Const::Slice` or `Const`
 //! that contain `AllocId`s.
 
-</span><span class="kw">use </span>rustc_const_eval::const_eval::DummyMachine;
-<span class="kw">use </span>rustc_const_eval::interpret::{intern_const_alloc_for_constprop, MemPlaceMeta, MemoryKind};
-<span class="kw">use </span>rustc_const_eval::interpret::{ImmTy, Immediate, InterpCx, OpTy, Projectable, Scalar};
+</span><span class="kw">use </span>std::borrow::Cow;
+
+<span class="kw">use </span>either::Either;
+<span class="kw">use </span>rustc_const_eval::const_eval::DummyMachine;
+<span class="kw">use </span>rustc_const_eval::interpret::{
+    intern_const_alloc_for_constprop, ImmTy, Immediate, InterpCx, MemPlaceMeta, MemoryKind, OpTy,
+    Projectable, Scalar,
+};
 <span class="kw">use </span>rustc_data_structures::fx::FxIndexSet;
 <span class="kw">use </span>rustc_data_structures::graph::dominators::Dominators;
 <span class="kw">use </span>rustc_hir::def::DefKind;
 <span class="kw">use </span>rustc_index::bit_set::BitSet;
-<span class="kw">use </span>rustc_index::newtype_index;
-<span class="kw">use </span>rustc_index::IndexVec;
+<span class="kw">use </span>rustc_index::{newtype_index, IndexVec};
 <span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::mir::interpret::GlobalAlloc;
 <span class="kw">use </span>rustc_middle::mir::visit::<span class="kw-2">*</span>;
@@ -1648,10 +1676,8 @@
 <span class="kw">use </span>rustc_span::DUMMY_SP;
 <span class="kw">use </span>rustc_target::abi::{<span class="self">self</span>, Abi, FieldIdx, Size, VariantIdx, FIRST_VARIANT};
 <span class="kw">use </span>smallvec::SmallVec;
-<span class="kw">use </span>std::borrow::Cow;
 
 <span class="kw">use </span><span class="kw">crate</span>::ssa::{AssignedValue, SsaLocals};
-<span class="kw">use </span>either::Either;
 
 <span class="kw">pub struct </span>GVN;
 
@@ -1673,7 +1699,7 @@
     <span class="comment">// Clone dominators as we need them while mutating the body.
     </span><span class="kw">let </span>dominators = body.basic_blocks.dominators().clone();
 
-    <span class="kw">let </span><span class="kw-2">mut </span>state = VnState::new(tcx, param_env, <span class="kw-2">&amp;</span>ssa, <span class="kw-2">&amp;</span>dominators, <span class="kw-2">&amp;</span>body.local_decls);
+    <span class="kw">let </span><span class="kw-2">mut </span>state = VnState::new(tcx, body, param_env, <span class="kw-2">&amp;</span>ssa, <span class="kw-2">&amp;</span>dominators, <span class="kw-2">&amp;</span>body.local_decls);
     ssa.for_each_assignment_mut(
         body.basic_blocks.as_mut_preserves_cfg(),
         |local, value, location| {
@@ -1749,6 +1775,7 @@
         value: Const&lt;<span class="lifetime">'tcx</span>&gt;,
         <span class="doccomment">/// Some constants do not have a deterministic value. To avoid merging two instances of the
         /// same `Const`, we assign them an additional integer index.
+        </span><span class="comment">// `disambiguator` is 0 iff the constant is deterministic.
         </span>disambiguator: usize,
     },
     <span class="doccomment">/// An aggregate value, either tuple/closure/struct/enum.
@@ -1811,21 +1838,29 @@
 <span class="kw">impl</span>&lt;<span class="lifetime">'body</span>, <span class="lifetime">'tcx</span>&gt; VnState&lt;<span class="lifetime">'body</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">fn </span>new(
         tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
+        body: <span class="kw-2">&amp;</span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
         param_env: ty::ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
         ssa: <span class="kw-2">&amp;</span><span class="lifetime">'body </span>SsaLocals,
         dominators: <span class="kw-2">&amp;</span><span class="lifetime">'body </span>Dominators&lt;BasicBlock&gt;,
         local_decls: <span class="kw-2">&amp;</span><span class="lifetime">'body </span>LocalDecls&lt;<span class="lifetime">'tcx</span>&gt;,
     ) -&gt; <span class="self">Self </span>{
+        <span class="comment">// Compute a rough estimate of the number of values in the body from the number of
+        // statements. This is meant to reduce the number of allocations, but it's all right if
+        // we miss the exact amount. We estimate based on 2 values per statement (one in LHS and
+        // one in RHS) and 4 values per terminator (for call operands).
+        </span><span class="kw">let </span>num_values =
+            <span class="number">2 </span>* body.basic_blocks.iter().map(|bbdata| bbdata.statements.len()).sum::&lt;usize&gt;()
+                + <span class="number">4 </span>* body.basic_blocks.len();
         VnState {
             tcx,
             ecx: InterpCx::new(tcx, DUMMY_SP, param_env, DummyMachine),
             param_env,
             local_decls,
             locals: IndexVec::from_elem(<span class="prelude-val">None</span>, local_decls),
-            rev_locals: IndexVec::default(),
-            values: FxIndexSet::default(),
-            evaluated: IndexVec::new(),
-            next_opaque: <span class="prelude-val">Some</span>(<span class="number">0</span>),
+            rev_locals: IndexVec::with_capacity(num_values),
+            values: FxIndexSet::with_capacity_and_hasher(num_values, Default::default()),
+            evaluated: IndexVec::with_capacity(num_values),
+            next_opaque: <span class="prelude-val">Some</span>(<span class="number">1</span>),
             feature_unsized_locals: tcx.features().unsized_locals,
             ssa,
             dominators,
@@ -1838,9 +1873,15 @@
         <span class="kw">let </span>(index, new) = <span class="self">self</span>.values.insert_full(value);
         <span class="kw">let </span>index = VnIndex::from_usize(index);
         <span class="kw">if </span>new {
-            <span class="kw">let </span>evaluated = <span class="self">self</span>.eval_to_const(index);
+            <span class="comment">// Grow `evaluated` and `rev_locals` here to amortize the allocations.
+            </span><span class="kw">let </span>evaluated = <span class="self">self</span>.eval_to_const(index);
             <span class="kw">let </span>_index = <span class="self">self</span>.evaluated.push(evaluated);
             <span class="macro">debug_assert_eq!</span>(index, _index);
+            <span class="comment">// No need to push to `rev_locals` if we finished listing assignments.
+            </span><span class="kw">if </span><span class="self">self</span>.next_opaque.is_some() {
+                <span class="kw">let </span>_index = <span class="self">self</span>.rev_locals.push(SmallVec::new());
+                <span class="macro">debug_assert_eq!</span>(index, _index);
+            }
         }
         index
     }
@@ -1877,7 +1918,7 @@
         </span><span class="kw">let </span>is_sized = !<span class="self">self</span>.feature_unsized_locals
             || <span class="self">self</span>.local_decls[local].ty.is_sized(<span class="self">self</span>.tcx, <span class="self">self</span>.param_env);
         <span class="kw">if </span>is_sized {
-            <span class="self">self</span>.rev_locals.ensure_contains_elem(value, SmallVec::new).push(local);
+            <span class="self">self</span>.rev_locals[value].push(local);
         }
     }
 
@@ -1891,6 +1932,8 @@
             </span><span class="kw">let </span>next_opaque = <span class="self">self</span>.next_opaque.as_mut()<span class="question-mark">?</span>;
             <span class="kw">let </span>disambiguator = <span class="kw-2">*</span>next_opaque;
             <span class="kw-2">*</span>next_opaque += <span class="number">1</span>;
+            <span class="comment">// `disambiguator: 0` means deterministic.
+            </span><span class="macro">debug_assert_ne!</span>(disambiguator, <span class="number">0</span>);
             disambiguator
         };
         <span class="prelude-val">Some</span>(<span class="self">self</span>.insert(Value::Constant { value, disambiguator }))
@@ -1898,12 +1941,16 @@
 
     <span class="kw">fn </span>insert_bool(<span class="kw-2">&amp;mut </span><span class="self">self</span>, flag: bool) -&gt; VnIndex {
         <span class="comment">// Booleans are deterministic.
-        </span><span class="self">self</span>.insert(Value::Constant { value: Const::from_bool(<span class="self">self</span>.tcx, flag), disambiguator: <span class="number">0 </span>})
+        </span><span class="kw">let </span>value = Const::from_bool(<span class="self">self</span>.tcx, flag);
+        <span class="macro">debug_assert!</span>(value.is_deterministic());
+        <span class="self">self</span>.insert(Value::Constant { value, disambiguator: <span class="number">0 </span>})
     }
 
     <span class="kw">fn </span>insert_scalar(<span class="kw-2">&amp;mut </span><span class="self">self</span>, scalar: Scalar, ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; VnIndex {
-        <span class="self">self</span>.insert_constant(Const::from_scalar(<span class="self">self</span>.tcx, scalar, ty))
-            .expect(<span class="string">"scalars are deterministic"</span>)
+        <span class="comment">// Scalars are deterministic.
+        </span><span class="kw">let </span>value = Const::from_scalar(<span class="self">self</span>.tcx, scalar, ty);
+        <span class="macro">debug_assert!</span>(value.is_deterministic());
+        <span class="self">self</span>.insert(Value::Constant { value, disambiguator: <span class="number">0 </span>})
     }
 
     <span class="kw">fn </span>insert_tuple(<span class="kw-2">&amp;mut </span><span class="self">self</span>, values: Vec&lt;VnIndex&gt;) -&gt; VnIndex {
@@ -2216,7 +2263,7 @@
     </span><span class="kw">fn </span>simplify_place_projection(<span class="kw-2">&amp;mut </span><span class="self">self</span>, place: <span class="kw-2">&amp;mut </span>Place&lt;<span class="lifetime">'tcx</span>&gt;, location: Location) {
         <span class="comment">// If the projection is indirect, we treat the local as a value, so can replace it with
         // another local.
-        </span><span class="kw">if </span>place.is_indirect()
+        </span><span class="kw">if </span>place.is_indirect_first_projection()
             &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(base) = <span class="self">self</span>.locals[place.local]
             &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(new_local) = <span class="self">self</span>.try_as_local(base, location)
             &amp;&amp; place.local != new_local
@@ -2318,10 +2365,7 @@
         location: Location,
     ) -&gt; <span class="prelude-ty">Option</span>&lt;VnIndex&gt; {
         <span class="kw">match </span><span class="kw-2">*</span>operand {
-            Operand::Constant(<span class="kw-2">ref mut </span>constant) =&gt; {
-                <span class="kw">let </span>const_ = constant.const_.normalize(<span class="self">self</span>.tcx, <span class="self">self</span>.param_env);
-                <span class="self">self</span>.insert_constant(const_)
-            }
+            Operand::Constant(<span class="kw-2">ref </span>constant) =&gt; <span class="self">self</span>.insert_constant(constant.const_),
             Operand::Copy(<span class="kw-2">ref mut </span>place) | Operand::Move(<span class="kw-2">ref mut </span>place) =&gt; {
                 <span class="kw">let </span>value = <span class="self">self</span>.simplify_place_value(place, location)<span class="question-mark">?</span>;
                 <span class="kw">if let </span><span class="prelude-val">Some</span>(const_) = <span class="self">self</span>.try_as_constant(value) {
@@ -2916,8 +2960,13 @@
     <span class="comment">// If this constant has scalar ABI, return it as a `ConstValue::Scalar`.
     </span><span class="kw">if let </span>Abi::Scalar(abi::Scalar::Initialized { .. }) = op.layout.abi
         &amp;&amp; <span class="kw">let </span><span class="prelude-val">Ok</span>(scalar) = ecx.read_scalar(op)
-        &amp;&amp; scalar.try_to_scalar_int().is_ok()
     {
+        <span class="kw">if </span>!scalar.try_to_scalar_int().is_ok() {
+            <span class="comment">// Check that we do not leak a pointer.
+            // Those pointers may lose part of their identity in codegen.
+            // FIXME: remove this hack once https://github.com/rust-lang/rust/issues/79738 is fixed.
+            </span><span class="kw">return </span><span class="prelude-val">None</span>;
+        }
         <span class="kw">return </span><span class="prelude-val">Some</span>(ConstValue::Scalar(scalar));
     }
 
@@ -2981,12 +3030,11 @@
 
     <span class="doccomment">/// If `index` is a `Value::Constant`, return the `Constant` to be put in the MIR.
     </span><span class="kw">fn </span>try_as_constant(<span class="kw-2">&amp;mut </span><span class="self">self</span>, index: VnIndex) -&gt; <span class="prelude-ty">Option</span>&lt;ConstOperand&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
-        <span class="comment">// This was already constant in MIR, do not change it.
-        </span><span class="kw">if let </span>Value::Constant { value, disambiguator: <span class="kw">_ </span>} = <span class="kw-2">*</span><span class="self">self</span>.get(index)
-            <span class="comment">// If the constant is not deterministic, adding an additional mention of it in MIR will
-            // not give the same value as the former mention.
-            </span>&amp;&amp; value.is_deterministic()
-        {
+        <span class="comment">// This was already constant in MIR, do not change it. If the constant is not
+        // deterministic, adding an additional mention of it in MIR will not give the same value as
+        // the former mention.
+        </span><span class="kw">if let </span>Value::Constant { value, disambiguator: <span class="number">0 </span>} = <span class="kw-2">*</span><span class="self">self</span>.get(index) {
+            <span class="macro">debug_assert!</span>(value.is_deterministic());
             <span class="kw">return </span><span class="prelude-val">Some</span>(ConstOperand { span: DUMMY_SP, user_ty: <span class="prelude-val">None</span>, const_: value });
         }
 

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/match_branches.rs`."><title>match_branches.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/match_branches.rs`."><title>match_branches.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -500,12 +500,30 @@
 <a href="#500" id="500">500</a>
 <a href="#501" id="501">501</a>
 <a href="#502" id="502">502</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_index::IndexSlice;
+<a href="#503" id="503">503</a>
+<a href="#504" id="504">504</a>
+<a href="#505" id="505">505</a>
+<a href="#506" id="506">506</a>
+<a href="#507" id="507">507</a>
+<a href="#508" id="508">508</a>
+<a href="#509" id="509">509</a>
+<a href="#510" id="510">510</a>
+<a href="#511" id="511">511</a>
+<a href="#512" id="512">512</a>
+<a href="#513" id="513">513</a>
+<a href="#514" id="514">514</a>
+<a href="#515" id="515">515</a>
+<a href="#516" id="516">516</a>
+<a href="#517" id="517">517</a>
+</pre></div><pre class="rust"><code><span class="kw">use </span>std::iter;
+
+<span class="kw">use </span>rustc_index::IndexSlice;
 <span class="kw">use </span>rustc_middle::mir::patch::MirPatch;
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
+<span class="kw">use </span>rustc_middle::ty::layout::{IntegerExt, TyAndLayout};
 <span class="kw">use </span>rustc_middle::ty::{ParamEnv, ScalarInt, Ty, TyCtxt};
-<span class="kw">use </span>rustc_target::abi::Size;
-<span class="kw">use </span>std::iter;
+<span class="kw">use </span>rustc_target::abi::Integer;
+<span class="kw">use </span>rustc_type_ir::TyKind::<span class="kw-2">*</span>;
 
 <span class="kw">use </span><span class="kw">super</span>::simplify::simplify_cfg;
 
@@ -543,10 +561,7 @@
                 should_cleanup = <span class="bool-val">true</span>;
                 <span class="kw">continue</span>;
             }
-            <span class="comment">// unsound: https://github.com/rust-lang/rust/issues/124150
-            </span><span class="kw">if </span>tcx.sess.opts.unstable_opts.unsound_mir_opts
-                &amp;&amp; SimplifyToExp::default().simplify(tcx, body, bb_idx, param_env).is_some()
-            {
+            <span class="kw">if </span>SimplifyToExp::default().simplify(tcx, body, bb_idx, param_env).is_some() {
                 should_cleanup = <span class="bool-val">true</span>;
                 <span class="kw">continue</span>;
             }
@@ -765,33 +780,56 @@
     }
 }
 
+<span class="doccomment">/// Check if the cast constant using `IntToInt` is equal to the target constant.
+</span><span class="kw">fn </span>can_cast(
+    tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;,
+    src_val: <span class="kw">impl </span>Into&lt;u128&gt;,
+    src_layout: TyAndLayout&lt;<span class="lifetime">'_</span>&gt;,
+    cast_ty: Ty&lt;<span class="lifetime">'_</span>&gt;,
+    target_scalar: ScalarInt,
+) -&gt; bool {
+    <span class="kw">let </span>from_scalar = ScalarInt::try_from_uint(src_val.into(), src_layout.size).unwrap();
+    <span class="kw">let </span>v = <span class="kw">match </span>src_layout.ty.kind() {
+        Uint(<span class="kw">_</span>) =&gt; from_scalar.to_uint(src_layout.size),
+        Int(<span class="kw">_</span>) =&gt; from_scalar.to_int(src_layout.size) <span class="kw">as </span>u128,
+        <span class="kw">_ </span>=&gt; <span class="macro">unreachable!</span>(<span class="string">"invalid int"</span>),
+    };
+    <span class="kw">let </span>size = <span class="kw">match </span><span class="kw-2">*</span>cast_ty.kind() {
+        Int(t) =&gt; Integer::from_int_ty(<span class="kw-2">&amp;</span>tcx, t).size(),
+        Uint(t) =&gt; Integer::from_uint_ty(<span class="kw-2">&amp;</span>tcx, t).size(),
+        <span class="kw">_ </span>=&gt; <span class="macro">unreachable!</span>(<span class="string">"invalid int"</span>),
+    };
+    <span class="kw">let </span>v = size.truncate(v);
+    <span class="kw">let </span>cast_scalar = ScalarInt::try_from_uint(v, size).unwrap();
+    cast_scalar == target_scalar
+}
+
 <span class="attr">#[derive(Default)]
 </span><span class="kw">struct </span>SimplifyToExp {
-    transfrom_types: Vec&lt;TransfromType&gt;,
+    transfrom_kinds: Vec&lt;TransfromKind&gt;,
 }
 
 <span class="attr">#[derive(Clone, Copy)]
-</span><span class="kw">enum </span>CompareType&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt; {
+</span><span class="kw">enum </span>ExpectedTransformKind&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt; {
     <span class="doccomment">/// Identical statements.
     </span>Same(<span class="kw-2">&amp;</span><span class="lifetime">'a </span>StatementKind&lt;<span class="lifetime">'tcx</span>&gt;),
     <span class="doccomment">/// Assignment statements have the same value.
-    </span>Eq(<span class="kw-2">&amp;</span><span class="lifetime">'a </span>Place&lt;<span class="lifetime">'tcx</span>&gt;, Ty&lt;<span class="lifetime">'tcx</span>&gt;, ScalarInt),
+    </span>SameByEq { place: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Place&lt;<span class="lifetime">'tcx</span>&gt;, ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;, scalar: ScalarInt },
     <span class="doccomment">/// Enum variant comparison type.
-    </span>Discr { place: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Place&lt;<span class="lifetime">'tcx</span>&gt;, ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;, is_signed: bool },
+    </span>Cast { place: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Place&lt;<span class="lifetime">'tcx</span>&gt;, ty: Ty&lt;<span class="lifetime">'tcx</span>&gt; },
 }
 
-<span class="kw">enum </span>TransfromType {
+<span class="kw">enum </span>TransfromKind {
     Same,
-    Eq,
-    Discr,
+    Cast,
 }
 
-<span class="kw">impl </span>From&lt;CompareType&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;&gt; <span class="kw">for </span>TransfromType {
-    <span class="kw">fn </span>from(compare_type: CompareType&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;) -&gt; <span class="self">Self </span>{
+<span class="kw">impl </span>From&lt;ExpectedTransformKind&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;&gt; <span class="kw">for </span>TransfromKind {
+    <span class="kw">fn </span>from(compare_type: ExpectedTransformKind&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;) -&gt; <span class="self">Self </span>{
         <span class="kw">match </span>compare_type {
-            CompareType::Same(<span class="kw">_</span>) =&gt; TransfromType::Same,
-            CompareType::Eq(<span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>) =&gt; TransfromType::Eq,
-            CompareType::Discr { .. } =&gt; TransfromType::Discr,
+            ExpectedTransformKind::Same(<span class="kw">_</span>) =&gt; TransfromKind::Same,
+            ExpectedTransformKind::SameByEq { .. } =&gt; TransfromKind::Same,
+            ExpectedTransformKind::Cast { .. } =&gt; TransfromKind::Cast,
         }
     }
 }
@@ -855,7 +893,7 @@
             <span class="kw">return </span><span class="prelude-val">None</span>;
         }
         <span class="kw">let </span><span class="kw-2">mut </span>target_iter = targets.iter();
-        <span class="kw">let </span>(first_val, first_target) = target_iter.next().unwrap();
+        <span class="kw">let </span>(first_case_val, first_target) = target_iter.next().unwrap();
         <span class="kw">let </span>first_terminator_kind = <span class="kw-2">&amp;</span>bbs[first_target].terminator().kind;
         <span class="comment">// Check that destinations are identical, and if not, then don't optimize this block
         </span><span class="kw">if </span>!targets
@@ -865,24 +903,20 @@
             <span class="kw">return </span><span class="prelude-val">None</span>;
         }
 
-        <span class="kw">let </span>discr_size = tcx.layout_of(param_env.and(discr_ty)).unwrap().size;
+        <span class="kw">let </span>discr_layout = tcx.layout_of(param_env.and(discr_ty)).unwrap();
         <span class="kw">let </span>first_stmts = <span class="kw-2">&amp;</span>bbs[first_target].statements;
-        <span class="kw">let </span>(second_val, second_target) = target_iter.next().unwrap();
+        <span class="kw">let </span>(second_case_val, second_target) = target_iter.next().unwrap();
         <span class="kw">let </span>second_stmts = <span class="kw-2">&amp;</span>bbs[second_target].statements;
         <span class="kw">if </span>first_stmts.len() != second_stmts.len() {
             <span class="kw">return </span><span class="prelude-val">None</span>;
         }
 
-        <span class="kw">fn </span>int_equal(l: ScalarInt, r: <span class="kw">impl </span>Into&lt;u128&gt;, size: Size) -&gt; bool {
-            l.to_bits_unchecked() == ScalarInt::try_from_uint(r, size).unwrap().to_bits_unchecked()
-        }
-
         <span class="comment">// We first compare the two branches, and then the other branches need to fulfill the same conditions.
-        </span><span class="kw">let </span><span class="kw-2">mut </span>compare_types = Vec::new();
+        </span><span class="kw">let </span><span class="kw-2">mut </span>expected_transform_kinds = Vec::new();
         <span class="kw">for </span>(f, s) <span class="kw">in </span>iter::zip(first_stmts, second_stmts) {
             <span class="kw">let </span>compare_type = <span class="kw">match </span>(<span class="kw-2">&amp;</span>f.kind, <span class="kw-2">&amp;</span>s.kind) {
                 <span class="comment">// If two statements are exactly the same, we can optimize.
-                </span>(f_s, s_s) <span class="kw">if </span>f_s == s_s =&gt; CompareType::Same(f_s),
+                </span>(f_s, s_s) <span class="kw">if </span>f_s == s_s =&gt; ExpectedTransformKind::Same(f_s),
 
                 <span class="comment">// If two statements are assignments with the match values to the same place, we can optimize.
                 </span>(
@@ -896,22 +930,29 @@
                         f_c.const_.try_eval_scalar_int(tcx, param_env),
                         s_c.const_.try_eval_scalar_int(tcx, param_env),
                     ) {
-                        (<span class="prelude-val">Some</span>(f), <span class="prelude-val">Some</span>(s)) <span class="kw">if </span>f == s =&gt; CompareType::Eq(lhs_f, f_c.const_.ty(), f),
-                        <span class="comment">// Enum variants can also be simplified to an assignment statement if their values are equal.
-                        // We need to consider both unsigned and signed scenarios here.
+                        (<span class="prelude-val">Some</span>(f), <span class="prelude-val">Some</span>(s)) <span class="kw">if </span>f == s =&gt; ExpectedTransformKind::SameByEq {
+                            place: lhs_f,
+                            ty: f_c.const_.ty(),
+                            scalar: f,
+                        },
+                        <span class="comment">// Enum variants can also be simplified to an assignment statement,
+                        // if we can use `IntToInt` cast to get an equal value.
                         </span>(<span class="prelude-val">Some</span>(f), <span class="prelude-val">Some</span>(s))
-                            <span class="kw">if </span>((f_c.const_.ty().is_signed() || discr_ty.is_signed())
-                                &amp;&amp; int_equal(f, first_val, discr_size)
-                                &amp;&amp; int_equal(s, second_val, discr_size))
-                                || (<span class="prelude-val">Some</span>(f) == ScalarInt::try_from_uint(first_val, f.size())
-                                    &amp;&amp; <span class="prelude-val">Some</span>(s)
-                                        == ScalarInt::try_from_uint(second_val, s.size())) =&gt;
+                            <span class="kw">if </span>(can_cast(
+                                tcx,
+                                first_case_val,
+                                discr_layout,
+                                f_c.const_.ty(),
+                                f,
+                            ) &amp;&amp; can_cast(
+                                tcx,
+                                second_case_val,
+                                discr_layout,
+                                f_c.const_.ty(),
+                                s,
+                            )) =&gt;
                         {
-                            CompareType::Discr {
-                                place: lhs_f,
-                                ty: f_c.const_.ty(),
-                                is_signed: f_c.const_.ty().is_signed() || discr_ty.is_signed(),
-                            }
+                            ExpectedTransformKind::Cast { place: lhs_f, ty: f_c.const_.ty() }
                         }
                         <span class="kw">_ </span>=&gt; {
                             <span class="kw">return </span><span class="prelude-val">None</span>;
@@ -922,47 +963,36 @@
                 <span class="comment">// Otherwise we cannot optimize. Try another block.
                 </span><span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
             };
-            compare_types.push(compare_type);
+            expected_transform_kinds.push(compare_type);
         }
 
         <span class="comment">// All remaining BBs need to fulfill the same pattern as the two BBs from the previous step.
         </span><span class="kw">for </span>(other_val, other_target) <span class="kw">in </span>target_iter {
             <span class="kw">let </span>other_stmts = <span class="kw-2">&amp;</span>bbs[other_target].statements;
-            <span class="kw">if </span>compare_types.len() != other_stmts.len() {
+            <span class="kw">if </span>expected_transform_kinds.len() != other_stmts.len() {
                 <span class="kw">return </span><span class="prelude-val">None</span>;
             }
-            <span class="kw">for </span>(f, s) <span class="kw">in </span>iter::zip(<span class="kw-2">&amp;</span>compare_types, other_stmts) {
+            <span class="kw">for </span>(f, s) <span class="kw">in </span>iter::zip(<span class="kw-2">&amp;</span>expected_transform_kinds, other_stmts) {
                 <span class="kw">match </span>(<span class="kw-2">*</span>f, <span class="kw-2">&amp;</span>s.kind) {
-                    (CompareType::Same(f_s), s_s) <span class="kw">if </span>f_s == s_s =&gt; {}
+                    (ExpectedTransformKind::Same(f_s), s_s) <span class="kw">if </span>f_s == s_s =&gt; {}
                     (
-                        CompareType::Eq(lhs_f, f_ty, val),
+                        ExpectedTransformKind::SameByEq { place: lhs_f, ty: f_ty, scalar },
                         StatementKind::Assign(<span class="kw">box </span>(lhs_s, Rvalue::Use(Operand::Constant(s_c)))),
                     ) <span class="kw">if </span>lhs_f == lhs_s
                         &amp;&amp; s_c.const_.ty() == f_ty
-                        &amp;&amp; s_c.const_.try_eval_scalar_int(tcx, param_env) == <span class="prelude-val">Some</span>(val) =&gt; {}
+                        &amp;&amp; s_c.const_.try_eval_scalar_int(tcx, param_env) == <span class="prelude-val">Some</span>(scalar) =&gt; {}
                     (
-                        CompareType::Discr { place: lhs_f, ty: f_ty, is_signed },
+                        ExpectedTransformKind::Cast { place: lhs_f, ty: f_ty },
                         StatementKind::Assign(<span class="kw">box </span>(lhs_s, Rvalue::Use(Operand::Constant(s_c)))),
-                    ) <span class="kw">if </span>lhs_f == lhs_s &amp;&amp; s_c.const_.ty() == f_ty =&gt; {
-                        <span class="kw">let </span><span class="prelude-val">Some</span>(f) = s_c.const_.try_eval_scalar_int(tcx, param_env) <span class="kw">else </span>{
-                            <span class="kw">return </span><span class="prelude-val">None</span>;
-                        };
-                        <span class="kw">if </span>is_signed
-                            &amp;&amp; s_c.const_.ty().is_signed()
-                            &amp;&amp; int_equal(f, other_val, discr_size)
-                        {
-                            <span class="kw">continue</span>;
-                        }
-                        <span class="kw">if </span><span class="prelude-val">Some</span>(f) == ScalarInt::try_from_uint(other_val, f.size()) {
-                            <span class="kw">continue</span>;
-                        }
-                        <span class="kw">return </span><span class="prelude-val">None</span>;
-                    }
+                    ) <span class="kw">if let </span><span class="prelude-val">Some</span>(f) = s_c.const_.try_eval_scalar_int(tcx, param_env)
+                        &amp;&amp; lhs_f == lhs_s
+                        &amp;&amp; s_c.const_.ty() == f_ty
+                        &amp;&amp; can_cast(tcx, other_val, discr_layout, f_ty, f) =&gt; {}
                     <span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
                 }
             }
         }
-        <span class="self">self</span>.transfrom_types = compare_types.into_iter().map(|c| c.into()).collect();
+        <span class="self">self</span>.transfrom_kinds = expected_transform_kinds.into_iter().map(|c| c.into()).collect();
         <span class="prelude-val">Some</span>(())
     }
 
@@ -980,13 +1010,13 @@
         <span class="kw">let </span>(<span class="kw">_</span>, first) = targets.iter().next().unwrap();
         <span class="kw">let </span>first = <span class="kw-2">&amp;</span>bbs[first];
 
-        <span class="kw">for </span>(t, s) <span class="kw">in </span>iter::zip(<span class="kw-2">&amp;</span><span class="self">self</span>.transfrom_types, <span class="kw-2">&amp;</span>first.statements) {
+        <span class="kw">for </span>(t, s) <span class="kw">in </span>iter::zip(<span class="kw-2">&amp;</span><span class="self">self</span>.transfrom_kinds, <span class="kw-2">&amp;</span>first.statements) {
             <span class="kw">match </span>(t, <span class="kw-2">&amp;</span>s.kind) {
-                (TransfromType::Same, <span class="kw">_</span>) | (TransfromType::Eq, <span class="kw">_</span>) =&gt; {
+                (TransfromKind::Same, <span class="kw">_</span>) =&gt; {
                     patch.add_statement(parent_end, s.kind.clone());
                 }
                 (
-                    TransfromType::Discr,
+                    TransfromKind::Cast,
                     StatementKind::Assign(<span class="kw">box </span>(lhs, Rvalue::Use(Operand::Constant(f_c)))),
                 ) =&gt; {
                     <span class="kw">let </span>operand = Operand::Copy(Place::from(discr_local));

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/ty/layout.rs`."><title>layout.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/ty/layout.rs`."><title>layout.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1360,11 +1360,12 @@
 <a href="#1360" id="1360">1360</a>
 <a href="#1361" id="1361">1361</a>
 <a href="#1362" id="1362">1362</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::error::UnsupportedFnAbi;
-<span class="kw">use </span><span class="kw">crate</span>::middle::codegen_fn_attrs::CodegenFnAttrFlags;
-<span class="kw">use </span><span class="kw">crate</span>::query::TyCtxtAt;
-<span class="kw">use </span><span class="kw">crate</span>::ty::normalize_erasing_regions::NormalizationError;
-<span class="kw">use </span><span class="kw">crate</span>::ty::{<span class="self">self</span>, CoroutineArgsExt, Ty, TyCtxt, TypeVisitableExt};
+<a href="#1363" id="1363">1363</a>
+</pre></div><pre class="rust"><code><span class="kw">use </span>std::borrow::Cow;
+<span class="kw">use </span>std::num::NonZero;
+<span class="kw">use </span>std::ops::Bound;
+<span class="kw">use </span>std::{cmp, fmt};
+
 <span class="kw">use </span>rustc_error_messages::DiagMessage;
 <span class="kw">use </span>rustc_errors::{
     Diag, DiagArgValue, DiagCtxtHandle, Diagnostic, EmissionGuarantee, IntoDiagArg, Level,
@@ -1379,16 +1380,15 @@
 <span class="kw">use </span>rustc_span::{ErrorGuaranteed, Span, DUMMY_SP};
 <span class="kw">use </span>rustc_target::abi::call::FnAbi;
 <span class="kw">use </span>rustc_target::abi::<span class="kw-2">*</span>;
-<span class="kw">use </span>rustc_target::spec::{
-    abi::Abi <span class="kw">as </span>SpecAbi, HasTargetSpec, HasWasmCAbiOpt, PanicStrategy, Target, WasmCAbi,
-};
+<span class="kw">use </span>rustc_target::spec::abi::Abi <span class="kw">as </span>SpecAbi;
+<span class="kw">use </span>rustc_target::spec::{HasTargetSpec, HasWasmCAbiOpt, PanicStrategy, Target, WasmCAbi};
 <span class="kw">use </span>tracing::debug;
 
-<span class="kw">use </span>std::borrow::Cow;
-<span class="kw">use </span>std::cmp;
-<span class="kw">use </span>std::fmt;
-<span class="kw">use </span>std::num::NonZero;
-<span class="kw">use </span>std::ops::Bound;
+<span class="kw">use </span><span class="kw">crate</span>::error::UnsupportedFnAbi;
+<span class="kw">use </span><span class="kw">crate</span>::middle::codegen_fn_attrs::CodegenFnAttrFlags;
+<span class="kw">use </span><span class="kw">crate</span>::query::TyCtxtAt;
+<span class="kw">use </span><span class="kw">crate</span>::ty::normalize_erasing_regions::NormalizationError;
+<span class="kw">use </span><span class="kw">crate</span>::ty::{<span class="self">self</span>, CoroutineArgsExt, Ty, TyCtxt, TypeVisitableExt};
 
 <span class="attr">#[extension(<span class="kw">pub trait </span>IntegerExt)]
 </span><span class="kw">impl </span>Integer {
@@ -1593,8 +1593,9 @@
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; LayoutError&lt;<span class="lifetime">'tcx</span>&gt; {
     <span class="kw">pub fn </span>diagnostic_message(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; DiagMessage {
-        <span class="kw">use </span><span class="kw">crate</span>::fluent_generated::<span class="kw-2">*</span>;
         <span class="kw">use </span>LayoutError::<span class="kw-2">*</span>;
+
+        <span class="kw">use </span><span class="kw">crate</span>::fluent_generated::<span class="kw-2">*</span>;
         <span class="kw">match </span><span class="self">self </span>{
             Unknown(<span class="kw">_</span>) =&gt; middle_unknown_layout,
             SizeOverflow(<span class="kw">_</span>) =&gt; middle_values_too_big,
@@ -1605,8 +1606,9 @@
     }
 
     <span class="kw">pub fn </span>into_diagnostic(<span class="self">self</span>) -&gt; <span class="kw">crate</span>::error::LayoutError&lt;<span class="lifetime">'tcx</span>&gt; {
-        <span class="kw">use </span><span class="kw">crate</span>::error::LayoutError <span class="kw">as </span>E;
         <span class="kw">use </span>LayoutError::<span class="kw-2">*</span>;
+
+        <span class="kw">use </span><span class="kw">crate</span>::error::LayoutError <span class="kw">as </span>E;
         <span class="kw">match </span><span class="self">self </span>{
             Unknown(ty) =&gt; E::Unknown { ty },
             SizeOverflow(ty) =&gt; E::Overflow { ty },
@@ -1723,7 +1725,7 @@
             ty::Ref(<span class="kw">_</span>, pointee, <span class="kw">_</span>) | ty::RawPtr(pointee, <span class="kw">_</span>) =&gt; {
                 <span class="kw">let </span>non_zero = !ty.is_unsafe_ptr();
 
-                <span class="kw">let </span>tail = tcx.struct_tail_with_normalize(
+                <span class="kw">let </span>tail = tcx.struct_tail_raw(
                     pointee,
                     |ty| <span class="kw">match </span>tcx.try_normalize_erasing_regions(param_env, ty) {
                         <span class="prelude-val">Ok</span>(ty) =&gt; ty,
@@ -2230,7 +2232,7 @@
                             metadata
                         }
                     } <span class="kw">else </span>{
-                        <span class="kw">match </span>tcx.struct_tail_erasing_lifetimes(pointee, cx.param_env()).kind() {
+                        <span class="kw">match </span>tcx.struct_tail_for_codegen(pointee, cx.param_env()).kind() {
                             ty::Slice(<span class="kw">_</span>) | ty::Str =&gt; tcx.types.usize,
                             ty::Dynamic(data, <span class="kw">_</span>, ty::Dyn) =&gt; mk_dyn_vtable(data.principal()),
                             <span class="kw">_ </span>=&gt; <span class="macro">bug!</span>(<span class="string">"TyAndLayout::field({:?}): not applicable"</span>, this),
@@ -2709,7 +2711,7 @@
             layout = layout.field(<span class="kw-2">&amp;</span>cx, index);
             <span class="kw">if </span>!layout.is_sized() {
                 <span class="comment">// If it is not sized, then the tail must still have at least a known static alignment.
-                </span><span class="kw">let </span>tail = <span class="self">self</span>.struct_tail_erasing_lifetimes(layout.ty, param_env);
+                </span><span class="kw">let </span>tail = <span class="self">self</span>.struct_tail_for_codegen(layout.ty, param_env);
                 <span class="kw">if </span>!<span class="macro">matches!</span>(tail.kind(), ty::Slice(..)) {
                     <span class="macro">bug!</span>(
                         <span class="string">"offset of not-statically-aligned field (type {:?}) cannot be computed statically"</span>,

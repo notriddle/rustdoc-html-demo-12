@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/traits/engine.rs`."><title>engine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/traits/engine.rs`."><title>engine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -316,23 +316,9 @@
 <a href="#316" id="316">316</a>
 <a href="#317" id="317">317</a>
 <a href="#318" id="318">318</a>
-<a href="#319" id="319">319</a>
-<a href="#320" id="320">320</a>
-<a href="#321" id="321">321</a>
-<a href="#322" id="322">322</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span>std::cell::RefCell;
 <span class="kw">use </span>std::fmt::Debug;
 
-<span class="kw">use super</span>::{FromSolverError, TraitEngine};
-<span class="kw">use super</span>::{FulfillmentContext, ScrubbedTraitError};
-<span class="kw">use </span><span class="kw">crate</span>::error_reporting::InferCtxtErrorExt;
-<span class="kw">use </span><span class="kw">crate</span>::regions::InferCtxtRegionExt;
-<span class="kw">use </span><span class="kw">crate</span>::solve::FulfillmentCtxt <span class="kw">as </span>NextFulfillmentCtxt;
-<span class="kw">use </span><span class="kw">crate</span>::solve::NextSolverError;
-<span class="kw">use </span><span class="kw">crate</span>::traits::fulfill::OldSolverError;
-<span class="kw">use </span><span class="kw">crate</span>::traits::NormalizeExt;
-<span class="kw">use </span><span class="kw">crate</span>::traits::StructurallyNormalizeExt;
-<span class="kw">use </span><span class="kw">crate</span>::traits::{FulfillmentError, Obligation, ObligationCause, PredicateObligation};
 <span class="kw">use </span>rustc_data_structures::fx::FxIndexSet;
 <span class="kw">use </span>rustc_errors::ErrorGuaranteed;
 <span class="kw">use </span>rustc_hir::def_id::{DefId, LocalDefId};
@@ -341,16 +327,22 @@
     Canonical, CanonicalQueryResponse, CanonicalVarValues, QueryResponse,
 };
 <span class="kw">use </span>rustc_infer::infer::outlives::env::OutlivesEnvironment;
-<span class="kw">use </span>rustc_infer::infer::RegionResolutionError;
-<span class="kw">use </span>rustc_infer::infer::{DefineOpaqueTypes, InferCtxt, InferOk};
+<span class="kw">use </span>rustc_infer::infer::{DefineOpaqueTypes, InferCtxt, InferOk, RegionResolutionError};
 <span class="kw">use </span>rustc_macros::extension;
 <span class="kw">use </span>rustc_middle::arena::ArenaAllocatable;
 <span class="kw">use </span>rustc_middle::traits::query::NoSolution;
 <span class="kw">use </span>rustc_middle::ty::error::TypeError;
-<span class="kw">use </span>rustc_middle::ty::TypeFoldable;
-<span class="kw">use </span>rustc_middle::ty::Upcast;
-<span class="kw">use </span>rustc_middle::ty::Variance;
-<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Ty, TyCtxt};
+<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Ty, TyCtxt, TypeFoldable, Upcast, Variance};
+
+<span class="kw">use super</span>::{FromSolverError, FulfillmentContext, ScrubbedTraitError, TraitEngine};
+<span class="kw">use </span><span class="kw">crate</span>::error_reporting::InferCtxtErrorExt;
+<span class="kw">use </span><span class="kw">crate</span>::regions::InferCtxtRegionExt;
+<span class="kw">use </span><span class="kw">crate</span>::solve::{FulfillmentCtxt <span class="kw">as </span>NextFulfillmentCtxt, NextSolverError};
+<span class="kw">use </span><span class="kw">crate</span>::traits::fulfill::OldSolverError;
+<span class="kw">use </span><span class="kw">crate</span>::traits::{
+    FulfillmentError, NormalizeExt, Obligation, ObligationCause, PredicateObligation,
+    StructurallyNormalizeExt,
+};
 
 <span class="attr">#[extension(<span class="kw">pub trait </span>TraitEngineExt&lt;<span class="lifetime">'tcx</span>, E&gt;)]
 </span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, E&gt; <span class="kw">dyn </span>TraitEngine&lt;<span class="lifetime">'tcx</span>, E&gt;

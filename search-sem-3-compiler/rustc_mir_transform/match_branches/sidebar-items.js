@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["CompareType","TransfromType"],"struct":["MatchBranchSimplification","SimplifyToExp","SimplifyToIf"],"trait":["SimplifyMatch"]};
+window.SIDEBAR_ITEMS = {"enum":["ExpectedTransformKind","TransfromKind"],"fn":["can_cast"],"struct":["MatchBranchSimplification","SimplifyToExp","SimplifyToIf"],"trait":["SimplifyMatch"]};

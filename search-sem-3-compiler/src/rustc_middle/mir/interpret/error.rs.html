@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/mir/interpret/error.rs`."><title>error.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/mir/interpret/error.rs`."><title>error.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -718,22 +718,28 @@
 <a href="#718" id="718">718</a>
 <a href="#719" id="719">719</a>
 <a href="#720" id="720">720</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::borrow::Cow;
-<span class="kw">use </span>std::{any::Any, backtrace::Backtrace, fmt};
+<a href="#721" id="721">721</a>
+<a href="#722" id="722">722</a>
+<a href="#723" id="723">723</a>
+<a href="#724" id="724">724</a>
+<a href="#725" id="725">725</a>
+<a href="#726" id="726">726</a>
+</pre></div><pre class="rust"><code><span class="kw">use </span>std::any::Any;
+<span class="kw">use </span>std::backtrace::Backtrace;
+<span class="kw">use </span>std::borrow::Cow;
+<span class="kw">use </span>std::fmt;
 
 <span class="kw">use </span>either::Either;
-
 <span class="kw">use </span>rustc_ast_ir::Mutability;
 <span class="kw">use </span>rustc_data_structures::sync::Lock;
 <span class="kw">use </span>rustc_errors::{DiagArgName, DiagArgValue, DiagMessage, ErrorGuaranteed, IntoDiagArg};
 <span class="kw">use </span>rustc_macros::{HashStable, TyDecodable, TyEncodable};
 <span class="kw">use </span>rustc_session::CtfeBacktrace;
-<span class="kw">use </span>rustc_span::Symbol;
-<span class="kw">use </span>rustc_span::{def_id::DefId, Span, DUMMY_SP};
+<span class="kw">use </span>rustc_span::def_id::DefId;
+<span class="kw">use </span>rustc_span::{Span, Symbol, DUMMY_SP};
 <span class="kw">use </span>rustc_target::abi::{call, Align, Size, VariantIdx, WrappingRange};
 
 <span class="kw">use super</span>::{AllocId, AllocRange, ConstAllocation, Pointer, Scalar};
-
 <span class="kw">use </span><span class="kw">crate</span>::error;
 <span class="kw">use </span><span class="kw">crate</span>::mir::{ConstAlloc, ConstValue};
 <span class="kw">use </span><span class="kw">crate</span>::ty::{<span class="self">self</span>, layout, tls, Ty, TyCtxt, ValTree};
@@ -1049,16 +1055,22 @@
     <span class="doccomment">/// Using a pointer after it got freed.
     </span>PointerUseAfterFree(AllocId, CheckInAllocMsg),
     <span class="doccomment">/// Used a pointer outside the bounds it is valid for.
-    /// (If `ptr_size &gt; 0`, determines the size of the memory range that was expected to be in-bounds.)
     </span>PointerOutOfBounds {
         alloc_id: AllocId,
         alloc_size: Size,
         ptr_offset: i64,
-        ptr_size: Size,
+        <span class="doccomment">/// The size of the memory range that was expected to be in-bounds.
+        </span>inbounds_size: i64,
         msg: CheckInAllocMsg,
     },
     <span class="doccomment">/// Using an integer as a pointer in the wrong way.
-    </span>DanglingIntPointer(u64, CheckInAllocMsg),
+    </span>DanglingIntPointer {
+        addr: u64,
+        <span class="doccomment">/// The size of the memory range that was expected to be in-bounds (or 0 if we need an
+        /// allocation but not any actual memory there, e.g. for function pointers).
+        </span>inbounds_size: i64,
+        msg: CheckInAllocMsg,
+    },
     <span class="doccomment">/// Used a pointer with bad alignment.
     </span>AlignmentCheckFailed(Misalignment, CheckAlignMsg),
     <span class="doccomment">/// Writing to read-only memory.

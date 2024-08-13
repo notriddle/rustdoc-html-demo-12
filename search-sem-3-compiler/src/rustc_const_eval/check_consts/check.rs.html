@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/check_consts/check.rs`."><title>check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/check_consts/check.rs`."><title>check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1018,12 +1018,13 @@
 <a href="#1018" id="1018">1018</a>
 <a href="#1019" id="1019">1019</a>
 <a href="#1020" id="1020">1020</a>
-<a href="#1021" id="1021">1021</a>
-<a href="#1022" id="1022">1022</a>
-<a href="#1023" id="1023">1023</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! The `Visitor` responsible for actually checking a `mir::Body` for invalid operations.
 
-</span><span class="kw">use </span>rustc_errors::{Diag, ErrorGuaranteed};
+</span><span class="kw">use </span>std::assert_matches::assert_matches;
+<span class="kw">use </span>std::mem;
+<span class="kw">use </span>std::ops::Deref;
+
+<span class="kw">use </span>rustc_errors::{Diag, ErrorGuaranteed};
 <span class="kw">use </span>rustc_hir::def_id::DefId;
 <span class="kw">use </span>rustc_hir::{<span class="self">self </span><span class="kw">as </span>hir, LangItem};
 <span class="kw">use </span>rustc_index::bit_set::BitSet;
@@ -1032,17 +1033,13 @@
 <span class="kw">use </span>rustc_middle::mir::visit::{MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor};
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::span_bug;
-<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, adjustment::PointerCoercion, Ty, TyCtxt};
-<span class="kw">use </span>rustc_middle::ty::{Instance, InstanceKind, TypeVisitableExt};
+<span class="kw">use </span>rustc_middle::ty::adjustment::PointerCoercion;
+<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Instance, InstanceKind, Ty, TyCtxt, TypeVisitableExt};
 <span class="kw">use </span>rustc_mir_dataflow::Analysis;
 <span class="kw">use </span>rustc_span::{sym, Span, Symbol, DUMMY_SP};
 <span class="kw">use </span>rustc_trait_selection::error_reporting::InferCtxtErrorExt;
 <span class="kw">use </span>rustc_trait_selection::traits::{<span class="self">self</span>, ObligationCauseCode, ObligationCtxt};
 <span class="kw">use </span>rustc_type_ir::visit::{TypeSuperVisitable, TypeVisitor};
-
-<span class="kw">use </span>std::mem;
-<span class="kw">use </span>std::ops::Deref;
-
 <span class="kw">use </span>tracing::{debug, instrument, trace};
 
 <span class="kw">use </span><span class="kw">super</span>::ops::{<span class="self">self</span>, NonConstOp, Status};
@@ -1614,7 +1611,7 @@
                 <span class="kw">if </span>is_int_bool_or_char(lhs_ty) &amp;&amp; is_int_bool_or_char(rhs_ty) {
                     <span class="comment">// Int, bool, and char operations are fine.
                 </span>} <span class="kw">else if </span>lhs_ty.is_fn_ptr() || lhs_ty.is_unsafe_ptr() {
-                    <span class="macro">assert!</span>(<span class="macro">matches!</span>(
+                    <span class="macro">assert_matches!</span>(
                         op,
                         BinOp::Eq
                             | BinOp::Ne
@@ -1623,7 +1620,7 @@
                             | BinOp::Ge
                             | BinOp::Gt
                             | BinOp::Offset
-                    ));
+                    );
 
                     <span class="self">self</span>.check_op(ops::RawPtrComparison);
                 } <span class="kw">else if </span>lhs_ty.is_floating_point() || rhs_ty.is_floating_point() {
@@ -1658,10 +1655,7 @@
         <span class="macro">trace!</span>(
             <span class="string">"visit_projection_elem: place_ref={:?} elem={:?} \
             context={:?} location={:?}"</span>,
-            place_ref,
-            elem,
-            context,
-            location,
+            place_ref, elem, context, location,
         );
 
         <span class="self">self</span>.super_projection_elem(place_ref, elem, context, location);

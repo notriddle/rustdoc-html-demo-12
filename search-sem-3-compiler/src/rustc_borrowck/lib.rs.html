@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/lib.rs`."><title>lib.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/lib.rs`."><title>lib.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -2579,10 +2579,6 @@
 <a href="#2579" id="2579">2579</a>
 <a href="#2580" id="2580">2580</a>
 <a href="#2581" id="2581">2581</a>
-<a href="#2582" id="2582">2582</a>
-<a href="#2583" id="2583">2583</a>
-<a href="#2584" id="2584">2584</a>
-<a href="#2585" id="2585">2585</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! This query borrow-checks the MIR to (further) ensure it is not broken.
 
 </span><span class="comment">// tidy-alphabetical-start
@@ -2602,6 +2598,13 @@
 </span><span class="attr">#[macro_use]
 </span><span class="kw">extern crate </span>tracing;
 
+<span class="kw">use </span>std::cell::RefCell;
+<span class="kw">use </span>std::collections::BTreeMap;
+<span class="kw">use </span>std::marker::PhantomData;
+<span class="kw">use </span>std::ops::Deref;
+<span class="kw">use </span>std::rc::Rc;
+
+<span class="kw">use </span>consumers::{BodyWithBorrowckFacts, ConsumerOptions};
 <span class="kw">use </span>rustc_data_structures::fx::{FxIndexMap, FxIndexSet};
 <span class="kw">use </span>rustc_data_structures::graph::dominators::Dominators;
 <span class="kw">use </span>rustc_errors::Diag;
@@ -2609,40 +2612,31 @@
 <span class="kw">use </span>rustc_hir::def_id::LocalDefId;
 <span class="kw">use </span>rustc_index::bit_set::{BitSet, ChunkedBitSet};
 <span class="kw">use </span>rustc_index::{IndexSlice, IndexVec};
-<span class="kw">use </span>rustc_infer::infer::TyCtxtInferExt;
-<span class="kw">use </span>rustc_infer::infer::{InferCtxt, NllRegionVariableOrigin, RegionVariableOrigin};
+<span class="kw">use </span>rustc_infer::infer::{
+    InferCtxt, NllRegionVariableOrigin, RegionVariableOrigin, TyCtxtInferExt,
+};
 <span class="kw">use </span>rustc_middle::mir::tcx::PlaceTy;
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::query::Providers;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, ParamEnv, RegionVid, TyCtxt};
 <span class="kw">use </span>rustc_middle::{bug, span_bug};
-<span class="kw">use </span>rustc_session::lint::builtin::UNUSED_MUT;
-<span class="kw">use </span>rustc_span::{Span, Symbol};
-<span class="kw">use </span>rustc_target::abi::FieldIdx;
-
-<span class="kw">use </span>smallvec::SmallVec;
-<span class="kw">use </span>std::cell::RefCell;
-<span class="kw">use </span>std::collections::BTreeMap;
-<span class="kw">use </span>std::marker::PhantomData;
-<span class="kw">use </span>std::ops::Deref;
-<span class="kw">use </span>std::rc::Rc;
-
 <span class="kw">use </span>rustc_mir_dataflow::impls::{
     EverInitializedPlaces, MaybeInitializedPlaces, MaybeUninitializedPlaces,
 };
-<span class="kw">use </span>rustc_mir_dataflow::move_paths::{InitIndex, MoveOutIndex, MovePathIndex};
-<span class="kw">use </span>rustc_mir_dataflow::move_paths::{InitLocation, LookupResult, MoveData};
+<span class="kw">use </span>rustc_mir_dataflow::move_paths::{
+    InitIndex, InitLocation, LookupResult, MoveData, MoveOutIndex, MovePathIndex,
+};
 <span class="kw">use </span>rustc_mir_dataflow::Analysis;
-<span class="kw">use </span>rustc_mir_dataflow::MoveDataParamEnv;
-
-<span class="kw">use </span><span class="kw">crate</span>::session_diagnostics::VarNeedNotMut;
+<span class="kw">use </span>rustc_session::lint::builtin::UNUSED_MUT;
+<span class="kw">use </span>rustc_span::{Span, Symbol};
+<span class="kw">use </span>rustc_target::abi::FieldIdx;
+<span class="kw">use </span>smallvec::SmallVec;
 
 <span class="kw">use </span><span class="self">self</span>::diagnostics::{AccessKind, IllegalMoveOriginKind, MoveError, RegionName};
 <span class="kw">use </span><span class="self">self</span>::location::LocationTable;
-<span class="kw">use </span><span class="self">self</span>::prefixes::PrefixSet;
-<span class="kw">use </span>consumers::{BodyWithBorrowckFacts, ConsumerOptions};
-
 <span class="kw">use </span><span class="self">self</span>::path_utils::<span class="kw-2">*</span>;
+<span class="kw">use </span><span class="self">self</span>::prefixes::PrefixSet;
+<span class="kw">use </span><span class="kw">crate</span>::session_diagnostics::VarNeedNotMut;
 
 <span class="kw">pub mod </span>borrow_set;
 <span class="kw">mod </span>borrowck_errors;
@@ -2781,9 +2775,7 @@
         .iter_enumerated()
         .map(|(idx, body)| (idx, MoveData::gather_moves(body, tcx, param_env, |<span class="kw">_</span>| <span class="bool-val">true</span>)));
 
-    <span class="kw">let </span>mdpe = MoveDataParamEnv { move_data, param_env };
-
-    <span class="kw">let </span><span class="kw-2">mut </span>flow_inits = MaybeInitializedPlaces::new(tcx, body, <span class="kw-2">&amp;</span>mdpe)
+    <span class="kw">let </span><span class="kw-2">mut </span>flow_inits = MaybeInitializedPlaces::new(tcx, body, <span class="kw-2">&amp;</span>move_data)
         .into_engine(tcx, body)
         .pass_name(<span class="string">"borrowck"</span>)
         .iterate_to_fixpoint()
@@ -2791,7 +2783,7 @@
 
     <span class="kw">let </span>locals_are_invalidated_at_exit = tcx.hir().body_owner_kind(def).is_fn_or_closure();
     <span class="kw">let </span>borrow_set =
-        Rc::new(BorrowSet::build(tcx, body, locals_are_invalidated_at_exit, <span class="kw-2">&amp;</span>mdpe.move_data));
+        Rc::new(BorrowSet::build(tcx, body, locals_are_invalidated_at_exit, <span class="kw-2">&amp;</span>move_data));
 
     <span class="comment">// Compute non-lexical lifetimes.
     </span><span class="kw">let </span>nll::NllOutput {
@@ -2809,7 +2801,7 @@
         <span class="kw-2">&amp;</span>location_table,
         param_env,
         <span class="kw-2">&amp;mut </span>flow_inits,
-        <span class="kw-2">&amp;</span>mdpe.move_data,
+        <span class="kw-2">&amp;</span>move_data,
         <span class="kw-2">&amp;</span>borrow_set,
         tcx.closure_captures(def),
         consumer_options,
@@ -2841,11 +2833,11 @@
         .into_engine(tcx, body)
         .pass_name(<span class="string">"borrowck"</span>)
         .iterate_to_fixpoint();
-    <span class="kw">let </span>flow_uninits = MaybeUninitializedPlaces::new(tcx, body, <span class="kw-2">&amp;</span>mdpe)
+    <span class="kw">let </span>flow_uninits = MaybeUninitializedPlaces::new(tcx, body, <span class="kw-2">&amp;</span>move_data)
         .into_engine(tcx, body)
         .pass_name(<span class="string">"borrowck"</span>)
         .iterate_to_fixpoint();
-    <span class="kw">let </span>flow_ever_inits = EverInitializedPlaces::new(body, <span class="kw-2">&amp;</span>mdpe)
+    <span class="kw">let </span>flow_ever_inits = EverInitializedPlaces::new(body, <span class="kw-2">&amp;</span>move_data)
         .into_engine(tcx, body)
         .pass_name(<span class="string">"borrowck"</span>)
         .iterate_to_fixpoint();
@@ -2911,7 +2903,7 @@
         infcx: <span class="kw-2">&amp;</span>infcx,
         param_env,
         body,
-        move_data: <span class="kw-2">&amp;</span>mdpe.move_data,
+        move_data: <span class="kw-2">&amp;</span>move_data,
         location_table: <span class="kw-2">&amp;</span>location_table,
         movable_coroutine,
         locals_are_invalidated_at_exit,

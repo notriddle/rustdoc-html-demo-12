@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/check/wfcheck.rs`."><title>wfcheck.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/check/wfcheck.rs`."><title>wfcheck.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -2262,19 +2262,13 @@
 <a href="#2262" id="2262">2262</a>
 <a href="#2263" id="2263">2263</a>
 <a href="#2264" id="2264">2264</a>
-<a href="#2265" id="2265">2265</a>
-<a href="#2266" id="2266">2266</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::autoderef::Autoderef;
-<span class="kw">use </span><span class="kw">crate</span>::collect::CollectItemTypesVisitor;
-<span class="kw">use </span><span class="kw">crate</span>::constrained_generic_params::{identify_constrained_generic_params, Parameter};
-<span class="kw">use </span><span class="kw">crate</span>::errors;
-<span class="kw">use </span><span class="kw">crate</span>::fluent_generated <span class="kw">as </span>fluent;
+</pre></div><pre class="rust"><code><span class="kw">use </span>std::cell::LazyCell;
+<span class="kw">use </span>std::ops::{ControlFlow, Deref};
 
 <span class="kw">use </span>hir::intravisit::{<span class="self">self</span>, Visitor};
-<span class="kw">use </span>rustc_ast <span class="kw">as </span>ast;
 <span class="kw">use </span>rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexSet};
-<span class="kw">use </span>rustc_errors::{codes::<span class="kw-2">*</span>, pluralize, struct_span_code_err, Applicability, ErrorGuaranteed};
-<span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
+<span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
+<span class="kw">use </span>rustc_errors::{pluralize, struct_span_code_err, Applicability, ErrorGuaranteed};
 <span class="kw">use </span>rustc_hir::def::{DefKind, Res};
 <span class="kw">use </span>rustc_hir::def_id::{DefId, LocalDefId, LocalModDefId};
 <span class="kw">use </span>rustc_hir::lang_items::LangItem;
@@ -2286,10 +2280,9 @@
 <span class="kw">use </span>rustc_middle::ty::print::with_no_trimmed_paths;
 <span class="kw">use </span>rustc_middle::ty::trait_def::TraitSpecializationKind;
 <span class="kw">use </span>rustc_middle::ty::{
-    <span class="self">self</span>, AdtKind, GenericParamDefKind, Ty, TyCtxt, TypeFoldable, TypeSuperVisitable,
-    TypeVisitable, TypeVisitableExt, TypeVisitor, Upcast,
+    <span class="self">self</span>, AdtKind, GenericArgKind, GenericArgs, GenericParamDefKind, Ty, TyCtxt, TypeFoldable,
+    TypeSuperVisitable, TypeVisitable, TypeVisitableExt, TypeVisitor, Upcast,
 };
-<span class="kw">use </span>rustc_middle::ty::{GenericArgKind, GenericArgs};
 <span class="kw">use </span>rustc_middle::{bug, span_bug};
 <span class="kw">use </span>rustc_session::parse::feature_err;
 <span class="kw">use </span>rustc_span::symbol::{sym, Ident};
@@ -2307,9 +2300,12 @@
 };
 <span class="kw">use </span>rustc_type_ir::solve::NoSolution;
 <span class="kw">use </span>rustc_type_ir::TypeFlags;
+<span class="kw">use </span>{rustc_ast <span class="kw">as </span>ast, rustc_hir <span class="kw">as </span>hir};
 
-<span class="kw">use </span>std::cell::LazyCell;
-<span class="kw">use </span>std::ops::{ControlFlow, Deref};
+<span class="kw">use </span><span class="kw">crate</span>::autoderef::Autoderef;
+<span class="kw">use </span><span class="kw">crate</span>::collect::CollectItemTypesVisitor;
+<span class="kw">use </span><span class="kw">crate</span>::constrained_generic_params::{identify_constrained_generic_params, Parameter};
+<span class="kw">use crate</span>::{errors, fluent_generated <span class="kw">as </span>fluent};
 
 <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>WfCheckingCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">pub</span>(<span class="kw">super</span>) ocx: ObligationCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, FulfillmentError&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
@@ -3097,7 +3093,7 @@
 
 <span class="kw">fn </span>could_be_self(trait_def_id: LocalDefId, ty: <span class="kw-2">&amp;</span>hir::Ty&lt;<span class="lifetime">'_</span>&gt;) -&gt; bool {
     <span class="kw">match </span>ty.kind {
-        hir::TyKind::TraitObject([trait_ref], ..) =&gt; <span class="kw">match </span>trait_ref.trait_ref.path.segments {
+        hir::TyKind::TraitObject([(trait_ref, <span class="kw">_</span>)], ..) =&gt; <span class="kw">match </span>trait_ref.trait_ref.path.segments {
             [s] =&gt; s.res.opt_def_id() == <span class="prelude-val">Some</span>(trait_def_id.to_def_id()),
             <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
         },
@@ -3544,7 +3540,7 @@
             UnsizedHandling::Forbid =&gt; <span class="bool-val">true</span>,
             UnsizedHandling::Allow =&gt; <span class="bool-val">false</span>,
             UnsizedHandling::AllowIfForeignTail =&gt; {
-                <span class="kw">let </span>tail = tcx.struct_tail_erasing_lifetimes(item_ty, wfcx.param_env);
+                <span class="kw">let </span>tail = tcx.struct_tail_for_codegen(item_ty, wfcx.param_env);
                 !<span class="macro">matches!</span>(tail.kind(), ty::Foreign(<span class="kw">_</span>))
             }
         };

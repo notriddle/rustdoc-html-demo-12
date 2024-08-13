@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_ssa/src/base.rs`."><title>base.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_codegen_ssa" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_ssa/src/base.rs`."><title>base.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_codegen_ssa" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1079,25 +1079,11 @@
 <a href="#1079" id="1079">1079</a>
 <a href="#1080" id="1080">1080</a>
 <a href="#1081" id="1081">1081</a>
-<a href="#1082" id="1082">1082</a>
-<a href="#1083" id="1083">1083</a>
-<a href="#1084" id="1084">1084</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::assert_module_sources::CguReuse;
-<span class="kw">use </span><span class="kw">crate</span>::back::link::are_upstream_rust_objects_already_included;
-<span class="kw">use </span><span class="kw">crate</span>::back::metadata::create_compressed_metadata_file;
-<span class="kw">use </span><span class="kw">crate</span>::back::write::{
-    compute_per_cgu_lto_type, start_async_codegen, submit_codegened_module_to_llvm,
-    submit_post_lto_module_to_llvm, submit_pre_lto_module_to_llvm, ComputedLtoType, OngoingCodegen,
-};
-<span class="kw">use </span><span class="kw">crate</span>::common::{<span class="self">self</span>, IntPredicate, RealPredicate, TypeKind};
-<span class="kw">use </span><span class="kw">crate</span>::errors;
-<span class="kw">use </span><span class="kw">crate</span>::meth;
-<span class="kw">use </span><span class="kw">crate</span>::mir;
-<span class="kw">use </span><span class="kw">crate</span>::mir::operand::OperandValue;
-<span class="kw">use </span><span class="kw">crate</span>::mir::place::PlaceRef;
-<span class="kw">use </span><span class="kw">crate</span>::traits::<span class="kw-2">*</span>;
-<span class="kw">use crate</span>::{CachedModuleCodegen, CompiledModule, CrateInfo, ModuleCodegen, ModuleKind};
+</pre></div><pre class="rust"><code><span class="kw">use </span>std::cmp;
+<span class="kw">use </span>std::collections::BTreeSet;
+<span class="kw">use </span>std::time::{Duration, Instant};
 
+<span class="kw">use </span>itertools::Itertools;
 <span class="kw">use </span>rustc_ast::expand::allocator::{global_fn_name, AllocatorKind, ALLOCATOR_METHODS};
 <span class="kw">use </span>rustc_attr <span class="kw">as </span>attr;
 <span class="kw">use </span>rustc_data_structures::fx::{FxHashMap, FxIndexSet};
@@ -1110,9 +1096,8 @@
 <span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrs;
 <span class="kw">use </span>rustc_middle::middle::debugger_visualizer::{DebuggerVisualizerFile, DebuggerVisualizerType};
-<span class="kw">use </span>rustc_middle::middle::exported_symbols;
 <span class="kw">use </span>rustc_middle::middle::exported_symbols::SymbolExportKind;
-<span class="kw">use </span>rustc_middle::middle::lang_items;
+<span class="kw">use </span>rustc_middle::middle::{exported_symbols, lang_items};
 <span class="kw">use </span>rustc_middle::mir::mono::{CodegenUnit, CodegenUnitNameBuilder, MonoItem};
 <span class="kw">use </span>rustc_middle::mir::BinOp;
 <span class="kw">use </span>rustc_middle::query::Providers;
@@ -1123,13 +1108,22 @@
 <span class="kw">use </span>rustc_span::symbol::sym;
 <span class="kw">use </span>rustc_span::{Symbol, DUMMY_SP};
 <span class="kw">use </span>rustc_target::abi::FIRST_VARIANT;
-
-<span class="kw">use </span>std::cmp;
-<span class="kw">use </span>std::collections::BTreeSet;
-<span class="kw">use </span>std::time::{Duration, Instant};
-
-<span class="kw">use </span>itertools::Itertools;
 <span class="kw">use </span>tracing::{debug, info};
+
+<span class="kw">use </span><span class="kw">crate</span>::assert_module_sources::CguReuse;
+<span class="kw">use </span><span class="kw">crate</span>::back::link::are_upstream_rust_objects_already_included;
+<span class="kw">use </span><span class="kw">crate</span>::back::metadata::create_compressed_metadata_file;
+<span class="kw">use </span><span class="kw">crate</span>::back::write::{
+    compute_per_cgu_lto_type, start_async_codegen, submit_codegened_module_to_llvm,
+    submit_post_lto_module_to_llvm, submit_pre_lto_module_to_llvm, ComputedLtoType, OngoingCodegen,
+};
+<span class="kw">use </span><span class="kw">crate</span>::common::{<span class="self">self</span>, IntPredicate, RealPredicate, TypeKind};
+<span class="kw">use </span><span class="kw">crate</span>::mir::operand::OperandValue;
+<span class="kw">use </span><span class="kw">crate</span>::mir::place::PlaceRef;
+<span class="kw">use </span><span class="kw">crate</span>::traits::<span class="kw-2">*</span>;
+<span class="kw">use crate</span>::{
+    errors, meth, mir, CachedModuleCodegen, CompiledModule, CrateInfo, ModuleCodegen, ModuleKind,
+};
 
 <span class="kw">pub fn </span>bin_op_to_icmp_predicate(op: BinOp, signed: bool) -&gt; IntPredicate {
     <span class="kw">match </span>op {
@@ -1230,7 +1224,7 @@
 ) -&gt; Bx::Value {
     <span class="kw">let </span>cx = bx.cx();
     <span class="kw">let </span>(source, target) =
-        cx.tcx().struct_lockstep_tails_erasing_lifetimes(source, target, bx.param_env());
+        cx.tcx().struct_lockstep_tails_for_codegen(source, target, bx.param_env());
     <span class="kw">match </span>(source.kind(), target.kind()) {
         (<span class="kw-2">&amp;</span>ty::Array(<span class="kw">_</span>, len), <span class="kw-2">&amp;</span>ty::Slice(<span class="kw">_</span>)) =&gt; {
             cx.const_usize(len.eval_target_usize(cx.tcx(), ty::ParamEnv::reveal_all()))

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/abi.rs`."><title>abi.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/abi.rs`."><title>abi.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -627,33 +627,87 @@
 <a href="#627" id="627">627</a>
 <a href="#628" id="628">628</a>
 <a href="#629" id="629">629</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::attributes;
-<span class="kw">use </span><span class="kw">crate</span>::builder::Builder;
-<span class="kw">use </span><span class="kw">crate</span>::context::CodegenCx;
-<span class="kw">use </span><span class="kw">crate</span>::llvm::{<span class="self">self</span>, Attribute, AttributePlace};
-<span class="kw">use </span><span class="kw">crate</span>::llvm_util;
-<span class="kw">use </span><span class="kw">crate</span>::type_::Type;
-<span class="kw">use </span><span class="kw">crate</span>::type_of::LayoutLlvmExt;
-<span class="kw">use </span><span class="kw">crate</span>::value::Value;
+<a href="#630" id="630">630</a>
+<a href="#631" id="631">631</a>
+<a href="#632" id="632">632</a>
+<a href="#633" id="633">633</a>
+<a href="#634" id="634">634</a>
+<a href="#635" id="635">635</a>
+<a href="#636" id="636">636</a>
+<a href="#637" id="637">637</a>
+<a href="#638" id="638">638</a>
+<a href="#639" id="639">639</a>
+<a href="#640" id="640">640</a>
+<a href="#641" id="641">641</a>
+<a href="#642" id="642">642</a>
+<a href="#643" id="643">643</a>
+<a href="#644" id="644">644</a>
+<a href="#645" id="645">645</a>
+<a href="#646" id="646">646</a>
+<a href="#647" id="647">647</a>
+<a href="#648" id="648">648</a>
+<a href="#649" id="649">649</a>
+<a href="#650" id="650">650</a>
+<a href="#651" id="651">651</a>
+<a href="#652" id="652">652</a>
+<a href="#653" id="653">653</a>
+<a href="#654" id="654">654</a>
+<a href="#655" id="655">655</a>
+<a href="#656" id="656">656</a>
+<a href="#657" id="657">657</a>
+<a href="#658" id="658">658</a>
+<a href="#659" id="659">659</a>
+<a href="#660" id="660">660</a>
+<a href="#661" id="661">661</a>
+<a href="#662" id="662">662</a>
+<a href="#663" id="663">663</a>
+<a href="#664" id="664">664</a>
+<a href="#665" id="665">665</a>
+<a href="#666" id="666">666</a>
+<a href="#667" id="667">667</a>
+<a href="#668" id="668">668</a>
+<a href="#669" id="669">669</a>
+<a href="#670" id="670">670</a>
+<a href="#671" id="671">671</a>
+<a href="#672" id="672">672</a>
+<a href="#673" id="673">673</a>
+<a href="#674" id="674">674</a>
+<a href="#675" id="675">675</a>
+<a href="#676" id="676">676</a>
+<a href="#677" id="677">677</a>
+<a href="#678" id="678">678</a>
+<a href="#679" id="679">679</a>
+<a href="#680" id="680">680</a>
+<a href="#681" id="681">681</a>
+<a href="#682" id="682">682</a>
+<a href="#683" id="683">683</a>
+<a href="#684" id="684">684</a>
+</pre></div><pre class="rust"><code><span class="kw">use </span>std::cmp;
 
+<span class="kw">use </span>libc::c_uint;
 <span class="kw">use </span>rustc_codegen_ssa::mir::operand::{OperandRef, OperandValue};
 <span class="kw">use </span>rustc_codegen_ssa::mir::place::{PlaceRef, PlaceValue};
 <span class="kw">use </span>rustc_codegen_ssa::traits::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_codegen_ssa::MemFlags;
-<span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::ty::layout::LayoutOf;
 <span class="kw">pub use </span>rustc_middle::ty::layout::{FAT_PTR_ADDR, FAT_PTR_EXTRA};
 <span class="kw">use </span>rustc_middle::ty::Ty;
+<span class="kw">use </span>rustc_middle::{bug, ty};
 <span class="kw">use </span>rustc_session::config;
 <span class="kw">pub use </span>rustc_target::abi::call::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_target::abi::{<span class="self">self</span>, HasDataLayout, Int, Size};
 <span class="kw">pub use </span>rustc_target::spec::abi::Abi;
 <span class="kw">use </span>rustc_target::spec::SanitizerSet;
-
-<span class="kw">use </span>libc::c_uint;
 <span class="kw">use </span>smallvec::SmallVec;
 
-<span class="kw">use </span>std::cmp;
+<span class="kw">use </span><span class="kw">crate</span>::attributes::llfn_attrs_from_instance;
+<span class="kw">use </span><span class="kw">crate</span>::builder::Builder;
+<span class="kw">use </span><span class="kw">crate</span>::context::CodegenCx;
+<span class="kw">use </span><span class="kw">crate</span>::llvm::{<span class="self">self</span>, Attribute, AttributePlace};
+<span class="kw">use </span><span class="kw">crate</span>::type_::Type;
+<span class="kw">use </span><span class="kw">crate</span>::type_of::LayoutLlvmExt;
+<span class="kw">use </span><span class="kw">crate</span>::value::Value;
+<span class="kw">use crate</span>::{attributes, llvm_util};
 
 <span class="kw">pub trait </span>ArgAttributesExt {
     <span class="kw">fn </span>apply_attrs_to_llfn(<span class="kw-2">&amp;</span><span class="self">self</span>, idx: AttributePlace, cx: <span class="kw-2">&amp;</span>CodegenCx&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;, llfn: <span class="kw-2">&amp;</span>Value);
@@ -750,8 +804,10 @@
         <span class="kw">match </span><span class="self">self</span>.kind {
             RegKind::Integer =&gt; cx.type_ix(<span class="self">self</span>.size.bits()),
             RegKind::Float =&gt; <span class="kw">match </span><span class="self">self</span>.size.bits() {
+                <span class="number">16 </span>=&gt; cx.type_f16(),
                 <span class="number">32 </span>=&gt; cx.type_f32(),
                 <span class="number">64 </span>=&gt; cx.type_f64(),
+                <span class="number">128 </span>=&gt; cx.type_f128(),
                 <span class="kw">_ </span>=&gt; <span class="macro">bug!</span>(<span class="string">"unsupported float: {:?}"</span>, <span class="self">self</span>),
             },
             RegKind::Vector =&gt; cx.type_vector(cx.type_i8(), <span class="self">self</span>.size.bytes()),
@@ -939,8 +995,17 @@
     <span class="kw">fn </span>llvm_type(<span class="kw-2">&amp;</span><span class="self">self</span>, cx: <span class="kw-2">&amp;</span>CodegenCx&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'ll </span>Type;
     <span class="kw">fn </span>ptr_to_llvm_type(<span class="kw-2">&amp;</span><span class="self">self</span>, cx: <span class="kw-2">&amp;</span>CodegenCx&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'ll </span>Type;
     <span class="kw">fn </span>llvm_cconv(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; llvm::CallConv;
-    <span class="kw">fn </span>apply_attrs_llfn(<span class="kw-2">&amp;</span><span class="self">self</span>, cx: <span class="kw-2">&amp;</span>CodegenCx&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;, llfn: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span>Value);
-    <span class="kw">fn </span>apply_attrs_callsite(<span class="kw-2">&amp;</span><span class="self">self</span>, bx: <span class="kw-2">&amp;mut </span>Builder&lt;<span class="lifetime">'_</span>, <span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;, callsite: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span>Value);
+
+    <span class="doccomment">/// Apply attributes to a function declaration/definition.
+    </span><span class="kw">fn </span>apply_attrs_llfn(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        cx: <span class="kw-2">&amp;</span>CodegenCx&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;,
+        llfn: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span>Value,
+        instance: <span class="prelude-ty">Option</span>&lt;ty::Instance&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+    );
+
+    <span class="doccomment">/// Apply attributes to a function call.
+    </span><span class="kw">fn </span>apply_attrs_callsite(<span class="kw-2">&amp;</span><span class="self">self</span>, bx: <span class="kw-2">&amp;mut </span>Builder&lt;<span class="lifetime">'_</span>, <span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;, callsite: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span>Value);
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt; FnAbiLlvmExt&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>FnAbi&lt;<span class="lifetime">'tcx</span>, Ty&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
@@ -1025,7 +1090,12 @@
         <span class="self">self</span>.conv.into()
     }
 
-    <span class="kw">fn </span>apply_attrs_llfn(<span class="kw-2">&amp;</span><span class="self">self</span>, cx: <span class="kw-2">&amp;</span>CodegenCx&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;, llfn: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span>Value) {
+    <span class="kw">fn </span>apply_attrs_llfn(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        cx: <span class="kw-2">&amp;</span>CodegenCx&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;,
+        llfn: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span>Value,
+        instance: <span class="prelude-ty">Option</span>&lt;ty::Instance&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+    ) {
         <span class="kw">let </span><span class="kw-2">mut </span>func_attrs = SmallVec::&lt;[<span class="kw">_</span>; <span class="number">3</span>]&gt;::new();
         <span class="kw">if </span><span class="self">self</span>.ret.layout.abi.is_uninhabited() {
             func_attrs.push(llvm::AttributeKind::NoReturn.create_attr(cx.llcx));
@@ -1044,9 +1114,32 @@
             i += <span class="number">1</span>;
             i - <span class="number">1
         </span>};
+
+        <span class="kw">let </span>apply_range_attr = |idx: AttributePlace, scalar: rustc_target::abi::Scalar| {
+            <span class="kw">if </span>cx.sess().opts.optimize != config::OptLevel::No
+                &amp;&amp; llvm_util::get_version() &gt;= (<span class="number">19</span>, <span class="number">0</span>, <span class="number">0</span>)
+                &amp;&amp; <span class="macro">matches!</span>(scalar.primitive(), Int(..))
+                <span class="comment">// If the value is a boolean, the range is 0..2 and that ultimately
+                // become 0..0 when the type becomes i1, which would be rejected
+                // by the LLVM verifier.
+                </span>&amp;&amp; !scalar.is_bool()
+                <span class="comment">// LLVM also rejects full range.
+                </span>&amp;&amp; !scalar.is_always_valid(cx)
+            {
+                attributes::apply_to_llfn(
+                    llfn,
+                    idx,
+                    <span class="kw-2">&amp;</span>[llvm::CreateRangeAttr(cx.llcx, scalar.size(cx), scalar.valid_range(cx))],
+                );
+            }
+        };
+
         <span class="kw">match </span><span class="kw-2">&amp;</span><span class="self">self</span>.ret.mode {
             PassMode::Direct(attrs) =&gt; {
                 attrs.apply_attrs_to_llfn(llvm::AttributePlace::ReturnValue, cx, llfn);
+                <span class="kw">if let </span>abi::Abi::Scalar(scalar) = <span class="self">self</span>.ret.layout.abi {
+                    apply_range_attr(llvm::AttributePlace::ReturnValue, scalar);
+                }
             }
             PassMode::Indirect { attrs, meta_attrs: <span class="kw">_</span>, on_stack } =&gt; {
                 <span class="macro">assert!</span>(!on_stack);
@@ -1085,8 +1178,13 @@
                     );
                     attributes::apply_to_llfn(llfn, llvm::AttributePlace::Argument(i), <span class="kw-2">&amp;</span>[byval]);
                 }
-                PassMode::Direct(attrs)
-                | PassMode::Indirect { attrs, meta_attrs: <span class="prelude-val">None</span>, on_stack: <span class="bool-val">false </span>} =&gt; {
+                PassMode::Direct(attrs) =&gt; {
+                    <span class="kw">let </span>i = apply(attrs);
+                    <span class="kw">if let </span>abi::Abi::Scalar(scalar) = arg.layout.abi {
+                        apply_range_attr(llvm::AttributePlace::Argument(i), scalar);
+                    }
+                }
+                PassMode::Indirect { attrs, meta_attrs: <span class="prelude-val">None</span>, on_stack: <span class="bool-val">false </span>} =&gt; {
                     apply(attrs);
                 }
                 PassMode::Indirect { attrs, meta_attrs: <span class="prelude-val">Some</span>(meta_attrs), on_stack } =&gt; {
@@ -1095,8 +1193,12 @@
                     apply(meta_attrs);
                 }
                 PassMode::Pair(a, b) =&gt; {
-                    apply(a);
-                    apply(b);
+                    <span class="kw">let </span>i = apply(a);
+                    <span class="kw">let </span>ii = apply(b);
+                    <span class="kw">if let </span>abi::Abi::ScalarPair(scalar_a, scalar_b) = arg.layout.abi {
+                        apply_range_attr(llvm::AttributePlace::Argument(i), scalar_a);
+                        apply_range_attr(llvm::AttributePlace::Argument(ii), scalar_b);
+                    }
                 }
                 PassMode::Cast { cast, pad_i32 } =&gt; {
                     <span class="kw">if </span><span class="kw-2">*</span>pad_i32 {
@@ -1105,6 +1207,11 @@
                     apply(<span class="kw-2">&amp;</span>cast.attrs);
                 }
             }
+        }
+
+        <span class="comment">// If the declaration has an associated instance, compute extra attributes based on that.
+        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(instance) = instance {
+            llfn_attrs_from_instance(cx, llfn, instance);
         }
     }
 
@@ -1146,15 +1253,18 @@
             }
             <span class="kw">_ </span>=&gt; {}
         }
-        <span class="kw">if let </span>abi::Abi::Scalar(scalar) = <span class="self">self</span>.ret.layout.abi {
-            <span class="comment">// If the value is a boolean, the range is 0..2 and that ultimately
-            // become 0..0 when the type becomes i1, which would be rejected
-            // by the LLVM verifier.
-            </span><span class="kw">if let </span>Int(..) = scalar.primitive() {
-                <span class="kw">if </span>!scalar.is_bool() &amp;&amp; !scalar.is_always_valid(bx) {
-                    bx.range_metadata(callsite, scalar.valid_range(bx));
-                }
-            }
+        <span class="kw">if </span>bx.cx.sess().opts.optimize != config::OptLevel::No
+                &amp;&amp; llvm_util::get_version() &lt; (<span class="number">19</span>, <span class="number">0</span>, <span class="number">0</span>)
+                &amp;&amp; <span class="kw">let </span>abi::Abi::Scalar(scalar) = <span class="self">self</span>.ret.layout.abi
+                &amp;&amp; <span class="macro">matches!</span>(scalar.primitive(), Int(..))
+                <span class="comment">// If the value is a boolean, the range is 0..2 and that ultimately
+                // become 0..0 when the type becomes i1, which would be rejected
+                // by the LLVM verifier.
+                </span>&amp;&amp; !scalar.is_bool()
+                <span class="comment">// LLVM also rejects full range.
+                </span>&amp;&amp; !scalar.is_always_valid(bx)
+        {
+            bx.range_metadata(callsite, scalar.valid_range(bx));
         }
         <span class="kw">for </span>arg <span class="kw">in </span><span class="self">self</span>.args.iter() {
             <span class="kw">match </span><span class="kw-2">&amp;</span>arg.mode {

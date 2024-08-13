@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["env_var","env_var_os"]};
+window.SIDEBAR_ITEMS = {"fn":["env_var","env_var_os","no_debug_assertions"]};

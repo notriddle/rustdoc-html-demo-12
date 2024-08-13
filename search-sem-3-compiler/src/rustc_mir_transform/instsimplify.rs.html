@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/instsimplify.rs`."><title>instsimplify.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/instsimplify.rs`."><title>instsimplify.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -377,23 +377,54 @@
 <a href="#377" id="377">377</a>
 <a href="#378" id="378">378</a>
 <a href="#379" id="379">379</a>
+<a href="#380" id="380">380</a>
+<a href="#381" id="381">381</a>
+<a href="#382" id="382">382</a>
+<a href="#383" id="383">383</a>
+<a href="#384" id="384">384</a>
+<a href="#385" id="385">385</a>
+<a href="#386" id="386">386</a>
+<a href="#387" id="387">387</a>
+<a href="#388" id="388">388</a>
+<a href="#389" id="389">389</a>
+<a href="#390" id="390">390</a>
+<a href="#391" id="391">391</a>
+<a href="#392" id="392">392</a>
+<a href="#393" id="393">393</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Performs various peephole optimizations.
 
-</span><span class="kw">use </span><span class="kw">crate</span>::simplify::simplify_duplicate_switch_targets;
-<span class="kw">use </span><span class="kw">crate</span>::take_array;
-<span class="kw">use </span>rustc_ast::attr;
+</span><span class="kw">use </span>rustc_ast::attr;
+<span class="kw">use </span>rustc_hir::LangItem;
 <span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
-<span class="kw">use </span>rustc_middle::ty::layout;
 <span class="kw">use </span>rustc_middle::ty::layout::ValidityRequirement;
-<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, GenericArgsRef, ParamEnv, Ty, TyCtxt};
+<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, layout, GenericArgsRef, ParamEnv, Ty, TyCtxt};
 <span class="kw">use </span>rustc_span::sym;
 <span class="kw">use </span>rustc_span::symbol::Symbol;
 <span class="kw">use </span>rustc_target::spec::abi::Abi;
 
-<span class="kw">pub struct </span>InstSimplify;
+<span class="kw">use </span><span class="kw">crate</span>::simplify::simplify_duplicate_switch_targets;
+<span class="kw">use </span><span class="kw">crate</span>::take_array;
+
+<span class="kw">pub enum </span>InstSimplify {
+    BeforeInline,
+    AfterSimplifyCfg,
+}
+
+<span class="kw">impl </span>InstSimplify {
+    <span class="kw">pub fn </span>name(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str {
+        <span class="kw">match </span><span class="self">self </span>{
+            InstSimplify::BeforeInline =&gt; <span class="string">"InstSimplify-before-inline"</span>,
+            InstSimplify::AfterSimplifyCfg =&gt; <span class="string">"InstSimplify-after-simplifycfg"</span>,
+        }
+    }
+}
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>InstSimplify {
+    <span class="kw">fn </span>name(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str {
+        <span class="self">self</span>.name()
+    }
+
     <span class="kw">fn </span>is_enabled(<span class="kw-2">&amp;</span><span class="self">self</span>, sess: <span class="kw-2">&amp;</span>rustc_session::Session) -&gt; bool {
         sess.mir_opt_level() &gt; <span class="number">0
     </span>}
@@ -626,9 +657,7 @@
         };
 
         <span class="comment">// It's definitely not a clone if there are multiple arguments
-        </span><span class="kw">if </span>args.len() != <span class="number">1 </span>{
-            <span class="kw">return</span>;
-        }
+        </span><span class="kw">let </span>[arg] = <span class="kw-2">&amp;</span>args[..] <span class="kw">else </span>{ <span class="kw">return </span>};
 
         <span class="kw">let </span><span class="prelude-val">Some</span>(destination_block) = <span class="kw-2">*</span>target <span class="kw">else </span>{ <span class="kw">return </span>};
 
@@ -642,7 +671,7 @@
 
         <span class="comment">// These types are easily available from locals, so check that before
         // doing DefId lookups to figure out what we're actually calling.
-        </span><span class="kw">let </span>arg_ty = args[<span class="number">0</span>].node.ty(<span class="self">self</span>.local_decls, <span class="self">self</span>.tcx);
+        </span><span class="kw">let </span>arg_ty = arg.node.ty(<span class="self">self</span>.local_decls, <span class="self">self</span>.tcx);
 
         <span class="kw">let </span>ty::Ref(_region, inner_ty, Mutability::Not) = <span class="kw-2">*</span>arg_ty.kind() <span class="kw">else </span>{ <span class="kw">return </span>};
 
@@ -650,8 +679,7 @@
             <span class="kw">return</span>;
         }
 
-        <span class="kw">let </span>trait_def_id = <span class="self">self</span>.tcx.trait_of_item(fn_def_id);
-        <span class="kw">if </span>trait_def_id.is_none() || trait_def_id != <span class="self">self</span>.tcx.lang_items().clone_trait() {
+        <span class="kw">if </span>!<span class="self">self</span>.tcx.is_lang_item(fn_def_id, LangItem::CloneFn) {
             <span class="kw">return</span>;
         }
 

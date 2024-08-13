@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/coroutine.rs`."><title>coroutine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/coroutine.rs`."><title>coroutine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -2131,10 +2131,6 @@
 <a href="#2131" id="2131">2131</a>
 <a href="#2132" id="2132">2132</a>
 <a href="#2133" id="2133">2133</a>
-<a href="#2134" id="2134">2134</a>
-<a href="#2135" id="2135">2135</a>
-<a href="#2136" id="2136">2136</a>
-<a href="#2137" id="2137">2137</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! This is the implementation of the pass which transforms coroutines into state machines.
 //!
 //! MIR generation for coroutines creates a function which has a self argument which
@@ -2188,13 +2184,9 @@
 //! Otherwise it drops all the values in scope at the last suspension point.
 
 </span><span class="kw">mod </span>by_move_body;
-<span class="kw">pub use </span>by_move_body::ByMoveBody;
+<span class="kw">use </span>std::{iter, ops};
 
-<span class="kw">use </span><span class="kw">crate</span>::abort_unwinding_calls;
-<span class="kw">use </span><span class="kw">crate</span>::deref_separator::deref_finder;
-<span class="kw">use </span><span class="kw">crate</span>::errors;
-<span class="kw">use </span><span class="kw">crate</span>::pass_manager <span class="kw">as </span>pm;
-<span class="kw">use </span><span class="kw">crate</span>::simplify;
+<span class="kw">pub use </span>by_move_body::ByMoveBody;
 <span class="kw">use </span>rustc_data_structures::fx::FxHashSet;
 <span class="kw">use </span>rustc_errors::pluralize;
 <span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
@@ -2204,9 +2196,7 @@
 <span class="kw">use </span>rustc_index::{Idx, IndexVec};
 <span class="kw">use </span>rustc_middle::mir::visit::{MutVisitor, PlaceContext, Visitor};
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
-<span class="kw">use </span>rustc_middle::ty::CoroutineArgs;
-<span class="kw">use </span>rustc_middle::ty::InstanceKind;
-<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, CoroutineArgsExt, Ty, TyCtxt};
+<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, CoroutineArgs, CoroutineArgsExt, InstanceKind, Ty, TyCtxt};
 <span class="kw">use </span>rustc_middle::{bug, span_bug};
 <span class="kw">use </span>rustc_mir_dataflow::impls::{
     MaybeBorrowedLocals, MaybeLiveLocals, MaybeRequiresStorage, MaybeStorageLive,
@@ -2220,9 +2210,10 @@
 <span class="kw">use </span>rustc_target::spec::PanicStrategy;
 <span class="kw">use </span>rustc_trait_selection::error_reporting::InferCtxtErrorExt;
 <span class="kw">use </span>rustc_trait_selection::infer::TyCtxtInferExt <span class="kw">as _</span>;
-<span class="kw">use </span>rustc_trait_selection::traits::ObligationCtxt;
-<span class="kw">use </span>rustc_trait_selection::traits::{ObligationCause, ObligationCauseCode};
-<span class="kw">use </span>std::{iter, ops};
+<span class="kw">use </span>rustc_trait_selection::traits::{ObligationCause, ObligationCauseCode, ObligationCtxt};
+
+<span class="kw">use </span><span class="kw">crate</span>::deref_separator::deref_finder;
+<span class="kw">use crate</span>::{abort_unwinding_calls, errors, pass_manager <span class="kw">as </span>pm, simplify};
 
 <span class="kw">pub struct </span>StateTransform;
 
@@ -3304,9 +3295,10 @@
 }
 
 <span class="kw">fn </span>elaborate_coroutine_drops&lt;<span class="lifetime">'tcx</span>&gt;(tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;mut </span>Body&lt;<span class="lifetime">'tcx</span>&gt;) {
-    <span class="kw">use </span><span class="kw">crate</span>::shim::DropShimElaborator;
     <span class="kw">use </span>rustc_middle::mir::patch::MirPatch;
     <span class="kw">use </span>rustc_mir_dataflow::elaborate_drops::{elaborate_drop, Unwind};
+
+    <span class="kw">use </span><span class="kw">crate</span>::shim::DropShimElaborator;
 
     <span class="comment">// Note that `elaborate_drops` only drops the upvars of a coroutine, and
     // this is ok because `open_drop` can only be reached within that own

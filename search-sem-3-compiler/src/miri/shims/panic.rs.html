@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/panic.rs`."><title>panic.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/panic.rs`."><title>panic.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -287,7 +287,7 @@
     <span class="doccomment">/// The `catch_fn` callback to call in case of a panic.
     </span>catch_fn: Pointer,
     <span class="doccomment">/// The `data` argument for that callback.
-    </span>data: Scalar,
+    </span>data: ImmTy&lt;<span class="lifetime">'tcx</span>&gt;,
     <span class="doccomment">/// The return place from the original call to `try`.
     </span>dest: MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
     <span class="doccomment">/// The return block from the original call to `try`.
@@ -310,9 +310,9 @@
     </span><span class="kw">fn </span>handle_miri_start_unwind(<span class="kw-2">&amp;mut </span><span class="self">self</span>, payload: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="macro">trace!</span>(<span class="string">"miri_start_unwind: {:?}"</span>, this.frame().instance);
+        <span class="macro">trace!</span>(<span class="string">"miri_start_unwind: {:?}"</span>, this.frame().instance());
 
-        <span class="kw">let </span>payload = this.read_scalar(payload)<span class="question-mark">?</span>;
+        <span class="kw">let </span>payload = this.read_immediate(payload)<span class="question-mark">?</span>;
         <span class="kw">let </span>thread = this.active_thread_mut();
         thread.panic_payloads.push(payload);
 
@@ -342,7 +342,7 @@
         // Get all the arguments.
         </span><span class="kw">let </span>[try_fn, data, catch_fn] = check_arg_count(args)<span class="question-mark">?</span>;
         <span class="kw">let </span>try_fn = this.read_pointer(try_fn)<span class="question-mark">?</span>;
-        <span class="kw">let </span>data = this.read_scalar(data)<span class="question-mark">?</span>;
+        <span class="kw">let </span>data = this.read_immediate(data)<span class="question-mark">?</span>;
         <span class="kw">let </span>catch_fn = this.read_pointer(catch_fn)<span class="question-mark">?</span>;
 
         <span class="comment">// Now we make a function call, and pass `data` as first and only argument.
@@ -351,7 +351,7 @@
         this.call_function(
             f_instance,
             Abi::Rust,
-            <span class="kw-2">&amp;</span>[data.into()],
+            <span class="kw-2">&amp;</span>[data.clone()],
             <span class="prelude-val">None</span>,
             <span class="comment">// Directly return to caller.
             </span>StackPopCleanup::Goto { ret, unwind: mir::UnwindAction::Continue },
@@ -386,7 +386,7 @@
             // and we are unwinding, so we should catch that.
             </span><span class="macro">trace!</span>(
                 <span class="string">"unwinding: found catch_panic frame during unwinding: {:?}"</span>,
-                this.frame().instance
+                this.frame().instance()
             );
 
             <span class="comment">// We set the return value of `try` to 1, since there was a panic.
@@ -402,7 +402,7 @@
             this.call_function(
                 f_instance,
                 Abi::Rust,
-                <span class="kw-2">&amp;</span>[catch_unwind.data.into(), payload.into()],
+                <span class="kw-2">&amp;</span>[catch_unwind.data, payload],
                 <span class="prelude-val">None</span>,
                 <span class="comment">// Directly return to caller of `try`.
                 </span>StackPopCleanup::Goto {
@@ -431,7 +431,7 @@
         this.call_function(
             panic,
             Abi::Rust,
-            <span class="kw-2">&amp;</span>[msg.to_ref(this)],
+            <span class="kw-2">&amp;</span>[this.mplace_to_ref(<span class="kw-2">&amp;</span>msg)<span class="question-mark">?</span>],
             <span class="prelude-val">None</span>,
             StackPopCleanup::Goto { ret: <span class="prelude-val">None</span>, unwind },
         )
@@ -450,7 +450,7 @@
         this.call_function(
             panic,
             Abi::Rust,
-            <span class="kw-2">&amp;</span>[msg.to_ref(this)],
+            <span class="kw-2">&amp;</span>[this.mplace_to_ref(<span class="kw-2">&amp;</span>msg)<span class="question-mark">?</span>],
             <span class="prelude-val">None</span>,
             StackPopCleanup::Goto { ret: <span class="prelude-val">None</span>, unwind: mir::UnwindAction::Unreachable },
         )
@@ -469,9 +469,9 @@
                 <span class="comment">// Forward to `panic_bounds_check` lang item.
 
                 // First arg: index.
-                </span><span class="kw">let </span>index = this.read_scalar(<span class="kw-2">&amp;</span>this.eval_operand(index, <span class="prelude-val">None</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+                </span><span class="kw">let </span>index = this.read_immediate(<span class="kw-2">&amp;</span>this.eval_operand(index, <span class="prelude-val">None</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
                 <span class="comment">// Second arg: len.
-                </span><span class="kw">let </span>len = this.read_scalar(<span class="kw-2">&amp;</span>this.eval_operand(len, <span class="prelude-val">None</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+                </span><span class="kw">let </span>len = this.read_immediate(<span class="kw-2">&amp;</span>this.eval_operand(len, <span class="prelude-val">None</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
 
                 <span class="comment">// Call the lang item.
                 </span><span class="kw">let </span>panic_bounds_check = this.tcx.lang_items().panic_bounds_check_fn().unwrap();
@@ -479,7 +479,7 @@
                 this.call_function(
                     panic_bounds_check,
                     Abi::Rust,
-                    <span class="kw-2">&amp;</span>[index.into(), len.into()],
+                    <span class="kw-2">&amp;</span>[index, len],
                     <span class="prelude-val">None</span>,
                     StackPopCleanup::Goto { ret: <span class="prelude-val">None</span>, unwind },
                 )<span class="question-mark">?</span>;
@@ -488,9 +488,9 @@
                 <span class="comment">// Forward to `panic_misaligned_pointer_dereference` lang item.
 
                 // First arg: required.
-                </span><span class="kw">let </span>required = this.read_scalar(<span class="kw-2">&amp;</span>this.eval_operand(required, <span class="prelude-val">None</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+                </span><span class="kw">let </span>required = this.read_immediate(<span class="kw-2">&amp;</span>this.eval_operand(required, <span class="prelude-val">None</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
                 <span class="comment">// Second arg: found.
-                </span><span class="kw">let </span>found = this.read_scalar(<span class="kw-2">&amp;</span>this.eval_operand(found, <span class="prelude-val">None</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+                </span><span class="kw">let </span>found = this.read_immediate(<span class="kw-2">&amp;</span>this.eval_operand(found, <span class="prelude-val">None</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
 
                 <span class="comment">// Call the lang item.
                 </span><span class="kw">let </span>panic_misaligned_pointer_dereference =
@@ -500,7 +500,7 @@
                 this.call_function(
                     panic_misaligned_pointer_dereference,
                     Abi::Rust,
-                    <span class="kw-2">&amp;</span>[required.into(), found.into()],
+                    <span class="kw-2">&amp;</span>[required, found],
                     <span class="prelude-val">None</span>,
                     StackPopCleanup::Goto { ret: <span class="prelude-val">None</span>, unwind },
                 )<span class="question-mark">?</span>;

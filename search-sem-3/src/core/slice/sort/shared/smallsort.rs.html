@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `library/core/src/slice/sort/shared/smallsort.rs`."><title>smallsort.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="core" data-themes="" data-resource-suffix="1.82.0" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../../src-files1.82.0.js"></script><script defer src="../../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `core/src/slice/sort/shared/smallsort.rs`."><title>smallsort.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="core" data-themes="" data-resource-suffix="1.82.0" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../../src-files1.82.0.js"></script><script defer src="../../../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -853,14 +853,22 @@
 <a href="#853" id="853">853</a>
 <a href="#854" id="854">854</a>
 <a href="#855" id="855">855</a>
+<a href="#856" id="856">856</a>
+<a href="#857" id="857">857</a>
+<a href="#858" id="858">858</a>
+<a href="#859" id="859">859</a>
+<a href="#860" id="860">860</a>
+<a href="#861" id="861">861</a>
+<a href="#862" id="862">862</a>
+<a href="#863" id="863">863</a>
+<a href="#864" id="864">864</a>
+<a href="#865" id="865">865</a>
+<a href="#866" id="866">866</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! This module contains a variety of sort implementations that are optimized for small lengths.
 
-</span><span class="kw">use </span><span class="kw">crate</span>::intrinsics;
-<span class="kw">use </span><span class="kw">crate</span>::mem::{<span class="self">self</span>, ManuallyDrop, MaybeUninit};
-<span class="kw">use </span><span class="kw">crate</span>::ptr;
-<span class="kw">use </span><span class="kw">crate</span>::slice;
-
+</span><span class="kw">use </span><span class="kw">crate</span>::mem::{<span class="self">self</span>, ManuallyDrop, MaybeUninit};
 <span class="kw">use </span><span class="kw">crate</span>::slice::sort::shared::FreezeMarker;
+<span class="kw">use crate</span>::{intrinsics, ptr, slice};
 
 <span class="comment">// It's important to differentiate between SMALL_SORT_THRESHOLD performance for
 // small slices and small-sort performance sorting small sub-slices as part of
@@ -1689,9 +1697,9 @@
             right = right.add((!left_nonempty) <span class="kw">as </span>usize);
         }
 
-        <span class="comment">// We now should have consumed the full input exactly once. This can
-        // only fail if the comparison operator fails to be Ord, in which case
-        // we will panic and never access the inconsistent state in dst.
+        <span class="comment">// We now should have consumed the full input exactly once. This can only fail if the
+        // user-provided comparison function fails to implement a strict weak ordering. In that case
+        // we panic and never access the inconsistent state in dst.
         </span><span class="kw">if </span>left != left_end || right != right_end {
             panic_on_ord_violation();
         }
@@ -1700,7 +1708,21 @@
 
 <span class="attr">#[inline(never)]
 </span><span class="kw">fn </span>panic_on_ord_violation() -&gt; ! {
-    <span class="macro">panic!</span>(<span class="string">"Ord violation"</span>);
+    <span class="comment">// This is indicative of a logic bug in the user-provided comparison function or Ord
+    // implementation. They are expected to implement a total order as explained in the Ord
+    // documentation.
+    //
+    // By panicking we inform the user, that they have a logic bug in their program. If a strict
+    // weak ordering is not given, the concept of comparison based sorting cannot yield a sorted
+    // result. E.g.: a &lt; b &lt; c &lt; a
+    //
+    // The Ord documentation requires users to implement a total order. Arguably that's
+    // unnecessarily strict in the context of sorting. Issues only arise if the weaker requirement
+    // of a strict weak ordering is violated.
+    //
+    // The panic message talks about a total order because that's what the Ord documentation talks
+    // about and requires, so as to not confuse users.
+    </span><span class="macro">panic!</span>(<span class="string">"user-provided comparison function does not correctly implement a total order"</span>);
 }
 
 <span class="attr">#[must_use]

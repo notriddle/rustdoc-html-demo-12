@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_ssa/src/back/write.rs`."><title>write.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_codegen_ssa" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_ssa/src/back/write.rs`."><title>write.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_codegen_ssa" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -2170,17 +2170,14 @@
 <a href="#2170" id="2170">2170</a>
 <a href="#2171" id="2171">2171</a>
 <a href="#2172" id="2172">2172</a>
-<a href="#2173" id="2173">2173</a>
-<a href="#2174" id="2174">2174</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">super</span>::link::{<span class="self">self</span>, ensure_removed};
-<span class="kw">use </span><span class="kw">super</span>::lto::{<span class="self">self</span>, SerializedModule};
-<span class="kw">use </span><span class="kw">super</span>::symbol_export::symbol_name_for_instance_in_crate;
+</pre></div><pre class="rust"><code><span class="kw">use </span>std::any::Any;
+<span class="kw">use </span>std::assert_matches::assert_matches;
+<span class="kw">use </span>std::marker::PhantomData;
+<span class="kw">use </span>std::path::{Path, PathBuf};
+<span class="kw">use </span>std::sync::mpsc::{channel, Receiver, Sender};
+<span class="kw">use </span>std::sync::Arc;
+<span class="kw">use </span>std::{fs, io, mem, str, thread};
 
-<span class="kw">use </span><span class="kw">crate</span>::errors;
-<span class="kw">use </span><span class="kw">crate</span>::traits::<span class="kw-2">*</span>;
-<span class="kw">use crate</span>::{
-    CachedModuleCodegen, CodegenResults, CompiledModule, CrateInfo, ModuleCodegen, ModuleKind,
-};
 <span class="kw">use </span>jobserver::{Acquired, Client};
 <span class="kw">use </span>rustc_ast::attr;
 <span class="kw">use </span>rustc_data_structures::fx::{FxHashMap, FxIndexMap};
@@ -2204,26 +2201,25 @@
 <span class="kw">use </span>rustc_middle::dep_graph::{WorkProduct, WorkProductId};
 <span class="kw">use </span>rustc_middle::middle::exported_symbols::SymbolExportInfo;
 <span class="kw">use </span>rustc_middle::ty::TyCtxt;
-<span class="kw">use </span>rustc_session::config::{<span class="self">self</span>, CrateType, Lto, OutFileName, OutputFilenames, OutputType};
-<span class="kw">use </span>rustc_session::config::{Passes, SwitchWithOptPath};
+<span class="kw">use </span>rustc_session::config::{
+    <span class="self">self</span>, CrateType, Lto, OutFileName, OutputFilenames, OutputType, Passes, SwitchWithOptPath,
+};
 <span class="kw">use </span>rustc_session::Session;
 <span class="kw">use </span>rustc_span::source_map::SourceMap;
 <span class="kw">use </span>rustc_span::symbol::sym;
 <span class="kw">use </span>rustc_span::{BytePos, FileName, InnerSpan, Pos, Span};
 <span class="kw">use </span>rustc_target::spec::{MergeFunctions, SanitizerSet};
-
-<span class="kw">use </span><span class="kw">crate</span>::errors::ErrorCreatingRemarkDir;
-<span class="kw">use </span>std::any::Any;
-<span class="kw">use </span>std::fs;
-<span class="kw">use </span>std::io;
-<span class="kw">use </span>std::marker::PhantomData;
-<span class="kw">use </span>std::mem;
-<span class="kw">use </span>std::path::{Path, PathBuf};
-<span class="kw">use </span>std::str;
-<span class="kw">use </span>std::sync::mpsc::{channel, Receiver, Sender};
-<span class="kw">use </span>std::sync::Arc;
-<span class="kw">use </span>std::thread;
 <span class="kw">use </span>tracing::debug;
+
+<span class="kw">use </span><span class="kw">super</span>::link::{<span class="self">self</span>, ensure_removed};
+<span class="kw">use </span><span class="kw">super</span>::lto::{<span class="self">self</span>, SerializedModule};
+<span class="kw">use </span><span class="kw">super</span>::symbol_export::symbol_name_for_instance_in_crate;
+<span class="kw">use </span><span class="kw">crate</span>::errors::ErrorCreatingRemarkDir;
+<span class="kw">use </span><span class="kw">crate</span>::traits::<span class="kw-2">*</span>;
+<span class="kw">use crate</span>::{
+    errors, CachedModuleCodegen, CodegenResults, CompiledModule, CrateInfo, ModuleCodegen,
+    ModuleKind,
+};
 
 <span class="kw">const </span>PRE_LTO_BC_EXT: <span class="kw-2">&amp;</span>str = <span class="string">"pre-lto.bc"</span>;
 
@@ -3686,7 +3682,7 @@
                             // We reduce the `running` counter by one. The
                             // `tokens.truncate()` below will take care of
                             // giving the Token back.
-                            </span><span class="macro">debug_assert!</span>(running_with_own_token &gt; <span class="number">0</span>);
+                            </span><span class="macro">assert!</span>(running_with_own_token &gt; <span class="number">0</span>);
                             running_with_own_token -= <span class="number">1</span>;
                             main_thread_state = MainThreadState::Lending;
                         }
@@ -4140,7 +4136,7 @@
                     sess.dcx().abort_if_errors();
                 }
                 <span class="prelude-val">Ok</span>(SharedEmitterMessage::InlineAsmError(cookie, msg, level, source)) =&gt; {
-                    <span class="macro">assert!</span>(<span class="macro">matches!</span>(level, Level::Error | Level::Warning | Level::Note));
+                    <span class="macro">assert_matches!</span>(level, Level::Error | Level::Warning | Level::Note);
                     <span class="kw">let </span>msg = msg.strip_prefix(<span class="string">"error: "</span>).unwrap_or(<span class="kw-2">&amp;</span>msg).to_string();
                     <span class="kw">let </span><span class="kw-2">mut </span>err = Diag::&lt;()&gt;::new(sess.dcx(), level, msg);
 

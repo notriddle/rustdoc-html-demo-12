@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["CodegenFnAttrFlags","CodegenFnAttrs","PatchableFunctionEntry"]};
+window.SIDEBAR_ITEMS = {"struct":["CodegenFnAttrFlags","CodegenFnAttrs","PatchableFunctionEntry","TargetFeature"]};

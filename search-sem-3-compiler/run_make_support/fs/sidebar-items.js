@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["copy","copy_dir_all","create_dir","create_dir_all","create_file","create_symlink","metadata","read","read_dir","read_dir_entries","read_to_string","remove_dir_all","remove_file","rename","set_permissions","write"]};
+window.SIDEBAR_ITEMS = {"fn":["copy","copy_dir_all","copy_symlink","create_dir","create_dir_all","create_file","create_symlink","metadata","read","read_dir","read_dir_entries","read_to_string","remove_dir_all","remove_file","rename","set_permissions","shallow_find_dir_entries","write"]};

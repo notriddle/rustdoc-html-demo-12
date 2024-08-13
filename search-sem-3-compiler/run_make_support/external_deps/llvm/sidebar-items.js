@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["llvm_ar","llvm_bin_dir","llvm_filecheck","llvm_objdump","llvm_profdata","llvm_readobj"],"struct":["LlvmAr","LlvmFilecheck","LlvmObjdump","LlvmProfdata","LlvmReadobj"]};
+window.SIDEBAR_ITEMS = {"fn":["llvm_ar","llvm_bcanalyzer","llvm_bin_dir","llvm_filecheck","llvm_nm","llvm_objdump","llvm_profdata","llvm_readobj"],"struct":["LlvmAr","LlvmBcanalyzer","LlvmFilecheck","LlvmNm","LlvmObjdump","LlvmProfdata","LlvmReadobj"]};

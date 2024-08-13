@@ -1,6 +1,7 @@
 (function() {var type_impls = {
 "rustc_codegen_ssa":[],
 "rustc_expand":[],
+"rustc_hir_analysis":[],
 "rustc_query_system":[],
 "rustc_resolve":[],
 "rustdoc":[]

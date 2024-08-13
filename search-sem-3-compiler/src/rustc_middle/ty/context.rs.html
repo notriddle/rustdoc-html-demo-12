@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/ty/context.rs`."><title>context.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/ty/context.rs`."><title>context.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -3219,42 +3219,21 @@
 <a href="#3219" id="3219">3219</a>
 <a href="#3220" id="3220">3220</a>
 <a href="#3221" id="3221">3221</a>
+<a href="#3222" id="3222">3222</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Type context book-keeping.
 
 </span><span class="attr">#![allow(rustc::usage_of_ty_tykind)]
 
 </span><span class="kw">pub mod </span>tls;
 
-<span class="kw">pub use </span>rustc_type_ir::lift::Lift;
+<span class="kw">use </span>std::assert_matches::assert_matches;
+<span class="kw">use </span>std::borrow::Borrow;
+<span class="kw">use </span>std::cmp::Ordering;
+<span class="kw">use </span>std::hash::{Hash, Hasher};
+<span class="kw">use </span>std::marker::PhantomData;
+<span class="kw">use </span>std::ops::{Bound, Deref};
+<span class="kw">use </span>std::{fmt, iter, mem};
 
-<span class="kw">use </span><span class="kw">crate</span>::arena::Arena;
-<span class="kw">use </span><span class="kw">crate</span>::dep_graph::{DepGraph, DepKindStruct};
-<span class="kw">use </span><span class="kw">crate</span>::infer::canonical::{CanonicalParamEnvCache, CanonicalVarInfo, CanonicalVarInfos};
-<span class="kw">use </span><span class="kw">crate</span>::lint::lint_level;
-<span class="kw">use </span><span class="kw">crate</span>::metadata::ModChild;
-<span class="kw">use </span><span class="kw">crate</span>::middle::codegen_fn_attrs::CodegenFnAttrs;
-<span class="kw">use </span><span class="kw">crate</span>::middle::resolve_bound_vars;
-<span class="kw">use </span><span class="kw">crate</span>::middle::stability;
-<span class="kw">use </span><span class="kw">crate</span>::mir::interpret::{<span class="self">self</span>, Allocation, ConstAllocation};
-<span class="kw">use </span><span class="kw">crate</span>::mir::{Body, Local, Place, PlaceElem, ProjectionKind, Promoted};
-<span class="kw">use </span><span class="kw">crate</span>::query::plumbing::QuerySystem;
-<span class="kw">use </span><span class="kw">crate</span>::query::LocalCrate;
-<span class="kw">use </span><span class="kw">crate</span>::query::Providers;
-<span class="kw">use </span><span class="kw">crate</span>::query::{IntoQueryParam, TyCtxtAt};
-<span class="kw">use </span><span class="kw">crate</span>::thir::Thir;
-<span class="kw">use </span><span class="kw">crate</span>::traits;
-<span class="kw">use </span><span class="kw">crate</span>::traits::solve;
-<span class="kw">use </span><span class="kw">crate</span>::traits::solve::{
-    ExternalConstraints, ExternalConstraintsData, PredefinedOpaques, PredefinedOpaquesData,
-};
-<span class="kw">use </span><span class="kw">crate</span>::ty::predicate::ExistentialPredicateStableCmpExt <span class="kw">as _</span>;
-<span class="kw">use </span><span class="kw">crate</span>::ty::{
-    <span class="self">self</span>, AdtDef, AdtDefData, AdtKind, Binder, Clause, Clauses, Const, GenericParamDefKind,
-    ImplPolarity, List, ListWithCachedTypeInfo, ParamConst, ParamTy, Pattern, PatternKind,
-    PolyExistentialPredicate, PolyFnSig, Predicate, PredicateKind, PredicatePolarity, Region,
-    RegionKind, ReprOptions, TraitObjectVisitor, Ty, TyKind, TyVid, Visibility,
-};
-<span class="kw">use </span><span class="kw">crate</span>::ty::{GenericArg, GenericArgs, GenericArgsRef};
 <span class="kw">use </span>rustc_ast::{<span class="self">self </span><span class="kw">as </span>ast, attr};
 <span class="kw">use </span>rustc_data_structures::defer;
 <span class="kw">use </span>rustc_data_structures::fingerprint::Fingerprint;
@@ -3295,20 +3274,37 @@
 <span class="kw">use </span>rustc_target::spec::abi;
 <span class="kw">use </span>rustc_type_ir::fold::TypeFoldable;
 <span class="kw">use </span>rustc_type_ir::lang_items::TraitSolverLangItem;
+<span class="kw">pub use </span>rustc_type_ir::lift::Lift;
 <span class="kw">use </span>rustc_type_ir::solve::SolverMode;
 <span class="kw">use </span>rustc_type_ir::TyKind::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_type_ir::{search_graph, CollectAndApply, Interner, TypeFlags, WithCachedTypeInfo};
 <span class="kw">use </span>tracing::{debug, instrument};
 
-<span class="kw">use </span>std::assert_matches::assert_matches;
-<span class="kw">use </span>std::borrow::Borrow;
-<span class="kw">use </span>std::cmp::Ordering;
-<span class="kw">use </span>std::fmt;
-<span class="kw">use </span>std::hash::{Hash, Hasher};
-<span class="kw">use </span>std::iter;
-<span class="kw">use </span>std::marker::PhantomData;
-<span class="kw">use </span>std::mem;
-<span class="kw">use </span>std::ops::{Bound, Deref};
+<span class="kw">use </span><span class="kw">crate</span>::arena::Arena;
+<span class="kw">use </span><span class="kw">crate</span>::dep_graph::{DepGraph, DepKindStruct};
+<span class="kw">use </span><span class="kw">crate</span>::infer::canonical::{CanonicalParamEnvCache, CanonicalVarInfo, CanonicalVarInfos};
+<span class="kw">use </span><span class="kw">crate</span>::lint::lint_level;
+<span class="kw">use </span><span class="kw">crate</span>::metadata::ModChild;
+<span class="kw">use </span><span class="kw">crate</span>::middle::codegen_fn_attrs::CodegenFnAttrs;
+<span class="kw">use </span><span class="kw">crate</span>::middle::{resolve_bound_vars, stability};
+<span class="kw">use </span><span class="kw">crate</span>::mir::interpret::{<span class="self">self</span>, Allocation, ConstAllocation};
+<span class="kw">use </span><span class="kw">crate</span>::mir::{Body, Local, Place, PlaceElem, ProjectionKind, Promoted};
+<span class="kw">use </span><span class="kw">crate</span>::query::plumbing::QuerySystem;
+<span class="kw">use </span><span class="kw">crate</span>::query::{IntoQueryParam, LocalCrate, Providers, TyCtxtAt};
+<span class="kw">use </span><span class="kw">crate</span>::thir::Thir;
+<span class="kw">use </span><span class="kw">crate</span>::traits;
+<span class="kw">use </span><span class="kw">crate</span>::traits::solve;
+<span class="kw">use </span><span class="kw">crate</span>::traits::solve::{
+    ExternalConstraints, ExternalConstraintsData, PredefinedOpaques, PredefinedOpaquesData,
+};
+<span class="kw">use </span><span class="kw">crate</span>::ty::predicate::ExistentialPredicateStableCmpExt <span class="kw">as _</span>;
+<span class="kw">use </span><span class="kw">crate</span>::ty::{
+    <span class="self">self</span>, AdtDef, AdtDefData, AdtKind, Binder, Clause, Clauses, Const, GenericArg, GenericArgs,
+    GenericArgsRef, GenericParamDefKind, ImplPolarity, List, ListWithCachedTypeInfo, ParamConst,
+    ParamTy, Pattern, PatternKind, PolyExistentialPredicate, PolyFnSig, Predicate, PredicateKind,
+    PredicatePolarity, Region, RegionKind, ReprOptions, TraitObjectVisitor, Ty, TyKind, TyVid,
+    Visibility,
+};
 
 <span class="attr">#[allow(rustc::usage_of_ty_tykind)]
 </span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; Interner <span class="kw">for </span>TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
@@ -4664,11 +4660,11 @@
 
     <span class="doccomment">/// Allocates a read-only byte or string literal for `mir::interpret`.
     /// Returns the same `AllocId` if called again with the same bytes.
-    </span><span class="kw">pub fn </span>allocate_bytes_dedup(<span class="self">self</span>, bytes: <span class="kw-2">&amp;</span>[u8]) -&gt; interpret::AllocId {
+    </span><span class="kw">pub fn </span>allocate_bytes_dedup(<span class="self">self</span>, bytes: <span class="kw-2">&amp;</span>[u8], salt: usize) -&gt; interpret::AllocId {
         <span class="comment">// Create an allocation that just contains these bytes.
         </span><span class="kw">let </span>alloc = interpret::Allocation::from_bytes_byte_aligned_immutable(bytes);
         <span class="kw">let </span>alloc = <span class="self">self</span>.mk_const_alloc(alloc);
-        <span class="self">self</span>.reserve_and_set_memory_dedup(alloc)
+        <span class="self">self</span>.reserve_and_set_memory_dedup(alloc, salt)
     }
 
     <span class="doccomment">/// Returns a range of the start/end indices specified with the
@@ -6401,6 +6397,12 @@
 
     <span class="kw">pub fn </span>impl_polarity(<span class="self">self</span>, def_id: <span class="kw">impl </span>IntoQueryParam&lt;DefId&gt;) -&gt; ty::ImplPolarity {
         <span class="self">self</span>.impl_trait_header(def_id).map_or(ty::ImplPolarity::Positive, |h| h.polarity)
+    }
+
+    <span class="doccomment">/// Whether this is a trait implementation that has `#[diagnostic::do_not_recommend]`
+    </span><span class="kw">pub fn </span>do_not_recommend_impl(<span class="self">self</span>, def_id: DefId) -&gt; bool {
+        <span class="macro">matches!</span>(<span class="self">self</span>.def_kind(def_id), DefKind::Impl { of_trait: <span class="bool-val">true </span>})
+            &amp;&amp; <span class="self">self</span>.impl_trait_header(def_id).is_some_and(|header| header.do_not_recommend)
     }
 }
 

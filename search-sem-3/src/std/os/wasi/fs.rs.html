@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `library/std/src/os/wasi/fs.rs`."><title>fs.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="std" data-themes="" data-resource-suffix="1.82.0" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files1.82.0.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `std/src/os/wasi/fs.rs`."><title>fs.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="std" data-themes="" data-resource-suffix="1.82.0" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files1.82.0.js"></script><script defer src="../../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -563,6 +563,7 @@
 <a href="#563" id="563">563</a>
 <a href="#564" id="564">564</a>
 <a href="#565" id="565">565</a>
+<a href="#566" id="566">566</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! WASI-specific extensions to primitives in the [`std::fs`] module.
 //!
 //! [`std::fs`]: crate::fs
@@ -570,14 +571,15 @@
 </span><span class="attr">#![deny(unsafe_op_in_unsafe_fn)]
 #![unstable(feature = <span class="string">"wasi_ext"</span>, issue = <span class="string">"71213"</span>)]
 
-</span><span class="kw">use </span><span class="kw">crate</span>::ffi::OsStr;
+</span><span class="comment">// Used for `File::read` on intra-doc links
+</span><span class="attr">#[allow(unused_imports)]
+</span><span class="kw">use </span>io::{Read, Write};
+
+<span class="kw">use </span><span class="kw">crate</span>::ffi::OsStr;
 <span class="kw">use </span><span class="kw">crate</span>::fs::{<span class="self">self</span>, File, Metadata, OpenOptions};
 <span class="kw">use </span><span class="kw">crate</span>::io::{<span class="self">self</span>, IoSlice, IoSliceMut};
 <span class="kw">use </span><span class="kw">crate</span>::path::{Path, PathBuf};
 <span class="kw">use </span><span class="kw">crate</span>::sys_common::{AsInner, AsInnerMut, FromInner};
-<span class="comment">// Used for `File::read` on intra-doc links
-</span><span class="attr">#[allow(unused_imports)]
-</span><span class="kw">use </span>io::{Read, Write};
 
 <span class="doccomment">/// WASI-specific extensions to [`File`].
 </span><span class="kw">pub trait </span>FileExt {
@@ -734,55 +736,55 @@
     </span><span class="attr">#[doc(alias = <span class="string">"fd_tell"</span>)]
     </span><span class="kw">fn </span>tell(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; io::Result&lt;u64&gt;;
 
-    <span class="doccomment">/// Adjust the flags associated with this file.
+    <span class="doccomment">/// Adjusts the flags associated with this file.
     ///
     /// This corresponds to the `fd_fdstat_set_flags` syscall.
     </span><span class="attr">#[doc(alias = <span class="string">"fd_fdstat_set_flags"</span>)]
     </span><span class="kw">fn </span>fdstat_set_flags(<span class="kw-2">&amp;</span><span class="self">self</span>, flags: u16) -&gt; io::Result&lt;()&gt;;
 
-    <span class="doccomment">/// Adjust the rights associated with this file.
+    <span class="doccomment">/// Adjusts the rights associated with this file.
     ///
     /// This corresponds to the `fd_fdstat_set_rights` syscall.
     </span><span class="attr">#[doc(alias = <span class="string">"fd_fdstat_set_rights"</span>)]
     </span><span class="kw">fn </span>fdstat_set_rights(<span class="kw-2">&amp;</span><span class="self">self</span>, rights: u64, inheriting: u64) -&gt; io::Result&lt;()&gt;;
 
-    <span class="doccomment">/// Provide file advisory information on a file descriptor.
+    <span class="doccomment">/// Provides file advisory information on a file descriptor.
     ///
     /// This corresponds to the `fd_advise` syscall.
     </span><span class="attr">#[doc(alias = <span class="string">"fd_advise"</span>)]
     </span><span class="kw">fn </span>advise(<span class="kw-2">&amp;</span><span class="self">self</span>, offset: u64, len: u64, advice: u8) -&gt; io::Result&lt;()&gt;;
 
-    <span class="doccomment">/// Force the allocation of space in a file.
+    <span class="doccomment">/// Forces the allocation of space in a file.
     ///
     /// This corresponds to the `fd_allocate` syscall.
     </span><span class="attr">#[doc(alias = <span class="string">"fd_allocate"</span>)]
     </span><span class="kw">fn </span>allocate(<span class="kw-2">&amp;</span><span class="self">self</span>, offset: u64, len: u64) -&gt; io::Result&lt;()&gt;;
 
-    <span class="doccomment">/// Create a directory.
+    <span class="doccomment">/// Creates a directory.
     ///
     /// This corresponds to the `path_create_directory` syscall.
     </span><span class="attr">#[doc(alias = <span class="string">"path_create_directory"</span>)]
     </span><span class="kw">fn </span>create_directory&lt;P: AsRef&lt;Path&gt;&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, dir: P) -&gt; io::Result&lt;()&gt;;
 
-    <span class="doccomment">/// Read the contents of a symbolic link.
+    <span class="doccomment">/// Reads the contents of a symbolic link.
     ///
     /// This corresponds to the `path_readlink` syscall.
     </span><span class="attr">#[doc(alias = <span class="string">"path_readlink"</span>)]
     </span><span class="kw">fn </span>read_link&lt;P: AsRef&lt;Path&gt;&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, path: P) -&gt; io::Result&lt;PathBuf&gt;;
 
-    <span class="doccomment">/// Return the attributes of a file or directory.
+    <span class="doccomment">/// Returns the attributes of a file or directory.
     ///
     /// This corresponds to the `path_filestat_get` syscall.
     </span><span class="attr">#[doc(alias = <span class="string">"path_filestat_get"</span>)]
     </span><span class="kw">fn </span>metadata_at&lt;P: AsRef&lt;Path&gt;&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, lookup_flags: u32, path: P) -&gt; io::Result&lt;Metadata&gt;;
 
-    <span class="doccomment">/// Unlink a file.
+    <span class="doccomment">/// Unlinks a file.
     ///
     /// This corresponds to the `path_unlink_file` syscall.
     </span><span class="attr">#[doc(alias = <span class="string">"path_unlink_file"</span>)]
     </span><span class="kw">fn </span>remove_file&lt;P: AsRef&lt;Path&gt;&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, path: P) -&gt; io::Result&lt;()&gt;;
 
-    <span class="doccomment">/// Remove a directory.
+    <span class="doccomment">/// Removes a directory.
     ///
     /// This corresponds to the `path_remove_directory` syscall.
     </span><span class="attr">#[doc(alias = <span class="string">"path_remove_directory"</span>)]
@@ -1066,7 +1068,7 @@
     }
 }
 
-<span class="doccomment">/// Create a hard link.
+<span class="doccomment">/// Creates a hard link.
 ///
 /// This corresponds to the `path_link` syscall.
 </span><span class="attr">#[doc(alias = <span class="string">"path_link"</span>)]
@@ -1085,7 +1087,7 @@
     )
 }
 
-<span class="doccomment">/// Rename a file or directory.
+<span class="doccomment">/// Renames a file or directory.
 ///
 /// This corresponds to the `path_rename` syscall.
 </span><span class="attr">#[doc(alias = <span class="string">"path_rename"</span>)]
@@ -1102,7 +1104,7 @@
     )
 }
 
-<span class="doccomment">/// Create a symbolic link.
+<span class="doccomment">/// Creates a symbolic link.
 ///
 /// This corresponds to the `path_symlink` syscall.
 </span><span class="attr">#[doc(alias = <span class="string">"path_symlink"</span>)]
@@ -1116,7 +1118,7 @@
         .symlink(osstr2str(old_path.as_ref().as_ref())<span class="question-mark">?</span>, osstr2str(new_path.as_ref().as_ref())<span class="question-mark">?</span>)
 }
 
-<span class="doccomment">/// Create a symbolic link.
+<span class="doccomment">/// Creates a symbolic link.
 ///
 /// This is a convenience API similar to `std::os::unix::fs::symlink` and
 /// `std::os::windows::fs::symlink_file` and `std::os::windows::fs::symlink_dir`.

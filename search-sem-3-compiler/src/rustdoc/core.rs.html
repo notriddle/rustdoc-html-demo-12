@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/librustdoc/core.rs`."><title>core.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustdoc" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/librustdoc/core.rs`."><title>core.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustdoc" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -524,12 +524,21 @@
 <a href="#524" id="524">524</a>
 <a href="#525" id="525">525</a>
 <a href="#526" id="526">526</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_data_structures::fx::{FxHashMap, FxHashSet};
+<a href="#527" id="527">527</a>
+<a href="#528" id="528">528</a>
+</pre></div><pre class="rust"><code><span class="kw">use </span>std::cell::RefCell;
+<span class="kw">use </span>std::rc::Rc;
+<span class="kw">use </span>std::sync::atomic::AtomicBool;
+<span class="kw">use </span>std::sync::{Arc, LazyLock};
+<span class="kw">use </span>std::{io, mem};
+
+<span class="kw">use </span>rustc_data_structures::fx::{FxHashMap, FxHashSet};
 <span class="kw">use </span>rustc_data_structures::sync::Lrc;
 <span class="kw">use </span>rustc_data_structures::unord::UnordSet;
+<span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_errors::emitter::{stderr_destination, DynEmitter, HumanEmitter};
 <span class="kw">use </span>rustc_errors::json::JsonEmitter;
-<span class="kw">use </span>rustc_errors::{codes::<span class="kw-2">*</span>, DiagCtxtHandle, ErrorGuaranteed, TerminalUrl};
+<span class="kw">use </span>rustc_errors::{DiagCtxtHandle, ErrorGuaranteed, TerminalUrl};
 <span class="kw">use </span>rustc_feature::UnstableFeatures;
 <span class="kw">use </span>rustc_hir::def::Res;
 <span class="kw">use </span>rustc_hir::def_id::{DefId, DefIdMap, DefIdSet, LocalDefId};
@@ -540,25 +549,17 @@
 <span class="kw">use </span>rustc_middle::hir::nested_filter;
 <span class="kw">use </span>rustc_middle::ty::{ParamEnv, Ty, TyCtxt};
 <span class="kw">use </span>rustc_session::config::{<span class="self">self</span>, CrateType, ErrorOutputType, ResolveDocLinks};
-<span class="kw">use </span>rustc_session::lint;
-<span class="kw">use </span>rustc_session::Session;
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use </span>rustc_session::config::{Options, UnstableOptions};
+<span class="kw">use </span>rustc_session::{lint, Session};
 <span class="kw">use </span>rustc_span::symbol::sym;
 <span class="kw">use </span>rustc_span::{source_map, Span};
-
-<span class="kw">use </span>std::cell::RefCell;
-<span class="kw">use </span>std::io;
-<span class="kw">use </span>std::mem;
-<span class="kw">use </span>std::rc::Rc;
-<span class="kw">use </span>std::sync::LazyLock;
-<span class="kw">use </span>std::sync::{atomic::AtomicBool, Arc};
 
 <span class="kw">use </span><span class="kw">crate</span>::clean::inline::build_external_trait;
 <span class="kw">use </span><span class="kw">crate</span>::clean::{<span class="self">self</span>, ItemId};
 <span class="kw">use </span><span class="kw">crate</span>::config::{Options <span class="kw">as </span>RustdocOptions, OutputFormat, RenderOptions};
 <span class="kw">use </span><span class="kw">crate</span>::formats::cache::Cache;
-<span class="kw">use </span><span class="kw">crate</span>::passes::{<span class="self">self</span>, Condition::<span class="kw-2">*</span>};
-
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use </span>rustc_session::config::{Options, UnstableOptions};
+<span class="kw">use </span><span class="kw">crate</span>::passes::Condition::<span class="kw-2">*</span>;
+<span class="kw">use </span><span class="kw">crate</span>::passes::{<span class="self">self</span>};
 
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>DocContext&lt;<span class="lifetime">'tcx</span>&gt; {
     <span class="kw">pub</span>(<span class="kw">crate</span>) tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -665,8 +666,8 @@
         <span class="bool-val">false</span>,
     );
     <span class="kw">let </span>emitter: Box&lt;DynEmitter&gt; = <span class="kw">match </span>error_format {
-        ErrorOutputType::HumanReadable(kind) =&gt; {
-            <span class="kw">let </span>(short, color_config) = kind.unzip();
+        ErrorOutputType::HumanReadable(kind, color_config) =&gt; {
+            <span class="kw">let </span>short = kind.short();
             Box::new(
                 HumanEmitter::new(stderr_destination(color_config), fallback_bundle)
                     .sm(source_map.map(|sm| sm <span class="kw">as _</span>))
@@ -677,7 +678,7 @@
                     .ui_testing(unstable_opts.ui_testing),
             )
         }
-        ErrorOutputType::Json { pretty, json_rendered } =&gt; {
+        ErrorOutputType::Json { pretty, json_rendered, color_config } =&gt; {
             <span class="kw">let </span>source_map = source_map.unwrap_or_else(|| {
                 Lrc::new(source_map::SourceMap::new(source_map::FilePathMapping::empty()))
             });
@@ -688,6 +689,7 @@
                     fallback_bundle,
                     pretty,
                     json_rendered,
+                    color_config,
                 )
                 .ui_testing(unstable_opts.ui_testing)
                 .diagnostic_width(diagnostic_width)
@@ -722,6 +724,7 @@
         lint_cap,
         scrape_examples_options,
         expanded_args,
+        remap_path_prefix,
         ..
     }: RustdocOptions,
     RenderOptions { document_private, .. }: <span class="kw-2">&amp;</span>RenderOptions,
@@ -774,6 +777,7 @@
         describe_lints,
         crate_name,
         test,
+        remap_path_prefix,
         ..Options::default()
     };
 

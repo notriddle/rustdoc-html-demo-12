@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `library/std/src/io/cursor.rs`."><title>cursor.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="std" data-themes="" data-resource-suffix="1.82.0" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files1.82.0.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `std/src/io/cursor.rs`."><title>cursor.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="std" data-themes="" data-resource-suffix="1.82.0" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files1.82.0.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -675,13 +675,16 @@
 <a href="#675" id="675">675</a>
 <a href="#676" id="676">676</a>
 <a href="#677" id="677">677</a>
+<a href="#678" id="678">678</a>
+<a href="#679" id="679">679</a>
+<a href="#680" id="680">680</a>
+<a href="#681" id="681">681</a>
 </pre></div><pre class="rust"><code><span class="attr">#[cfg(test)]
 </span><span class="kw">mod </span>tests;
 
-<span class="kw">use </span><span class="kw">crate</span>::io::prelude::<span class="kw-2">*</span>;
-
 <span class="kw">use </span><span class="kw">crate</span>::alloc::Allocator;
 <span class="kw">use </span><span class="kw">crate</span>::cmp;
+<span class="kw">use </span><span class="kw">crate</span>::io::prelude::<span class="kw-2">*</span>;
 <span class="kw">use </span><span class="kw">crate</span>::io::{<span class="self">self</span>, BorrowedCursor, ErrorKind, IoSlice, IoSliceMut, SeekFrom};
 
 <span class="doccomment">/// A `Cursor` wraps an in-memory buffer and provides it with a
@@ -887,55 +890,60 @@
 <span class="kw">where
     </span>T: AsRef&lt;[u8]&gt;,
 {
-    <span class="doccomment">/// Returns the remaining slice.
+    <span class="doccomment">/// Splits the underlying slice at the cursor position and returns them.
     ///
     /// # Examples
     ///
     /// ```
-    /// #![feature(cursor_remaining)]
+    /// #![feature(cursor_split)]
     /// use std::io::Cursor;
     ///
     /// let mut buff = Cursor::new(vec![1, 2, 3, 4, 5]);
     ///
-    /// assert_eq!(buff.remaining_slice(), &amp;[1, 2, 3, 4, 5]);
+    /// assert_eq!(buff.split(), ([].as_slice(), [1, 2, 3, 4, 5].as_slice()));
     ///
     /// buff.set_position(2);
-    /// assert_eq!(buff.remaining_slice(), &amp;[3, 4, 5]);
-    ///
-    /// buff.set_position(4);
-    /// assert_eq!(buff.remaining_slice(), &amp;[5]);
+    /// assert_eq!(buff.split(), ([1, 2].as_slice(), [3, 4, 5].as_slice()));
     ///
     /// buff.set_position(6);
-    /// assert_eq!(buff.remaining_slice(), &amp;[]);
+    /// assert_eq!(buff.split(), ([1, 2, 3, 4, 5].as_slice(), [].as_slice()));
     /// ```
-    </span><span class="attr">#[unstable(feature = <span class="string">"cursor_remaining"</span>, issue = <span class="string">"86369"</span>)]
-    </span><span class="kw">pub fn </span>remaining_slice(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>[u8] {
-        <span class="kw">let </span>len = <span class="self">self</span>.pos.min(<span class="self">self</span>.inner.as_ref().len() <span class="kw">as </span>u64);
-        <span class="kw-2">&amp;</span><span class="self">self</span>.inner.as_ref()[(len <span class="kw">as </span>usize)..]
+    </span><span class="attr">#[unstable(feature = <span class="string">"cursor_split"</span>, issue = <span class="string">"86369"</span>)]
+    </span><span class="kw">pub fn </span>split(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; (<span class="kw-2">&amp;</span>[u8], <span class="kw-2">&amp;</span>[u8]) {
+        <span class="kw">let </span>slice = <span class="self">self</span>.inner.as_ref();
+        <span class="kw">let </span>pos = <span class="self">self</span>.pos.min(slice.len() <span class="kw">as </span>u64);
+        slice.split_at(pos <span class="kw">as </span>usize)
     }
+}
 
-    <span class="doccomment">/// Returns `true` if the remaining slice is empty.
+<span class="kw">impl</span>&lt;T&gt; Cursor&lt;T&gt;
+<span class="kw">where
+    </span>T: AsMut&lt;[u8]&gt;,
+{
+    <span class="doccomment">/// Splits the underlying slice at the cursor position and returns them
+    /// mutably.
     ///
     /// # Examples
     ///
     /// ```
-    /// #![feature(cursor_remaining)]
+    /// #![feature(cursor_split)]
     /// use std::io::Cursor;
     ///
     /// let mut buff = Cursor::new(vec![1, 2, 3, 4, 5]);
     ///
+    /// assert_eq!(buff.split_mut(), ([].as_mut_slice(), [1, 2, 3, 4, 5].as_mut_slice()));
+    ///
     /// buff.set_position(2);
-    /// assert!(!buff.is_empty());
+    /// assert_eq!(buff.split_mut(), ([1, 2].as_mut_slice(), [3, 4, 5].as_mut_slice()));
     ///
-    /// buff.set_position(5);
-    /// assert!(buff.is_empty());
-    ///
-    /// buff.set_position(10);
-    /// assert!(buff.is_empty());
+    /// buff.set_position(6);
+    /// assert_eq!(buff.split_mut(), ([1, 2, 3, 4, 5].as_mut_slice(), [].as_mut_slice()));
     /// ```
-    </span><span class="attr">#[unstable(feature = <span class="string">"cursor_remaining"</span>, issue = <span class="string">"86369"</span>)]
-    </span><span class="kw">pub fn </span>is_empty(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
-        <span class="self">self</span>.pos &gt;= <span class="self">self</span>.inner.as_ref().len() <span class="kw">as </span>u64
+    </span><span class="attr">#[unstable(feature = <span class="string">"cursor_split"</span>, issue = <span class="string">"86369"</span>)]
+    </span><span class="kw">pub fn </span>split_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; (<span class="kw-2">&amp;mut </span>[u8], <span class="kw-2">&amp;mut </span>[u8]) {
+        <span class="kw">let </span>slice = <span class="self">self</span>.inner.as_mut();
+        <span class="kw">let </span>pos = <span class="self">self</span>.pos.min(slice.len() <span class="kw">as </span>u64);
+        slice.split_at_mut(pos <span class="kw">as </span>usize)
     }
 }
 
@@ -997,7 +1005,7 @@
     </span>T: AsRef&lt;[u8]&gt;,
 {
     <span class="kw">fn </span>read(<span class="kw-2">&amp;mut </span><span class="self">self</span>, buf: <span class="kw-2">&amp;mut </span>[u8]) -&gt; io::Result&lt;usize&gt; {
-        <span class="kw">let </span>n = Read::read(<span class="kw-2">&amp;mut </span><span class="self">self</span>.remaining_slice(), buf)<span class="question-mark">?</span>;
+        <span class="kw">let </span>n = Read::read(<span class="kw-2">&amp;mut </span>Cursor::split(<span class="self">self</span>).<span class="number">1</span>, buf)<span class="question-mark">?</span>;
         <span class="self">self</span>.pos += n <span class="kw">as </span>u64;
         <span class="prelude-val">Ok</span>(n)
     }
@@ -1005,7 +1013,7 @@
     <span class="kw">fn </span>read_buf(<span class="kw-2">&amp;mut </span><span class="self">self</span>, <span class="kw-2">mut </span>cursor: BorrowedCursor&lt;<span class="lifetime">'_</span>&gt;) -&gt; io::Result&lt;()&gt; {
         <span class="kw">let </span>prev_written = cursor.written();
 
-        Read::read_buf(<span class="kw-2">&amp;mut </span><span class="self">self</span>.remaining_slice(), cursor.reborrow())<span class="question-mark">?</span>;
+        Read::read_buf(<span class="kw-2">&amp;mut </span>Cursor::split(<span class="self">self</span>).<span class="number">1</span>, cursor.reborrow())<span class="question-mark">?</span>;
 
         <span class="self">self</span>.pos += (cursor.written() - prev_written) <span class="kw">as </span>u64;
 
@@ -1029,7 +1037,7 @@
     </span>}
 
     <span class="kw">fn </span>read_exact(<span class="kw-2">&amp;mut </span><span class="self">self</span>, buf: <span class="kw-2">&amp;mut </span>[u8]) -&gt; io::Result&lt;()&gt; {
-        <span class="kw">let </span>result = Read::read_exact(<span class="kw-2">&amp;mut </span><span class="self">self</span>.remaining_slice(), buf);
+        <span class="kw">let </span>result = Read::read_exact(<span class="kw-2">&amp;mut </span>Cursor::split(<span class="self">self</span>).<span class="number">1</span>, buf);
 
         <span class="kw">match </span>result {
             <span class="prelude-val">Ok</span>(<span class="kw">_</span>) =&gt; <span class="self">self</span>.pos += buf.len() <span class="kw">as </span>u64,
@@ -1043,14 +1051,14 @@
     <span class="kw">fn </span>read_buf_exact(<span class="kw-2">&amp;mut </span><span class="self">self</span>, <span class="kw-2">mut </span>cursor: BorrowedCursor&lt;<span class="lifetime">'_</span>&gt;) -&gt; io::Result&lt;()&gt; {
         <span class="kw">let </span>prev_written = cursor.written();
 
-        <span class="kw">let </span>result = Read::read_buf_exact(<span class="kw-2">&amp;mut </span><span class="self">self</span>.remaining_slice(), cursor.reborrow());
+        <span class="kw">let </span>result = Read::read_buf_exact(<span class="kw-2">&amp;mut </span>Cursor::split(<span class="self">self</span>).<span class="number">1</span>, cursor.reborrow());
         <span class="self">self</span>.pos += (cursor.written() - prev_written) <span class="kw">as </span>u64;
 
         result
     }
 
     <span class="kw">fn </span>read_to_end(<span class="kw-2">&amp;mut </span><span class="self">self</span>, buf: <span class="kw-2">&amp;mut </span>Vec&lt;u8&gt;) -&gt; io::Result&lt;usize&gt; {
-        <span class="kw">let </span>content = <span class="self">self</span>.remaining_slice();
+        <span class="kw">let </span>content = Cursor::split(<span class="self">self</span>).<span class="number">1</span>;
         <span class="kw">let </span>len = content.len();
         buf.try_reserve(len)<span class="question-mark">?</span>;
         buf.extend_from_slice(content);
@@ -1061,7 +1069,7 @@
 
     <span class="kw">fn </span>read_to_string(<span class="kw-2">&amp;mut </span><span class="self">self</span>, buf: <span class="kw-2">&amp;mut </span>String) -&gt; io::Result&lt;usize&gt; {
         <span class="kw">let </span>content =
-            <span class="kw">crate</span>::str::from_utf8(<span class="self">self</span>.remaining_slice()).map_err(|<span class="kw">_</span>| io::Error::INVALID_UTF8)<span class="question-mark">?</span>;
+            <span class="kw">crate</span>::str::from_utf8(Cursor::split(<span class="self">self</span>).<span class="number">1</span>).map_err(|<span class="kw">_</span>| io::Error::INVALID_UTF8)<span class="question-mark">?</span>;
         <span class="kw">let </span>len = content.len();
         buf.try_reserve(len)<span class="question-mark">?</span>;
         buf.push_str(content);
@@ -1077,7 +1085,7 @@
     </span>T: AsRef&lt;[u8]&gt;,
 {
     <span class="kw">fn </span>fill_buf(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; io::Result&lt;<span class="kw-2">&amp;</span>[u8]&gt; {
-        <span class="prelude-val">Ok</span>(<span class="self">self</span>.remaining_slice())
+        <span class="prelude-val">Ok</span>(Cursor::split(<span class="self">self</span>).<span class="number">1</span>)
     }
     <span class="kw">fn </span>consume(<span class="kw-2">&amp;mut </span><span class="self">self</span>, amt: usize) {
         <span class="self">self</span>.pos += amt <span class="kw">as </span>u64;

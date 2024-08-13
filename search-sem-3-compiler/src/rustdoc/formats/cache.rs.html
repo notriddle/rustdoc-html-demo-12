@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/librustdoc/formats/cache.rs`."><title>cache.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustdoc" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/librustdoc/formats/cache.rs`."><title>cache.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustdoc" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -630,6 +630,12 @@
 <a href="#630" id="630">630</a>
 <a href="#631" id="631">631</a>
 <a href="#632" id="632">632</a>
+<a href="#633" id="633">633</a>
+<a href="#634" id="634">634</a>
+<a href="#635" id="635">635</a>
+<a href="#636" id="636">636</a>
+<a href="#637" id="637">637</a>
+<a href="#638" id="638">638</a>
 </pre></div><pre class="rust"><code><span class="kw">use </span>std::mem;
 
 <span class="kw">use </span>rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexSet};
@@ -637,7 +643,8 @@
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, TyCtxt};
 <span class="kw">use </span>rustc_span::Symbol;
 
-<span class="kw">use </span><span class="kw">crate</span>::clean::{<span class="self">self</span>, types::ExternalLocation, ExternalCrate, ItemId, PrimitiveType};
+<span class="kw">use </span><span class="kw">crate</span>::clean::types::ExternalLocation;
+<span class="kw">use </span><span class="kw">crate</span>::clean::{<span class="self">self</span>, ExternalCrate, ItemId, PrimitiveType};
 <span class="kw">use </span><span class="kw">crate</span>::core::DocContext;
 <span class="kw">use </span><span class="kw">crate</span>::fold::DocFolder;
 <span class="kw">use </span><span class="kw">crate</span>::formats::item_type::ItemType;
@@ -891,153 +898,21 @@
         }
 
         <span class="comment">// Index this method for searching later on.
-        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(s) = item.name.or_else(|| {
-            <span class="kw">if </span>item.is_stripped() {
-                <span class="prelude-val">None
-            </span>} <span class="kw">else if let </span>clean::ImportItem(<span class="kw-2">ref </span>i) = <span class="kw-2">*</span>item.kind
-                &amp;&amp; <span class="kw">let </span>clean::ImportKind::Simple(s) = i.kind
-            {
-                <span class="prelude-val">Some</span>(s)
-            } <span class="kw">else </span>{
-                <span class="prelude-val">None
-            </span>}
-        }) {
-            <span class="kw">let </span>(parent, is_inherent_impl_item) = <span class="kw">match </span><span class="kw-2">*</span>item.kind {
-                clean::StrippedItem(..) =&gt; ((<span class="prelude-val">None</span>, <span class="prelude-val">None</span>), <span class="bool-val">false</span>),
-                clean::AssocConstItem(..) | clean::AssocTypeItem(..)
-                    <span class="kw">if </span><span class="self">self
-                        </span>.cache
-                        .parent_stack
-                        .last()
-                        .is_some_and(|parent| parent.is_trait_impl()) =&gt;
+        </span><span class="kw">let </span>search_name = <span class="kw">if </span>!item.is_stripped() {
+            item.name.or_else(|| {
+                <span class="kw">if let </span>clean::ImportItem(<span class="kw-2">ref </span>i) = <span class="kw-2">*</span>item.kind
+                    &amp;&amp; <span class="kw">let </span>clean::ImportKind::Simple(s) = i.kind
                 {
-                    <span class="comment">// skip associated items in trait impls
-                    </span>((<span class="prelude-val">None</span>, <span class="prelude-val">None</span>), <span class="bool-val">false</span>)
-                }
-                clean::TyMethodItem(..)
-                | clean::TyAssocConstItem(..)
-                | clean::TyAssocTypeItem(..)
-                | clean::StructFieldItem(..)
-                | clean::VariantItem(..) =&gt; (
-                    (
-                        <span class="prelude-val">Some</span>(
-                            <span class="self">self</span>.cache
-                                .parent_stack
-                                .last()
-                                .expect(<span class="string">"parent_stack is empty"</span>)
-                                .item_id()
-                                .expect_def_id(),
-                        ),
-                        <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.cache.stack[..<span class="self">self</span>.cache.stack.len() - <span class="number">1</span>]),
-                    ),
-                    <span class="bool-val">false</span>,
-                ),
-                clean::MethodItem(..) | clean::AssocConstItem(..) | clean::AssocTypeItem(..) =&gt; {
-                    <span class="kw">if </span><span class="self">self</span>.cache.parent_stack.is_empty() {
-                        ((<span class="prelude-val">None</span>, <span class="prelude-val">None</span>), <span class="bool-val">false</span>)
-                    } <span class="kw">else </span>{
-                        <span class="kw">let </span>last = <span class="self">self</span>.cache.parent_stack.last().expect(<span class="string">"parent_stack is empty 2"</span>);
-                        <span class="kw">let </span>did = <span class="kw">match </span><span class="kw-2">&amp;*</span>last {
-                            ParentStackItem::Impl {
-                                <span class="comment">// impl Trait for &amp;T { fn method(self); }
-                                //
-                                // When generating a function index with the above shape, we want it
-                                // associated with `T`, not with the primitive reference type. It should
-                                // show up as `T::method`, rather than `reference::method`, in the search
-                                // results page.
-                                </span>for_: clean::Type::BorrowedRef { type_, .. },
-                                ..
-                            } =&gt; type_.def_id(<span class="kw-2">&amp;</span><span class="self">self</span>.cache),
-                            ParentStackItem::Impl { for_, .. } =&gt; for_.def_id(<span class="kw-2">&amp;</span><span class="self">self</span>.cache),
-                            ParentStackItem::Type(item_id) =&gt; item_id.as_def_id(),
-                        };
-                        <span class="kw">let </span>path = did
-                            .and_then(|did| <span class="self">self</span>.cache.paths.get(<span class="kw-2">&amp;</span>did))
-                            <span class="comment">// The current stack not necessarily has correlation
-                            // for where the type was defined. On the other
-                            // hand, `paths` always has the right
-                            // information if present.
-                            </span>.map(|(fqp, <span class="kw">_</span>)| <span class="kw-2">&amp;</span>fqp[..fqp.len() - <span class="number">1</span>]);
-                        ((did, path), <span class="bool-val">true</span>)
-                    }
-                }
-                <span class="kw">_ </span>=&gt; ((<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(<span class="kw-2">&amp;*</span><span class="self">self</span>.cache.stack)), <span class="bool-val">false</span>),
-            };
-
-            <span class="kw">match </span>parent {
-                (parent, <span class="prelude-val">Some</span>(path)) <span class="kw">if </span>is_inherent_impl_item || !<span class="self">self</span>.cache.stripped_mod =&gt; {
-                    <span class="macro">debug_assert!</span>(!item.is_stripped());
-
-                    <span class="comment">// A crate has a module at its root, containing all items,
-                    // which should not be indexed. The crate-item itself is
-                    // inserted later on when serializing the search-index.
-                    </span><span class="kw">if </span>item.item_id.as_def_id().is_some_and(|idx| !idx.is_crate_root())
-                        &amp;&amp; <span class="kw">let </span>ty = item.type_()
-                        &amp;&amp; (ty != ItemType::StructField
-                            || u16::from_str_radix(s.as_str(), <span class="number">10</span>).is_err())
-                    {
-                        <span class="kw">let </span>desc =
-                            short_markdown_summary(<span class="kw-2">&amp;</span>item.doc_value(), <span class="kw-2">&amp;</span>item.link_names(<span class="self">self</span>.cache));
-                        <span class="comment">// For searching purposes, a re-export is a duplicate if:
-                        //
-                        // - It's either an inline, or a true re-export
-                        // - It's got the same name
-                        // - Both of them have the same exact path
-                        </span><span class="kw">let </span>defid = (<span class="kw">match </span><span class="kw-2">&amp;*</span>item.kind {
-                            <span class="kw-2">&amp;</span>clean::ItemKind::ImportItem(<span class="kw-2">ref </span>import) =&gt; import.source.did,
-                            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
-                        })
-                        .or_else(|| item.item_id.as_def_id());
-                        <span class="comment">// In case this is a field from a tuple struct, we don't add it into
-                        // the search index because its name is something like "0", which is
-                        // not useful for rustdoc search.
-                        </span><span class="self">self</span>.cache.search_index.push(IndexItem {
-                            ty,
-                            defid,
-                            name: s,
-                            path: join_with_double_colon(path),
-                            desc,
-                            parent,
-                            parent_idx: <span class="prelude-val">None</span>,
-                            exact_path: <span class="prelude-val">None</span>,
-                            impl_id: <span class="kw">if let </span><span class="prelude-val">Some</span>(ParentStackItem::Impl { item_id, .. }) =
-                                <span class="self">self</span>.cache.parent_stack.last()
-                            {
-                                item_id.as_def_id()
-                            } <span class="kw">else </span>{
-                                <span class="prelude-val">None
-                            </span>},
-                            search_type: get_function_type_for_search(
-                                <span class="kw-2">&amp;</span>item,
-                                <span class="self">self</span>.tcx,
-                                clean_impl_generics(<span class="self">self</span>.cache.parent_stack.last()).as_ref(),
-                                parent,
-                                <span class="self">self</span>.cache,
-                            ),
-                            aliases: item.attrs.get_doc_aliases(),
-                            deprecation: item.deprecation(<span class="self">self</span>.tcx),
-                        });
-                    }
-                }
-                (<span class="prelude-val">Some</span>(parent), <span class="prelude-val">None</span>) <span class="kw">if </span>is_inherent_impl_item =&gt; {
-                    <span class="comment">// We have a parent, but we don't know where they're
-                    // defined yet. Wait for later to index this item.
-                    </span><span class="kw">let </span>impl_generics = clean_impl_generics(<span class="self">self</span>.cache.parent_stack.last());
-                    <span class="self">self</span>.cache.orphan_impl_items.push(OrphanImplItem {
-                        parent,
-                        item: item.clone(),
-                        impl_generics,
-                        impl_id: <span class="kw">if let </span><span class="prelude-val">Some</span>(ParentStackItem::Impl { item_id, .. }) =
-                            <span class="self">self</span>.cache.parent_stack.last()
-                        {
-                            item_id.as_def_id()
-                        } <span class="kw">else </span>{
-                            <span class="prelude-val">None
-                        </span>},
-                    });
-                }
-                <span class="kw">_ </span>=&gt; {}
-            }
+                    <span class="prelude-val">Some</span>(s)
+                } <span class="kw">else </span>{
+                    <span class="prelude-val">None
+                </span>}
+            })
+        } <span class="kw">else </span>{
+            <span class="prelude-val">None
+        </span>};
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(name) = search_name {
+            add_item_to_search_index(<span class="self">self</span>.tcx, <span class="kw-2">&amp;mut </span><span class="self">self</span>.cache, <span class="kw-2">&amp;</span>item, name)
         }
 
         <span class="comment">// Keep track of the fully qualified path for this item.
@@ -1073,16 +948,16 @@
                     // `public_items` map, so we can skip inserting into the
                     // paths map if there was already an entry present and we're
                     // not a public item.
-                    </span><span class="kw">if </span>!<span class="self">self</span>.cache.paths.contains_key(<span class="kw-2">&amp;</span>item.item_id.expect_def_id())
+                    </span><span class="kw">let </span>item_def_id = item.item_id.expect_def_id();
+                    <span class="kw">if </span>!<span class="self">self</span>.cache.paths.contains_key(<span class="kw-2">&amp;</span>item_def_id)
                         || <span class="self">self
                             </span>.cache
                             .effective_visibilities
-                            .is_directly_public(<span class="self">self</span>.tcx, item.item_id.expect_def_id())
+                            .is_directly_public(<span class="self">self</span>.tcx, item_def_id)
                     {
-                        <span class="self">self</span>.cache.paths.insert(
-                            item.item_id.expect_def_id(),
-                            (<span class="self">self</span>.cache.stack.clone(), item.type_()),
-                        );
+                        <span class="self">self</span>.cache
+                            .paths
+                            .insert(item_def_id, (<span class="self">self</span>.cache.stack.clone(), item.type_()));
                     }
                 }
             }
@@ -1094,7 +969,6 @@
 
             clean::ExternCrateItem { .. }
             | clean::ImportItem(..)
-            | clean::OpaqueTyItem(..)
             | clean::ImplItem(..)
             | clean::TyMethodItem(..)
             | clean::MethodItem(..)
@@ -1145,9 +1019,7 @@
                         &amp;&amp; adt.is_fundamental()
                     {
                         <span class="kw">for </span>ty <span class="kw">in </span>generics {
-                            <span class="kw">if let </span><span class="prelude-val">Some</span>(did) = ty.def_id(<span class="self">self</span>.cache) {
-                                dids.insert(did);
-                            }
+                            dids.extend(ty.def_id(<span class="self">self</span>.cache));
                         }
                     }
                 }
@@ -1160,32 +1032,26 @@
                         .primitive_type()
                         .and_then(|t| <span class="self">self</span>.cache.primitive_locations.get(<span class="kw-2">&amp;</span>t).cloned());
 
-                    <span class="kw">if let </span><span class="prelude-val">Some</span>(did) = did {
-                        dids.insert(did);
-                    }
+                    dids.extend(did);
                 }
             }
 
             <span class="kw">if let </span><span class="prelude-val">Some</span>(generics) = i.trait_.as_ref().and_then(|t| t.generics()) {
                 <span class="kw">for </span>bound <span class="kw">in </span>generics {
-                    <span class="kw">if let </span><span class="prelude-val">Some</span>(did) = bound.def_id(<span class="self">self</span>.cache) {
-                        dids.insert(did);
-                    }
+                    dids.extend(bound.def_id(<span class="self">self</span>.cache));
                 }
             }
             <span class="kw">let </span>impl_item = Impl { impl_item: item };
-            <span class="kw">if </span>impl_item.trait_did().map_or(<span class="bool-val">true</span>, |d| <span class="self">self</span>.cache.traits.contains_key(<span class="kw-2">&amp;</span>d)) {
+            <span class="kw">let </span>impl_did = impl_item.def_id();
+            <span class="kw">let </span>trait_did = impl_item.trait_did();
+            <span class="kw">if </span>trait_did.map_or(<span class="bool-val">true</span>, |d| <span class="self">self</span>.cache.traits.contains_key(<span class="kw-2">&amp;</span>d)) {
                 <span class="kw">for </span>did <span class="kw">in </span>dids {
-                    <span class="kw">if </span><span class="self">self</span>.impl_ids.entry(did).or_default().insert(impl_item.def_id()) {
-                        <span class="self">self</span>.cache
-                            .impls
-                            .entry(did)
-                            .or_insert_with(Vec::new)
-                            .push(impl_item.clone());
+                    <span class="kw">if </span><span class="self">self</span>.impl_ids.entry(did).or_default().insert(impl_did) {
+                        <span class="self">self</span>.cache.impls.entry(did).or_default().push(impl_item.clone());
                     }
                 }
             } <span class="kw">else </span>{
-                <span class="kw">let </span>trait_did = impl_item.trait_did().expect(<span class="string">"no trait did"</span>);
+                <span class="kw">let </span>trait_did = trait_did.expect(<span class="string">"no trait did"</span>);
                 <span class="self">self</span>.cache.orphan_trait_impls.push((trait_did, dids, impl_item));
             }
             <span class="prelude-val">None
@@ -1202,6 +1068,152 @@
         <span class="self">self</span>.cache.stripped_mod = orig_stripped_mod;
         ret
     }
+}
+
+<span class="kw">fn </span>add_item_to_search_index(tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;, cache: <span class="kw-2">&amp;mut </span>Cache, item: <span class="kw-2">&amp;</span>clean::Item, name: Symbol) {
+    <span class="comment">// Item has a name, so it must also have a DefId (can't be an impl, let alone a blanket or auto impl).
+    </span><span class="kw">let </span>item_def_id = item.item_id.as_def_id().unwrap();
+    <span class="kw">let </span>(parent_did, parent_path) = <span class="kw">match </span><span class="kw-2">*</span>item.kind {
+        clean::StrippedItem(..) =&gt; <span class="kw">return</span>,
+        clean::AssocConstItem(..) | clean::AssocTypeItem(..)
+            <span class="kw">if </span>cache.parent_stack.last().is_some_and(|parent| parent.is_trait_impl()) =&gt;
+        {
+            <span class="comment">// skip associated items in trait impls
+            </span><span class="kw">return</span>;
+        }
+        clean::TyMethodItem(..)
+        | clean::TyAssocConstItem(..)
+        | clean::TyAssocTypeItem(..)
+        | clean::StructFieldItem(..)
+        | clean::VariantItem(..) =&gt; {
+            <span class="comment">// Don't index if containing module is stripped (i.e., private),
+            // or if item is tuple struct/variant field (name is a number -&gt; not useful for search).
+            </span><span class="kw">if </span>cache.stripped_mod
+                || item.type_() == ItemType::StructField
+                    &amp;&amp; name.as_str().chars().all(|c| c.is_digit(<span class="number">10</span>))
+            {
+                <span class="kw">return</span>;
+            }
+            <span class="kw">let </span>parent_did =
+                cache.parent_stack.last().expect(<span class="string">"parent_stack is empty"</span>).item_id().expect_def_id();
+            <span class="kw">let </span>parent_path = <span class="kw-2">&amp;</span>cache.stack[..cache.stack.len() - <span class="number">1</span>];
+            (<span class="prelude-val">Some</span>(parent_did), parent_path)
+        }
+        clean::MethodItem(..) | clean::AssocConstItem(..) | clean::AssocTypeItem(..) =&gt; {
+            <span class="kw">let </span>last = cache.parent_stack.last().expect(<span class="string">"parent_stack is empty 2"</span>);
+            <span class="kw">let </span>parent_did = <span class="kw">match </span><span class="kw-2">&amp;*</span>last {
+                <span class="comment">// impl Trait for &amp;T { fn method(self); }
+                //
+                // When generating a function index with the above shape, we want it
+                // associated with `T`, not with the primitive reference type. It should
+                // show up as `T::method`, rather than `reference::method`, in the search
+                // results page.
+                </span>ParentStackItem::Impl { for_: clean::Type::BorrowedRef { type_, .. }, .. } =&gt; {
+                    type_.def_id(<span class="kw-2">&amp;</span>cache)
+                }
+                ParentStackItem::Impl { for_, .. } =&gt; for_.def_id(<span class="kw-2">&amp;</span>cache),
+                ParentStackItem::Type(item_id) =&gt; item_id.as_def_id(),
+            };
+            <span class="kw">let </span><span class="prelude-val">Some</span>(parent_did) = parent_did <span class="kw">else </span>{ <span class="kw">return </span>};
+            <span class="comment">// The current stack reflects the CacheBuilder's recursive
+            // walk over HIR. For associated items, this is the module
+            // where the `impl` block is defined. That's an implementation
+            // detail that we don't want to affect the search engine.
+            //
+            // In particular, you can arrange things like this:
+            //
+            //     #![crate_name="me"]
+            //     mod private_mod {
+            //         impl Clone for MyThing { fn clone(&amp;self) -&gt; MyThing { MyThing } }
+            //     }
+            //     pub struct MyThing;
+            //
+            // When that happens, we need to:
+            // - ignore the `cache.stripped_mod` flag, since the Clone impl is actually
+            //   part of the public API even though it's defined in a private module
+            // - present the method as `me::MyThing::clone`, its publicly-visible path
+            // - deal with the fact that the recursive walk hasn't actually reached `MyThing`
+            //   until it's already past `private_mod`, since that's first, and doesn't know
+            //   yet if `MyThing` will actually be public or not (it could be re-exported)
+            //
+            // We accomplish the last two points by recording children of "orphan impls"
+            // in a field of the cache whose elements are added to the search index later,
+            // after cache building is complete (see `handle_orphan_impl_child`).
+            </span><span class="kw">match </span>cache.paths.get(<span class="kw-2">&amp;</span>parent_did) {
+                <span class="prelude-val">Some</span>((fqp, <span class="kw">_</span>)) =&gt; (<span class="prelude-val">Some</span>(parent_did), <span class="kw-2">&amp;</span>fqp[..fqp.len() - <span class="number">1</span>]),
+                <span class="prelude-val">None </span>=&gt; {
+                    handle_orphan_impl_child(cache, item, parent_did);
+                    <span class="kw">return</span>;
+                }
+            }
+        }
+        <span class="kw">_ </span>=&gt; {
+            <span class="comment">// Don't index if item is crate root, which is inserted later on when serializing the index.
+            // Don't index if containing module is stripped (i.e., private),
+            </span><span class="kw">if </span>item_def_id.is_crate_root() || cache.stripped_mod {
+                <span class="kw">return</span>;
+            }
+            (<span class="prelude-val">None</span>, <span class="kw-2">&amp;*</span>cache.stack)
+        }
+    };
+
+    <span class="macro">debug_assert!</span>(!item.is_stripped());
+
+    <span class="kw">let </span>desc = short_markdown_summary(<span class="kw-2">&amp;</span>item.doc_value(), <span class="kw-2">&amp;</span>item.link_names(cache));
+    <span class="comment">// For searching purposes, a re-export is a duplicate if:
+    //
+    // - It's either an inline, or a true re-export
+    // - It's got the same name
+    // - Both of them have the same exact path
+    </span><span class="kw">let </span>defid = <span class="kw">match </span><span class="kw-2">&amp;*</span>item.kind {
+        clean::ItemKind::ImportItem(import) =&gt; import.source.did.unwrap_or(item_def_id),
+        <span class="kw">_ </span>=&gt; item_def_id,
+    };
+    <span class="kw">let </span>path = join_with_double_colon(parent_path);
+    <span class="kw">let </span>impl_id = <span class="kw">if let </span><span class="prelude-val">Some</span>(ParentStackItem::Impl { item_id, .. }) = cache.parent_stack.last() {
+        item_id.as_def_id()
+    } <span class="kw">else </span>{
+        <span class="prelude-val">None
+    </span>};
+    <span class="kw">let </span>search_type = get_function_type_for_search(
+        <span class="kw-2">&amp;</span>item,
+        tcx,
+        clean_impl_generics(cache.parent_stack.last()).as_ref(),
+        parent_did,
+        cache,
+    );
+    <span class="kw">let </span>aliases = item.attrs.get_doc_aliases();
+    <span class="kw">let </span>deprecation = item.deprecation(tcx);
+    <span class="kw">let </span>index_item = IndexItem {
+        ty: item.type_(),
+        defid: <span class="prelude-val">Some</span>(defid),
+        name,
+        path,
+        desc,
+        parent: parent_did,
+        parent_idx: <span class="prelude-val">None</span>,
+        exact_path: <span class="prelude-val">None</span>,
+        impl_id,
+        search_type,
+        aliases,
+        deprecation,
+    };
+    cache.search_index.push(index_item);
+}
+
+<span class="doccomment">/// We have a parent, but we don't know where they're
+/// defined yet. Wait for later to index this item.
+/// See [`Cache::orphan_impl_items`].
+</span><span class="kw">fn </span>handle_orphan_impl_child(cache: <span class="kw-2">&amp;mut </span>Cache, item: <span class="kw-2">&amp;</span>clean::Item, parent_did: DefId) {
+    <span class="kw">let </span>impl_generics = clean_impl_generics(cache.parent_stack.last());
+    <span class="kw">let </span>impl_id = <span class="kw">if let </span><span class="prelude-val">Some</span>(ParentStackItem::Impl { item_id, .. }) = cache.parent_stack.last() {
+        item_id.as_def_id()
+    } <span class="kw">else </span>{
+        <span class="prelude-val">None
+    </span>};
+    <span class="kw">let </span>orphan_item =
+        OrphanImplItem { parent: parent_did, item: item.clone(), impl_generics, impl_id };
+    cache.orphan_impl_items.push(orphan_item);
 }
 
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>OrphanImplItem {

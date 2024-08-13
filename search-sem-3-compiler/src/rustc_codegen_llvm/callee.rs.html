@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/callee.rs`."><title>callee.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/callee.rs`."><title>callee.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -186,24 +186,20 @@
 <a href="#186" id="186">186</a>
 <a href="#187" id="187">187</a>
 <a href="#188" id="188">188</a>
-<a href="#189" id="189">189</a>
-<a href="#190" id="190">190</a>
-<a href="#191" id="191">191</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! Handles codegen of callees as well as other call-related
 //! things. Callees are a superset of normal rust values and sometimes
 //! have different representations. In particular, top-level fn items
 //! and methods are represented as just a fn ptr and not a full
 //! closure.
 
-</span><span class="kw">use </span><span class="kw">crate</span>::attributes;
-<span class="kw">use </span><span class="kw">crate</span>::common;
-<span class="kw">use </span><span class="kw">crate</span>::context::CodegenCx;
-<span class="kw">use </span><span class="kw">crate</span>::llvm;
-<span class="kw">use </span><span class="kw">crate</span>::value::Value;
-
+</span><span class="kw">use </span>rustc_codegen_ssa::common;
 <span class="kw">use </span>rustc_middle::ty::layout::{FnAbiOf, HasTyCtxt};
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Instance, TypeVisitableExt};
 <span class="kw">use </span>tracing::debug;
+
+<span class="kw">use </span><span class="kw">crate</span>::context::CodegenCx;
+<span class="kw">use </span><span class="kw">crate</span>::llvm;
+<span class="kw">use </span><span class="kw">crate</span>::value::Value;
 
 <span class="doccomment">/// Codegens a reference to a fn/method item, monomorphizing and
 /// inlining as it goes.
@@ -239,7 +235,7 @@
     } <span class="kw">else </span>{
         <span class="kw">let </span>instance_def_id = instance.def_id();
         <span class="kw">let </span>llfn = <span class="kw">if </span>tcx.sess.target.arch == <span class="string">"x86"
-            </span>&amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(dllimport) = common::get_dllimport(tcx, instance_def_id, sym)
+            </span>&amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(dllimport) = <span class="kw">crate</span>::common::get_dllimport(tcx, instance_def_id, sym)
         {
             <span class="comment">// Fix for https://github.com/rust-lang/rust/issues/104453
             // On x86 Windows, LLVM uses 'L' as the prefix for any private
@@ -269,8 +265,6 @@
             cx.declare_fn(sym, fn_abi, <span class="prelude-val">Some</span>(instance))
         };
         <span class="macro">debug!</span>(<span class="string">"get_fn: not casting pointer!"</span>);
-
-        attributes::from_fn_attrs(cx, llfn, instance);
 
         <span class="comment">// Apply an appropriate linkage/visibility value to our item that we
         // just declared.

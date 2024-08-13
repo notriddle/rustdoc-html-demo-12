@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_build/src/thir/pattern/check_match.rs`."><title>check_match.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_mir_build" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_build/src/thir/pattern/check_match.rs`."><title>check_match.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_mir_build" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1240,13 +1240,52 @@
 <a href="#1240" id="1240">1240</a>
 <a href="#1241" id="1241">1241</a>
 <a href="#1242" id="1242">1242</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span><span class="kw">crate</span>::errors::<span class="kw-2">*</span>;
-
-<span class="kw">use </span>rustc_arena::{DroplessArena, TypedArena};
+<a href="#1243" id="1243">1243</a>
+<a href="#1244" id="1244">1244</a>
+<a href="#1245" id="1245">1245</a>
+<a href="#1246" id="1246">1246</a>
+<a href="#1247" id="1247">1247</a>
+<a href="#1248" id="1248">1248</a>
+<a href="#1249" id="1249">1249</a>
+<a href="#1250" id="1250">1250</a>
+<a href="#1251" id="1251">1251</a>
+<a href="#1252" id="1252">1252</a>
+<a href="#1253" id="1253">1253</a>
+<a href="#1254" id="1254">1254</a>
+<a href="#1255" id="1255">1255</a>
+<a href="#1256" id="1256">1256</a>
+<a href="#1257" id="1257">1257</a>
+<a href="#1258" id="1258">1258</a>
+<a href="#1259" id="1259">1259</a>
+<a href="#1260" id="1260">1260</a>
+<a href="#1261" id="1261">1261</a>
+<a href="#1262" id="1262">1262</a>
+<a href="#1263" id="1263">1263</a>
+<a href="#1264" id="1264">1264</a>
+<a href="#1265" id="1265">1265</a>
+<a href="#1266" id="1266">1266</a>
+<a href="#1267" id="1267">1267</a>
+<a href="#1268" id="1268">1268</a>
+<a href="#1269" id="1269">1269</a>
+<a href="#1270" id="1270">1270</a>
+<a href="#1271" id="1271">1271</a>
+<a href="#1272" id="1272">1272</a>
+<a href="#1273" id="1273">1273</a>
+<a href="#1274" id="1274">1274</a>
+<a href="#1275" id="1275">1275</a>
+<a href="#1276" id="1276">1276</a>
+<a href="#1277" id="1277">1277</a>
+<a href="#1278" id="1278">1278</a>
+<a href="#1279" id="1279">1279</a>
+<a href="#1280" id="1280">1280</a>
+<a href="#1281" id="1281">1281</a>
+<a href="#1282" id="1282">1282</a>
+</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_arena::{DroplessArena, TypedArena};
 <span class="kw">use </span>rustc_ast::Mutability;
 <span class="kw">use </span>rustc_data_structures::fx::FxIndexSet;
 <span class="kw">use </span>rustc_data_structures::stack::ensure_sufficient_stack;
-<span class="kw">use </span>rustc_errors::{codes::<span class="kw-2">*</span>, struct_span_code_err, Applicability, ErrorGuaranteed, MultiSpan};
+<span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
+<span class="kw">use </span>rustc_errors::{struct_span_code_err, Applicability, ErrorGuaranteed, MultiSpan};
 <span class="kw">use </span>rustc_hir::def::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_hir::def_id::LocalDefId;
 <span class="kw">use </span>rustc_hir::{<span class="self">self </span><span class="kw">as </span>hir, BindingMode, ByRef, HirId};
@@ -1258,8 +1297,8 @@
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, AdtDef, Ty, TyCtxt};
 <span class="kw">use </span>rustc_pattern_analysis::errors::Uncovered;
 <span class="kw">use </span>rustc_pattern_analysis::rustc::{
-    Constructor, DeconstructedPat, MatchArm, RevealedTy, RustcPatCtxt <span class="kw">as </span>PatCtxt, Usefulness,
-    UsefulnessReport, WitnessPat,
+    Constructor, DeconstructedPat, MatchArm, RedundancyExplanation, RevealedTy,
+    RustcPatCtxt <span class="kw">as </span>PatCtxt, Usefulness, UsefulnessReport, WitnessPat,
 };
 <span class="kw">use </span>rustc_session::lint::builtin::{
     BINDINGS_WITH_VARIANT_NAME, IRREFUTABLE_LET_PATTERNS, UNREACHABLE_PATTERNS,
@@ -1267,6 +1306,9 @@
 <span class="kw">use </span>rustc_span::hygiene::DesugaringKind;
 <span class="kw">use </span>rustc_span::{sym, Span};
 <span class="kw">use </span>tracing::instrument;
+
+<span class="kw">use </span><span class="kw">crate</span>::errors::<span class="kw-2">*</span>;
+<span class="kw">use </span><span class="kw">crate</span>::fluent_generated <span class="kw">as </span>fluent;
 
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>check_match(tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;, def_id: LocalDefId) -&gt; <span class="prelude-ty">Result</span>&lt;(), ErrorGuaranteed&gt; {
     <span class="kw">let </span>typeck_results = tcx.typeck(def_id);
@@ -1633,12 +1675,16 @@
     ) -&gt; <span class="prelude-ty">Result</span>&lt;UsefulnessReport&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;, ErrorGuaranteed&gt; {
         <span class="kw">let </span>pattern_complexity_limit =
             get_limit_size(cx.tcx.hir().krate_attrs(), cx.tcx.sess, sym::pattern_complexity);
-        <span class="kw">let </span>report =
-            rustc_pattern_analysis::analyze_match(<span class="kw-2">&amp;</span>cx, <span class="kw-2">&amp;</span>arms, scrut_ty, pattern_complexity_limit)
-                .map_err(|err| {
-                <span class="self">self</span>.error = <span class="prelude-val">Err</span>(err);
-                err
-            })<span class="question-mark">?</span>;
+        <span class="kw">let </span>report = rustc_pattern_analysis::rustc::analyze_match(
+            <span class="kw-2">&amp;</span>cx,
+            <span class="kw-2">&amp;</span>arms,
+            scrut_ty,
+            pattern_complexity_limit,
+        )
+        .map_err(|err| {
+            <span class="self">self</span>.error = <span class="prelude-val">Err</span>(err);
+            err
+        })<span class="question-mark">?</span>;
 
         <span class="comment">// Warn unreachable subpatterns.
         </span><span class="kw">for </span>(arm, is_useful) <span class="kw">in </span>report.arm_usefulness.iter() {
@@ -1647,9 +1693,9 @@
             {
                 <span class="kw">let </span><span class="kw-2">mut </span>redundant_subpats = redundant_subpats.clone();
                 <span class="comment">// Emit lints in the order in which they occur in the file.
-                </span>redundant_subpats.sort_unstable_by_key(|pat| pat.data().span);
-                <span class="kw">for </span>pat <span class="kw">in </span>redundant_subpats {
-                    report_unreachable_pattern(cx, arm.arm_data, pat.data().span, <span class="prelude-val">None</span>)
+                </span>redundant_subpats.sort_unstable_by_key(|(pat, <span class="kw">_</span>)| pat.data().span);
+                <span class="kw">for </span>(pat, explanation) <span class="kw">in </span>redundant_subpats {
+                    report_unreachable_pattern(cx, arm.arm_data, pat, <span class="kw-2">&amp;</span>explanation)
                 }
             }
         }
@@ -1719,9 +1765,11 @@
         <span class="comment">// Check if the match is exhaustive.
         </span><span class="kw">let </span>witnesses = report.non_exhaustiveness_witnesses;
         <span class="kw">if </span>!witnesses.is_empty() {
-            <span class="kw">if </span>source == hir::MatchSource::ForLoopDesugar &amp;&amp; arms.len() == <span class="number">2 </span>{
+            <span class="kw">if </span>source == hir::MatchSource::ForLoopDesugar
+                &amp;&amp; <span class="kw">let </span>[<span class="kw">_</span>, snd_arm] = <span class="kw-2">*</span>arms
+            {
                 <span class="comment">// the for loop pattern is not irrefutable
-                </span><span class="kw">let </span>pat = <span class="kw-2">&amp;</span><span class="self">self</span>.thir[arms[<span class="number">1</span>]].pattern;
+                </span><span class="kw">let </span>pat = <span class="kw-2">&amp;</span><span class="self">self</span>.thir[snd_arm].pattern;
                 <span class="comment">// `pat` should be `Some(&lt;pat_field&gt;)` from a desugared for loop.
                 </span><span class="macro">debug_assert_eq!</span>(pat.span.desugaring_kind(), <span class="prelude-val">Some</span>(DesugaringKind::ForLoop));
                 <span class="kw">let </span>PatKind::Variant { <span class="kw-2">ref </span>subpatterns, .. } = pat.kind <span class="kw">else </span>{ <span class="macro">bug!</span>() };
@@ -1931,9 +1979,7 @@
 
         <span class="comment">// Emit an extra note if the first uncovered witness would be uninhabited
         // if we disregard visibility.
-        </span><span class="kw">let </span>witness_1_is_privately_uninhabited = <span class="kw">if </span>(<span class="self">self</span>.tcx.features().exhaustive_patterns
-            || <span class="self">self</span>.tcx.features().min_exhaustive_patterns)
-            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(witness_1) = witnesses.get(<span class="number">0</span>)
+        </span><span class="kw">let </span>witness_1_is_privately_uninhabited = <span class="kw">if let </span><span class="prelude-val">Some</span>(witness_1) = witnesses.get(<span class="number">0</span>)
             &amp;&amp; <span class="kw">let </span>ty::Adt(adt, args) = witness_1.ty().kind()
             &amp;&amp; adt.is_enum()
             &amp;&amp; <span class="kw">let </span>Constructor::Variant(variant_index) = witness_1.ctor()
@@ -2148,26 +2194,60 @@
 </span><span class="kw">fn </span>report_unreachable_pattern&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;(
     cx: <span class="kw-2">&amp;</span>PatCtxt&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;,
     hir_id: HirId,
-    span: Span,
-    catchall: <span class="prelude-ty">Option</span>&lt;Span&gt;,
+    pat: <span class="kw-2">&amp;</span>DeconstructedPat&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;,
+    explanation: <span class="kw-2">&amp;</span>RedundancyExplanation&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;,
 ) {
-    cx.tcx.emit_node_span_lint(
-        UNREACHABLE_PATTERNS,
-        hir_id,
-        span,
-        UnreachablePattern { span: <span class="kw">if </span>catchall.is_some() { <span class="prelude-val">Some</span>(span) } <span class="kw">else </span>{ <span class="prelude-val">None </span>}, catchall },
-    );
+    <span class="kw">let </span>pat_span = pat.data().span;
+    <span class="kw">let </span><span class="kw-2">mut </span>lint = UnreachablePattern {
+        span: <span class="prelude-val">Some</span>(pat_span),
+        matches_no_values: <span class="prelude-val">None</span>,
+        covered_by_catchall: <span class="prelude-val">None</span>,
+        covered_by_one: <span class="prelude-val">None</span>,
+        covered_by_many: <span class="prelude-val">None</span>,
+    };
+    <span class="kw">match </span>explanation.covered_by.as_slice() {
+        [] =&gt; {
+            <span class="comment">// Empty pattern; we report the uninhabited type that caused the emptiness.
+            </span>lint.span = <span class="prelude-val">None</span>; <span class="comment">// Don't label the pattern itself
+            </span>pat.walk(<span class="kw-2">&amp;mut </span>|subpat| {
+                <span class="kw">let </span>ty = <span class="kw-2">**</span>subpat.ty();
+                <span class="kw">if </span>cx.is_uninhabited(ty) {
+                    lint.matches_no_values = <span class="prelude-val">Some</span>(UnreachableMatchesNoValues { ty });
+                    <span class="bool-val">false </span><span class="comment">// No need to dig further.
+                </span>} <span class="kw">else if </span><span class="macro">matches!</span>(subpat.ctor(), Constructor::Ref | Constructor::UnionField) {
+                    <span class="bool-val">false </span><span class="comment">// Don't explore further since they are not by-value.
+                </span>} <span class="kw">else </span>{
+                    <span class="bool-val">true
+                </span>}
+            });
+        }
+        [covering_pat] <span class="kw">if </span>pat_is_catchall(covering_pat) =&gt; {
+            lint.covered_by_catchall = <span class="prelude-val">Some</span>(covering_pat.data().span);
+        }
+        [covering_pat] =&gt; {
+            lint.covered_by_one = <span class="prelude-val">Some</span>(covering_pat.data().span);
+        }
+        covering_pats =&gt; {
+            <span class="kw">let </span><span class="kw-2">mut </span>multispan = MultiSpan::from_span(pat_span);
+            <span class="kw">for </span>p <span class="kw">in </span>covering_pats {
+                multispan.push_span_label(
+                    p.data().span,
+                    fluent::mir_build_unreachable_matches_same_values,
+                );
+            }
+            multispan
+                .push_span_label(pat_span, fluent::mir_build_unreachable_making_this_unreachable);
+            lint.covered_by_many = <span class="prelude-val">Some</span>(multispan);
+        }
+    }
+    cx.tcx.emit_node_span_lint(UNREACHABLE_PATTERNS, hir_id, pat_span, lint);
 }
 
 <span class="doccomment">/// Report unreachable arms, if any.
 </span><span class="kw">fn </span>report_arm_reachability&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;(cx: <span class="kw-2">&amp;</span>PatCtxt&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;, report: <span class="kw-2">&amp;</span>UsefulnessReport&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;) {
-    <span class="kw">let </span><span class="kw-2">mut </span>catchall = <span class="prelude-val">None</span>;
     <span class="kw">for </span>(arm, is_useful) <span class="kw">in </span>report.arm_usefulness.iter() {
-        <span class="kw">if </span><span class="macro">matches!</span>(is_useful, Usefulness::Redundant) {
-            report_unreachable_pattern(cx, arm.arm_data, arm.pat.data().span, catchall)
-        }
-        <span class="kw">if </span>!arm.has_guard &amp;&amp; catchall.is_none() &amp;&amp; pat_is_catchall(arm.pat) {
-            catchall = <span class="prelude-val">Some</span>(arm.pat.data().span);
+        <span class="kw">if let </span>Usefulness::Redundant(explanation) = is_useful {
+            report_unreachable_pattern(cx, arm.arm_data, arm.pat, explanation)
         }
     }
 }
@@ -2261,7 +2341,7 @@
                 err.note(<span class="string">"`&amp;str` cannot be matched exhaustively, so a wildcard `_` is necessary"</span>);
             } <span class="kw">else if </span>cx.is_foreign_non_exhaustive_enum(ty) {
                 err.note(<span class="macro">format!</span>(<span class="string">"`{ty}` is marked as non-exhaustive, so a wildcard `_` is necessary to match exhaustively"</span>));
-            } <span class="kw">else if </span>cx.is_uninhabited(ty.inner()) &amp;&amp; cx.tcx.features().min_exhaustive_patterns {
+            } <span class="kw">else if </span>cx.is_uninhabited(ty.inner()) {
                 <span class="comment">// The type is uninhabited yet there is a witness: we must be in the `MaybeInvalid`
                 // case.
                 </span>err.note(<span class="macro">format!</span>(<span class="string">"`{ty}` is uninhabited but is not being matched by value, so a wildcard `_` is required"</span>));
@@ -2280,7 +2360,7 @@
     <span class="kw">let </span>suggested_arm = <span class="kw">if </span>suggest_the_witnesses {
         <span class="kw">let </span>pattern = witnesses
             .iter()
-            .map(|witness| cx.hoist_witness_pat(witness).to_string())
+            .map(|witness| cx.print_witness_pat(witness))
             .collect::&lt;Vec&lt;String&gt;&gt;()
             .join(<span class="string">" | "</span>);
         <span class="kw">if </span>witnesses.iter().all(|p| p.is_never_pattern()) &amp;&amp; cx.tcx.features().never_patterns {
@@ -2398,13 +2478,13 @@
     witnesses: <span class="kw-2">&amp;</span>[WitnessPat&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;],
 ) -&gt; String {
     <span class="kw">const </span>LIMIT: usize = <span class="number">3</span>;
-    <span class="kw">let </span>pat_to_str = |pat: <span class="kw-2">&amp;</span>WitnessPat&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;| cx.hoist_witness_pat(pat).to_string();
+    <span class="kw">let </span>pat_to_str = |pat: <span class="kw-2">&amp;</span>WitnessPat&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;| cx.print_witness_pat(pat);
     <span class="kw">match </span>witnesses {
         [] =&gt; <span class="macro">bug!</span>(),
-        [witness] =&gt; <span class="macro">format!</span>(<span class="string">"`{}`"</span>, cx.hoist_witness_pat(witness)),
+        [witness] =&gt; <span class="macro">format!</span>(<span class="string">"`{}`"</span>, cx.print_witness_pat(witness)),
         [head @ .., tail] <span class="kw">if </span>head.len() &lt; LIMIT =&gt; {
             <span class="kw">let </span>head: Vec&lt;<span class="kw">_</span>&gt; = head.iter().map(pat_to_str).collect();
-            <span class="macro">format!</span>(<span class="string">"`{}` and `{}`"</span>, head.join(<span class="string">"`, `"</span>), cx.hoist_witness_pat(tail))
+            <span class="macro">format!</span>(<span class="string">"`{}` and `{}`"</span>, head.join(<span class="string">"`, `"</span>), cx.print_witness_pat(tail))
         }
         <span class="kw">_ </span>=&gt; {
             <span class="kw">let </span>(head, tail) = witnesses.split_at(LIMIT);

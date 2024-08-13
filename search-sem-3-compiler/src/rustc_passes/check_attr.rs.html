@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_passes/src/check_attr.rs`."><title>check_attr.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_passes" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_passes/src/check_attr.rs`."><title>check_attr.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_passes" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -2638,47 +2638,35 @@
 <a href="#2638" id="2638">2638</a>
 <a href="#2639" id="2639">2639</a>
 <a href="#2640" id="2640">2640</a>
-<a href="#2641" id="2641">2641</a>
-<a href="#2642" id="2642">2642</a>
-<a href="#2643" id="2643">2643</a>
-<a href="#2644" id="2644">2644</a>
-<a href="#2645" id="2645">2645</a>
-<a href="#2646" id="2646">2646</a>
-<a href="#2647" id="2647">2647</a>
-<a href="#2648" id="2648">2648</a>
-<a href="#2649" id="2649">2649</a>
-<a href="#2650" id="2650">2650</a>
-<a href="#2651" id="2651">2651</a>
-<a href="#2652" id="2652">2652</a>
-<a href="#2653" id="2653">2653</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! This module implements some validity checks for attributes.
 //! In particular it verifies that `#[inline]` and `#[repr]` attributes are
 //! attached to items that actually support them and if there are
 //! conflicts between multiple such attributes attached to the same
 //! item.
 
-</span><span class="kw">use crate</span>::{errors, fluent_generated <span class="kw">as </span>fluent};
-<span class="kw">use </span>rustc_ast::{ast, AttrKind, AttrStyle, Attribute, LitKind};
-<span class="kw">use </span>rustc_ast::{MetaItemKind, MetaItemLit, NestedMetaItem};
+</span><span class="kw">use </span>std::cell::Cell;
+<span class="kw">use </span>std::collections::hash_map::Entry;
+
+<span class="kw">use </span>rustc_ast::{
+    ast, AttrKind, AttrStyle, Attribute, LitKind, MetaItemKind, MetaItemLit, NestedMetaItem,
+};
 <span class="kw">use </span>rustc_data_structures::fx::FxHashMap;
-<span class="kw">use </span>rustc_errors::{Applicability, IntoDiagArg, MultiSpan};
-<span class="kw">use </span>rustc_errors::{DiagCtxtHandle, StashKey};
+<span class="kw">use </span>rustc_errors::{Applicability, DiagCtxtHandle, IntoDiagArg, MultiSpan, StashKey};
 <span class="kw">use </span>rustc_feature::{AttributeDuplicates, AttributeType, BuiltinAttribute, BUILTIN_ATTRIBUTE_MAP};
 <span class="kw">use </span>rustc_hir::def_id::LocalModDefId;
 <span class="kw">use </span>rustc_hir::intravisit::{<span class="self">self</span>, Visitor};
-<span class="kw">use </span>rustc_hir::{<span class="self">self </span><span class="kw">as </span>hir};
 <span class="kw">use </span>rustc_hir::{
-    <span class="self">self</span>, FnSig, ForeignItem, HirId, Item, ItemKind, TraitItem, CRATE_HIR_ID, CRATE_OWNER_ID,
+    <span class="self">self </span><span class="kw">as </span>hir, <span class="self">self</span>, AssocItemKind, FnSig, ForeignItem, HirId, Item, ItemKind, MethodKind,
+    Safety, Target, TraitItem, CRATE_HIR_ID, CRATE_OWNER_ID,
 };
-<span class="kw">use </span>rustc_hir::{MethodKind, Safety, Target};
 <span class="kw">use </span>rustc_macros::LintDiagnostic;
-<span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::hir::nested_filter;
 <span class="kw">use </span>rustc_middle::middle::resolve_bound_vars::ObjectLifetimeDefault;
 <span class="kw">use </span>rustc_middle::query::Providers;
 <span class="kw">use </span>rustc_middle::traits::ObligationCause;
 <span class="kw">use </span>rustc_middle::ty::error::{ExpectedFound, TypeError};
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, TyCtxt};
+<span class="kw">use </span>rustc_middle::{bug, span_bug};
 <span class="kw">use </span>rustc_session::lint::builtin::{
     CONFLICTING_REPR_HINTS, INVALID_DOC_ATTRIBUTES, INVALID_MACRO_EXPORT_ARGUMENTS,
     UNKNOWN_OR_MALFORMED_DIAGNOSTIC_ATTRIBUTES, UNUSED_ATTRIBUTES,
@@ -2690,9 +2678,9 @@
 <span class="kw">use </span>rustc_trait_selection::error_reporting::InferCtxtErrorExt;
 <span class="kw">use </span>rustc_trait_selection::infer::{TyCtxtInferExt, ValuePairs};
 <span class="kw">use </span>rustc_trait_selection::traits::ObligationCtxt;
-<span class="kw">use </span>std::cell::Cell;
-<span class="kw">use </span>std::collections::hash_map::Entry;
 <span class="kw">use </span>tracing::debug;
+
+<span class="kw">use crate</span>::{errors, fluent_generated <span class="kw">as </span>fluent};
 
 <span class="attr">#[derive(LintDiagnostic)]
 #[diag(passes_diagnostic_diagnostic_on_unimplemented_only_for_traits)]
@@ -2768,132 +2756,185 @@
         <span class="kw">let </span>attrs = <span class="self">self</span>.tcx.hir().attrs(hir_id);
         <span class="kw">for </span>attr <span class="kw">in </span>attrs {
             <span class="kw">match </span>attr.path().as_slice() {
-                [sym::diagnostic, sym::do_not_recommend] =&gt; {
+                [sym::diagnostic, sym::do_not_recommend, ..] =&gt; {
                     <span class="self">self</span>.check_do_not_recommend(attr.span, hir_id, target)
                 }
-                [sym::diagnostic, sym::on_unimplemented] =&gt; {
+                [sym::diagnostic, sym::on_unimplemented, ..] =&gt; {
                     <span class="self">self</span>.check_diagnostic_on_unimplemented(attr.span, hir_id, target)
                 }
-                [sym::inline] =&gt; <span class="self">self</span>.check_inline(hir_id, attr, span, target),
-                [sym::coverage] =&gt; <span class="self">self</span>.check_coverage(attr, span, target),
-                [sym::non_exhaustive] =&gt; <span class="self">self</span>.check_non_exhaustive(hir_id, attr, span, target),
-                [sym::marker] =&gt; <span class="self">self</span>.check_marker(hir_id, attr, span, target),
-                [sym::target_feature] =&gt; {
+                [sym::inline, ..] =&gt; <span class="self">self</span>.check_inline(hir_id, attr, span, target),
+                [sym::coverage, ..] =&gt; <span class="self">self</span>.check_coverage(attr, span, target),
+                [sym::optimize, ..] =&gt; <span class="self">self</span>.check_optimize(hir_id, attr, target),
+                [sym::no_sanitize, ..] =&gt; <span class="self">self</span>.check_no_sanitize(hir_id, attr, span, target),
+                [sym::non_exhaustive, ..] =&gt; <span class="self">self</span>.check_non_exhaustive(hir_id, attr, span, target),
+                [sym::marker, ..] =&gt; <span class="self">self</span>.check_marker(hir_id, attr, span, target),
+                [sym::target_feature, ..] =&gt; {
                     <span class="self">self</span>.check_target_feature(hir_id, attr, span, target, attrs)
                 }
-                [sym::thread_local] =&gt; <span class="self">self</span>.check_thread_local(attr, span, target),
-                [sym::track_caller] =&gt; {
+                [sym::thread_local, ..] =&gt; <span class="self">self</span>.check_thread_local(attr, span, target),
+                [sym::track_caller, ..] =&gt; {
                     <span class="self">self</span>.check_track_caller(hir_id, attr.span, attrs, span, target)
                 }
-                [sym::doc] =&gt; <span class="self">self</span>.check_doc_attrs(
+                [sym::doc, ..] =&gt; <span class="self">self</span>.check_doc_attrs(
                     attr,
                     hir_id,
                     target,
                     <span class="kw-2">&amp;mut </span>specified_inline,
                     <span class="kw-2">&amp;mut </span>doc_aliases,
                 ),
-                [sym::no_link] =&gt; <span class="self">self</span>.check_no_link(hir_id, attr, span, target),
-                [sym::export_name] =&gt; <span class="self">self</span>.check_export_name(hir_id, attr, span, target),
-                [sym::rustc_layout_scalar_valid_range_start]
-                | [sym::rustc_layout_scalar_valid_range_end] =&gt; {
+                [sym::no_link, ..] =&gt; <span class="self">self</span>.check_no_link(hir_id, attr, span, target),
+                [sym::export_name, ..] =&gt; <span class="self">self</span>.check_export_name(hir_id, attr, span, target),
+                [sym::rustc_layout_scalar_valid_range_start, ..]
+                | [sym::rustc_layout_scalar_valid_range_end, ..] =&gt; {
                     <span class="self">self</span>.check_rustc_layout_scalar_valid_range(attr, span, target)
                 }
-                [sym::allow_internal_unstable] =&gt; {
+                [sym::allow_internal_unstable, ..] =&gt; {
                     <span class="self">self</span>.check_allow_internal_unstable(hir_id, attr, span, target, attrs)
                 }
-                [sym::debugger_visualizer] =&gt; <span class="self">self</span>.check_debugger_visualizer(attr, target),
-                [sym::rustc_allow_const_fn_unstable] =&gt; {
+                [sym::debugger_visualizer, ..] =&gt; <span class="self">self</span>.check_debugger_visualizer(attr, target),
+                [sym::rustc_allow_const_fn_unstable, ..] =&gt; {
                     <span class="self">self</span>.check_rustc_allow_const_fn_unstable(hir_id, attr, span, target)
                 }
-                [sym::rustc_std_internal_symbol] =&gt; {
+                [sym::rustc_std_internal_symbol, ..] =&gt; {
                     <span class="self">self</span>.check_rustc_std_internal_symbol(attr, span, target)
                 }
-                [sym::naked] =&gt; <span class="self">self</span>.check_naked(hir_id, attr, span, target),
-                [sym::rustc_never_returns_null_ptr] =&gt; {
+                [sym::naked, ..] =&gt; <span class="self">self</span>.check_naked(hir_id, attr, span, target, attrs),
+                [sym::rustc_never_returns_null_ptr, ..] =&gt; {
                     <span class="self">self</span>.check_applied_to_fn_or_method(hir_id, attr, span, target)
                 }
-                [sym::rustc_legacy_const_generics] =&gt; {
+                [sym::rustc_legacy_const_generics, ..] =&gt; {
                     <span class="self">self</span>.check_rustc_legacy_const_generics(hir_id, attr, span, target, item)
                 }
-                [sym::rustc_lint_query_instability] =&gt; {
+                [sym::rustc_lint_query_instability, ..] =&gt; {
                     <span class="self">self</span>.check_rustc_lint_query_instability(hir_id, attr, span, target)
                 }
-                [sym::rustc_lint_diagnostics] =&gt; {
+                [sym::rustc_lint_diagnostics, ..] =&gt; {
                     <span class="self">self</span>.check_rustc_lint_diagnostics(hir_id, attr, span, target)
                 }
-                [sym::rustc_lint_opt_ty] =&gt; <span class="self">self</span>.check_rustc_lint_opt_ty(attr, span, target),
-                [sym::rustc_lint_opt_deny_field_access] =&gt; {
+                [sym::rustc_lint_opt_ty, ..] =&gt; <span class="self">self</span>.check_rustc_lint_opt_ty(attr, span, target),
+                [sym::rustc_lint_opt_deny_field_access, ..] =&gt; {
                     <span class="self">self</span>.check_rustc_lint_opt_deny_field_access(attr, span, target)
                 }
-                [sym::rustc_clean]
-                | [sym::rustc_dirty]
-                | [sym::rustc_if_this_changed]
-                | [sym::rustc_then_this_would_need] =&gt; <span class="self">self</span>.check_rustc_dirty_clean(attr),
-                [sym::rustc_coinductive]
-                | [sym::rustc_must_implement_one_of]
-                | [sym::rustc_deny_explicit_impl]
-                | [sym::const_trait] =&gt; <span class="self">self</span>.check_must_be_applied_to_trait(attr, span, target),
-                [sym::cmse_nonsecure_entry] =&gt; {
+                [sym::rustc_clean, ..]
+                | [sym::rustc_dirty, ..]
+                | [sym::rustc_if_this_changed, ..]
+                | [sym::rustc_then_this_would_need, ..] =&gt; <span class="self">self</span>.check_rustc_dirty_clean(attr),
+                [sym::rustc_coinductive, ..]
+                | [sym::rustc_must_implement_one_of, ..]
+                | [sym::rustc_deny_explicit_impl, ..]
+                | [sym::const_trait, ..] =&gt; <span class="self">self</span>.check_must_be_applied_to_trait(attr, span, target),
+                [sym::cmse_nonsecure_entry, ..] =&gt; {
                     <span class="self">self</span>.check_cmse_nonsecure_entry(hir_id, attr, span, target)
                 }
-                [sym::collapse_debuginfo] =&gt; <span class="self">self</span>.check_collapse_debuginfo(attr, span, target),
-                [sym::must_not_suspend] =&gt; <span class="self">self</span>.check_must_not_suspend(attr, span, target),
-                [sym::must_use] =&gt; <span class="self">self</span>.check_must_use(hir_id, attr, target),
-                [sym::rustc_pass_by_value] =&gt; <span class="self">self</span>.check_pass_by_value(attr, span, target),
-                [sym::rustc_allow_incoherent_impl] =&gt; {
+                [sym::collapse_debuginfo, ..] =&gt; <span class="self">self</span>.check_collapse_debuginfo(attr, span, target),
+                [sym::must_not_suspend, ..] =&gt; <span class="self">self</span>.check_must_not_suspend(attr, span, target),
+                [sym::must_use, ..] =&gt; <span class="self">self</span>.check_must_use(hir_id, attr, target),
+                [sym::rustc_pass_by_value, ..] =&gt; <span class="self">self</span>.check_pass_by_value(attr, span, target),
+                [sym::rustc_allow_incoherent_impl, ..] =&gt; {
                     <span class="self">self</span>.check_allow_incoherent_impl(attr, span, target)
                 }
-                [sym::rustc_has_incoherent_inherent_impls] =&gt; {
+                [sym::rustc_has_incoherent_inherent_impls, ..] =&gt; {
                     <span class="self">self</span>.check_has_incoherent_inherent_impls(attr, span, target)
                 }
-                [sym::ffi_pure] =&gt; <span class="self">self</span>.check_ffi_pure(attr.span, attrs, target),
-                [sym::ffi_const] =&gt; <span class="self">self</span>.check_ffi_const(attr.span, target),
-                [sym::rustc_const_unstable]
-                | [sym::rustc_const_stable]
-                | [sym::unstable]
-                | [sym::stable]
-                | [sym::rustc_allowed_through_unstable_modules]
-                | [sym::rustc_promotable] =&gt; <span class="self">self</span>.check_stability_promotable(attr, target),
-                [sym::link_ordinal] =&gt; <span class="self">self</span>.check_link_ordinal(attr, span, target),
-                [sym::rustc_confusables] =&gt; <span class="self">self</span>.check_confusables(attr, target),
-                [sym::rustc_safe_intrinsic] =&gt; {
+                [sym::ffi_pure, ..] =&gt; <span class="self">self</span>.check_ffi_pure(attr.span, attrs, target),
+                [sym::ffi_const, ..] =&gt; <span class="self">self</span>.check_ffi_const(attr.span, target),
+                [sym::rustc_const_unstable, ..]
+                | [sym::rustc_const_stable, ..]
+                | [sym::unstable, ..]
+                | [sym::stable, ..]
+                | [sym::rustc_allowed_through_unstable_modules, ..]
+                | [sym::rustc_promotable, ..] =&gt; <span class="self">self</span>.check_stability_promotable(attr, target),
+                [sym::link_ordinal, ..] =&gt; <span class="self">self</span>.check_link_ordinal(attr, span, target),
+                [sym::rustc_confusables, ..] =&gt; <span class="self">self</span>.check_confusables(attr, target),
+                [sym::rustc_safe_intrinsic, ..] =&gt; {
                     <span class="self">self</span>.check_rustc_safe_intrinsic(hir_id, attr, span, target)
                 }
-                <span class="kw">_ </span>=&gt; <span class="bool-val">true</span>,
-            };
-
-            <span class="comment">// lint-only checks
-            </span><span class="kw">match </span>attr.name_or_empty() {
-                sym::cold =&gt; <span class="self">self</span>.check_cold(hir_id, attr, span, target),
-                sym::link =&gt; <span class="self">self</span>.check_link(hir_id, attr, span, target),
-                sym::link_name =&gt; <span class="self">self</span>.check_link_name(hir_id, attr, span, target),
-                sym::link_section =&gt; <span class="self">self</span>.check_link_section(hir_id, attr, span, target),
-                sym::no_mangle =&gt; <span class="self">self</span>.check_no_mangle(hir_id, attr, span, target),
-                sym::deprecated =&gt; <span class="self">self</span>.check_deprecated(hir_id, attr, span, target),
-                sym::macro_use | sym::macro_escape =&gt; <span class="self">self</span>.check_macro_use(hir_id, attr, target),
-                sym::path =&gt; <span class="self">self</span>.check_generic_attr(hir_id, attr, target, Target::Mod),
-                sym::macro_export =&gt; <span class="self">self</span>.check_macro_export(hir_id, attr, target),
-                sym::ignore | sym::should_panic =&gt; {
+                [sym::cold, ..] =&gt; <span class="self">self</span>.check_cold(hir_id, attr, span, target),
+                [sym::link, ..] =&gt; <span class="self">self</span>.check_link(hir_id, attr, span, target),
+                [sym::link_name, ..] =&gt; <span class="self">self</span>.check_link_name(hir_id, attr, span, target),
+                [sym::link_section, ..] =&gt; <span class="self">self</span>.check_link_section(hir_id, attr, span, target),
+                [sym::no_mangle, ..] =&gt; <span class="self">self</span>.check_no_mangle(hir_id, attr, span, target),
+                [sym::deprecated, ..] =&gt; <span class="self">self</span>.check_deprecated(hir_id, attr, span, target),
+                [sym::macro_use, ..] | [sym::macro_escape, ..] =&gt; {
+                    <span class="self">self</span>.check_macro_use(hir_id, attr, target)
+                }
+                [sym::path, ..] =&gt; <span class="self">self</span>.check_generic_attr(hir_id, attr, target, Target::Mod),
+                [sym::macro_export, ..] =&gt; <span class="self">self</span>.check_macro_export(hir_id, attr, target),
+                [sym::ignore, ..] | [sym::should_panic, ..] =&gt; {
                     <span class="self">self</span>.check_generic_attr(hir_id, attr, target, Target::Fn)
                 }
-                sym::automatically_derived =&gt; {
+                [sym::automatically_derived, ..] =&gt; {
                     <span class="self">self</span>.check_generic_attr(hir_id, attr, target, Target::Impl)
                 }
-                sym::no_implicit_prelude =&gt; {
+                [sym::no_implicit_prelude, ..] =&gt; {
                     <span class="self">self</span>.check_generic_attr(hir_id, attr, target, Target::Mod)
                 }
-                sym::rustc_object_lifetime_default =&gt; <span class="self">self</span>.check_object_lifetime_default(hir_id),
-                sym::proc_macro =&gt; {
+                [sym::rustc_object_lifetime_default, ..] =&gt; <span class="self">self</span>.check_object_lifetime_default(hir_id),
+                [sym::proc_macro, ..] =&gt; {
                     <span class="self">self</span>.check_proc_macro(hir_id, target, ProcMacroKind::FunctionLike)
                 }
-                sym::proc_macro_attribute =&gt; {
+                [sym::proc_macro_attribute, ..] =&gt; {
                     <span class="self">self</span>.check_proc_macro(hir_id, target, ProcMacroKind::Attribute);
                 }
-                sym::proc_macro_derive =&gt; {
+                [sym::proc_macro_derive, ..] =&gt; {
                     <span class="self">self</span>.check_generic_attr(hir_id, attr, target, Target::Fn);
                     <span class="self">self</span>.check_proc_macro(hir_id, target, ProcMacroKind::Derive)
                 }
-                <span class="kw">_ </span>=&gt; {}
+                [sym::coroutine, ..] =&gt; {
+                    <span class="self">self</span>.check_coroutine(attr, target);
+                }
+                [
+                    <span class="comment">// ok
+                    </span>sym::allow
+                    | sym::expect
+                    | sym::warn
+                    | sym::deny
+                    | sym::forbid
+                    | sym::cfg
+                    | sym::cfg_attr
+                    <span class="comment">// need to be fixed
+                    </span>| sym::cfi_encoding <span class="comment">// FIXME(cfi_encoding)
+                    </span>| sym::may_dangle <span class="comment">// FIXME(dropck_eyepatch)
+                    </span>| sym::pointee <span class="comment">// FIXME(derive_smart_pointer)
+                    </span>| sym::linkage <span class="comment">// FIXME(linkage)
+                    </span>| sym::omit_gdb_pretty_printer_section <span class="comment">// FIXME(omit_gdb_pretty_printer_section)
+                    </span>| sym::used <span class="comment">// handled elsewhere to restrict to static items
+                    </span>| sym::repr <span class="comment">// handled elsewhere to restrict to type decls items
+                    </span>| sym::instruction_set <span class="comment">// broken on stable!!!
+                    </span>| sym::windows_subsystem <span class="comment">// broken on stable!!!
+                    </span>| sym::patchable_function_entry <span class="comment">// FIXME(patchable_function_entry)
+                    </span>| sym::deprecated_safe <span class="comment">// FIXME(deprecated_safe)
+                    // internal
+                    </span>| sym::prelude_import
+                    | sym::panic_handler
+                    | sym::allow_internal_unsafe
+                    | sym::fundamental
+                    | sym::lang
+                    | sym::needs_allocator
+                    | sym::default_lib_allocator
+                    | sym::start
+                    | sym::custom_mir,
+                    ..
+                ] =&gt; {}
+                [name, ..] =&gt; {
+                    <span class="kw">match </span>BUILTIN_ATTRIBUTE_MAP.get(name) {
+                        <span class="comment">// checked below
+                        </span><span class="prelude-val">Some</span>(BuiltinAttribute { type_: AttributeType::CrateLevel, .. }) =&gt; {}
+                        <span class="prelude-val">Some</span>(<span class="kw">_</span>) =&gt; {
+                            <span class="comment">// FIXME: differentiate between unstable and internal attributes just
+                            // like we do with features instead of just accepting `rustc_`
+                            // attributes by name. That should allow trimming the above list, too.
+                            </span><span class="kw">if </span>!name.as_str().starts_with(<span class="string">"rustc_"</span>) {
+                                <span class="macro">span_bug!</span>(
+                                    attr.span,
+                                    <span class="string">"builtin attribute {name:?} not handled by `CheckAttrVisitor`"
+                                </span>)
+                            }
+                        }
+                        <span class="prelude-val">None </span>=&gt; (),
+                    }
+                }
+                [] =&gt; <span class="macro">unreachable!</span>(),
             }
 
             <span class="kw">let </span>builtin = attr.ident().and_then(|ident| BUILTIN_ATTRIBUTE_MAP.get(<span class="kw-2">&amp;</span>ident.name));
@@ -2949,7 +2990,7 @@
     }
 
     <span class="doccomment">/// Checks if `#[diagnostic::do_not_recommend]` is applied on a trait impl.
-    </span><span class="kw">fn </span>check_do_not_recommend(<span class="kw-2">&amp;</span><span class="self">self</span>, attr_span: Span, hir_id: HirId, target: Target) -&gt; bool {
+    </span><span class="kw">fn </span>check_do_not_recommend(<span class="kw-2">&amp;</span><span class="self">self</span>, attr_span: Span, hir_id: HirId, target: Target) {
         <span class="kw">if </span>!<span class="macro">matches!</span>(target, Target::Impl) {
             <span class="self">self</span>.tcx.emit_node_span_lint(
                 UNKNOWN_OR_MALFORMED_DIAGNOSTIC_ATTRIBUTES,
@@ -2958,16 +2999,10 @@
                 errors::IncorrectDoNotRecommendLocation,
             );
         }
-        <span class="bool-val">true
-    </span>}
+    }
 
     <span class="doccomment">/// Checks if `#[diagnostic::on_unimplemented]` is applied to a trait definition
-    </span><span class="kw">fn </span>check_diagnostic_on_unimplemented(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        attr_span: Span,
-        hir_id: HirId,
-        target: Target,
-    ) -&gt; bool {
+    </span><span class="kw">fn </span>check_diagnostic_on_unimplemented(<span class="kw-2">&amp;</span><span class="self">self</span>, attr_span: Span, hir_id: HirId, target: Target) {
         <span class="kw">if </span>!<span class="macro">matches!</span>(target, Target::Trait) {
             <span class="self">self</span>.tcx.emit_node_span_lint(
                 UNKNOWN_OR_MALFORMED_DIAGNOSTIC_ATTRIBUTES,
@@ -2976,70 +3011,89 @@
                 DiagnosticOnUnimplementedOnlyForTraits,
             );
         }
-        <span class="bool-val">true
-    </span>}
+    }
 
-    <span class="doccomment">/// Checks if an `#[inline]` is applied to a function or a closure. Returns `true` if valid.
-    </span><span class="kw">fn </span>check_inline(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) -&gt; bool {
+    <span class="doccomment">/// Checks if an `#[inline]` is applied to a function or a closure.
+    </span><span class="kw">fn </span>check_inline(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
             Target::Fn
             | Target::Closure
-            | Target::Method(MethodKind::Trait { body: <span class="bool-val">true </span>} | MethodKind::Inherent) =&gt; <span class="bool-val">true</span>,
+            | Target::Method(MethodKind::Trait { body: <span class="bool-val">true </span>} | MethodKind::Inherent) =&gt; {}
             Target::Method(MethodKind::Trait { body: <span class="bool-val">false </span>}) | Target::ForeignFn =&gt; {
                 <span class="self">self</span>.tcx.emit_node_span_lint(
                     UNUSED_ATTRIBUTES,
                     hir_id,
                     attr.span,
                     errors::IgnoredInlineAttrFnProto,
-                );
-                <span class="bool-val">true
-            </span>}
+                )
+            }
             <span class="comment">// FIXME(#65833): We permit associated consts to have an `#[inline]` attribute with
             // just a lint, because we previously erroneously allowed it and some crates used it
             // accidentally, to be compatible with crates depending on them, we can't throw an
             // error here.
-            </span>Target::AssocConst =&gt; {
-                <span class="self">self</span>.tcx.emit_node_span_lint(
-                    UNUSED_ATTRIBUTES,
-                    hir_id,
-                    attr.span,
-                    errors::IgnoredInlineAttrConstants,
-                );
-                <span class="bool-val">true
-            </span>}
+            </span>Target::AssocConst =&gt; <span class="self">self</span>.tcx.emit_node_span_lint(
+                UNUSED_ATTRIBUTES,
+                hir_id,
+                attr.span,
+                errors::IgnoredInlineAttrConstants,
+            ),
             <span class="comment">// FIXME(#80564): Same for fields, arms, and macro defs
             </span>Target::Field | Target::Arm | Target::MacroDef =&gt; {
-                <span class="self">self</span>.inline_attr_str_error_with_macro_def(hir_id, attr, <span class="string">"inline"</span>);
-                <span class="bool-val">true
-            </span>}
+                <span class="self">self</span>.inline_attr_str_error_with_macro_def(hir_id, attr, <span class="string">"inline"</span>)
+            }
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::InlineNotFnOrClosure {
                     attr_span: attr.span,
                     defn_span: span,
                 });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
     <span class="doccomment">/// Checks that `#[coverage(..)]` is applied to a function/closure/method,
     /// or to an impl block or module.
-    </span><span class="kw">fn </span>check_coverage(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) -&gt; bool {
+    </span><span class="kw">fn </span>check_coverage(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
             Target::Fn
             | Target::Closure
             | Target::Method(MethodKind::Trait { body: <span class="bool-val">true </span>} | MethodKind::Inherent)
             | Target::Impl
-            | Target::Mod =&gt; <span class="bool-val">true</span>,
+            | Target::Mod =&gt; {}
 
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::CoverageNotFnOrClosure {
                     attr_span: attr.span,
                     defn_span: span,
                 });
-                <span class="bool-val">false
-            </span>}
+            }
         }
+    }
+
+    <span class="doccomment">/// Checks that `#[optimize(..)]` is applied to a function/closure/method,
+    /// or to an impl block or module.
+    </span><span class="comment">// FIXME(#128488): this should probably be elevated to an error?
+    </span><span class="kw">fn </span>check_optimize(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, target: Target) {
+        <span class="kw">match </span>target {
+            Target::Fn
+            | Target::Closure
+            | Target::Method(MethodKind::Trait { body: <span class="bool-val">true </span>} | MethodKind::Inherent)
+            | Target::Impl
+            | Target::Mod =&gt; {}
+
+            <span class="kw">_ </span>=&gt; {
+                <span class="self">self</span>.tcx.emit_node_span_lint(
+                    UNUSED_ATTRIBUTES,
+                    hir_id,
+                    attr.span,
+                    errors::OptimizeNotFnOrClosure,
+                );
+            }
+        }
+    }
+
+    <span class="doccomment">/// Checks that `#[no_sanitize(..)]` is applied to a function or method.
+    </span><span class="kw">fn </span>check_no_sanitize(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
+        <span class="self">self</span>.check_applied_to_fn_or_method(hir_id, attr, span, target)
     }
 
     <span class="kw">fn </span>check_generic_attr(
@@ -3063,26 +3117,87 @@
     }
 
     <span class="doccomment">/// Checks if `#[naked]` is applied to a function definition.
-    </span><span class="kw">fn </span>check_naked(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) -&gt; bool {
+    </span><span class="kw">fn </span>check_naked(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        hir_id: HirId,
+        attr: <span class="kw-2">&amp;</span>Attribute,
+        span: Span,
+        target: Target,
+        attrs: <span class="kw-2">&amp;</span>[Attribute],
+    ) {
+        <span class="comment">// many attributes don't make sense in combination with #[naked].
+        // Notable attributes that are incompatible with `#[naked]` are:
+        //
+        // * `#[inline]`
+        // * `#[track_caller]`
+        // * `#[test]`, `#[ignore]`, `#[should_panic]`
+        //
+        // NOTE: when making changes to this list, check that `error_codes/E0736.md` remains accurate
+        </span><span class="kw">const </span>ALLOW_LIST: <span class="kw-2">&amp;</span>[rustc_span::Symbol] = <span class="kw-2">&amp;</span>[
+            <span class="comment">// conditional compilation
+            </span>sym::cfg,
+            sym::cfg_attr,
+            <span class="comment">// testing (allowed here so better errors can be generated in `rustc_builtin_macros::test`)
+            </span>sym::test,
+            sym::ignore,
+            sym::should_panic,
+            sym::bench,
+            <span class="comment">// diagnostics
+            </span>sym::allow,
+            sym::warn,
+            sym::deny,
+            sym::forbid,
+            sym::deprecated,
+            sym::must_use,
+            <span class="comment">// abi, linking and FFI
+            </span>sym::export_name,
+            sym::link_section,
+            sym::linkage,
+            sym::no_mangle,
+            sym::naked,
+            sym::instruction_set,
+            <span class="comment">// code generation
+            </span>sym::cold,
+            sym::target_feature,
+            <span class="comment">// documentation
+            </span>sym::doc,
+        ];
+
         <span class="kw">match </span>target {
             Target::Fn
-            | Target::Method(MethodKind::Trait { body: <span class="bool-val">true </span>} | MethodKind::Inherent) =&gt; <span class="bool-val">true</span>,
+            | Target::Method(MethodKind::Trait { body: <span class="bool-val">true </span>} | MethodKind::Inherent) =&gt; {
+                <span class="kw">for </span>other_attr <span class="kw">in </span>attrs {
+                    <span class="comment">// this covers "sugared doc comments" of the form `/// ...`
+                    // it does not cover `#[doc = "..."]`, which is handled below
+                    </span><span class="kw">if </span>other_attr.is_doc_comment() {
+                        <span class="kw">continue</span>;
+                    }
+
+                    <span class="kw">if </span>!ALLOW_LIST.iter().any(|name| other_attr.has_name(<span class="kw-2">*</span>name)) {
+                        <span class="self">self</span>.dcx().emit_err(errors::NakedFunctionIncompatibleAttribute {
+                            span: other_attr.span,
+                            naked_span: attr.span,
+                            attr: other_attr.name_or_empty(),
+                        });
+
+                        <span class="kw">return</span>;
+                    }
+                }
+            }
             <span class="comment">// FIXME(#80564): We permit struct fields, match arms and macro defs to have an
-            // `#[allow_internal_unstable]` attribute with just a lint, because we previously
+            // `#[naked]` attribute with just a lint, because we previously
             // erroneously allowed it and some crates used it accidentally, to be compatible
             // with crates depending on them, we can't throw an error here.
             </span>Target::Field | Target::Arm | Target::MacroDef =&gt; {
-                <span class="self">self</span>.inline_attr_str_error_with_macro_def(hir_id, attr, <span class="string">"naked"</span>);
-                <span class="bool-val">true
-            </span>}
+                <span class="self">self</span>.inline_attr_str_error_with_macro_def(hir_id, attr, <span class="string">"naked"</span>)
+            }
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::AttrShouldBeAppliedToFn {
                     attr_span: attr.span,
                     defn_span: span,
                     on_crate: hir_id == CRATE_HIR_ID,
                 });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
@@ -3093,18 +3208,17 @@
         attr: <span class="kw-2">&amp;</span>Attribute,
         span: Span,
         target: Target,
-    ) -&gt; bool {
+    ) {
         <span class="kw">match </span>target {
             Target::Fn
-            | Target::Method(MethodKind::Trait { body: <span class="bool-val">true </span>} | MethodKind::Inherent) =&gt; <span class="bool-val">true</span>,
+            | Target::Method(MethodKind::Trait { body: <span class="bool-val">true </span>} | MethodKind::Inherent) =&gt; {}
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::AttrShouldBeAppliedToFn {
                     attr_span: attr.span,
                     defn_span: span,
                     on_crate: hir_id == CRATE_HIR_ID,
                 });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
@@ -3129,19 +3243,18 @@
     }
 
     <span class="doccomment">/// Checks if `#[collapse_debuginfo]` is applied to a macro.
-    </span><span class="kw">fn </span>check_collapse_debuginfo(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) -&gt; bool {
+    </span><span class="kw">fn </span>check_collapse_debuginfo(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::MacroDef =&gt; <span class="bool-val">true</span>,
+            Target::MacroDef =&gt; {}
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.tcx
                     .dcx()
                     .emit_err(errors::CollapseDebuginfo { attr_span: attr.span, defn_span: span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
-    <span class="doccomment">/// Checks if a `#[track_caller]` is applied to a non-naked function. Returns `true` if valid.
+    <span class="doccomment">/// Checks if a `#[track_caller]` is applied to a function.
     </span><span class="kw">fn </span>check_track_caller(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         hir_id: HirId,
@@ -3149,12 +3262,8 @@
         attrs: <span class="kw-2">&amp;</span>[Attribute],
         span: Span,
         target: Target,
-    ) -&gt; bool {
+    ) {
         <span class="kw">match </span>target {
-            <span class="kw">_ if </span>attrs.iter().any(|attr| attr.has_name(sym::naked)) =&gt; {
-                <span class="self">self</span>.dcx().emit_err(errors::NakedTrackedCaller { attr_span });
-                <span class="bool-val">false
-            </span>}
             Target::Fn =&gt; {
                 <span class="comment">// `#[track_caller]` is not valid on weak lang items because they are called via
                 // `extern` declarations and `#[track_caller]` would alter their ABI.
@@ -3169,12 +3278,9 @@
                         name: lang_item,
                         sig_span: sig.span,
                     });
-                    <span class="bool-val">false
-                </span>} <span class="kw">else </span>{
-                    <span class="bool-val">true
-                </span>}
+                }
             }
-            Target::Method(..) | Target::ForeignFn | Target::Closure =&gt; <span class="bool-val">true</span>,
+            Target::Method(..) | Target::ForeignFn | Target::Closure =&gt; {}
             <span class="comment">// FIXME(#80564): We permit struct fields, match arms and macro defs to have an
             // `#[track_caller]` attribute with just a lint, because we previously
             // erroneously allowed it and some crates used it accidentally, to be compatible
@@ -3183,70 +3289,58 @@
                 <span class="kw">for </span>attr <span class="kw">in </span>attrs {
                     <span class="self">self</span>.inline_attr_str_error_with_macro_def(hir_id, attr, <span class="string">"track_caller"</span>);
                 }
-                <span class="bool-val">true
-            </span>}
+            }
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::TrackedCallerWrongLocation {
                     attr_span,
                     defn_span: span,
                     on_crate: hir_id == CRATE_HIR_ID,
                 });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
-    <span class="doccomment">/// Checks if the `#[non_exhaustive]` attribute on an `item` is valid. Returns `true` if valid.
-    </span><span class="kw">fn </span>check_non_exhaustive(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        hir_id: HirId,
-        attr: <span class="kw-2">&amp;</span>Attribute,
-        span: Span,
-        target: Target,
-    ) -&gt; bool {
+    <span class="doccomment">/// Checks if the `#[non_exhaustive]` attribute on an `item` is valid.
+    </span><span class="kw">fn </span>check_non_exhaustive(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::Struct | Target::Enum | Target::Variant =&gt; <span class="bool-val">true</span>,
+            Target::Struct | Target::Enum | Target::Variant =&gt; {}
             <span class="comment">// FIXME(#80564): We permit struct fields, match arms and macro defs to have an
             // `#[non_exhaustive]` attribute with just a lint, because we previously
             // erroneously allowed it and some crates used it accidentally, to be compatible
             // with crates depending on them, we can't throw an error here.
             </span>Target::Field | Target::Arm | Target::MacroDef =&gt; {
                 <span class="self">self</span>.inline_attr_str_error_with_macro_def(hir_id, attr, <span class="string">"non_exhaustive"</span>);
-                <span class="bool-val">true
-            </span>}
+            }
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::NonExhaustiveWrongLocation {
                     attr_span: attr.span,
                     defn_span: span,
                 });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
-    <span class="doccomment">/// Checks if the `#[marker]` attribute on an `item` is valid. Returns `true` if valid.
-    </span><span class="kw">fn </span>check_marker(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) -&gt; bool {
+    <span class="doccomment">/// Checks if the `#[marker]` attribute on an `item` is valid.
+    </span><span class="kw">fn </span>check_marker(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::Trait =&gt; <span class="bool-val">true</span>,
+            Target::Trait =&gt; {}
             <span class="comment">// FIXME(#80564): We permit struct fields, match arms and macro defs to have an
             // `#[marker]` attribute with just a lint, because we previously
             // erroneously allowed it and some crates used it accidentally, to be compatible
             // with crates depending on them, we can't throw an error here.
             </span>Target::Field | Target::Arm | Target::MacroDef =&gt; {
                 <span class="self">self</span>.inline_attr_str_error_with_macro_def(hir_id, attr, <span class="string">"marker"</span>);
-                <span class="bool-val">true
-            </span>}
+            }
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::AttrShouldBeAppliedToTrait {
                     attr_span: attr.span,
                     defn_span: span,
                 });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
-    <span class="doccomment">/// Checks if the `#[target_feature]` attribute on `item` is valid. Returns `true` if valid.
+    <span class="doccomment">/// Checks if the `#[target_feature]` attribute on `item` is valid.
     </span><span class="kw">fn </span>check_target_feature(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         hir_id: HirId,
@@ -3254,7 +3348,7 @@
         span: Span,
         target: Target,
         attrs: <span class="kw-2">&amp;</span>[Attribute],
-    ) -&gt; bool {
+    ) {
         <span class="kw">match </span>target {
             Target::Fn =&gt; {
                 <span class="comment">// `#[target_feature]` is not allowed in lang items.
@@ -3271,12 +3365,9 @@
                         name: lang_item,
                         sig_span: sig.span,
                     });
-                    <span class="bool-val">false
-                </span>} <span class="kw">else </span>{
-                    <span class="bool-val">true
-                </span>}
+                }
             }
-            Target::Method(MethodKind::Trait { body: <span class="bool-val">true </span>} | MethodKind::Inherent) =&gt; <span class="bool-val">true</span>,
+            Target::Method(MethodKind::Trait { body: <span class="bool-val">true </span>} | MethodKind::Inherent) =&gt; {}
             <span class="comment">// FIXME: #[target_feature] was previously erroneously allowed on statements and some
             // crates used this, so only emit a warning.
             </span>Target::Statement =&gt; {
@@ -3286,38 +3377,34 @@
                     attr.span,
                     errors::TargetFeatureOnStatement,
                 );
-                <span class="bool-val">true
-            </span>}
+            }
             <span class="comment">// FIXME(#80564): We permit struct fields, match arms and macro defs to have an
             // `#[target_feature]` attribute with just a lint, because we previously
             // erroneously allowed it and some crates used it accidentally, to be compatible
             // with crates depending on them, we can't throw an error here.
             </span>Target::Field | Target::Arm | Target::MacroDef =&gt; {
                 <span class="self">self</span>.inline_attr_str_error_with_macro_def(hir_id, attr, <span class="string">"target_feature"</span>);
-                <span class="bool-val">true
-            </span>}
+            }
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::AttrShouldBeAppliedToFn {
                     attr_span: attr.span,
                     defn_span: span,
                     on_crate: hir_id == CRATE_HIR_ID,
                 });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
-    <span class="doccomment">/// Checks if the `#[thread_local]` attribute on `item` is valid. Returns `true` if valid.
-    </span><span class="kw">fn </span>check_thread_local(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) -&gt; bool {
+    <span class="doccomment">/// Checks if the `#[thread_local]` attribute on `item` is valid.
+    </span><span class="kw">fn </span>check_thread_local(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::ForeignStatic | Target::Static =&gt; <span class="bool-val">true</span>,
+            Target::ForeignStatic | Target::Static =&gt; {}
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::AttrShouldBeAppliedToStatic {
                     attr_span: attr.span,
                     defn_span: span,
                 });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
@@ -3333,14 +3420,14 @@
         target: Target,
         is_list: bool,
         aliases: <span class="kw-2">&amp;mut </span>FxHashMap&lt;String, Span&gt;,
-    ) -&gt; bool {
+    ) {
         <span class="kw">let </span>tcx = <span class="self">self</span>.tcx;
         <span class="kw">let </span>span = meta.name_value_literal_span().unwrap_or_else(|| meta.span());
         <span class="kw">let </span>attr_str =
             <span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">"`#[doc(alias{})]`"</span>, <span class="kw">if </span>is_list { <span class="string">"(\"...\")" </span>} <span class="kw">else </span>{ <span class="string">" = \"...\"" </span>});
         <span class="kw">if </span>doc_alias == kw::Empty {
             tcx.dcx().emit_err(errors::DocAliasEmpty { span, attr_str });
-            <span class="kw">return </span><span class="bool-val">false</span>;
+            <span class="kw">return</span>;
         }
 
         <span class="kw">let </span>doc_alias_str = doc_alias.as_str();
@@ -3349,11 +3436,11 @@
             .find(|<span class="kw-2">&amp;</span>c| c == <span class="string">'"' </span>|| c == <span class="string">'\'' </span>|| (c.is_whitespace() &amp;&amp; c != <span class="string">' '</span>))
         {
             tcx.dcx().emit_err(errors::DocAliasBadChar { span, attr_str, char_: c });
-            <span class="kw">return </span><span class="bool-val">false</span>;
+            <span class="kw">return</span>;
         }
         <span class="kw">if </span>doc_alias_str.starts_with(<span class="string">' '</span>) || doc_alias_str.ends_with(<span class="string">' '</span>) {
             tcx.dcx().emit_err(errors::DocAliasStartEnd { span, attr_str });
-            <span class="kw">return </span><span class="bool-val">false</span>;
+            <span class="kw">return</span>;
         }
 
         <span class="kw">let </span>span = meta.span();
@@ -3378,7 +3465,7 @@
                 }
             }
             <span class="comment">// we check the validity of params elsewhere
-            </span>Target::Param =&gt; <span class="kw">return </span><span class="bool-val">false</span>,
+            </span>Target::Param =&gt; <span class="kw">return</span>,
             Target::Expression
             | Target::Statement
             | Target::Arm
@@ -3411,12 +3498,12 @@
             | Target::ExprField =&gt; <span class="prelude-val">None</span>,
         } {
             tcx.dcx().emit_err(errors::DocAliasBadLocation { span, attr_str, location });
-            <span class="kw">return </span><span class="bool-val">false</span>;
+            <span class="kw">return</span>;
         }
         <span class="kw">let </span>item_name = <span class="self">self</span>.tcx.hir().name(hir_id);
         <span class="kw">if </span>item_name == doc_alias {
             tcx.dcx().emit_err(errors::DocAliasNotAnAlias { span, attr_str });
-            <span class="kw">return </span><span class="bool-val">false</span>;
+            <span class="kw">return</span>;
         }
         <span class="kw">if let </span><span class="prelude-val">Err</span>(entry) = aliases.try_insert(doc_alias_str.to_owned(), span) {
             <span class="self">self</span>.tcx.emit_node_span_lint(
@@ -3426,8 +3513,7 @@
                 errors::DocAliasDuplicated { first_defn: <span class="kw-2">*</span>entry.entry.get() },
             );
         }
-        <span class="bool-val">true
-    </span>}
+    }
 
     <span class="kw">fn </span>check_doc_alias(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
@@ -3435,46 +3521,39 @@
         hir_id: HirId,
         target: Target,
         aliases: <span class="kw-2">&amp;mut </span>FxHashMap&lt;String, Span&gt;,
-    ) -&gt; bool {
+    ) {
         <span class="kw">if let </span><span class="prelude-val">Some</span>(values) = meta.meta_item_list() {
-            <span class="kw">let </span><span class="kw-2">mut </span>errors = <span class="number">0</span>;
             <span class="kw">for </span>v <span class="kw">in </span>values {
                 <span class="kw">match </span>v.lit() {
                     <span class="prelude-val">Some</span>(l) =&gt; <span class="kw">match </span>l.kind {
                         LitKind::Str(s, <span class="kw">_</span>) =&gt; {
-                            <span class="kw">if </span>!<span class="self">self</span>.check_doc_alias_value(v, s, hir_id, target, <span class="bool-val">true</span>, aliases) {
-                                errors += <span class="number">1</span>;
-                            }
+                            <span class="self">self</span>.check_doc_alias_value(v, s, hir_id, target, <span class="bool-val">true</span>, aliases);
                         }
                         <span class="kw">_ </span>=&gt; {
                             <span class="self">self</span>.tcx
                                 .dcx()
                                 .emit_err(errors::DocAliasNotStringLiteral { span: v.span() });
-                            errors += <span class="number">1</span>;
                         }
                     },
                     <span class="prelude-val">None </span>=&gt; {
                         <span class="self">self</span>.tcx
                             .dcx()
                             .emit_err(errors::DocAliasNotStringLiteral { span: v.span() });
-                        errors += <span class="number">1</span>;
                     }
                 }
             }
-            errors == <span class="number">0
-        </span>} <span class="kw">else if let </span><span class="prelude-val">Some</span>(doc_alias) = meta.value_str() {
+        } <span class="kw">else if let </span><span class="prelude-val">Some</span>(doc_alias) = meta.value_str() {
             <span class="self">self</span>.check_doc_alias_value(meta, doc_alias, hir_id, target, <span class="bool-val">false</span>, aliases)
         } <span class="kw">else </span>{
             <span class="self">self</span>.dcx().emit_err(errors::DocAliasMalformed { span: meta.span() });
-            <span class="bool-val">false
-        </span>}
+        }
     }
 
-    <span class="kw">fn </span>check_doc_keyword(<span class="kw-2">&amp;</span><span class="self">self</span>, meta: <span class="kw-2">&amp;</span>NestedMetaItem, hir_id: HirId) -&gt; bool {
+    <span class="kw">fn </span>check_doc_keyword(<span class="kw-2">&amp;</span><span class="self">self</span>, meta: <span class="kw-2">&amp;</span>NestedMetaItem, hir_id: HirId) {
         <span class="kw">let </span>doc_keyword = meta.value_str().unwrap_or(kw::Empty);
         <span class="kw">if </span>doc_keyword == kw::Empty {
             <span class="self">self</span>.doc_attr_str_error(meta, <span class="string">"keyword"</span>);
-            <span class="kw">return </span><span class="bool-val">false</span>;
+            <span class="kw">return</span>;
         }
         <span class="kw">let </span>item_kind = <span class="kw">match </span><span class="self">self</span>.tcx.hir_node(hir_id) {
             hir::Node::Item(item) =&gt; <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>item.kind),
@@ -3484,12 +3563,12 @@
             <span class="prelude-val">Some</span>(ItemKind::Mod(module)) =&gt; {
                 <span class="kw">if </span>!module.item_ids.is_empty() {
                     <span class="self">self</span>.dcx().emit_err(errors::DocKeywordEmptyMod { span: meta.span() });
-                    <span class="kw">return </span><span class="bool-val">false</span>;
+                    <span class="kw">return</span>;
                 }
             }
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::DocKeywordNotMod { span: meta.span() });
-                <span class="kw">return </span><span class="bool-val">false</span>;
+                <span class="kw">return</span>;
             }
         }
         <span class="kw">if </span>!rustc_lexer::is_ident(doc_keyword.as_str()) {
@@ -3497,12 +3576,10 @@
                 span: meta.name_value_literal_span().unwrap_or_else(|| meta.span()),
                 doc_keyword,
             });
-            <span class="kw">return </span><span class="bool-val">false</span>;
         }
-        <span class="bool-val">true
-    </span>}
+    }
 
-    <span class="kw">fn </span>check_doc_fake_variadic(<span class="kw-2">&amp;</span><span class="self">self</span>, meta: <span class="kw-2">&amp;</span>NestedMetaItem, hir_id: HirId) -&gt; bool {
+    <span class="kw">fn </span>check_doc_fake_variadic(<span class="kw-2">&amp;</span><span class="self">self</span>, meta: <span class="kw-2">&amp;</span>NestedMetaItem, hir_id: HirId) {
         <span class="kw">let </span>item_kind = <span class="kw">match </span><span class="self">self</span>.tcx.hir_node(hir_id) {
             hir::Node::Item(item) =&gt; <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>item.kind),
             <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
@@ -3517,18 +3594,32 @@
                     </span>};
                 <span class="kw">if </span>!is_valid {
                     <span class="self">self</span>.dcx().emit_err(errors::DocFakeVariadicNotValid { span: meta.span() });
-                    <span class="kw">return </span><span class="bool-val">false</span>;
                 }
             }
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::DocKeywordOnlyImpl { span: meta.span() });
-                <span class="kw">return </span><span class="bool-val">false</span>;
             }
         }
-        <span class="bool-val">true
-    </span>}
+    }
 
-    <span class="doccomment">/// Checks `#[doc(inline)]`/`#[doc(no_inline)]` attributes. Returns `true` if valid.
+    <span class="kw">fn </span>check_doc_search_unbox(<span class="kw-2">&amp;</span><span class="self">self</span>, meta: <span class="kw-2">&amp;</span>NestedMetaItem, hir_id: HirId) {
+        <span class="kw">let </span>hir::Node::Item(item) = <span class="self">self</span>.tcx.hir_node(hir_id) <span class="kw">else </span>{
+            <span class="self">self</span>.dcx().emit_err(errors::DocSearchUnboxInvalid { span: meta.span() });
+            <span class="kw">return</span>;
+        };
+        <span class="kw">match </span>item.kind {
+            ItemKind::Enum(<span class="kw">_</span>, generics) | ItemKind::Struct(<span class="kw">_</span>, generics)
+                <span class="kw">if </span>generics.params.len() != <span class="number">0 </span>=&gt; {}
+            ItemKind::Trait(<span class="kw">_</span>, <span class="kw">_</span>, generics, <span class="kw">_</span>, items)
+                <span class="kw">if </span>generics.params.len() != <span class="number">0
+                    </span>|| items.iter().any(|item| <span class="macro">matches!</span>(item.kind, AssocItemKind::Type)) =&gt; {}
+            <span class="kw">_ </span>=&gt; {
+                <span class="self">self</span>.dcx().emit_err(errors::DocSearchUnboxInvalid { span: meta.span() });
+            }
+        }
+    }
+
+    <span class="doccomment">/// Checks `#[doc(inline)]`/`#[doc(no_inline)]` attributes.
     ///
     /// A doc inlining attribute is invalid if it is applied to a non-`use` item, or
     /// if there are conflicting attributes for one item.
@@ -3544,7 +3635,7 @@
         hir_id: HirId,
         target: Target,
         specified_inline: <span class="kw-2">&amp;mut </span><span class="prelude-ty">Option</span>&lt;(bool, Span)&gt;,
-    ) -&gt; bool {
+    ) {
         <span class="kw">match </span>target {
             Target::Use | Target::ExternCrate =&gt; {
                 <span class="kw">let </span>do_inline = meta.name_or_empty() == sym::inline;
@@ -3557,13 +3648,10 @@
                             fluent::passes_doc_inline_conflict_second,
                         );
                         <span class="self">self</span>.dcx().emit_err(errors::DocKeywordConflict { spans });
-                        <span class="kw">return </span><span class="bool-val">false</span>;
                     }
-                    <span class="bool-val">true
-                </span>} <span class="kw">else </span>{
+                } <span class="kw">else </span>{
                     <span class="kw-2">*</span>specified_inline = <span class="prelude-val">Some</span>((do_inline, meta.span()));
-                    <span class="bool-val">true
-                </span>}
+                }
             }
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.tcx.emit_node_span_lint(
@@ -3576,8 +3664,7 @@
                             .then(|| <span class="self">self</span>.tcx.hir().span(hir_id)),
                     },
                 );
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
@@ -3587,7 +3674,7 @@
         meta: <span class="kw-2">&amp;</span>NestedMetaItem,
         hir_id: HirId,
         target: Target,
-    ) -&gt; bool {
+    ) {
         <span class="kw">if </span>target != Target::ExternCrate {
             <span class="self">self</span>.tcx.emit_node_span_lint(
                 INVALID_DOC_ATTRIBUTES,
@@ -3599,7 +3686,7 @@
                         .then(|| <span class="self">self</span>.tcx.hir().span(hir_id)),
                 },
             );
-            <span class="kw">return </span><span class="bool-val">false</span>;
+            <span class="kw">return</span>;
         }
 
         <span class="kw">if </span><span class="self">self</span>.tcx.extern_mod_stmt_cnum(hir_id.owner).is_none() {
@@ -3613,11 +3700,8 @@
                         .then(|| <span class="self">self</span>.tcx.hir().span(hir_id)),
                 },
             );
-            <span class="kw">return </span><span class="bool-val">false</span>;
         }
-
-        <span class="bool-val">true
-    </span>}
+    }
 
     <span class="doccomment">/// Checks that an attribute is *not* used at the crate level. Returns `true` if valid.
     </span><span class="kw">fn </span>check_attr_not_crate_level(
@@ -3661,8 +3745,7 @@
 
     <span class="doccomment">/// Checks that `doc(test(...))` attribute contains only valid attributes. Returns `true` if
     /// valid.
-    </span><span class="kw">fn </span>check_test_attr(<span class="kw-2">&amp;</span><span class="self">self</span>, meta: <span class="kw-2">&amp;</span>NestedMetaItem, hir_id: HirId) -&gt; bool {
-        <span class="kw">let </span><span class="kw-2">mut </span>is_valid = <span class="bool-val">true</span>;
+    </span><span class="kw">fn </span>check_test_attr(<span class="kw-2">&amp;</span><span class="self">self</span>, meta: <span class="kw-2">&amp;</span>NestedMetaItem, hir_id: HirId) {
         <span class="kw">if let </span><span class="prelude-val">Some</span>(metas) = meta.meta_item_list() {
             <span class="kw">for </span>i_meta <span class="kw">in </span>metas {
                 <span class="kw">match </span>(i_meta.name_or_empty(), i_meta.meta_item()) {
@@ -3676,7 +3759,6 @@
                                 path: rustc_ast_pretty::pprust::path_to_string(<span class="kw-2">&amp;</span>m.path),
                             },
                         );
-                        is_valid = <span class="bool-val">false</span>;
                     }
                     (<span class="kw">_</span>, <span class="prelude-val">None</span>) =&gt; {
                         <span class="self">self</span>.tcx.emit_node_span_lint(
@@ -3685,7 +3767,6 @@
                             i_meta.span(),
                             errors::DocTestLiteral,
                         );
-                        is_valid = <span class="bool-val">false</span>;
                     }
                 }
             }
@@ -3696,34 +3777,28 @@
                 meta.span(),
                 errors::DocTestTakesList,
             );
-            is_valid = <span class="bool-val">false</span>;
         }
-        is_valid
     }
 
     <span class="doccomment">/// Check that the `#![doc(cfg_hide(...))]` attribute only contains a list of attributes.
-    /// Returns `true` if valid.
-    </span><span class="kw">fn </span>check_doc_cfg_hide(<span class="kw-2">&amp;</span><span class="self">self</span>, meta: <span class="kw-2">&amp;</span>NestedMetaItem, hir_id: HirId) -&gt; bool {
-        <span class="kw">if </span>meta.meta_item_list().is_some() {
-            <span class="bool-val">true
-        </span>} <span class="kw">else </span>{
+    ///
+    </span><span class="kw">fn </span>check_doc_cfg_hide(<span class="kw-2">&amp;</span><span class="self">self</span>, meta: <span class="kw-2">&amp;</span>NestedMetaItem, hir_id: HirId) {
+        <span class="kw">if </span>meta.meta_item_list().is_none() {
             <span class="self">self</span>.tcx.emit_node_span_lint(
                 INVALID_DOC_ATTRIBUTES,
                 hir_id,
                 meta.span(),
                 errors::DocCfgHideTakesList,
             );
-            <span class="bool-val">false
-        </span>}
+        }
     }
 
-    <span class="doccomment">/// Runs various checks on `#[doc]` attributes. Returns `true` if valid.
+    <span class="doccomment">/// Runs various checks on `#[doc]` attributes.
     ///
     /// `specified_inline` should be initialized to `None` and kept for the scope
     /// of one item. Read the documentation of [`check_doc_inline`] for more information.
     ///
     /// [`check_doc_inline`]: Self::check_doc_inline
-    </span><span class="attr">#[allow(rustc::untranslatable_diagnostic)] </span><span class="comment">// FIXME: make this translatable
     </span><span class="kw">fn </span>check_doc_attrs(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         attr: <span class="kw-2">&amp;</span>Attribute,
@@ -3731,110 +3806,85 @@
         target: Target,
         specified_inline: <span class="kw-2">&amp;mut </span><span class="prelude-ty">Option</span>&lt;(bool, Span)&gt;,
         aliases: <span class="kw-2">&amp;mut </span>FxHashMap&lt;String, Span&gt;,
-    ) -&gt; bool {
-        <span class="kw">let </span><span class="kw-2">mut </span>is_valid = <span class="bool-val">true</span>;
-
+    ) {
         <span class="kw">if let </span><span class="prelude-val">Some</span>(mi) = attr.meta()
             &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(list) = mi.meta_item_list()
         {
             <span class="kw">for </span>meta <span class="kw">in </span>list {
                 <span class="kw">if let </span><span class="prelude-val">Some</span>(i_meta) = meta.meta_item() {
                     <span class="kw">match </span>i_meta.name_or_empty() {
-                        sym::alias
-                            <span class="kw">if </span>!<span class="self">self</span>.check_attr_not_crate_level(meta, hir_id, <span class="string">"alias"</span>)
-                                || !<span class="self">self</span>.check_doc_alias(meta, hir_id, target, aliases) =&gt;
-                        {
-                            is_valid = <span class="bool-val">false
-                        </span>}
+                        sym::alias =&gt; {
+                            <span class="kw">if </span><span class="self">self</span>.check_attr_not_crate_level(meta, hir_id, <span class="string">"alias"</span>) {
+                                <span class="self">self</span>.check_doc_alias(meta, hir_id, target, aliases);
+                            }
+                        }
 
-                        sym::keyword
-                            <span class="kw">if </span>!<span class="self">self</span>.check_attr_not_crate_level(meta, hir_id, <span class="string">"keyword"</span>)
-                                || !<span class="self">self</span>.check_doc_keyword(meta, hir_id) =&gt;
-                        {
-                            is_valid = <span class="bool-val">false
-                        </span>}
+                        sym::keyword =&gt; {
+                            <span class="kw">if </span><span class="self">self</span>.check_attr_not_crate_level(meta, hir_id, <span class="string">"keyword"</span>) {
+                                <span class="self">self</span>.check_doc_keyword(meta, hir_id);
+                            }
+                        }
 
-                        sym::fake_variadic
-                            <span class="kw">if </span>!<span class="self">self</span>.check_attr_not_crate_level(meta, hir_id, <span class="string">"fake_variadic"</span>)
-                                || !<span class="self">self</span>.check_doc_fake_variadic(meta, hir_id) =&gt;
-                        {
-                            is_valid = <span class="bool-val">false
-                        </span>}
+                        sym::fake_variadic =&gt; {
+                            <span class="kw">if </span><span class="self">self</span>.check_attr_not_crate_level(meta, hir_id, <span class="string">"fake_variadic"</span>) {
+                                <span class="self">self</span>.check_doc_fake_variadic(meta, hir_id);
+                            }
+                        }
+
+                        sym::test =&gt; {
+                            <span class="kw">if </span><span class="self">self</span>.check_attr_crate_level(attr, meta, hir_id) {
+                                <span class="self">self</span>.check_test_attr(meta, hir_id);
+                            }
+                        }
+
+                        sym::search_unbox =&gt; {
+                            <span class="kw">if </span><span class="self">self</span>.check_attr_not_crate_level(meta, hir_id, <span class="string">"fake_variadic"</span>) {
+                                <span class="self">self</span>.check_doc_search_unbox(meta, hir_id);
+                            }
+                        }
 
                         sym::html_favicon_url
                         | sym::html_logo_url
                         | sym::html_playground_url
                         | sym::issue_tracker_base_url
                         | sym::html_root_url
-                        | sym::html_no_source
-                        | sym::test
-                        | sym::rust_logo
-                            <span class="kw">if </span>!<span class="self">self</span>.check_attr_crate_level(attr, meta, hir_id) =&gt;
-                        {
-                            is_valid = <span class="bool-val">false</span>;
+                        | sym::html_no_source =&gt; {
+                            <span class="self">self</span>.check_attr_crate_level(attr, meta, hir_id);
                         }
 
-                        sym::cfg_hide
-                            <span class="kw">if </span>!<span class="self">self</span>.check_attr_crate_level(attr, meta, hir_id)
-                                || !<span class="self">self</span>.check_doc_cfg_hide(meta, hir_id) =&gt;
-                        {
-                            is_valid = <span class="bool-val">false</span>;
+                        sym::cfg_hide =&gt; {
+                            <span class="kw">if </span><span class="self">self</span>.check_attr_crate_level(attr, meta, hir_id) {
+                                <span class="self">self</span>.check_doc_cfg_hide(meta, hir_id);
+                            }
                         }
 
-                        sym::inline | sym::no_inline
-                            <span class="kw">if </span>!<span class="self">self</span>.check_doc_inline(
-                                attr,
-                                meta,
-                                hir_id,
-                                target,
-                                specified_inline,
-                            ) =&gt;
-                        {
-                            is_valid = <span class="bool-val">false</span>;
+                        sym::inline | sym::no_inline =&gt; {
+                            <span class="self">self</span>.check_doc_inline(attr, meta, hir_id, target, specified_inline)
                         }
 
-                        sym::masked <span class="kw">if </span>!<span class="self">self</span>.check_doc_masked(attr, meta, hir_id, target) =&gt; {
-                            is_valid = <span class="bool-val">false</span>;
-                        }
+                        sym::masked =&gt; <span class="self">self</span>.check_doc_masked(attr, meta, hir_id, target),
 
                         <span class="comment">// no_default_passes: deprecated
                         // passes: deprecated
                         // plugins: removed, but rustdoc warns about it itself
-                        </span>sym::alias
-                        | sym::cfg
-                        | sym::cfg_hide
+                        </span>sym::cfg
                         | sym::hidden
-                        | sym::html_favicon_url
-                        | sym::html_logo_url
-                        | sym::html_no_source
-                        | sym::html_playground_url
-                        | sym::html_root_url
-                        | sym::inline
-                        | sym::issue_tracker_base_url
-                        | sym::keyword
-                        | sym::masked
                         | sym::no_default_passes
-                        | sym::no_inline
                         | sym::notable_trait
                         | sym::passes
-                        | sym::plugins
-                        | sym::fake_variadic =&gt; {}
+                        | sym::plugins =&gt; {}
 
                         sym::rust_logo =&gt; {
-                            <span class="kw">if </span>!<span class="self">self</span>.tcx.features().rustdoc_internals {
+                            <span class="kw">if </span><span class="self">self</span>.check_attr_crate_level(attr, meta, hir_id)
+                                &amp;&amp; !<span class="self">self</span>.tcx.features().rustdoc_internals
+                            {
                                 feature_err(
                                     <span class="kw-2">&amp;</span><span class="self">self</span>.tcx.sess,
                                     sym::rustdoc_internals,
                                     meta.span(),
-                                    <span class="string">"the `#[doc(rust_logo)]` attribute is used for Rust branding"</span>,
+                                    fluent::passes_doc_rust_logo,
                                 )
                                 .emit();
-                            }
-                        }
-
-                        sym::test =&gt; {
-                            <span class="kw">if </span>!<span class="self">self</span>.check_test_attr(meta, hir_id) {
-                                is_valid = <span class="bool-val">false</span>;
                             }
                         }
 
@@ -3879,7 +3929,6 @@
                                     errors::DocTestUnknownAny { path },
                                 );
                             }
-                            is_valid = <span class="bool-val">false</span>;
                         }
                     }
                 } <span class="kw">else </span>{
@@ -3889,79 +3938,60 @@
                         meta.span(),
                         errors::DocInvalid,
                     );
-                    is_valid = <span class="bool-val">false</span>;
                 }
             }
         }
-
-        is_valid
     }
 
     <span class="doccomment">/// Warns against some misuses of `#[pass_by_value]`
-    </span><span class="kw">fn </span>check_pass_by_value(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) -&gt; bool {
+    </span><span class="kw">fn </span>check_pass_by_value(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::Struct | Target::Enum | Target::TyAlias =&gt; <span class="bool-val">true</span>,
+            Target::Struct | Target::Enum | Target::TyAlias =&gt; {}
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::PassByValue { attr_span: attr.span, span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
-    <span class="kw">fn </span>check_allow_incoherent_impl(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) -&gt; bool {
+    <span class="kw">fn </span>check_allow_incoherent_impl(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::Method(MethodKind::Inherent) =&gt; <span class="bool-val">true</span>,
+            Target::Method(MethodKind::Inherent) =&gt; {}
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::AllowIncoherentImpl { attr_span: attr.span, span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
-    <span class="kw">fn </span>check_has_incoherent_inherent_impls(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        attr: <span class="kw-2">&amp;</span>Attribute,
-        span: Span,
-        target: Target,
-    ) -&gt; bool {
+    <span class="kw">fn </span>check_has_incoherent_inherent_impls(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::Trait | Target::Struct | Target::Enum | Target::Union | Target::ForeignTy =&gt; {
-                <span class="bool-val">true
-            </span>}
+            Target::Trait | Target::Struct | Target::Enum | Target::Union | Target::ForeignTy =&gt; {}
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.tcx
                     .dcx()
                     .emit_err(errors::HasIncoherentInherentImpl { attr_span: attr.span, span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
-    <span class="kw">fn </span>check_ffi_pure(<span class="kw-2">&amp;</span><span class="self">self</span>, attr_span: Span, attrs: <span class="kw-2">&amp;</span>[Attribute], target: Target) -&gt; bool {
+    <span class="kw">fn </span>check_ffi_pure(<span class="kw-2">&amp;</span><span class="self">self</span>, attr_span: Span, attrs: <span class="kw-2">&amp;</span>[Attribute], target: Target) {
         <span class="kw">if </span>target != Target::ForeignFn {
             <span class="self">self</span>.dcx().emit_err(errors::FfiPureInvalidTarget { attr_span });
-            <span class="kw">return </span><span class="bool-val">false</span>;
+            <span class="kw">return</span>;
         }
         <span class="kw">if </span>attrs.iter().any(|a| a.has_name(sym::ffi_const)) {
             <span class="comment">// `#[ffi_const]` functions cannot be `#[ffi_pure]`
             </span><span class="self">self</span>.dcx().emit_err(errors::BothFfiConstAndPure { attr_span });
-            <span class="bool-val">false
-        </span>} <span class="kw">else </span>{
-            <span class="bool-val">true
-        </span>}
+        }
     }
 
-    <span class="kw">fn </span>check_ffi_const(<span class="kw-2">&amp;</span><span class="self">self</span>, attr_span: Span, target: Target) -&gt; bool {
-        <span class="kw">if </span>target == Target::ForeignFn {
-            <span class="bool-val">true
-        </span>} <span class="kw">else </span>{
+    <span class="kw">fn </span>check_ffi_const(<span class="kw-2">&amp;</span><span class="self">self</span>, attr_span: Span, target: Target) {
+        <span class="kw">if </span>target != Target::ForeignFn {
             <span class="self">self</span>.dcx().emit_err(errors::FfiConstInvalidTarget { attr_span });
-            <span class="bool-val">false
-        </span>}
+        }
     }
 
     <span class="doccomment">/// Warns against some misuses of `#[must_use]`
-    </span><span class="kw">fn </span>check_must_use(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, target: Target) -&gt; bool {
+    </span><span class="kw">fn </span>check_must_use(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, target: Target) {
         <span class="kw">if </span>!<span class="macro">matches!</span>(
             target,
             Target::Fn
@@ -3994,23 +4024,19 @@
                 errors::MustUseNoEffect { article, target },
             );
         }
+    }
 
-        <span class="comment">// For now, its always valid
-        </span><span class="bool-val">true
-    </span>}
-
-    <span class="doccomment">/// Checks if `#[must_not_suspend]` is applied to a function. Returns `true` if valid.
-    </span><span class="kw">fn </span>check_must_not_suspend(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) -&gt; bool {
+    <span class="doccomment">/// Checks if `#[must_not_suspend]` is applied to a function.
+    </span><span class="kw">fn </span>check_must_not_suspend(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::Struct | Target::Enum | Target::Union | Target::Trait =&gt; <span class="bool-val">true</span>,
+            Target::Struct | Target::Enum | Target::Union | Target::Trait =&gt; {}
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::MustNotSuspend { attr_span: attr.span, span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
-    <span class="doccomment">/// Checks if `#[cold]` is applied to a non-function. Returns `true` if valid.
+    <span class="doccomment">/// Checks if `#[cold]` is applied to a non-function.
     </span><span class="kw">fn </span>check_cold(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
             Target::Fn | Target::Method(..) | Target::ForeignFn | Target::Closure =&gt; {}
@@ -4086,22 +4112,20 @@
         }
     }
 
-    <span class="doccomment">/// Checks if `#[no_link]` is applied to an `extern crate`. Returns `true` if valid.
-    </span><span class="kw">fn </span>check_no_link(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) -&gt; bool {
+    <span class="doccomment">/// Checks if `#[no_link]` is applied to an `extern crate`.
+    </span><span class="kw">fn </span>check_no_link(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::ExternCrate =&gt; <span class="bool-val">true</span>,
+            Target::ExternCrate =&gt; {}
             <span class="comment">// FIXME(#80564): We permit struct fields, match arms and macro defs to have an
             // `#[no_link]` attribute with just a lint, because we previously
             // erroneously allowed it and some crates used it accidentally, to be compatible
             // with crates depending on them, we can't throw an error here.
             </span>Target::Field | Target::Arm | Target::MacroDef =&gt; {
                 <span class="self">self</span>.inline_attr_str_error_with_macro_def(hir_id, attr, <span class="string">"no_link"</span>);
-                <span class="bool-val">true
-            </span>}
+            }
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::NoLink { attr_span: attr.span, span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
@@ -4109,58 +4133,43 @@
         <span class="macro">matches!</span>(<span class="self">self</span>.tcx.hir_node(hir_id), hir::Node::ImplItem(..))
     }
 
-    <span class="doccomment">/// Checks if `#[export_name]` is applied to a function or static. Returns `true` if valid.
-    </span><span class="kw">fn </span>check_export_name(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        hir_id: HirId,
-        attr: <span class="kw-2">&amp;</span>Attribute,
-        span: Span,
-        target: Target,
-    ) -&gt; bool {
+    <span class="doccomment">/// Checks if `#[export_name]` is applied to a function or static.
+    </span><span class="kw">fn </span>check_export_name(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_id: HirId, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::Static | Target::Fn =&gt; <span class="bool-val">true</span>,
-            Target::Method(..) <span class="kw">if </span><span class="self">self</span>.is_impl_item(hir_id) =&gt; <span class="bool-val">true</span>,
+            Target::Static | Target::Fn =&gt; {}
+            Target::Method(..) <span class="kw">if </span><span class="self">self</span>.is_impl_item(hir_id) =&gt; {}
             <span class="comment">// FIXME(#80564): We permit struct fields, match arms and macro defs to have an
             // `#[export_name]` attribute with just a lint, because we previously
             // erroneously allowed it and some crates used it accidentally, to be compatible
             // with crates depending on them, we can't throw an error here.
             </span>Target::Field | Target::Arm | Target::MacroDef =&gt; {
                 <span class="self">self</span>.inline_attr_str_error_with_macro_def(hir_id, attr, <span class="string">"export_name"</span>);
-                <span class="bool-val">true
-            </span>}
+            }
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::ExportName { attr_span: attr.span, span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
-    <span class="kw">fn </span>check_rustc_layout_scalar_valid_range(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        attr: <span class="kw-2">&amp;</span>Attribute,
-        span: Span,
-        target: Target,
-    ) -&gt; bool {
+    <span class="kw">fn </span>check_rustc_layout_scalar_valid_range(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">if </span>target != Target::Struct {
             <span class="self">self</span>.dcx().emit_err(errors::RustcLayoutScalarValidRangeNotStruct {
                 attr_span: attr.span,
                 span,
             });
-            <span class="kw">return </span><span class="bool-val">false</span>;
+            <span class="kw">return</span>;
         }
 
         <span class="kw">let </span><span class="prelude-val">Some</span>(list) = attr.meta_item_list() <span class="kw">else </span>{
-            <span class="kw">return </span><span class="bool-val">false</span>;
+            <span class="kw">return</span>;
         };
 
-        <span class="kw">if </span><span class="macro">matches!</span>(<span class="kw-2">&amp;</span>list[..], <span class="kw-2">&amp;</span>[NestedMetaItem::Lit(MetaItemLit { kind: LitKind::Int(..), .. })]) {
-            <span class="bool-val">true
-        </span>} <span class="kw">else </span>{
+        <span class="kw">if </span>!<span class="macro">matches!</span>(<span class="kw-2">&amp;</span>list[..], <span class="kw-2">&amp;</span>[NestedMetaItem::Lit(MetaItemLit { kind: LitKind::Int(..), .. })])
+        {
             <span class="self">self</span>.tcx
                 .dcx()
                 .emit_err(errors::RustcLayoutScalarValidRangeArg { attr_span: attr.span });
-            <span class="bool-val">false
-        </span>}
+        }
     }
 
     <span class="doccomment">/// Checks if `#[rustc_legacy_const_generics]` is applied to a function and has a valid argument.
@@ -4171,7 +4180,7 @@
         span: Span,
         target: Target,
         item: <span class="prelude-ty">Option</span>&lt;ItemLike&lt;<span class="lifetime">'_</span>&gt;&gt;,
-    ) -&gt; bool {
+    ) {
         <span class="kw">let </span>is_function = <span class="macro">matches!</span>(target, Target::Fn);
         <span class="kw">if </span>!is_function {
             <span class="self">self</span>.dcx().emit_err(errors::AttrShouldBeAppliedToFn {
@@ -4179,12 +4188,12 @@
                 defn_span: span,
                 on_crate: hir_id == CRATE_HIR_ID,
             });
-            <span class="kw">return </span><span class="bool-val">false</span>;
+            <span class="kw">return</span>;
         }
 
         <span class="kw">let </span><span class="prelude-val">Some</span>(list) = attr.meta_item_list() <span class="kw">else </span>{
             <span class="comment">// The attribute form is validated on AST.
-            </span><span class="kw">return </span><span class="bool-val">false</span>;
+            </span><span class="kw">return</span>;
         };
 
         <span class="kw">let </span><span class="prelude-val">Some</span>(ItemLike::Item(Item {
@@ -4202,7 +4211,7 @@
                         attr_span: attr.span,
                         param_span: param.span,
                     });
-                    <span class="kw">return </span><span class="bool-val">false</span>;
+                    <span class="kw">return</span>;
                 }
             }
         }
@@ -4212,7 +4221,7 @@
                 attr_span: attr.span,
                 generics_span: generics.span,
             });
-            <span class="kw">return </span><span class="bool-val">false</span>;
+            <span class="kw">return</span>;
         }
 
         <span class="kw">let </span>arg_count = decl.inputs.len() <span class="kw">as </span>u128 + generics.params.len() <span class="kw">as </span>u128;
@@ -4225,7 +4234,7 @@
                         span,
                         arg_count: arg_count <span class="kw">as </span>usize,
                     });
-                    <span class="kw">return </span><span class="bool-val">false</span>;
+                    <span class="kw">return</span>;
                 }
             } <span class="kw">else </span>{
                 invalid_args.push(meta.span());
@@ -4234,10 +4243,7 @@
 
         <span class="kw">if </span>!invalid_args.is_empty() {
             <span class="self">self</span>.dcx().emit_err(errors::RustcLegacyConstGenericsIndexNegative { invalid_args });
-            <span class="bool-val">false
-        </span>} <span class="kw">else </span>{
-            <span class="bool-val">true
-        </span>}
+        }
     }
 
     <span class="doccomment">/// Helper function for checking that the provided attribute is only applied to a function or
@@ -4248,7 +4254,7 @@
         attr: <span class="kw-2">&amp;</span>Attribute,
         span: Span,
         target: Target,
-    ) -&gt; bool {
+    ) {
         <span class="kw">let </span>is_function = <span class="macro">matches!</span>(target, Target::Fn | Target::Method(..));
         <span class="kw">if </span>!is_function {
             <span class="self">self</span>.dcx().emit_err(errors::AttrShouldBeAppliedToFn {
@@ -4256,10 +4262,7 @@
                 defn_span: span,
                 on_crate: hir_id == CRATE_HIR_ID,
             });
-            <span class="bool-val">false
-        </span>} <span class="kw">else </span>{
-            <span class="bool-val">true
-        </span>}
+        }
     }
 
     <span class="doccomment">/// Checks that the `#[rustc_lint_query_instability]` attribute is only applied to a function
@@ -4270,7 +4273,7 @@
         attr: <span class="kw-2">&amp;</span>Attribute,
         span: Span,
         target: Target,
-    ) -&gt; bool {
+    ) {
         <span class="self">self</span>.check_applied_to_fn_or_method(hir_id, attr, span, target)
     }
 
@@ -4282,61 +4285,50 @@
         attr: <span class="kw-2">&amp;</span>Attribute,
         span: Span,
         target: Target,
-    ) -&gt; bool {
+    ) {
         <span class="self">self</span>.check_applied_to_fn_or_method(hir_id, attr, span, target)
     }
 
     <span class="doccomment">/// Checks that the `#[rustc_lint_opt_ty]` attribute is only applied to a struct.
-    </span><span class="kw">fn </span>check_rustc_lint_opt_ty(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) -&gt; bool {
+    </span><span class="kw">fn </span>check_rustc_lint_opt_ty(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::Struct =&gt; <span class="bool-val">true</span>,
+            Target::Struct =&gt; {}
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::RustcLintOptTy { attr_span: attr.span, span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
     <span class="doccomment">/// Checks that the `#[rustc_lint_opt_deny_field_access]` attribute is only applied to a field.
-    </span><span class="kw">fn </span>check_rustc_lint_opt_deny_field_access(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        attr: <span class="kw-2">&amp;</span>Attribute,
-        span: Span,
-        target: Target,
-    ) -&gt; bool {
+    </span><span class="kw">fn </span>check_rustc_lint_opt_deny_field_access(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::Field =&gt; <span class="bool-val">true</span>,
+            Target::Field =&gt; {}
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.tcx
                     .dcx()
                     .emit_err(errors::RustcLintOptDenyFieldAccess { attr_span: attr.span, span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
     <span class="doccomment">/// Checks that the dep-graph debugging attributes are only present when the query-dep-graph
     /// option is passed to the compiler.
-    </span><span class="kw">fn </span>check_rustc_dirty_clean(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute) -&gt; bool {
-        <span class="kw">if </span><span class="self">self</span>.tcx.sess.opts.unstable_opts.query_dep_graph {
-            <span class="bool-val">true
-        </span>} <span class="kw">else </span>{
+    </span><span class="kw">fn </span>check_rustc_dirty_clean(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute) {
+        <span class="kw">if </span>!<span class="self">self</span>.tcx.sess.opts.unstable_opts.query_dep_graph {
             <span class="self">self</span>.dcx().emit_err(errors::RustcDirtyClean { span: attr.span });
-            <span class="bool-val">false
-        </span>}
+        }
     }
 
     <span class="doccomment">/// Checks if the attribute is applied to a trait.
-    </span><span class="kw">fn </span>check_must_be_applied_to_trait(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) -&gt; bool {
+    </span><span class="kw">fn </span>check_must_be_applied_to_trait(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::Trait =&gt; <span class="bool-val">true</span>,
+            Target::Trait =&gt; {}
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::AttrShouldBeAppliedToTrait {
                     attr_span: attr.span,
                     defn_span: span,
                 });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
@@ -4406,7 +4398,6 @@
     }
 
     <span class="doccomment">/// Checks if the `#[repr]` attributes on `item` are valid.
-    </span><span class="attr">#[allow(rustc::untranslatable_diagnostic)] </span><span class="comment">// FIXME: make this translatable
     </span><span class="kw">fn </span>check_repr(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         attrs: <span class="kw-2">&amp;</span>[Attribute],
@@ -4463,7 +4454,7 @@
                             <span class="kw-2">&amp;</span><span class="self">self</span>.tcx.sess,
                             sym::fn_align,
                             hint.span(),
-                            <span class="string">"`repr(align)` attributes on functions are unstable"</span>,
+                            fluent::passes_repr_align_function,
                         )
                         .emit();
                     }
@@ -4633,43 +4624,38 @@
         span: Span,
         target: Target,
         attrs: <span class="kw-2">&amp;</span>[Attribute],
-    ) -&gt; bool {
+    ) {
         <span class="macro">debug!</span>(<span class="string">"Checking target: {:?}"</span>, target);
         <span class="kw">match </span>target {
             Target::Fn =&gt; {
                 <span class="kw">for </span>attr <span class="kw">in </span>attrs {
                     <span class="kw">if </span>attr.is_proc_macro_attr() {
                         <span class="macro">debug!</span>(<span class="string">"Is proc macro attr"</span>);
-                        <span class="kw">return </span><span class="bool-val">true</span>;
+                        <span class="kw">return</span>;
                     }
                 }
                 <span class="macro">debug!</span>(<span class="string">"Is not proc macro attr"</span>);
-                <span class="bool-val">false
-            </span>}
-            Target::MacroDef =&gt; <span class="bool-val">true</span>,
+            }
+            Target::MacroDef =&gt; {}
             <span class="comment">// FIXME(#80564): We permit struct fields and match arms to have an
             // `#[allow_internal_unstable]` attribute with just a lint, because we previously
             // erroneously allowed it and some crates used it accidentally, to be compatible
             // with crates depending on them, we can't throw an error here.
-            </span>Target::Field | Target::Arm =&gt; {
-                <span class="self">self</span>.inline_attr_str_error_without_macro_def(
-                    hir_id,
-                    attr,
-                    <span class="string">"allow_internal_unstable"</span>,
-                );
-                <span class="bool-val">true
-            </span>}
+            </span>Target::Field | Target::Arm =&gt; <span class="self">self</span>.inline_attr_str_error_without_macro_def(
+                hir_id,
+                attr,
+                <span class="string">"allow_internal_unstable"</span>,
+            ),
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.tcx
                     .dcx()
                     .emit_err(errors::AllowInternalUnstable { attr_span: attr.span, span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
     <span class="doccomment">/// Checks if the items on the `#[debugger_visualizer]` attribute are valid.
-    </span><span class="kw">fn </span>check_debugger_visualizer(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, target: Target) -&gt; bool {
+    </span><span class="kw">fn </span>check_debugger_visualizer(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, target: Target) {
         <span class="comment">// Here we only check that the #[debugger_visualizer] attribute is attached
         // to nothing other than a module. All other checks are done in the
         // `debugger_visualizer` query where they need to be done for decoding
@@ -4678,12 +4664,9 @@
             Target::Mod =&gt; {}
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::DebugVisualizerPlacement { span: attr.span });
-                <span class="kw">return </span><span class="bool-val">false</span>;
             }
         }
-
-        <span class="bool-val">true
-    </span>}
+    }
 
     <span class="doccomment">/// Outputs an error for `#[allow_internal_unstable]` which can only be applied to macros.
     /// (Allows proc_macro functions)
@@ -4693,27 +4676,22 @@
         attr: <span class="kw-2">&amp;</span>Attribute,
         span: Span,
         target: Target,
-    ) -&gt; bool {
+    ) {
         <span class="kw">match </span>target {
             Target::Fn | Target::Method(<span class="kw">_</span>)
-                <span class="kw">if </span><span class="self">self</span>.tcx.is_const_fn_raw(hir_id.expect_owner().to_def_id()) =&gt;
-            {
-                <span class="bool-val">true
-            </span>}
+                <span class="kw">if </span><span class="self">self</span>.tcx.is_const_fn_raw(hir_id.expect_owner().to_def_id()) =&gt; {}
             <span class="comment">// FIXME(#80564): We permit struct fields and match arms to have an
             // `#[allow_internal_unstable]` attribute with just a lint, because we previously
             // erroneously allowed it and some crates used it accidentally, to be compatible
             // with crates depending on them, we can't throw an error here.
             </span>Target::Field | Target::Arm | Target::MacroDef =&gt; {
-                <span class="self">self</span>.inline_attr_str_error_with_macro_def(hir_id, attr, <span class="string">"allow_internal_unstable"</span>);
-                <span class="bool-val">true
-            </span>}
+                <span class="self">self</span>.inline_attr_str_error_with_macro_def(hir_id, attr, <span class="string">"allow_internal_unstable"</span>)
+            }
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.tcx
                     .dcx()
                     .emit_err(errors::RustcAllowConstFnUnstable { attr_span: attr.span, span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
@@ -4723,65 +4701,56 @@
         attr: <span class="kw-2">&amp;</span>Attribute,
         span: Span,
         target: Target,
-    ) -&gt; bool {
+    ) {
         <span class="kw">if let </span>Target::ForeignFn = target
             &amp;&amp; <span class="kw">let </span>hir::Node::Item(Item {
                 kind: ItemKind::ForeignMod { abi: Abi::RustIntrinsic, .. },
                 ..
             }) = <span class="self">self</span>.tcx.parent_hir_node(hir_id)
         {
-            <span class="kw">return </span><span class="bool-val">true</span>;
+            <span class="kw">return</span>;
         }
 
         <span class="self">self</span>.dcx().emit_err(errors::RustcSafeIntrinsic { attr_span: attr.span, span });
-        <span class="bool-val">false
-    </span>}
+    }
 
-    <span class="kw">fn </span>check_rustc_std_internal_symbol(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        attr: <span class="kw-2">&amp;</span>Attribute,
-        span: Span,
-        target: Target,
-    ) -&gt; bool {
+    <span class="kw">fn </span>check_rustc_std_internal_symbol(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::Fn | Target::Static =&gt; <span class="bool-val">true</span>,
+            Target::Fn | Target::Static =&gt; {}
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.tcx
                     .dcx()
                     .emit_err(errors::RustcStdInternalSymbol { attr_span: attr.span, span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
-    <span class="kw">fn </span>check_stability_promotable(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, target: Target) -&gt; bool {
+    <span class="kw">fn </span>check_stability_promotable(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, target: Target) {
         <span class="kw">match </span>target {
             Target::Expression =&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::StabilityPromotable { attr_span: attr.span });
-                <span class="bool-val">false
-            </span>}
-            <span class="kw">_ </span>=&gt; <span class="bool-val">true</span>,
+            }
+            <span class="kw">_ </span>=&gt; {}
         }
     }
 
-    <span class="kw">fn </span>check_link_ordinal(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, _span: Span, target: Target) -&gt; bool {
+    <span class="kw">fn </span>check_link_ordinal(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, _span: Span, target: Target) {
         <span class="kw">match </span>target {
-            Target::ForeignFn | Target::ForeignStatic =&gt; <span class="bool-val">true</span>,
+            Target::ForeignFn | Target::ForeignStatic =&gt; {}
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::LinkOrdinal { attr_span: attr.span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
-    <span class="kw">fn </span>check_confusables(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, target: Target) -&gt; bool {
+    <span class="kw">fn </span>check_confusables(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, target: Target) {
         <span class="kw">match </span>target {
             Target::Method(MethodKind::Inherent) =&gt; {
                 <span class="kw">let </span><span class="prelude-val">Some</span>(meta) = attr.meta() <span class="kw">else </span>{
-                    <span class="kw">return </span><span class="bool-val">false</span>;
+                    <span class="kw">return</span>;
                 };
                 <span class="kw">let </span>ast::MetaItem { kind: MetaItemKind::List(<span class="kw-2">ref </span>metas), .. } = meta <span class="kw">else </span>{
-                    <span class="kw">return </span><span class="bool-val">false</span>;
+                    <span class="kw">return</span>;
                 };
 
                 <span class="kw">let </span><span class="kw-2">mut </span>candidates = Vec::new();
@@ -4795,22 +4764,18 @@
                                 hi: meta.span().shrink_to_hi(),
                             },
                         });
-                        <span class="kw">return </span><span class="bool-val">false</span>;
+                        <span class="kw">return</span>;
                     };
                     candidates.push(meta_lit.symbol);
                 }
 
                 <span class="kw">if </span>candidates.is_empty() {
                     <span class="self">self</span>.dcx().emit_err(errors::EmptyConfusables { span: attr.span });
-                    <span class="kw">return </span><span class="bool-val">false</span>;
                 }
-
-                <span class="bool-val">true
-            </span>}
+            }
             <span class="kw">_ </span>=&gt; {
                 <span class="self">self</span>.dcx().emit_err(errors::Confusables { attr_span: attr.span });
-                <span class="bool-val">false
-            </span>}
+            }
         }
     }
 
@@ -4909,8 +4874,8 @@
             attr.name_or_empty(),
             sym::allow | sym::warn | sym::deny | sym::forbid | sym::expect
         ) &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(meta) = attr.meta_item_list()
-            &amp;&amp; meta.len() == <span class="number">1
-            </span>&amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(item) = meta[<span class="number">0</span>].meta_item()
+            &amp;&amp; <span class="kw">let </span>[meta] = meta.as_slice()
+            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(item) = meta.meta_item()
             &amp;&amp; <span class="kw">let </span>MetaItemKind::NameValue(<span class="kw">_</span>) = <span class="kw-2">&amp;</span>item.kind
             &amp;&amp; item.path == sym::reason
         {
@@ -5034,6 +4999,15 @@
         <span class="kw">if </span>!errors.is_empty() {
             infcx.err_ctxt().report_fulfillment_errors(errors);
             <span class="self">self</span>.abort.set(<span class="bool-val">true</span>);
+        }
+    }
+
+    <span class="kw">fn </span>check_coroutine(<span class="kw-2">&amp;</span><span class="self">self</span>, attr: <span class="kw-2">&amp;</span>Attribute, target: Target) {
+        <span class="kw">match </span>target {
+            Target::Closure =&gt; <span class="kw">return</span>,
+            <span class="kw">_ </span>=&gt; {
+                <span class="self">self</span>.dcx().emit_err(errors::CoroutineOnNonClosure { span: attr.span });
+            }
         }
     }
 }

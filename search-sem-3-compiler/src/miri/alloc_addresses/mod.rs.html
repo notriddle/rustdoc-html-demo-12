@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/alloc_addresses/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-5df6628ff18b78c1.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-b7d916502f27c37a.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-34fdfa47078c50a4.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/alloc_addresses/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -391,6 +391,8 @@
 <a href="#391" id="391">391</a>
 <a href="#392" id="392">392</a>
 <a href="#393" id="393">393</a>
+<a href="#394" id="394">394</a>
+<a href="#395" id="395">395</a>
 </pre></div><pre class="rust"><code><span class="doccomment">//! This module is responsible for managing the absolute addresses that allocations are located at,
 //! and for casting between pointers and integers based on those addresses.
 
@@ -404,7 +406,7 @@
 
 <span class="kw">use </span>rustc_data_structures::fx::{FxHashMap, FxHashSet};
 <span class="kw">use </span>rustc_span::Span;
-<span class="kw">use </span>rustc_target::abi::{Align, HasDataLayout, Size};
+<span class="kw">use </span>rustc_target::abi::{Align, Size};
 
 <span class="kw">use crate</span>::{concurrency::VClock, <span class="kw-2">*</span>};
 
@@ -498,15 +500,17 @@
 <span class="kw">trait </span>EvalContextExtPriv&lt;<span class="lifetime">'tcx</span>&gt;: <span class="kw">crate</span>::MiriInterpCxExt&lt;<span class="lifetime">'tcx</span>&gt; {
     <span class="comment">// Returns the exposed `AllocId` that corresponds to the specified addr,
     // or `None` if the addr is out of bounds
-    </span><span class="kw">fn </span>alloc_id_from_addr(<span class="kw-2">&amp;</span><span class="self">self</span>, addr: u64) -&gt; <span class="prelude-ty">Option</span>&lt;AllocId&gt; {
+    </span><span class="kw">fn </span>alloc_id_from_addr(<span class="kw-2">&amp;</span><span class="self">self</span>, addr: u64, size: i64) -&gt; <span class="prelude-ty">Option</span>&lt;AllocId&gt; {
         <span class="kw">let </span>ecx = <span class="self">self</span>.eval_context_ref();
         <span class="kw">let </span>global_state = ecx.machine.alloc_addresses.borrow();
         <span class="macro">assert!</span>(global_state.provenance_mode != ProvenanceMode::Strict);
 
+        <span class="comment">// We always search the allocation to the right of this address. So if the size is structly
+        // negative, we have to search for `addr-1` instead.
+        </span><span class="kw">let </span>addr = <span class="kw">if </span>size &gt;= <span class="number">0 </span>{ addr } <span class="kw">else </span>{ addr.saturating_sub(<span class="number">1</span>) };
         <span class="kw">let </span>pos = global_state.int_to_ptr_map.binary_search_by_key(<span class="kw-2">&amp;</span>addr, |(addr, <span class="kw">_</span>)| <span class="kw-2">*</span>addr);
 
         <span class="comment">// Determine the in-bounds provenance for this pointer.
-        // (This is only called on an actual access, so in-bounds is the only possible kind of provenance.)
         </span><span class="kw">let </span>alloc_id = <span class="kw">match </span>pos {
             <span class="prelude-val">Ok</span>(pos) =&gt; <span class="prelude-val">Some</span>(global_state.int_to_ptr_map[pos].<span class="number">1</span>),
             <span class="prelude-val">Err</span>(<span class="number">0</span>) =&gt; <span class="prelude-val">None</span>,
@@ -698,20 +702,24 @@
 
         <span class="kw">let </span>(prov, offset) = ptr.into_parts(); <span class="comment">// offset is relative (AllocId provenance)
         </span><span class="kw">let </span>alloc_id = prov.alloc_id();
-        <span class="kw">let </span>base_addr = ecx.addr_from_alloc_id(alloc_id, kind)<span class="question-mark">?</span>;
 
-        <span class="comment">// Add offset with the right kind of pointer-overflowing arithmetic.
-        </span><span class="kw">let </span>dl = ecx.data_layout();
-        <span class="kw">let </span>absolute_addr = dl.overflowing_offset(base_addr, offset.bytes()).<span class="number">0</span>;
-        <span class="prelude-val">Ok</span>(interpret::Pointer::new(
+        <span class="comment">// Get a pointer to the beginning of this allocation.
+        </span><span class="kw">let </span>base_addr = ecx.addr_from_alloc_id(alloc_id, kind)<span class="question-mark">?</span>;
+        <span class="kw">let </span>base_ptr = interpret::Pointer::new(
             Provenance::Concrete { alloc_id, tag },
-            Size::from_bytes(absolute_addr),
-        ))
+            Size::from_bytes(base_addr),
+        );
+        <span class="comment">// Add offset with the right kind of pointer-overflowing arithmetic.
+        </span><span class="prelude-val">Ok</span>(base_ptr.wrapping_offset(offset, ecx))
     }
 
     <span class="doccomment">/// When a pointer is used for a memory access, this computes where in which allocation the
     /// access is going.
-    </span><span class="kw">fn </span>ptr_get_alloc(<span class="kw-2">&amp;</span><span class="self">self</span>, ptr: interpret::Pointer&lt;Provenance&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;(AllocId, Size)&gt; {
+    </span><span class="kw">fn </span>ptr_get_alloc(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        ptr: interpret::Pointer&lt;Provenance&gt;,
+        size: i64,
+    ) -&gt; <span class="prelude-ty">Option</span>&lt;(AllocId, Size)&gt; {
         <span class="kw">let </span>ecx = <span class="self">self</span>.eval_context_ref();
 
         <span class="kw">let </span>(tag, addr) = ptr.into_parts(); <span class="comment">// addr is absolute (Tag provenance)
@@ -720,7 +728,7 @@
             alloc_id
         } <span class="kw">else </span>{
             <span class="comment">// A wildcard pointer.
-            </span>ecx.alloc_id_from_addr(addr.bytes())<span class="question-mark">?
+            </span>ecx.alloc_id_from_addr(addr.bytes(), size)<span class="question-mark">?
         </span>};
 
         <span class="comment">// This cannot fail: since we already have a pointer with that provenance, adjust_alloc_root_pointer
@@ -728,12 +736,8 @@
         </span><span class="kw">let </span>base_addr = <span class="kw-2">*</span>ecx.machine.alloc_addresses.borrow().base_addr.get(<span class="kw-2">&amp;</span>alloc_id).unwrap();
 
         <span class="comment">// Wrapping "addr - base_addr"
-        </span><span class="attr">#[allow(clippy::cast_possible_wrap)] </span><span class="comment">// we want to wrap here
-        </span><span class="kw">let </span>neg_base_addr = (base_addr <span class="kw">as </span>i64).wrapping_neg();
-        <span class="prelude-val">Some</span>((
-            alloc_id,
-            Size::from_bytes(ecx.overflowing_signed_offset(addr.bytes(), neg_base_addr).<span class="number">0</span>),
-        ))
+        </span><span class="kw">let </span>rel_offset = ecx.truncate_to_target_usize(addr.bytes().wrapping_sub(base_addr));
+        <span class="prelude-val">Some</span>((alloc_id, Size::from_bytes(rel_offset)))
     }
 }
 

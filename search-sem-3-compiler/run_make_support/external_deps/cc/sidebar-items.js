@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["cc","extra_c_flags","extra_cxx_flags"],"struct":["Cc"]};
+window.SIDEBAR_ITEMS = {"fn":["cc","cxx","extra_c_flags","extra_cxx_flags"],"struct":["Cc"]};
