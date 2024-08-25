@@ -1,0 +1,1 @@
+/home/michael/Development/rust/src/librustdoc/html/static/js/search.js
