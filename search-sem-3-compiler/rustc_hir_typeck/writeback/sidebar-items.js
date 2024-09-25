@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["Resolver","WritebackCx"],"trait":["Locatable"]};
+window.SIDEBAR_ITEMS = {"struct":["EagerlyNormalizeConsts","Resolver","WritebackCx"],"trait":["Locatable"]};

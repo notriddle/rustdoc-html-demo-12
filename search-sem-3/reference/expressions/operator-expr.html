@@ -219,7 +219,9 @@ These checks occur even when <code>-C overflow-checks</code> is disabled, for le
 <p><strong><sup>Syntax</sup></strong><br />
 <em>BorrowExpression</em> :<br />
       (<code>&amp;</code>|<code>&amp;&amp;</code>) <a href="../expressions.html"><em>Expression</em></a><br />
-   | (<code>&amp;</code>|<code>&amp;&amp;</code>) <code>mut</code> <a href="../expressions.html"><em>Expression</em></a></p>
+   | (<code>&amp;</code>|<code>&amp;&amp;</code>) <code>mut</code> <a href="../expressions.html"><em>Expression</em></a><br />
+   | (<code>&amp;</code>|<code>&amp;&amp;</code>) <code>raw</code> <code>const</code> <a href="../expressions.html"><em>Expression</em></a><br />
+   | (<code>&amp;</code>|<code>&amp;&amp;</code>) <code>raw</code> <code>mut</code> <a href="../expressions.html"><em>Expression</em></a></p>
 </blockquote>
 <p>The <code>&amp;</code> (shared borrow) and <code>&amp;mut</code> (mutable borrow) operators are unary prefix operators.
 When applied to a <a href="../expressions.html#place-expressions-and-value-expressions">place expression</a>, this expressions produces a reference (pointer) to the location that the value refers to.
@@ -254,32 +256,30 @@ let a = &amp;&amp;&amp;&amp;  mut 10;
 let a = &amp;&amp; &amp;&amp; mut 10;
 let a = &amp; &amp; &amp; &amp; mut 10;
 <span class="boring">}</span></code></pre></pre>
-<h3 id="raw-address-of-operators"><a class="header" href="#raw-address-of-operators">Raw address-of operators</a></h3>
-<p>Related to the borrow operators are the <em>raw address-of operators</em>, which do not have first-class syntax, but are exposed via the macros <a href="../../std/ptr/macro.addr_of.html"><code>ptr::addr_of!(expr)</code></a> and <a href="../../std/ptr/macro.addr_of_mut.html"><code>ptr::addr_of_mut!(expr)</code></a>.
-The expression <code>expr</code> is evaluated in place expression context.
-<code>ptr::addr_of!(expr)</code> then creates a const raw pointer of type <code>*const T</code> to the given place, and <code>ptr::addr_of_mut!(expr)</code> creates a mutable raw pointer of type <code>*mut T</code>.</p>
-<p>The raw address-of operators must be used instead of a borrow operator whenever the place expression could evaluate to a place that is not properly aligned or does not store a valid value as determined by its type, or whenever creating a reference would introduce incorrect aliasing assumptions.
-In those situations, using a borrow operator would cause <a href="../behavior-considered-undefined.html">undefined behavior</a> by creating an invalid reference, but a raw pointer may still be constructed using an address-of operator.</p>
+<h3 id="raw-borrow-operators"><a class="header" href="#raw-borrow-operators">Raw borrow operators</a></h3>
+<p><code>&amp;raw const</code> and <code>&amp;raw mut</code> are the <em>raw borrow operators</em>.
+The operand expression of these operators is evaluated in place expression context.
+<code>&amp;raw const expr</code> then creates a const raw pointer of type <code>*const T</code> to the given place, and <code>&amp;raw mut expr</code> creates a mutable raw pointer of type <code>*mut T</code>.</p>
+<p>The raw borrow operators must be used instead of a borrow operator whenever the place expression could evaluate to a place that is not properly aligned or does not store a valid value as determined by its type, or whenever creating a reference would introduce incorrect aliasing assumptions.
+In those situations, using a borrow operator would cause <a href="../behavior-considered-undefined.html">undefined behavior</a> by creating an invalid reference, but a raw pointer may still be constructed.</p>
 <p>The following is an example of creating a raw pointer to an unaligned place through a <code>packed</code> struct:</p>
 <pre><pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use std::ptr;
-
-#[repr(packed)]
+</span>#[repr(packed)]
 struct Packed {
     f1: u8,
     f2: u16,
 }
 
 let packed = Packed { f1: 1, f2: 2 };
-// `&amp;packed.f2` would create an unaligned reference, and thus be Undefined Behavior!
-let raw_f2 = ptr::addr_of!(packed.f2);
+// `&amp;packed.f2` would create an unaligned reference, and thus be undefined behavior!
+let raw_f2 = &amp;raw const packed.f2;
 assert_eq!(unsafe { raw_f2.read_unaligned() }, 2);
 <span class="boring">}</span></code></pre></pre>
 <p>The following is an example of creating a raw pointer to a place that does not contain a valid value:</p>
 <pre><pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
-</span>use std::{ptr, mem::MaybeUninit};
+</span>use std::mem::MaybeUninit;
 
 struct Demo {
     field: bool,
@@ -287,8 +287,8 @@ struct Demo {
 
 let mut uninit = MaybeUninit::&lt;Demo&gt;::uninit();
 // `&amp;uninit.as_mut().field` would create a reference to an uninitialized `bool`,
-// and thus be Undefined Behavior!
-let f1_ptr = unsafe { ptr::addr_of_mut!((*uninit.as_mut_ptr()).field) };
+// and thus be undefined behavior!
+let f1_ptr = unsafe { &amp;raw mut (*uninit.as_mut_ptr()).field };
 unsafe { f1_ptr.write(true); }
 let init = unsafe { uninit.assume_init() };
 <span class="boring">}</span></code></pre></pre>
@@ -599,10 +599,12 @@ If the integer type is smaller than the pointer type, the address may be truncat
 <h4 id="address-to-pointer-cast"><a class="header" href="#address-to-pointer-cast">Address to pointer cast</a></h4>
 <p>Casting from an integer to a raw pointer interprets the integer as a memory address and produces a pointer referencing that memory.</p>
 <div class="warning">
-<p>Warning:
+<blockquote>
+<p><em><strong>Warning:</strong></em>
 This interacts with the Rust memory model, which is still under development.
 A pointer obtained from this cast may suffer additional restrictions even if it is bitwise equal to a valid pointer.
 Dereferencing such a pointer may be <a href="../behavior-considered-undefined.html">undefined behavior</a> if aliasing rules are not followed.</p>
+</blockquote>
 </div>
 <p>A trivial example of sound address arithmetic:</p>
 <pre><pre class="playground"><code class="language-rust edition2021"><span class="boring">#![allow(unused)]
@@ -765,10 +767,13 @@ fn example() {
 <span class="boring">}</span></code></pre></pre>
 <p>Like assignment expressions, compound assignment expressions always produce <a href="../types/tuple.html">the unit value</a>.</p>
 <div class="warning">
-<p>Warning: The evaluation order of operands swaps depending on the types of the operands:
+<blockquote>
+<p><em><strong>Warning:</strong></em>
+The evaluation order of operands swaps depending on the types of the operands:
 with primitive types the right-hand side will get evaluated first, while with non-primitive types the left-hand side will get evaluated first.
 Try not to write code that depends on the evaluation order of operands in compound assignment expressions.
 See <a href="https://github.com/rust-lang/rust/blob/1.58.0/src/test/ui/expr/compound-assignment/eval-order.rs">this test</a> for an example of using this dependency.</p>
+</blockquote>
 </div>
 <script>
 (function() {

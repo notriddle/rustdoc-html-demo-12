@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["NicheBias"],"fn":["absent","format_field_niches","layout_of_enum","layout_of_struct","univariant"],"trait":["LayoutCalculator"]};
+window.SIDEBAR_ITEMS = {"enum":["LayoutCalculatorError","NicheBias"],"fn":["absent"],"struct":["LayoutCalculator"],"type":["LayoutCalculatorResult"]};

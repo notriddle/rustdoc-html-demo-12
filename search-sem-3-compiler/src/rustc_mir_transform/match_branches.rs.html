@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/match_branches.rs`."><title>match_branches.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/match_branches.rs`."><title>match_branches.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>match_branches.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -515,7 +516,10 @@
 <a href="#515" id="515">515</a>
 <a href="#516" id="516">516</a>
 <a href="#517" id="517">517</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::iter;
+<a href="#518" id="518">518</a>
+<a href="#519" id="519">519</a>
+<a href="#520" id="520">520</a>
+<a href="#521" id="521">521</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::iter;
 
 <span class="kw">use </span>rustc_index::IndexSlice;
 <span class="kw">use </span>rustc_middle::mir::patch::MirPatch;
@@ -527,9 +531,9 @@
 
 <span class="kw">use </span><span class="kw">super</span>::simplify::simplify_cfg;
 
-<span class="kw">pub struct </span>MatchBranchSimplification;
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>MatchBranchSimplification;
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>MatchBranchSimplification {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">crate</span>::MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>MatchBranchSimplification {
     <span class="kw">fn </span>is_enabled(<span class="kw-2">&amp;</span><span class="self">self</span>, sess: <span class="kw-2">&amp;</span>rustc_session::Session) -&gt; bool {
         sess.mir_opt_level() &gt;= <span class="number">1
     </span>}
@@ -574,8 +578,9 @@
 }
 
 <span class="kw">trait </span>SimplifyMatch&lt;<span class="lifetime">'tcx</span>&gt; {
-    <span class="doccomment">/// Simplifies a match statement, returning true if the simplification succeeds, false otherwise.
-    /// Generic code is written here, and we generally don't need a custom implementation.
+    <span class="doccomment">/// Simplifies a match statement, returning true if the simplification succeeds, false
+    /// otherwise. Generic code is written here, and we generally don't need a custom
+    /// implementation.
     </span><span class="kw">fn </span>simplify(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -757,7 +762,8 @@
                         <span class="comment">// Same value in both blocks. Use statement as is.
                         </span>patch.add_statement(parent_end, f.kind.clone());
                     } <span class="kw">else </span>{
-                        <span class="comment">// Different value between blocks. Make value conditional on switch condition.
+                        <span class="comment">// Different value between blocks. Make value conditional on switch
+                        // condition.
                         </span><span class="kw">let </span>size = tcx.layout_of(param_env.and(discr_ty)).unwrap().size;
                         <span class="kw">let </span>const_cmp = Operand::const_from_scalar(
                             tcx,
@@ -806,11 +812,11 @@
 
 <span class="attr">#[derive(Default)]
 </span><span class="kw">struct </span>SimplifyToExp {
-    transfrom_kinds: Vec&lt;TransfromKind&gt;,
+    transform_kinds: Vec&lt;TransformKind&gt;,
 }
 
 <span class="attr">#[derive(Clone, Copy)]
-</span><span class="kw">enum </span>ExpectedTransformKind&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt; {
+</span><span class="kw">enum </span>ExpectedTransformKind&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="doccomment">/// Identical statements.
     </span>Same(<span class="kw-2">&amp;</span><span class="lifetime">'a </span>StatementKind&lt;<span class="lifetime">'tcx</span>&gt;),
     <span class="doccomment">/// Assignment statements have the same value.
@@ -819,17 +825,17 @@
     </span>Cast { place: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Place&lt;<span class="lifetime">'tcx</span>&gt;, ty: Ty&lt;<span class="lifetime">'tcx</span>&gt; },
 }
 
-<span class="kw">enum </span>TransfromKind {
+<span class="kw">enum </span>TransformKind {
     Same,
     Cast,
 }
 
-<span class="kw">impl </span>From&lt;ExpectedTransformKind&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;&gt; <span class="kw">for </span>TransfromKind {
+<span class="kw">impl </span>From&lt;ExpectedTransformKind&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;&gt; <span class="kw">for </span>TransformKind {
     <span class="kw">fn </span>from(compare_type: ExpectedTransformKind&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;) -&gt; <span class="self">Self </span>{
         <span class="kw">match </span>compare_type {
-            ExpectedTransformKind::Same(<span class="kw">_</span>) =&gt; TransfromKind::Same,
-            ExpectedTransformKind::SameByEq { .. } =&gt; TransfromKind::Same,
-            ExpectedTransformKind::Cast { .. } =&gt; TransfromKind::Cast,
+            ExpectedTransformKind::Same(<span class="kw">_</span>) =&gt; TransformKind::Same,
+            ExpectedTransformKind::SameByEq { .. } =&gt; TransformKind::Same,
+            ExpectedTransformKind::Cast { .. } =&gt; TransformKind::Cast,
         }
     }
 }
@@ -911,14 +917,16 @@
             <span class="kw">return </span><span class="prelude-val">None</span>;
         }
 
-        <span class="comment">// We first compare the two branches, and then the other branches need to fulfill the same conditions.
+        <span class="comment">// We first compare the two branches, and then the other branches need to fulfill the same
+        // conditions.
         </span><span class="kw">let </span><span class="kw-2">mut </span>expected_transform_kinds = Vec::new();
         <span class="kw">for </span>(f, s) <span class="kw">in </span>iter::zip(first_stmts, second_stmts) {
             <span class="kw">let </span>compare_type = <span class="kw">match </span>(<span class="kw-2">&amp;</span>f.kind, <span class="kw-2">&amp;</span>s.kind) {
                 <span class="comment">// If two statements are exactly the same, we can optimize.
                 </span>(f_s, s_s) <span class="kw">if </span>f_s == s_s =&gt; ExpectedTransformKind::Same(f_s),
 
-                <span class="comment">// If two statements are assignments with the match values to the same place, we can optimize.
+                <span class="comment">// If two statements are assignments with the match values to the same place, we
+                // can optimize.
                 </span>(
                     StatementKind::Assign(<span class="kw">box </span>(lhs_f, Rvalue::Use(Operand::Constant(f_c)))),
                     StatementKind::Assign(<span class="kw">box </span>(lhs_s, Rvalue::Use(Operand::Constant(s_c)))),
@@ -992,7 +1000,7 @@
                 }
             }
         }
-        <span class="self">self</span>.transfrom_kinds = expected_transform_kinds.into_iter().map(|c| c.into()).collect();
+        <span class="self">self</span>.transform_kinds = expected_transform_kinds.into_iter().map(|c| c.into()).collect();
         <span class="prelude-val">Some</span>(())
     }
 
@@ -1010,13 +1018,13 @@
         <span class="kw">let </span>(<span class="kw">_</span>, first) = targets.iter().next().unwrap();
         <span class="kw">let </span>first = <span class="kw-2">&amp;</span>bbs[first];
 
-        <span class="kw">for </span>(t, s) <span class="kw">in </span>iter::zip(<span class="kw-2">&amp;</span><span class="self">self</span>.transfrom_kinds, <span class="kw-2">&amp;</span>first.statements) {
+        <span class="kw">for </span>(t, s) <span class="kw">in </span>iter::zip(<span class="kw-2">&amp;</span><span class="self">self</span>.transform_kinds, <span class="kw-2">&amp;</span>first.statements) {
             <span class="kw">match </span>(t, <span class="kw-2">&amp;</span>s.kind) {
-                (TransfromKind::Same, <span class="kw">_</span>) =&gt; {
+                (TransformKind::Same, <span class="kw">_</span>) =&gt; {
                     patch.add_statement(parent_end, s.kind.clone());
                 }
                 (
-                    TransfromKind::Cast,
+                    TransformKind::Cast,
                     StatementKind::Assign(<span class="kw">box </span>(lhs, Rvalue::Use(Operand::Constant(f_c)))),
                 ) =&gt; {
                     <span class="kw">let </span>operand = Operand::Copy(Place::from(discr_local));

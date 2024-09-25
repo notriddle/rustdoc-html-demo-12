@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["check_fn","extract_def_id_from_arg"],"static":["IMPL_TRAIT_OVERCAPTURES","IMPL_TRAIT_REDUNDANT_CAPTURES"],"struct":["ImplTraitOvercaptures","ImplTraitOvercapturesLint","ImplTraitRedundantCapturesLint","VisitOpaqueTypes"]};
+window.SIDEBAR_ITEMS = {"enum":["ParamKind"],"fn":["check_fn","extract_def_id_from_arg","unify"],"static":["IMPL_TRAIT_OVERCAPTURES","IMPL_TRAIT_REDUNDANT_CAPTURES"],"struct":["FunctionalVariances","ImplTraitOvercaptures","ImplTraitOvercapturesLint","ImplTraitRedundantCapturesLint","VisitOpaqueTypes"]};

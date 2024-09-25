@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_build/src/check_unsafety.rs`."><title>check_unsafety.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_build" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_build/src/check_unsafety.rs`."><title>check_unsafety.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_build" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_build/</div>check_unsafety.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1021,7 +1022,44 @@
 <a href="#1021" id="1021">1021</a>
 <a href="#1022" id="1022">1022</a>
 <a href="#1023" id="1023">1023</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::borrow::Cow;
+<a href="#1024" id="1024">1024</a>
+<a href="#1025" id="1025">1025</a>
+<a href="#1026" id="1026">1026</a>
+<a href="#1027" id="1027">1027</a>
+<a href="#1028" id="1028">1028</a>
+<a href="#1029" id="1029">1029</a>
+<a href="#1030" id="1030">1030</a>
+<a href="#1031" id="1031">1031</a>
+<a href="#1032" id="1032">1032</a>
+<a href="#1033" id="1033">1033</a>
+<a href="#1034" id="1034">1034</a>
+<a href="#1035" id="1035">1035</a>
+<a href="#1036" id="1036">1036</a>
+<a href="#1037" id="1037">1037</a>
+<a href="#1038" id="1038">1038</a>
+<a href="#1039" id="1039">1039</a>
+<a href="#1040" id="1040">1040</a>
+<a href="#1041" id="1041">1041</a>
+<a href="#1042" id="1042">1042</a>
+<a href="#1043" id="1043">1043</a>
+<a href="#1044" id="1044">1044</a>
+<a href="#1045" id="1045">1045</a>
+<a href="#1046" id="1046">1046</a>
+<a href="#1047" id="1047">1047</a>
+<a href="#1048" id="1048">1048</a>
+<a href="#1049" id="1049">1049</a>
+<a href="#1050" id="1050">1050</a>
+<a href="#1051" id="1051">1051</a>
+<a href="#1052" id="1052">1052</a>
+<a href="#1053" id="1053">1053</a>
+<a href="#1054" id="1054">1054</a>
+<a href="#1055" id="1055">1055</a>
+<a href="#1056" id="1056">1056</a>
+<a href="#1057" id="1057">1057</a>
+<a href="#1058" id="1058">1058</a>
+<a href="#1059" id="1059">1059</a>
+<a href="#1060" id="1060">1060</a>
+<a href="#1061" id="1061">1061</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::borrow::Cow;
 <span class="kw">use </span>std::mem;
 <span class="kw">use </span>std::ops::Bound;
 
@@ -1035,11 +1073,11 @@
 <span class="kw">use </span>rustc_middle::thir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::ty::print::with_no_trimmed_paths;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, ParamEnv, Ty, TyCtxt};
-<span class="kw">use </span>rustc_session::lint::builtin::{DEPRECATED_SAFE_2024, UNSAFE_OP_IN_UNSAFE_FN, UNUSED_UNSAFE};
 <span class="kw">use </span>rustc_session::lint::Level;
+<span class="kw">use </span>rustc_session::lint::builtin::{DEPRECATED_SAFE_2024, UNSAFE_OP_IN_UNSAFE_FN, UNUSED_UNSAFE};
 <span class="kw">use </span>rustc_span::def_id::{DefId, LocalDefId};
 <span class="kw">use </span>rustc_span::symbol::Symbol;
-<span class="kw">use </span>rustc_span::{sym, Span};
+<span class="kw">use </span>rustc_span::{Span, sym};
 
 <span class="kw">use </span><span class="kw">crate</span>::build::ExprCategory;
 <span class="kw">use </span><span class="kw">crate</span>::errors::<span class="kw-2">*</span>;
@@ -1119,9 +1157,32 @@
             // from an edition before 2024.
             </span><span class="kw-2">&amp;</span>UnsafeOpKind::CallToUnsafeFunction(<span class="prelude-val">Some</span>(id))
                 <span class="kw">if </span>!span.at_least_rust_2024()
-                    &amp;&amp; <span class="self">self</span>.tcx.has_attr(id, sym::rustc_deprecated_safe_2024) =&gt;
+                    &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(attr) = <span class="self">self</span>.tcx.get_attr(id, sym::rustc_deprecated_safe_2024) =&gt;
             {
+                <span class="kw">let </span>suggestion = attr
+                    .meta_item_list()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find(|item| item.has_name(sym::audit_that))
+                    .map(|item| {
+                        item.value_str().expect(
+                            <span class="string">"`#[rustc_deprecated_safe_2024(audit_that)]` must have a string value"</span>,
+                        )
+                    });
+
                 <span class="kw">let </span>sm = <span class="self">self</span>.tcx.sess.source_map();
+                <span class="kw">let </span>guarantee = suggestion
+                    .as_ref()
+                    .map(|suggestion| <span class="macro">format!</span>(<span class="string">"that {}"</span>, suggestion))
+                    .unwrap_or_else(|| String::from(<span class="string">"its unsafe preconditions"</span>));
+                <span class="kw">let </span>suggestion = suggestion
+                    .and_then(|suggestion| {
+                        sm.indentation_before(span).map(|indent| {
+                            <span class="macro">format!</span>(<span class="string">"{}// TODO: Audit that {}.\n"</span>, indent, suggestion) <span class="comment">// ignore-tidy-todo
+                        </span>})
+                    })
+                    .unwrap_or_default();
+
                 <span class="self">self</span>.tcx.emit_node_span_lint(
                     DEPRECATED_SAFE_2024,
                     <span class="self">self</span>.hir_context,
@@ -1129,8 +1190,9 @@
                     CallToDeprecatedSafeFnRequiresUnsafe {
                         span,
                         function: <span class="macro">with_no_trimmed_paths!</span>(<span class="self">self</span>.tcx.def_path_str(id)),
+                        guarantee,
                         sub: CallToDeprecatedSafeFnRequiresUnsafeSub {
-                            indent: sm.indentation_before(span).unwrap_or_default(),
+                            start_of_line_suggestion: suggestion,
                             start_of_line: sm.span_extend_to_line(span).shrink_to_lo(),
                             left: span.shrink_to_lo(),
                             right: span.shrink_to_hi(),
@@ -1217,7 +1279,14 @@
                 warnings: <span class="self">self</span>.warnings,
                 suggest_unsafe_block: <span class="self">self</span>.suggest_unsafe_block,
             };
-            inner_visitor.visit_expr(<span class="kw-2">&amp;</span>inner_thir[expr]);
+            <span class="comment">// params in THIR may be unsafe, e.g. a union pattern.
+            </span><span class="kw">for </span>param <span class="kw">in </span><span class="kw-2">&amp;</span>inner_thir.params {
+                <span class="kw">if let </span><span class="prelude-val">Some</span>(param_pat) = param.pat.as_deref() {
+                    inner_visitor.visit_pat(param_pat);
+                }
+            }
+            <span class="comment">// Visit the body.
+            </span>inner_visitor.visit_expr(<span class="kw-2">&amp;</span>inner_thir[expr]);
             <span class="comment">// Unsafe blocks can be used in the inner body, make sure to take it into account
             </span><span class="self">self</span>.safety_context = inner_visitor.safety_context;
         }
@@ -1314,14 +1383,15 @@
                 | PatKind::DerefPattern { .. }
                 | PatKind::Range { .. }
                 | PatKind::Slice { .. }
-                | PatKind::Array { .. } =&gt; {
+                | PatKind::Array { .. }
+                <span class="comment">// Never constitutes a witness of uninhabitedness.
+                </span>| PatKind::Never =&gt; {
                     <span class="self">self</span>.requires_unsafe(pat.span, AccessToUnionField);
                     <span class="kw">return</span>; <span class="comment">// we can return here since this already requires unsafe
                 </span>}
-                <span class="comment">// wildcard/never don't take anything
+                <span class="comment">// wildcard doesn't read anything.
                 </span>PatKind::Wild |
-                PatKind::Never |
-                <span class="comment">// these just wrap other patterns
+                <span class="comment">// these just wrap other patterns, which we recurse on below.
                 </span>PatKind::Or { .. } |
                 PatKind::InlineConstant { .. } |
                 PatKind::AscribeUserType { .. } |
@@ -1396,7 +1466,7 @@
             | ExprKind::Scope { .. }
             | ExprKind::Cast { .. } =&gt; {}
 
-            ExprKind::AddressOf { .. }
+            ExprKind::RawBorrow { .. }
             | ExprKind::Adt { .. }
             | ExprKind::Array { .. }
             | ExprKind::Binary { .. }
@@ -1490,14 +1560,15 @@
                             .copied()
                             .filter(|feature| missing.contains(feature))
                             .collect();
-                        <span class="self">self</span>.requires_unsafe(
-                            expr.span,
-                            CallToFunctionWith { function: func_did, missing, build_enabled },
-                        );
+                        <span class="self">self</span>.requires_unsafe(expr.span, CallToFunctionWith {
+                            function: func_did,
+                            missing,
+                            build_enabled,
+                        });
                     }
                 }
             }
-            ExprKind::AddressOf { arg, .. } =&gt; {
+            ExprKind::RawBorrow { arg, .. } =&gt; {
                 <span class="kw">if let </span>ExprKind::Scope { value: arg, .. } = <span class="self">self</span>.thir[arg].kind
                 <span class="comment">// THIR desugars UNSAFE_STATIC into *UNSAFE_STATIC_REF, where
                 // UNSAFE_STATIC_REF holds the addr of the UNSAFE_STATIC, so: take two steps
@@ -1792,7 +1863,7 @@
                         missing.iter().map(|feature| Cow::from(feature.to_string())).collect(),
                     ),
                     missing_target_features_count: missing.len(),
-                    note: <span class="kw">if </span>build_enabled.is_empty() { <span class="prelude-val">None </span>} <span class="kw">else </span>{ <span class="prelude-val">Some</span>(()) },
+                    note: !build_enabled.is_empty(),
                     build_target_features: DiagArgValue::StrListSepByAnd(
                         build_enabled
                             .iter()
@@ -1957,7 +2028,7 @@
                         missing.iter().map(|feature| Cow::from(feature.to_string())).collect(),
                     ),
                     missing_target_features_count: missing.len(),
-                    note: <span class="kw">if </span>build_enabled.is_empty() { <span class="prelude-val">None </span>} <span class="kw">else </span>{ <span class="prelude-val">Some</span>(()) },
+                    note: !build_enabled.is_empty(),
                     build_target_features: DiagArgValue::StrListSepByAnd(
                         build_enabled
                             .iter()
@@ -1976,7 +2047,7 @@
                         missing.iter().map(|feature| Cow::from(feature.to_string())).collect(),
                     ),
                     missing_target_features_count: missing.len(),
-                    note: <span class="kw">if </span>build_enabled.is_empty() { <span class="prelude-val">None </span>} <span class="kw">else </span>{ <span class="prelude-val">Some</span>(()) },
+                    note: !build_enabled.is_empty(),
                     build_target_features: DiagArgValue::StrListSepByAnd(
                         build_enabled
                             .iter()
@@ -1992,7 +2063,7 @@
     }
 }
 
-<span class="kw">pub fn </span>check_unsafety(tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;, def: LocalDefId) {
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>check_unsafety(tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;, def: LocalDefId) {
     <span class="comment">// Closures and inline consts are handled by their owner, if it has a body
     // Also, don't safety check custom MIR
     </span><span class="kw">if </span>tcx.is_typeck_child(def.to_def_id()) || tcx.has_attr(def, sym::custom_mir) {
@@ -2031,17 +2102,22 @@
         warnings: <span class="kw-2">&amp;mut </span>warnings,
         suggest_unsafe_block: <span class="bool-val">true</span>,
     };
-    visitor.visit_expr(<span class="kw-2">&amp;</span>thir[expr]);
+    <span class="comment">// params in THIR may be unsafe, e.g. a union pattern.
+    </span><span class="kw">for </span>param <span class="kw">in </span><span class="kw-2">&amp;</span>thir.params {
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(param_pat) = param.pat.as_deref() {
+            visitor.visit_pat(param_pat);
+        }
+    }
+    <span class="comment">// Visit the body.
+    </span>visitor.visit_expr(<span class="kw-2">&amp;</span>thir[expr]);
 
     warnings.sort_by_key(|w| w.block_span);
     <span class="kw">for </span>UnusedUnsafeWarning { hir_id, block_span, enclosing_unsafe } <span class="kw">in </span>warnings {
         <span class="kw">let </span>block_span = tcx.sess.source_map().guess_head_span(block_span);
-        tcx.emit_node_span_lint(
-            UNUSED_UNSAFE,
-            hir_id,
-            block_span,
-            UnusedUnsafe { span: block_span, enclosing: enclosing_unsafe },
-        );
+        tcx.emit_node_span_lint(UNUSED_UNSAFE, hir_id, block_span, UnusedUnsafe {
+            span: block_span,
+            enclosing: enclosing_unsafe,
+        });
     }
 }
 </code></pre></div></section></main></body></html>

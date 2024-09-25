@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"trait":["DebugInfoBuilderMethods","DebugInfoMethods"]};
+window.SIDEBAR_ITEMS = {"trait":["DebugInfoBuilderMethods","DebugInfoCodegenMethods"]};

@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/jump_threading.rs`."><title>jump_threading.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/jump_threading.rs`."><title>jump_threading.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>jump_threading.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -845,7 +846,7 @@
 <a href="#845" id="845">845</a>
 <a href="#846" id="846">846</a>
 <a href="#847" id="847">847</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! A jump threading optimization.
+<a href="#848" id="848">848</a></pre></div><pre class="rust"><code><span class="doccomment">//! A jump threading optimization.
 //!
 //! This optimization seeks to replace join-then-switch control flow patterns by straight jumps
 //!    X = 0                                      X = 0
@@ -886,8 +887,8 @@
 <span class="kw">use </span>rustc_const_eval::const_eval::DummyMachine;
 <span class="kw">use </span>rustc_const_eval::interpret::{ImmTy, Immediate, InterpCx, OpTy, Projectable};
 <span class="kw">use </span>rustc_data_structures::fx::FxHashSet;
-<span class="kw">use </span>rustc_index::bit_set::BitSet;
 <span class="kw">use </span>rustc_index::IndexVec;
+<span class="kw">use </span>rustc_index::bit_set::BitSet;
 <span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::mir::interpret::Scalar;
 <span class="kw">use </span>rustc_middle::mir::visit::Visitor;
@@ -898,16 +899,17 @@
 <span class="kw">use </span>rustc_mir_dataflow::value_analysis::{Map, PlaceIndex, State, TrackElem};
 <span class="kw">use </span>rustc_span::DUMMY_SP;
 <span class="kw">use </span>rustc_target::abi::{TagEncoding, Variants};
+<span class="kw">use </span>tracing::{debug, instrument, trace};
 
 <span class="kw">use </span><span class="kw">crate</span>::cost_checker::CostChecker;
 
-<span class="kw">pub struct </span>JumpThreading;
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>JumpThreading;
 
 <span class="kw">const </span>MAX_BACKTRACK: usize = <span class="number">5</span>;
 <span class="kw">const </span>MAX_COST: usize = <span class="number">100</span>;
 <span class="kw">const </span>MAX_PLACES: usize = <span class="number">100</span>;
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>JumpThreading {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">crate</span>::MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>JumpThreading {
     <span class="kw">fn </span>is_enabled(<span class="kw-2">&amp;</span><span class="self">self</span>, sess: <span class="kw-2">&amp;</span>rustc_session::Session) -&gt; bool {
         sess.mir_opt_level() &gt;= <span class="number">2
     </span>}
@@ -924,18 +926,16 @@
         }
 
         <span class="kw">let </span>param_env = tcx.param_env_reveal_all_normalized(def_id);
-        <span class="kw">let </span>map = Map::new(tcx, body, <span class="prelude-val">Some</span>(MAX_PLACES));
-        <span class="kw">let </span>loop_headers = loop_headers(body);
 
-        <span class="kw">let </span>arena = DroplessArena::default();
+        <span class="kw">let </span>arena = <span class="kw-2">&amp;</span>DroplessArena::default();
         <span class="kw">let </span><span class="kw-2">mut </span>finder = TOFinder {
             tcx,
             param_env,
             ecx: InterpCx::new(tcx, DUMMY_SP, param_env, DummyMachine),
             body,
-            arena: <span class="kw-2">&amp;</span>arena,
-            map: <span class="kw-2">&amp;</span>map,
-            loop_headers: <span class="kw-2">&amp;</span>loop_headers,
+            arena,
+            map: Map::new(tcx, body, <span class="prelude-val">Some</span>(MAX_PLACES)),
+            loop_headers: loop_headers(body),
             opportunities: Vec::new(),
         };
 
@@ -951,7 +951,7 @@
 
         <span class="comment">// Verify that we do not thread through a loop header.
         </span><span class="kw">for </span>to <span class="kw">in </span>opportunities.iter() {
-            <span class="macro">assert!</span>(to.chain.iter().all(|<span class="kw-2">&amp;</span>block| !loop_headers.contains(block)));
+            <span class="macro">assert!</span>(to.chain.iter().all(|<span class="kw-2">&amp;</span>block| !finder.loop_headers.contains(block)));
         }
         OpportunitySet::new(body, opportunities).apply(body);
     }
@@ -965,13 +965,13 @@
     </span>target: BasicBlock,
 }
 
-<span class="kw">struct </span>TOFinder&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt; {
+<span class="kw">struct </span>TOFinder&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     param_env: ty::ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
     ecx: InterpCx&lt;<span class="lifetime">'tcx</span>, DummyMachine&gt;,
     body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
-    map: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Map&lt;<span class="lifetime">'tcx</span>&gt;,
-    loop_headers: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>BitSet&lt;BasicBlock&gt;,
+    map: Map&lt;<span class="lifetime">'tcx</span>&gt;,
+    loop_headers: BitSet&lt;BasicBlock&gt;,
     <span class="doccomment">/// We use an arena to avoid cloning the slices when cloning `state`.
     </span>arena: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>DroplessArena,
     opportunities: Vec&lt;ThreadingOpportunity&gt;,
@@ -1031,33 +1031,33 @@
     }
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt; TOFinder&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; TOFinder&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">fn </span>is_empty(<span class="kw-2">&amp;</span><span class="self">self</span>, state: <span class="kw-2">&amp;</span>State&lt;ConditionSet&lt;<span class="lifetime">'a</span>&gt;&gt;) -&gt; bool {
         state.all_bottom()
     }
 
     <span class="doccomment">/// Recursion entry point to find threading opportunities.
     </span><span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>))]
-    </span><span class="kw">fn </span>start_from_switch(<span class="kw-2">&amp;mut </span><span class="self">self</span>, bb: BasicBlock) -&gt; <span class="prelude-ty">Option</span>&lt;!&gt; {
+    </span><span class="kw">fn </span>start_from_switch(<span class="kw-2">&amp;mut </span><span class="self">self</span>, bb: BasicBlock) {
         <span class="kw">let </span>bbdata = <span class="kw-2">&amp;</span><span class="self">self</span>.body[bb];
         <span class="kw">if </span>bbdata.is_cleanup || <span class="self">self</span>.loop_headers.contains(bb) {
-            <span class="kw">return </span><span class="prelude-val">None</span>;
+            <span class="kw">return</span>;
         }
-        <span class="kw">let </span>(discr, targets) = bbdata.terminator().kind.as_switch()<span class="question-mark">?</span>;
-        <span class="kw">let </span>discr = discr.place()<span class="question-mark">?</span>;
+        <span class="kw">let </span><span class="prelude-val">Some</span>((discr, targets)) = bbdata.terminator().kind.as_switch() <span class="kw">else </span>{ <span class="kw">return </span>};
+        <span class="kw">let </span><span class="prelude-val">Some</span>(discr) = discr.place() <span class="kw">else </span>{ <span class="kw">return </span>};
         <span class="macro">debug!</span>(<span class="question-mark">?</span>discr, <span class="question-mark">?</span>bb);
 
         <span class="kw">let </span>discr_ty = discr.ty(<span class="self">self</span>.body, <span class="self">self</span>.tcx).ty;
-        <span class="kw">let </span>discr_layout = <span class="self">self</span>.ecx.layout_of(discr_ty).ok()<span class="question-mark">?</span>;
+        <span class="kw">let </span><span class="prelude-val">Ok</span>(discr_layout) = <span class="self">self</span>.ecx.layout_of(discr_ty) <span class="kw">else </span>{ <span class="kw">return </span>};
 
-        <span class="kw">let </span>discr = <span class="self">self</span>.map.find(discr.as_ref())<span class="question-mark">?</span>;
+        <span class="kw">let </span><span class="prelude-val">Some</span>(discr) = <span class="self">self</span>.map.find(discr.as_ref()) <span class="kw">else </span>{ <span class="kw">return </span>};
         <span class="macro">debug!</span>(<span class="question-mark">?</span>discr);
 
         <span class="kw">let </span>cost = CostChecker::new(<span class="self">self</span>.tcx, <span class="self">self</span>.param_env, <span class="prelude-val">None</span>, <span class="self">self</span>.body);
         <span class="kw">let </span><span class="kw-2">mut </span>state = State::new_reachable();
 
         <span class="kw">let </span>conds = <span class="kw">if let </span><span class="prelude-val">Some</span>((value, then, else_)) = targets.as_static_if() {
-            <span class="kw">let </span>value = ScalarInt::try_from_uint(value, discr_layout.size)<span class="question-mark">?</span>;
+            <span class="kw">let </span><span class="prelude-val">Some</span>(value) = ScalarInt::try_from_uint(value, discr_layout.size) <span class="kw">else </span>{ <span class="kw">return </span>};
             <span class="self">self</span>.arena.alloc_from_iter([
                 Condition { value, polarity: Polarity::Eq, target: then },
                 Condition { value, polarity: Polarity::Ne, target: else_ },
@@ -1069,11 +1069,10 @@
             }))
         };
         <span class="kw">let </span>conds = ConditionSet(conds);
-        state.insert_value_idx(discr, conds, <span class="self">self</span>.map);
+        state.insert_value_idx(discr, conds, <span class="kw-2">&amp;</span><span class="self">self</span>.map);
 
         <span class="self">self</span>.find_opportunity(bb, state, cost, <span class="number">0</span>);
-        <span class="prelude-val">None
-    </span>}
+    }
 
     <span class="doccomment">/// Recursively walk statements backwards from this bb's terminator to find threading
     /// opportunities.
@@ -1111,7 +1110,7 @@
             //   _1 = 5 // Whatever happens here, it won't change the result of a `SwitchInt`.
             //   _1 = 6
             </span><span class="kw">if let </span><span class="prelude-val">Some</span>((lhs, tail)) = <span class="self">self</span>.mutated_statement(stmt) {
-                state.flood_with_tail_elem(lhs.as_ref(), tail, <span class="self">self</span>.map, ConditionSet::BOTTOM);
+                state.flood_with_tail_elem(lhs.as_ref(), tail, <span class="kw-2">&amp;</span><span class="self">self</span>.map, ConditionSet::BOTTOM);
             }
         }
 
@@ -1211,19 +1210,18 @@
         lhs: PlaceIndex,
         rhs: ImmTy&lt;<span class="lifetime">'tcx</span>&gt;,
         state: <span class="kw-2">&amp;mut </span>State&lt;ConditionSet&lt;<span class="lifetime">'a</span>&gt;&gt;,
-    ) -&gt; <span class="prelude-ty">Option</span>&lt;!&gt; {
+    ) {
         <span class="kw">let </span>register_opportunity = |c: Condition| {
             <span class="macro">debug!</span>(<span class="question-mark">?</span>bb, <span class="question-mark">?</span>c.target, <span class="string">"register"</span>);
             <span class="self">self</span>.opportunities.push(ThreadingOpportunity { chain: <span class="macro">vec!</span>[bb], target: c.target })
         };
 
-        <span class="kw">let </span>conditions = state.try_get_idx(lhs, <span class="self">self</span>.map)<span class="question-mark">?</span>;
-        <span class="kw">if let </span>Immediate::Scalar(Scalar::Int(int)) = <span class="kw-2">*</span>rhs {
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(conditions) = state.try_get_idx(lhs, <span class="kw-2">&amp;</span><span class="self">self</span>.map)
+            &amp;&amp; <span class="kw">let </span>Immediate::Scalar(Scalar::Int(int)) = <span class="kw-2">*</span>rhs
+        {
             conditions.iter_matches(int).for_each(register_opportunity);
         }
-
-        <span class="prelude-val">None
-    </span>}
+    }
 
     <span class="doccomment">/// If we expect `lhs ?= A`, we have an opportunity if we assume `constant == A`.
     </span><span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>))]
@@ -1254,7 +1252,7 @@
                 }
             },
             <span class="kw-2">&amp;mut </span>|place, op| {
-                <span class="kw">if let </span><span class="prelude-val">Some</span>(conditions) = state.try_get_idx(place, <span class="self">self</span>.map)
+                <span class="kw">if let </span><span class="prelude-val">Some</span>(conditions) = state.try_get_idx(place, <span class="kw-2">&amp;</span><span class="self">self</span>.map)
                     &amp;&amp; <span class="kw">let </span><span class="prelude-val">Ok</span>(imm) = <span class="self">self</span>.ecx.read_immediate_raw(op)
                     &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(imm) = imm.right()
                     &amp;&amp; <span class="kw">let </span>Immediate::Scalar(Scalar::Int(int)) = <span class="kw-2">*</span>imm
@@ -1275,23 +1273,24 @@
         lhs: PlaceIndex,
         rhs: <span class="kw-2">&amp;</span>Operand&lt;<span class="lifetime">'tcx</span>&gt;,
         state: <span class="kw-2">&amp;mut </span>State&lt;ConditionSet&lt;<span class="lifetime">'a</span>&gt;&gt;,
-    ) -&gt; <span class="prelude-ty">Option</span>&lt;!&gt; {
+    ) {
         <span class="kw">match </span>rhs {
             <span class="comment">// If we expect `lhs ?= A`, we have an opportunity if we assume `constant == A`.
             </span>Operand::Constant(constant) =&gt; {
-                <span class="kw">let </span>constant =
-                    <span class="self">self</span>.ecx.eval_mir_constant(<span class="kw-2">&amp;</span>constant.const_, constant.span, <span class="prelude-val">None</span>).ok()<span class="question-mark">?</span>;
+                <span class="kw">let </span><span class="prelude-val">Ok</span>(constant) =
+                    <span class="self">self</span>.ecx.eval_mir_constant(<span class="kw-2">&amp;</span>constant.const_, constant.span, <span class="prelude-val">None</span>)
+                <span class="kw">else </span>{
+                    <span class="kw">return</span>;
+                };
                 <span class="self">self</span>.process_constant(bb, lhs, constant, state);
             }
             <span class="comment">// Transfer the conditions on the copied rhs.
             </span>Operand::Move(rhs) | Operand::Copy(rhs) =&gt; {
-                <span class="kw">let </span>rhs = <span class="self">self</span>.map.find(rhs.as_ref())<span class="question-mark">?</span>;
-                state.insert_place_idx(rhs, lhs, <span class="self">self</span>.map);
+                <span class="kw">let </span><span class="prelude-val">Some</span>(rhs) = <span class="self">self</span>.map.find(rhs.as_ref()) <span class="kw">else </span>{ <span class="kw">return </span>};
+                state.insert_place_idx(rhs, lhs, <span class="kw-2">&amp;</span><span class="self">self</span>.map);
             }
         }
-
-        <span class="prelude-val">None
-    </span>}
+    }
 
     <span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>))]
     </span><span class="kw">fn </span>process_assign(
@@ -1300,24 +1299,22 @@
         lhs_place: <span class="kw-2">&amp;</span>Place&lt;<span class="lifetime">'tcx</span>&gt;,
         rhs: <span class="kw-2">&amp;</span>Rvalue&lt;<span class="lifetime">'tcx</span>&gt;,
         state: <span class="kw-2">&amp;mut </span>State&lt;ConditionSet&lt;<span class="lifetime">'a</span>&gt;&gt;,
-    ) -&gt; <span class="prelude-ty">Option</span>&lt;!&gt; {
-        <span class="kw">let </span>lhs = <span class="self">self</span>.map.find(lhs_place.as_ref())<span class="question-mark">?</span>;
+    ) {
+        <span class="kw">let </span><span class="prelude-val">Some</span>(lhs) = <span class="self">self</span>.map.find(lhs_place.as_ref()) <span class="kw">else </span>{ <span class="kw">return </span>};
         <span class="kw">match </span>rhs {
-            Rvalue::Use(operand) =&gt; <span class="self">self</span>.process_operand(bb, lhs, operand, state)<span class="question-mark">?</span>,
+            Rvalue::Use(operand) =&gt; <span class="self">self</span>.process_operand(bb, lhs, operand, state),
             <span class="comment">// Transfer the conditions on the copy rhs.
-            </span>Rvalue::CopyForDeref(rhs) =&gt; {
-                <span class="self">self</span>.process_operand(bb, lhs, <span class="kw-2">&amp;</span>Operand::Copy(<span class="kw-2">*</span>rhs), state)<span class="question-mark">?
-            </span>}
+            </span>Rvalue::CopyForDeref(rhs) =&gt; <span class="self">self</span>.process_operand(bb, lhs, <span class="kw-2">&amp;</span>Operand::Copy(<span class="kw-2">*</span>rhs), state),
             Rvalue::Discriminant(rhs) =&gt; {
-                <span class="kw">let </span>rhs = <span class="self">self</span>.map.find_discr(rhs.as_ref())<span class="question-mark">?</span>;
-                state.insert_place_idx(rhs, lhs, <span class="self">self</span>.map);
+                <span class="kw">let </span><span class="prelude-val">Some</span>(rhs) = <span class="self">self</span>.map.find_discr(rhs.as_ref()) <span class="kw">else </span>{ <span class="kw">return </span>};
+                state.insert_place_idx(rhs, lhs, <span class="kw-2">&amp;</span><span class="self">self</span>.map);
             }
             <span class="comment">// If we expect `lhs ?= A`, we have an opportunity if we assume `constant == A`.
             </span>Rvalue::Aggregate(<span class="kw">box </span><span class="kw-2">ref </span>kind, <span class="kw-2">ref </span>operands) =&gt; {
                 <span class="kw">let </span>agg_ty = lhs_place.ty(<span class="self">self</span>.body, <span class="self">self</span>.tcx).ty;
                 <span class="kw">let </span>lhs = <span class="kw">match </span>kind {
                     <span class="comment">// Do not support unions.
-                    </span>AggregateKind::Adt(.., <span class="prelude-val">Some</span>(<span class="kw">_</span>)) =&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
+                    </span>AggregateKind::Adt(.., <span class="prelude-val">Some</span>(<span class="kw">_</span>)) =&gt; <span class="kw">return</span>,
                     AggregateKind::Adt(<span class="kw">_</span>, variant_index, ..) <span class="kw">if </span>agg_ty.is_enum() =&gt; {
                         <span class="kw">if let </span><span class="prelude-val">Some</span>(discr_target) = <span class="self">self</span>.map.apply(lhs, TrackElem::Discriminant)
                             &amp;&amp; <span class="kw">let </span><span class="prelude-val">Ok</span>(discr_value) =
@@ -1325,8 +1322,12 @@
                         {
                             <span class="self">self</span>.process_immediate(bb, discr_target, discr_value, state);
                         }
-                        <span class="self">self</span>.map.apply(lhs, TrackElem::Variant(<span class="kw-2">*</span>variant_index))<span class="question-mark">?
-                    </span>}
+                        <span class="kw">if let </span><span class="prelude-val">Some</span>(idx) = <span class="self">self</span>.map.apply(lhs, TrackElem::Variant(<span class="kw-2">*</span>variant_index)) {
+                            idx
+                        } <span class="kw">else </span>{
+                            <span class="kw">return</span>;
+                        }
+                    }
                     <span class="kw">_ </span>=&gt; lhs,
                 };
                 <span class="kw">for </span>(field_index, operand) <span class="kw">in </span>operands.iter_enumerated() {
@@ -1337,10 +1338,10 @@
             }
             <span class="comment">// Transfer the conditions on the copy rhs, after inversing polarity.
             </span>Rvalue::UnaryOp(UnOp::Not, Operand::Move(place) | Operand::Copy(place)) =&gt; {
-                <span class="kw">let </span>conditions = state.try_get_idx(lhs, <span class="self">self</span>.map)<span class="question-mark">?</span>;
-                <span class="kw">let </span>place = <span class="self">self</span>.map.find(place.as_ref())<span class="question-mark">?</span>;
+                <span class="kw">let </span><span class="prelude-val">Some</span>(conditions) = state.try_get_idx(lhs, <span class="kw-2">&amp;</span><span class="self">self</span>.map) <span class="kw">else </span>{ <span class="kw">return </span>};
+                <span class="kw">let </span><span class="prelude-val">Some</span>(place) = <span class="self">self</span>.map.find(place.as_ref()) <span class="kw">else </span>{ <span class="kw">return </span>};
                 <span class="kw">let </span>conds = conditions.map(<span class="self">self</span>.arena, Condition::inv);
-                state.insert_value_idx(place, conds, <span class="self">self</span>.map);
+                state.insert_value_idx(place, conds, <span class="kw-2">&amp;</span><span class="self">self</span>.map);
             }
             <span class="comment">// We expect `lhs ?= A`. We found `lhs = Eq(rhs, B)`.
             // Create a condition on `rhs ?= B`.
@@ -1349,34 +1350,36 @@
                 <span class="kw">box </span>(Operand::Move(place) | Operand::Copy(place), Operand::Constant(value))
                 | <span class="kw">box </span>(Operand::Constant(value), Operand::Move(place) | Operand::Copy(place)),
             ) =&gt; {
-                <span class="kw">let </span>conditions = state.try_get_idx(lhs, <span class="self">self</span>.map)<span class="question-mark">?</span>;
-                <span class="kw">let </span>place = <span class="self">self</span>.map.find(place.as_ref())<span class="question-mark">?</span>;
+                <span class="kw">let </span><span class="prelude-val">Some</span>(conditions) = state.try_get_idx(lhs, <span class="kw-2">&amp;</span><span class="self">self</span>.map) <span class="kw">else </span>{ <span class="kw">return </span>};
+                <span class="kw">let </span><span class="prelude-val">Some</span>(place) = <span class="self">self</span>.map.find(place.as_ref()) <span class="kw">else </span>{ <span class="kw">return </span>};
                 <span class="kw">let </span>equals = <span class="kw">match </span>op {
                     BinOp::Eq =&gt; ScalarInt::TRUE,
                     BinOp::Ne =&gt; ScalarInt::FALSE,
-                    <span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
+                    <span class="kw">_ </span>=&gt; <span class="kw">return</span>,
                 };
                 <span class="kw">if </span>value.const_.ty().is_floating_point() {
                     <span class="comment">// Floating point equality does not follow bit-patterns.
                     // -0.0 and NaN both have special rules for equality,
                     // and therefore we cannot use integer comparisons for them.
                     // Avoid handling them, though this could be extended in the future.
-                    </span><span class="kw">return </span><span class="prelude-val">None</span>;
+                    </span><span class="kw">return</span>;
                 }
-                <span class="kw">let </span>value = value.const_.normalize(<span class="self">self</span>.tcx, <span class="self">self</span>.param_env).try_to_scalar_int()<span class="question-mark">?</span>;
+                <span class="kw">let </span><span class="prelude-val">Some</span>(value) =
+                    value.const_.normalize(<span class="self">self</span>.tcx, <span class="self">self</span>.param_env).try_to_scalar_int()
+                <span class="kw">else </span>{
+                    <span class="kw">return</span>;
+                };
                 <span class="kw">let </span>conds = conditions.map(<span class="self">self</span>.arena, |c| Condition {
                     value,
                     polarity: <span class="kw">if </span>c.matches(equals) { Polarity::Eq } <span class="kw">else </span>{ Polarity::Ne },
                     ..c
                 });
-                state.insert_value_idx(place, conds, <span class="self">self</span>.map);
+                state.insert_value_idx(place, conds, <span class="kw-2">&amp;</span><span class="self">self</span>.map);
             }
 
             <span class="kw">_ </span>=&gt; {}
         }
-
-        <span class="prelude-val">None
-    </span>}
+    }
 
     <span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>))]
     </span><span class="kw">fn </span>process_statement(
@@ -1384,7 +1387,7 @@
         bb: BasicBlock,
         stmt: <span class="kw-2">&amp;</span>Statement&lt;<span class="lifetime">'tcx</span>&gt;,
         state: <span class="kw-2">&amp;mut </span>State&lt;ConditionSet&lt;<span class="lifetime">'a</span>&gt;&gt;,
-    ) -&gt; <span class="prelude-ty">Option</span>&lt;!&gt; {
+    ) {
         <span class="kw">let </span>register_opportunity = |c: Condition| {
             <span class="macro">debug!</span>(<span class="question-mark">?</span>bb, <span class="question-mark">?</span>c.target, <span class="string">"register"</span>);
             <span class="self">self</span>.opportunities.push(ThreadingOpportunity { chain: <span class="macro">vec!</span>[bb], target: c.target })
@@ -1397,12 +1400,12 @@
             <span class="comment">// If we expect `discriminant(place) ?= A`,
             // we have an opportunity if `variant_index ?= A`.
             </span>StatementKind::SetDiscriminant { <span class="kw">box </span>place, variant_index } =&gt; {
-                <span class="kw">let </span>discr_target = <span class="self">self</span>.map.find_discr(place.as_ref())<span class="question-mark">?</span>;
+                <span class="kw">let </span><span class="prelude-val">Some</span>(discr_target) = <span class="self">self</span>.map.find_discr(place.as_ref()) <span class="kw">else </span>{ <span class="kw">return </span>};
                 <span class="kw">let </span>enum_ty = place.ty(<span class="self">self</span>.body, <span class="self">self</span>.tcx).ty;
                 <span class="comment">// `SetDiscriminant` may be a no-op if the assigned variant is the untagged variant
                 // of a niche encoding. If we cannot ensure that we write to the discriminant, do
                 // nothing.
-                </span><span class="kw">let </span>enum_layout = <span class="self">self</span>.ecx.layout_of(enum_ty).ok()<span class="question-mark">?</span>;
+                </span><span class="kw">let </span><span class="prelude-val">Ok</span>(enum_layout) = <span class="self">self</span>.ecx.layout_of(enum_ty) <span class="kw">else </span>{ <span class="kw">return </span>};
                 <span class="kw">let </span>writes_discriminant = <span class="kw">match </span>enum_layout.variants {
                     Variants::Single { index } =&gt; {
                         <span class="macro">assert_eq!</span>(index, <span class="kw-2">*</span>variant_index);
@@ -1415,25 +1418,26 @@
                     } =&gt; <span class="kw-2">*</span>variant_index != untagged_variant,
                 };
                 <span class="kw">if </span>writes_discriminant {
-                    <span class="kw">let </span>discr = <span class="self">self</span>.ecx.discriminant_for_variant(enum_ty, <span class="kw-2">*</span>variant_index).ok()<span class="question-mark">?</span>;
-                    <span class="self">self</span>.process_immediate(bb, discr_target, discr, state)<span class="question-mark">?</span>;
+                    <span class="kw">let </span><span class="prelude-val">Ok</span>(discr) = <span class="self">self</span>.ecx.discriminant_for_variant(enum_ty, <span class="kw-2">*</span>variant_index)
+                    <span class="kw">else </span>{
+                        <span class="kw">return</span>;
+                    };
+                    <span class="self">self</span>.process_immediate(bb, discr_target, discr, state);
                 }
             }
             <span class="comment">// If we expect `lhs ?= true`, we have an opportunity if we assume `lhs == true`.
             </span>StatementKind::Intrinsic(<span class="kw">box </span>NonDivergingIntrinsic::Assume(
                 Operand::Copy(place) | Operand::Move(place),
             )) =&gt; {
-                <span class="kw">let </span>conditions = state.try_get(place.as_ref(), <span class="self">self</span>.map)<span class="question-mark">?</span>;
+                <span class="kw">let </span><span class="prelude-val">Some</span>(conditions) = state.try_get(place.as_ref(), <span class="kw-2">&amp;</span><span class="self">self</span>.map) <span class="kw">else </span>{ <span class="kw">return </span>};
                 conditions.iter_matches(ScalarInt::TRUE).for_each(register_opportunity);
             }
             StatementKind::Assign(<span class="kw">box </span>(lhs_place, rhs)) =&gt; {
-                <span class="self">self</span>.process_assign(bb, lhs_place, rhs, state)<span class="question-mark">?</span>;
+                <span class="self">self</span>.process_assign(bb, lhs_place, rhs, state);
             }
             <span class="kw">_ </span>=&gt; {}
         }
-
-        <span class="prelude-val">None
-    </span>}
+    }
 
     <span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>, state, cost))]
     </span><span class="kw">fn </span>recurse_through_terminator(
@@ -1473,7 +1477,7 @@
         <span class="comment">// We can recurse through this terminator.
         </span><span class="kw">let </span><span class="kw-2">mut </span>state = state();
         <span class="kw">if let </span><span class="prelude-val">Some</span>(place_to_flood) = place_to_flood {
-            state.flood_with(place_to_flood.as_ref(), <span class="self">self</span>.map, ConditionSet::BOTTOM);
+            state.flood_with(place_to_flood.as_ref(), <span class="kw-2">&amp;</span><span class="self">self</span>.map, ConditionSet::BOTTOM);
         }
         <span class="self">self</span>.find_opportunity(bb, state, cost.clone(), depth + <span class="number">1</span>);
     }
@@ -1485,17 +1489,17 @@
         targets: <span class="kw-2">&amp;</span>SwitchTargets,
         target_bb: BasicBlock,
         state: <span class="kw-2">&amp;mut </span>State&lt;ConditionSet&lt;<span class="lifetime">'a</span>&gt;&gt;,
-    ) -&gt; <span class="prelude-ty">Option</span>&lt;!&gt; {
+    ) {
         <span class="macro">debug_assert_ne!</span>(target_bb, START_BLOCK);
         <span class="macro">debug_assert_eq!</span>(<span class="self">self</span>.body.basic_blocks.predecessors()[target_bb].len(), <span class="number">1</span>);
 
-        <span class="kw">let </span>discr = discr.place()<span class="question-mark">?</span>;
+        <span class="kw">let </span><span class="prelude-val">Some</span>(discr) = discr.place() <span class="kw">else </span>{ <span class="kw">return </span>};
         <span class="kw">let </span>discr_ty = discr.ty(<span class="self">self</span>.body, <span class="self">self</span>.tcx).ty;
-        <span class="kw">let </span>discr_layout = <span class="self">self</span>.ecx.layout_of(discr_ty).ok()<span class="question-mark">?</span>;
-        <span class="kw">let </span>conditions = state.try_get(discr.as_ref(), <span class="self">self</span>.map)<span class="question-mark">?</span>;
+        <span class="kw">let </span><span class="prelude-val">Ok</span>(discr_layout) = <span class="self">self</span>.ecx.layout_of(discr_ty) <span class="kw">else </span>{ <span class="kw">return </span>};
+        <span class="kw">let </span><span class="prelude-val">Some</span>(conditions) = state.try_get(discr.as_ref(), <span class="kw-2">&amp;</span><span class="self">self</span>.map) <span class="kw">else </span>{ <span class="kw">return </span>};
 
         <span class="kw">if let </span><span class="prelude-val">Some</span>((value, <span class="kw">_</span>)) = targets.iter().find(|<span class="kw-2">&amp;</span>(<span class="kw">_</span>, target)| target == target_bb) {
-            <span class="kw">let </span>value = ScalarInt::try_from_uint(value, discr_layout.size)<span class="question-mark">?</span>;
+            <span class="kw">let </span><span class="prelude-val">Some</span>(value) = ScalarInt::try_from_uint(value, discr_layout.size) <span class="kw">else </span>{ <span class="kw">return </span>};
             <span class="macro">debug_assert_eq!</span>(targets.iter().filter(|<span class="kw-2">&amp;</span>(<span class="kw">_</span>, target)| target == target_bb).count(), <span class="number">1</span>);
 
             <span class="comment">// We are inside `target_bb`. Since we have a single predecessor, we know we passed
@@ -1509,7 +1513,7 @@
         } <span class="kw">else if let </span><span class="prelude-val">Some</span>((value, <span class="kw">_</span>, else_bb)) = targets.as_static_if()
             &amp;&amp; target_bb == else_bb
         {
-            <span class="kw">let </span>value = ScalarInt::try_from_uint(value, discr_layout.size)<span class="question-mark">?</span>;
+            <span class="kw">let </span><span class="prelude-val">Some</span>(value) = ScalarInt::try_from_uint(value, discr_layout.size) <span class="kw">else </span>{ <span class="kw">return </span>};
 
             <span class="comment">// We only know that `discr != value`. That's much weaker information than
             // the equality we had in the previous arm. All we can conclude is that
@@ -1522,9 +1526,7 @@
                 }
             }
         }
-
-        <span class="prelude-val">None
-    </span>}
+    }
 }
 
 <span class="kw">struct </span>OpportunitySet {

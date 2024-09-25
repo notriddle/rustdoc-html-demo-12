@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/elaborate_box_derefs.rs`."><title>elaborate_box_derefs.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/elaborate_box_derefs.rs`."><title>elaborate_box_derefs.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>elaborate_box_derefs.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -149,7 +150,7 @@
 <a href="#149" id="149">149</a>
 <a href="#150" id="150">150</a>
 <a href="#151" id="151">151</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! This pass transforms derefs of Box into a deref of the pointer inside Box.
+<a href="#152" id="152">152</a></pre></div><pre class="rust"><code><span class="doccomment">//! This pass transforms derefs of Box into a deref of the pointer inside Box.
 //!
 //! Box is not actually a pointer so it is incorrect to dereference it directly.
 
@@ -162,7 +163,7 @@
 <span class="kw">use </span>rustc_target::abi::FieldIdx;
 
 <span class="doccomment">/// Constructs the types used when accessing a Box's pointer
-</span><span class="kw">pub fn </span>build_ptr_tys&lt;<span class="lifetime">'tcx</span>&gt;(
+</span><span class="kw">fn </span>build_ptr_tys&lt;<span class="lifetime">'tcx</span>&gt;(
     tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     pointee: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
     unique_did: DefId,
@@ -177,7 +178,7 @@
 }
 
 <span class="doccomment">/// Constructs the projection needed to access a Box's pointer
-</span><span class="kw">pub fn </span>build_projection&lt;<span class="lifetime">'tcx</span>&gt;(
+</span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>build_projection&lt;<span class="lifetime">'tcx</span>&gt;(
     unique_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
     nonnull_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
     ptr_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -189,7 +190,7 @@
     ]
 }
 
-<span class="kw">struct </span>ElaborateBoxDerefVisitor&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt; {
+<span class="kw">struct </span>ElaborateBoxDerefVisitor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     unique_did: DefId,
     nonnull_did: DefId,
@@ -197,7 +198,7 @@
     patch: MirPatch&lt;<span class="lifetime">'tcx</span>&gt;,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt; MutVisitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>ElaborateBoxDerefVisitor&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; MutVisitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>ElaborateBoxDerefVisitor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">fn </span>tcx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; TyCtxt&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.tcx
     }
@@ -213,11 +214,13 @@
         <span class="kw">let </span>base_ty = <span class="self">self</span>.local_decls[place.local].ty;
 
         <span class="comment">// Derefer ensures that derefs are always the first projection
-        </span><span class="kw">if </span>place.projection.first() == <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>PlaceElem::Deref) &amp;&amp; base_ty.is_box() {
+        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(PlaceElem::Deref) = place.projection.first()
+            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(boxed_ty) = base_ty.boxed_ty()
+        {
             <span class="kw">let </span>source_info = <span class="self">self</span>.local_decls[place.local].source_info;
 
             <span class="kw">let </span>(unique_ty, nonnull_ty, ptr_ty) =
-                build_ptr_tys(tcx, base_ty.boxed_ty(), <span class="self">self</span>.unique_did, <span class="self">self</span>.nonnull_did);
+                build_ptr_tys(tcx, boxed_ty, <span class="self">self</span>.unique_did, <span class="self">self</span>.nonnull_did);
 
             <span class="kw">let </span>ptr_local = <span class="self">self</span>.patch.new_temp(ptr_ty, source_info.span);
 
@@ -237,67 +240,66 @@
     }
 }
 
-<span class="kw">pub struct </span>ElaborateBoxDerefs;
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>ElaborateBoxDerefs;
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>ElaborateBoxDerefs {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">crate</span>::MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>ElaborateBoxDerefs {
     <span class="kw">fn </span>run_pass(<span class="kw-2">&amp;</span><span class="self">self</span>, tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;mut </span>Body&lt;<span class="lifetime">'tcx</span>&gt;) {
-        <span class="kw">if let </span><span class="prelude-val">Some</span>(def_id) = tcx.lang_items().owned_box() {
-            <span class="kw">let </span>unique_did = tcx.adt_def(def_id).non_enum_variant().fields[FieldIdx::ZERO].did;
+        <span class="comment">// If box is not present, this pass doesn't need to do anything.
+        </span><span class="kw">let </span><span class="prelude-val">Some</span>(def_id) = tcx.lang_items().owned_box() <span class="kw">else </span>{ <span class="kw">return </span>};
 
-            <span class="kw">let </span><span class="prelude-val">Some</span>(nonnull_def) = tcx.type_of(unique_did).instantiate_identity().ty_adt_def()
-            <span class="kw">else </span>{
-                <span class="macro">span_bug!</span>(tcx.def_span(unique_did), <span class="string">"expected Box to contain Unique"</span>)
-            };
+        <span class="kw">let </span>unique_did = tcx.adt_def(def_id).non_enum_variant().fields[FieldIdx::ZERO].did;
 
-            <span class="kw">let </span>nonnull_did = nonnull_def.non_enum_variant().fields[FieldIdx::ZERO].did;
+        <span class="kw">let </span><span class="prelude-val">Some</span>(nonnull_def) = tcx.type_of(unique_did).instantiate_identity().ty_adt_def() <span class="kw">else </span>{
+            <span class="macro">span_bug!</span>(tcx.def_span(unique_did), <span class="string">"expected Box to contain Unique"</span>)
+        };
 
-            <span class="kw">let </span>patch = MirPatch::new(body);
+        <span class="kw">let </span>nonnull_did = nonnull_def.non_enum_variant().fields[FieldIdx::ZERO].did;
 
-            <span class="kw">let </span>local_decls = <span class="kw-2">&amp;mut </span>body.local_decls;
+        <span class="kw">let </span>patch = MirPatch::new(body);
 
-            <span class="kw">let </span><span class="kw-2">mut </span>visitor =
-                ElaborateBoxDerefVisitor { tcx, unique_did, nonnull_did, local_decls, patch };
+        <span class="kw">let </span>local_decls = <span class="kw-2">&amp;mut </span>body.local_decls;
 
-            <span class="kw">for </span>(block, data) <span class="kw">in </span>body.basic_blocks.as_mut_preserves_cfg().iter_enumerated_mut() {
-                visitor.visit_basic_block_data(block, data);
-            }
+        <span class="kw">let </span><span class="kw-2">mut </span>visitor =
+            ElaborateBoxDerefVisitor { tcx, unique_did, nonnull_did, local_decls, patch };
 
-            visitor.patch.apply(body);
+        <span class="kw">for </span>(block, data) <span class="kw">in </span>body.basic_blocks.as_mut_preserves_cfg().iter_enumerated_mut() {
+            visitor.visit_basic_block_data(block, data);
+        }
 
-            <span class="kw">for </span>debug_info <span class="kw">in </span>body.var_debug_info.iter_mut() {
-                <span class="kw">if let </span>VarDebugInfoContents::Place(place) = <span class="kw-2">&amp;mut </span>debug_info.value {
-                    <span class="kw">let </span><span class="kw-2">mut </span>new_projections: <span class="prelude-ty">Option</span>&lt;Vec&lt;<span class="kw">_</span>&gt;&gt; = <span class="prelude-val">None</span>;
+        visitor.patch.apply(body);
 
-                    <span class="kw">for </span>(base, elem) <span class="kw">in </span>place.iter_projections() {
-                        <span class="kw">let </span>base_ty = base.ty(<span class="kw-2">&amp;</span>body.local_decls, tcx).ty;
+        <span class="kw">for </span>debug_info <span class="kw">in </span>body.var_debug_info.iter_mut() {
+            <span class="kw">if let </span>VarDebugInfoContents::Place(place) = <span class="kw-2">&amp;mut </span>debug_info.value {
+                <span class="kw">let </span><span class="kw-2">mut </span>new_projections: <span class="prelude-ty">Option</span>&lt;Vec&lt;<span class="kw">_</span>&gt;&gt; = <span class="prelude-val">None</span>;
 
-                        <span class="kw">if </span>elem == PlaceElem::Deref &amp;&amp; base_ty.is_box() {
-                            <span class="comment">// Clone the projections before us, since now we need to mutate them.
-                            </span><span class="kw">let </span>new_projections =
-                                new_projections.get_or_insert_with(|| base.projection.to_vec());
+                <span class="kw">for </span>(base, elem) <span class="kw">in </span>place.iter_projections() {
+                    <span class="kw">let </span>base_ty = base.ty(<span class="kw-2">&amp;</span>body.local_decls, tcx).ty;
 
-                            <span class="kw">let </span>(unique_ty, nonnull_ty, ptr_ty) =
-                                build_ptr_tys(tcx, base_ty.boxed_ty(), unique_did, nonnull_did);
+                    <span class="kw">if let </span>PlaceElem::Deref = elem
+                        &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(boxed_ty) = base_ty.boxed_ty()
+                    {
+                        <span class="comment">// Clone the projections before us, since now we need to mutate them.
+                        </span><span class="kw">let </span>new_projections =
+                            new_projections.get_or_insert_with(|| base.projection.to_vec());
 
-                            new_projections.extend_from_slice(<span class="kw-2">&amp;</span>build_projection(
-                                unique_ty, nonnull_ty, ptr_ty,
-                            ));
-                            new_projections.push(PlaceElem::Deref);
-                        } <span class="kw">else if let </span><span class="prelude-val">Some</span>(new_projections) = new_projections.as_mut() {
-                            <span class="comment">// Keep building up our projections list once we've started it.
-                            </span>new_projections.push(elem);
-                        }
-                    }
+                        <span class="kw">let </span>(unique_ty, nonnull_ty, ptr_ty) =
+                            build_ptr_tys(tcx, boxed_ty, unique_did, nonnull_did);
 
-                    <span class="comment">// Store the mutated projections if we actually changed something.
-                    </span><span class="kw">if let </span><span class="prelude-val">Some</span>(new_projections) = new_projections {
-                        place.projection = tcx.mk_place_elems(<span class="kw-2">&amp;</span>new_projections);
+                        new_projections
+                            .extend_from_slice(<span class="kw-2">&amp;</span>build_projection(unique_ty, nonnull_ty, ptr_ty));
+                        new_projections.push(PlaceElem::Deref);
+                    } <span class="kw">else if let </span><span class="prelude-val">Some</span>(new_projections) = new_projections.as_mut() {
+                        <span class="comment">// Keep building up our projections list once we've started it.
+                        </span>new_projections.push(elem);
                     }
                 }
+
+                <span class="comment">// Store the mutated projections if we actually changed something.
+                </span><span class="kw">if let </span><span class="prelude-val">Some</span>(new_projections) = new_projections {
+                    place.projection = tcx.mk_place_elems(<span class="kw-2">&amp;</span>new_projections);
+                }
             }
-        } <span class="kw">else </span>{
-            <span class="comment">// box is not present, this pass doesn't need to do anything
-        </span>}
+        }
     }
 }
 </code></pre></div></section></main></body></html>

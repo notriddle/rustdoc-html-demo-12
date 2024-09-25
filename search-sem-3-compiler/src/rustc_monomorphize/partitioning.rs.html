@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_monomorphize/src/partitioning.rs`."><title>partitioning.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_monomorphize" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_monomorphize/src/partitioning.rs`."><title>partitioning.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_monomorphize" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_monomorphize/</div>partitioning.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1317,7 +1318,8 @@
 <a href="#1317" id="1317">1317</a>
 <a href="#1318" id="1318">1318</a>
 <a href="#1319" id="1319">1319</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! Partitioning Codegen Units for Incremental Compilation
+<a href="#1320" id="1320">1320</a>
+<a href="#1321" id="1321">1321</a></pre></div><pre class="rust"><code><span class="doccomment">//! Partitioning Codegen Units for Incremental Compilation
 //! ======================================================
 //!
 //! The task of this module is to take the complete set of monomorphizations of
@@ -1420,10 +1422,10 @@
 <span class="kw">use </span>rustc_data_structures::fx::{FxIndexMap, FxIndexSet};
 <span class="kw">use </span>rustc_data_structures::sync;
 <span class="kw">use </span>rustc_data_structures::unord::{UnordMap, UnordSet};
+<span class="kw">use </span>rustc_hir::LangItem;
 <span class="kw">use </span>rustc_hir::def::DefKind;
 <span class="kw">use </span>rustc_hir::def_id::{DefId, DefIdSet, LOCAL_CRATE};
 <span class="kw">use </span>rustc_hir::definitions::DefPathDataName;
-<span class="kw">use </span>rustc_hir::LangItem;
 <span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags;
 <span class="kw">use </span>rustc_middle::middle::exported_symbols::{SymbolExportInfo, SymbolExportLevel};
@@ -1435,8 +1437,8 @@
 <span class="kw">use </span>rustc_middle::ty::visit::TypeVisitableExt;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, InstanceKind, TyCtxt};
 <span class="kw">use </span>rustc_middle::util::Providers;
-<span class="kw">use </span>rustc_session::config::{DumpMonoStatsFormat, SwitchWithOptPath};
 <span class="kw">use </span>rustc_session::CodegenUnits;
+<span class="kw">use </span>rustc_session::config::{DumpMonoStatsFormat, SwitchWithOptPath};
 <span class="kw">use </span>rustc_span::symbol::Symbol;
 <span class="kw">use </span>tracing::debug;
 
@@ -1574,8 +1576,12 @@
         }
         <span class="kw">let </span>size_estimate = mono_item.size_estimate(cx.tcx);
 
-        cgu.items_mut()
-            .insert(mono_item, MonoItemData { inlined: <span class="bool-val">false</span>, linkage, visibility, size_estimate });
+        cgu.items_mut().insert(mono_item, MonoItemData {
+            inlined: <span class="bool-val">false</span>,
+            linkage,
+            visibility,
+            size_estimate,
+        });
 
         <span class="comment">// Get all inlined items that are reachable from `mono_item` without
         // going via another root item. This includes drop-glue, functions from
@@ -1690,7 +1696,7 @@
         <span class="comment">// Move the items from `cgu_src` to `cgu_dst`. Some of them may be
         // duplicate inlined items, in which case the destination CGU is
         // unaffected. Recalculate size estimates afterwards.
-        </span>cgu_dst.items_mut().extend(cgu_src.items_mut().drain(..));
+        </span>cgu_dst.items_mut().append(cgu_src.items_mut());
         cgu_dst.compute_size_estimate();
 
         <span class="comment">// Record that `cgu_dst` now contains all the stuff that was in
@@ -1729,7 +1735,7 @@
         <span class="comment">// Move the items from `smallest` to `second_smallest`. Some of them
         // may be duplicate inlined items, in which case the destination CGU is
         // unaffected. Recalculate size estimates afterwards.
-        </span>second_smallest.items_mut().extend(smallest.items_mut().drain(..));
+        </span>second_smallest.items_mut().append(smallest.items_mut());
         second_smallest.compute_size_estimate();
 
         <span class="comment">// Don't update `cgu_contents`, that's only for incremental builds.
@@ -1823,10 +1829,8 @@
 
     <span class="kw">let </span><span class="kw-2">mut </span>overlap = <span class="number">0</span>;
     <span class="kw">for </span>(item, data) <span class="kw">in </span>src_cgu.items().iter() {
-        <span class="kw">if </span>data.inlined {
-            <span class="kw">if </span>dst_cgu.items().contains_key(item) {
-                overlap += data.size_estimate;
-            }
+        <span class="kw">if </span>data.inlined &amp;&amp; dst_cgu.items().contains_key(item) {
+            overlap += data.size_estimate;
         }
     }
     overlap
@@ -1945,7 +1949,6 @@
                 | ty::InstanceKind::FnPtrShim(..)
                 | ty::InstanceKind::ClosureOnceShim { .. }
                 | ty::InstanceKind::ConstructCoroutineInClosureShim { .. }
-                | ty::InstanceKind::CoroutineKindShim { .. }
                 | ty::InstanceKind::Intrinsic(..)
                 | ty::InstanceKind::DropGlue(..)
                 | ty::InstanceKind::Virtual(..)
@@ -1967,7 +1970,9 @@
 
             <span class="kw">if let </span><span class="prelude-val">Some</span>(impl_def_id) = tcx.impl_of_method(def_id) {
                 <span class="kw">if </span>tcx.sess.opts.incremental.is_some()
-                    &amp;&amp; tcx.trait_id_of_impl(impl_def_id) == tcx.lang_items().drop_trait()
+                    &amp;&amp; tcx
+                        .trait_id_of_impl(impl_def_id)
+                        .is_some_and(|def_id| tcx.is_lang_item(def_id, LangItem::Drop))
                 {
                     <span class="comment">// Put `Drop::drop` into the same cgu as `drop_in_place`
                     // since `drop_in_place` is the only thing that can
@@ -2113,7 +2118,6 @@
         | InstanceKind::Intrinsic(..)
         | InstanceKind::ClosureOnceShim { .. }
         | InstanceKind::ConstructCoroutineInClosureShim { .. }
-        | InstanceKind::CoroutineKindShim { .. }
         | InstanceKind::DropGlue(..)
         | InstanceKind::AsyncDropGlueCtorShim(..)
         | InstanceKind::CloneShim(..)
@@ -2619,7 +2623,7 @@
     <span class="prelude-val">Ok</span>(())
 }
 
-<span class="kw">pub fn </span>provide(providers: <span class="kw-2">&amp;mut </span>Providers) {
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>provide(providers: <span class="kw-2">&amp;mut </span>Providers) {
     providers.collect_and_partition_mono_items = collect_and_partition_mono_items;
 
     providers.is_codegened_item = |tcx, def_id| {

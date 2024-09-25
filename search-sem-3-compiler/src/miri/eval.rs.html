@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/eval.rs`."><title>eval.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/eval.rs`."><title>eval.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/</div>eval.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -593,16 +594,7 @@
 <a href="#593" id="593">593</a>
 <a href="#594" id="594">594</a>
 <a href="#595" id="595">595</a>
-<a href="#596" id="596">596</a>
-<a href="#597" id="597">597</a>
-<a href="#598" id="598">598</a>
-<a href="#599" id="599">599</a>
-<a href="#600" id="600">600</a>
-<a href="#601" id="601">601</a>
-<a href="#602" id="602">602</a>
-<a href="#603" id="603">603</a>
-<a href="#604" id="604">604</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! Main evaluator loop and setting up the initial stack frame.
+<a href="#596" id="596">596</a></pre></div><pre class="rust"><code><span class="doccomment">//! Main evaluator loop and setting up the initial stack frame.
 
 </span><span class="kw">use </span>std::ffi::{OsStr, OsString};
 <span class="kw">use </span>std::iter;
@@ -617,9 +609,8 @@
 <span class="kw">use </span>rustc_hir::def::Namespace;
 <span class="kw">use </span>rustc_hir::def_id::DefId;
 <span class="kw">use </span>rustc_middle::ty::{
-    <span class="self">self</span>,
+    <span class="self">self</span>, Ty, TyCtxt,
     layout::{LayoutCx, LayoutOf},
-    Ty, TyCtxt,
 };
 <span class="kw">use </span>rustc_target::spec::abi::Abi;
 
@@ -722,8 +713,6 @@
     </span><span class="kw">pub </span>seed: <span class="prelude-ty">Option</span>&lt;u64&gt;,
     <span class="doccomment">/// The stacked borrows pointer ids to report about
     </span><span class="kw">pub </span>tracked_pointer_tags: FxHashSet&lt;BorTag&gt;,
-    <span class="doccomment">/// The stacked borrows call IDs to report about
-    </span><span class="kw">pub </span>tracked_call_ids: FxHashSet&lt;CallId&gt;,
     <span class="doccomment">/// The allocation ids to report about.
     </span><span class="kw">pub </span>tracked_alloc_ids: FxHashSet&lt;AllocId&gt;,
     <span class="doccomment">/// For the tracked alloc ids, also report read/write accesses.
@@ -787,7 +776,6 @@
             args: <span class="macro">vec!</span>[],
             seed: <span class="prelude-val">None</span>,
             tracked_pointer_tags: FxHashSet::default(),
-            tracked_call_ids: FxHashSet::default(),
             tracked_alloc_ids: FxHashSet::default(),
             track_alloc_accesses: <span class="bool-val">false</span>,
             data_race_detector: <span class="bool-val">true</span>,
@@ -884,7 +872,7 @@
     config: <span class="kw-2">&amp;</span>MiriConfig,
 ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, InterpCx&lt;<span class="lifetime">'tcx</span>, MiriMachine&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt; {
     <span class="kw">let </span>param_env = ty::ParamEnv::reveal_all();
-    <span class="kw">let </span>layout_cx = LayoutCx { tcx, param_env };
+    <span class="kw">let </span>layout_cx = LayoutCx::new(tcx, param_env);
     <span class="kw">let </span><span class="kw-2">mut </span>ecx =
         InterpCx::new(tcx, rustc_span::DUMMY_SP, param_env, MiriMachine::new(config, layout_cx));
 
@@ -1064,12 +1052,8 @@
         ecx.handle_ice();
         panic::resume_unwind(panic_payload)
     });
-    <span class="kw">let </span>res = <span class="kw">match </span>res {
-        <span class="prelude-val">Err</span>(res) =&gt; res,
-        <span class="comment">// `Ok` can never happen
-        </span><span class="attr">#[cfg(bootstrap)]
-        </span><span class="prelude-val">Ok</span>(never) =&gt; <span class="kw">match </span>never {},
-    };
+    <span class="comment">// `Ok` can never happen.
+    </span><span class="kw">let </span><span class="prelude-val">Err</span>(res) = res;
 
     <span class="comment">// Machine cleanup. Only do this if all threads have terminated; threads that are still running
     // might cause Stacked Borrows errors (https://github.com/rust-lang/miri/issues/2396).

@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/promote_consts.rs`."><title>promote_consts.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/promote_consts.rs`."><title>promote_consts.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>promote_consts.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1060,26 +1061,25 @@
 <a href="#1060" id="1060">1060</a>
 <a href="#1061" id="1061">1061</a>
 <a href="#1062" id="1062">1062</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! A pass that promotes borrows of constant rvalues.
+<a href="#1063" id="1063">1063</a>
+<a href="#1064" id="1064">1064</a></pre></div><pre class="rust"><code><span class="doccomment">//! A pass that promotes borrows of constant rvalues.
 //!
-//! The rvalues considered constant are trees of temps,
-//! each with exactly one initialization, and holding
-//! a constant value with no interior mutability.
-//! They are placed into a new MIR constant body in
-//! `promoted` and the borrow rvalue is replaced with
-//! a `Literal::Promoted` using the index into `promoted`
-//! of that constant MIR.
+//! The rvalues considered constant are trees of temps, each with exactly one
+//! initialization, and holding a constant value with no interior mutability.
+//! They are placed into a new MIR constant body in `promoted` and the borrow
+//! rvalue is replaced with a `Literal::Promoted` using the index into
+//! `promoted` of that constant MIR.
 //!
-//! This pass assumes that every use is dominated by an
-//! initialization and can otherwise silence errors, if
-//! move analysis runs after promotion on broken MIR.
+//! This pass assumes that every use is dominated by an initialization and can
+//! otherwise silence errors, if move analysis runs after promotion on broken
+//! MIR.
 
 </span><span class="kw">use </span>std::assert_matches::assert_matches;
 <span class="kw">use </span>std::cell::Cell;
 <span class="kw">use </span>std::{cmp, iter, mem};
 
 <span class="kw">use </span>either::{Left, Right};
-<span class="kw">use </span>rustc_const_eval::check_consts::{qualifs, ConstCx};
+<span class="kw">use </span>rustc_const_eval::check_consts::{ConstCx, qualifs};
 <span class="kw">use </span>rustc_data_structures::fx::FxHashSet;
 <span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
 <span class="kw">use </span>rustc_index::{Idx, IndexSlice, IndexVec};
@@ -1087,8 +1087,9 @@
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, GenericArgs, List, Ty, TyCtxt, TypeVisitableExt};
 <span class="kw">use </span>rustc_middle::{bug, mir, span_bug};
-<span class="kw">use </span>rustc_span::source_map::Spanned;
 <span class="kw">use </span>rustc_span::Span;
+<span class="kw">use </span>rustc_span::source_map::Spanned;
+<span class="kw">use </span>tracing::{debug, instrument};
 
 <span class="doccomment">/// A `MirPass` for promotion.
 ///
@@ -1098,11 +1099,12 @@
 /// After this pass is run, `promoted_fragments` will hold the MIR body corresponding to each
 /// newly created `Constant`.
 </span><span class="attr">#[derive(Default)]
-</span><span class="kw">pub struct </span>PromoteTemps&lt;<span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">pub </span>promoted_fragments: Cell&lt;IndexVec&lt;Promoted, Body&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt;,
+</span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>PromoteTemps&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="comment">// Must use `Cell` because `run_pass` takes `&amp;self`, not `&amp;mut self`.
+    </span><span class="kw">pub </span>promoted_fragments: Cell&lt;IndexVec&lt;Promoted, Body&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt;,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>PromoteTemps&lt;<span class="lifetime">'tcx</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">crate</span>::MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>PromoteTemps&lt;<span class="lifetime">'tcx</span>&gt; {
     <span class="kw">fn </span>run_pass(<span class="kw-2">&amp;</span><span class="self">self</span>, tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;mut </span>Body&lt;<span class="lifetime">'tcx</span>&gt;) {
         <span class="comment">// There's not really any point in promoting errorful MIR.
         //
@@ -1447,7 +1449,8 @@
     <span class="kw">fn </span>validate_ref(<span class="kw-2">&amp;mut </span><span class="self">self</span>, kind: BorrowKind, place: <span class="kw-2">&amp;</span>Place&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;(), Unpromotable&gt; {
         <span class="kw">match </span>kind {
             <span class="comment">// Reject these borrow types just to be safe.
-            // FIXME(RalfJung): could we allow them? Should we? No point in it until we have a usecase.
+            // FIXME(RalfJung): could we allow them? Should we? No point in it until we have a
+            // usecase.
             </span>BorrowKind::Fake(<span class="kw">_</span>) | BorrowKind::Mut { kind: MutBorrowKind::ClosureCapture } =&gt; {
                 <span class="kw">return </span><span class="prelude-val">Err</span>(Unpromotable);
             }
@@ -1529,7 +1532,8 @@
                 <span class="kw">let </span>lhs_ty = lhs.ty(<span class="self">self</span>.body, <span class="self">self</span>.tcx);
 
                 <span class="kw">if let </span>ty::RawPtr(<span class="kw">_</span>, <span class="kw">_</span>) | ty::FnPtr(..) = lhs_ty.kind() {
-                    <span class="comment">// Raw and fn pointer operations are not allowed inside consts and thus not promotable.
+                    <span class="comment">// Raw and fn pointer operations are not allowed inside consts and thus not
+                    // promotable.
                     </span><span class="macro">assert_matches!</span>(
                         op,
                         BinOp::Eq
@@ -1559,7 +1563,8 @@
                                 </span><span class="prelude-val">Some</span>(x) <span class="kw">if </span>x != <span class="number">0 </span>=&gt; {}        <span class="comment">// okay
                                 </span><span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(Unpromotable), <span class="comment">// value not known or 0 -- not okay
                             </span>}
-                            <span class="comment">// Furthermore, for signed divison, we also have to exclude `int::MIN / -1`.
+                            <span class="comment">// Furthermore, for signed division, we also have to exclude `int::MIN /
+                            // -1`.
                             </span><span class="kw">if </span>lhs_ty.is_signed() {
                                 <span class="kw">match </span>rhs_val.map(|x| x.to_int(sz)) {
                                     <span class="prelude-val">Some</span>(-<span class="number">1</span>) | <span class="prelude-val">None </span>=&gt; {
@@ -1573,9 +1578,12 @@
                                         };
                                         <span class="kw">let </span>lhs_min = sz.signed_int_min();
                                         <span class="kw">match </span>lhs_val.map(|x| x.to_int(sz)) {
-                                            <span class="prelude-val">Some</span>(x) <span class="kw">if </span>x != lhs_min =&gt; {}  <span class="comment">// okay
-                                            </span><span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(Unpromotable), <span class="comment">// value not known or int::MIN -- not okay
-                                        </span>}
+                                            <span class="comment">// okay
+                                            </span><span class="prelude-val">Some</span>(x) <span class="kw">if </span>x != lhs_min =&gt; {}
+
+                                            <span class="comment">// value not known or int::MIN -- not okay
+                                            </span><span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(Unpromotable),
+                                        }
                                     }
                                     <span class="kw">_ </span>=&gt; {}
                                 }
@@ -1613,7 +1621,7 @@
                 <span class="self">self</span>.validate_operand(rhs)<span class="question-mark">?</span>;
             }
 
-            Rvalue::AddressOf(<span class="kw">_</span>, place) =&gt; {
+            Rvalue::RawPtr(<span class="kw">_</span>, place) =&gt; {
                 <span class="comment">// We accept `&amp;raw *`, i.e., raw reborrows -- creating a raw pointer is
                 // no problem, only using it is.
                 </span><span class="kw">if let </span><span class="prelude-val">Some</span>((place_base, ProjectionElem::Deref)) = place.as_ref().last_projection()
@@ -1876,8 +1884,8 @@
                 TerminatorKind::Call {
                     <span class="kw-2">mut </span>func, <span class="kw-2">mut </span>args, call_source: desugar, fn_span, ..
                 } =&gt; {
-                    <span class="comment">// This promoted involves a function call, so it may fail to evaluate.
-                    // Let's make sure it is added to `required_consts` so that failure cannot get lost.
+                    <span class="comment">// This promoted involves a function call, so it may fail to evaluate. Let's
+                    // make sure it is added to `required_consts` so that failure cannot get lost.
                     </span><span class="self">self</span>.add_to_required = <span class="bool-val">true</span>;
 
                     <span class="self">self</span>.visit_operand(<span class="kw-2">&amp;mut </span>func, loc);
@@ -1968,23 +1976,19 @@
             <span class="self">self</span>.extra_statements.push((loc, promoted_ref_statement));
 
             (
-                Rvalue::Ref(
-                    tcx.lifetimes.re_erased,
-                    <span class="kw-2">*</span>borrow_kind,
-                    Place {
-                        local: mem::replace(<span class="kw-2">&amp;mut </span>place.local, promoted_ref),
-                        projection: List::empty(),
-                    },
-                ),
+                Rvalue::Ref(tcx.lifetimes.re_erased, <span class="kw-2">*</span>borrow_kind, Place {
+                    local: mem::replace(<span class="kw-2">&amp;mut </span>place.local, promoted_ref),
+                    projection: List::empty(),
+                }),
                 promoted_operand,
             )
         };
 
         <span class="macro">assert_eq!</span>(<span class="self">self</span>.new_block(), START_BLOCK);
-        <span class="self">self</span>.visit_rvalue(
-            <span class="kw-2">&amp;mut </span>rvalue,
-            Location { block: START_BLOCK, statement_index: usize::MAX },
-        );
+        <span class="self">self</span>.visit_rvalue(<span class="kw-2">&amp;mut </span>rvalue, Location {
+            block: START_BLOCK,
+            statement_index: usize::MAX,
+        });
 
         <span class="kw">let </span>span = <span class="self">self</span>.promoted.span;
         <span class="self">self</span>.assign(RETURN_PLACE, rvalue, span);

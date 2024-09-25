@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/nll.rs`."><title>nll.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/nll.rs`."><title>nll.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/</div>nll.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -338,7 +339,47 @@
 <a href="#338" id="338">338</a>
 <a href="#339" id="339">339</a>
 <a href="#340" id="340">340</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! The entry point of the NLL borrow checker.
+<a href="#341" id="341">341</a>
+<a href="#342" id="342">342</a>
+<a href="#343" id="343">343</a>
+<a href="#344" id="344">344</a>
+<a href="#345" id="345">345</a>
+<a href="#346" id="346">346</a>
+<a href="#347" id="347">347</a>
+<a href="#348" id="348">348</a>
+<a href="#349" id="349">349</a>
+<a href="#350" id="350">350</a>
+<a href="#351" id="351">351</a>
+<a href="#352" id="352">352</a>
+<a href="#353" id="353">353</a>
+<a href="#354" id="354">354</a>
+<a href="#355" id="355">355</a>
+<a href="#356" id="356">356</a>
+<a href="#357" id="357">357</a>
+<a href="#358" id="358">358</a>
+<a href="#359" id="359">359</a>
+<a href="#360" id="360">360</a>
+<a href="#361" id="361">361</a>
+<a href="#362" id="362">362</a>
+<a href="#363" id="363">363</a>
+<a href="#364" id="364">364</a>
+<a href="#365" id="365">365</a>
+<a href="#366" id="366">366</a>
+<a href="#367" id="367">367</a>
+<a href="#368" id="368">368</a>
+<a href="#369" id="369">369</a>
+<a href="#370" id="370">370</a>
+<a href="#371" id="371">371</a>
+<a href="#372" id="372">372</a>
+<a href="#373" id="373">373</a>
+<a href="#374" id="374">374</a>
+<a href="#375" id="375">375</a>
+<a href="#376" id="376">376</a>
+<a href="#377" id="377">377</a>
+<a href="#378" id="378">378</a>
+<a href="#379" id="379">379</a>
+<a href="#380" id="380">380</a>
+<a href="#381" id="381">381</a></pre></div><pre class="rust"><code><span class="doccomment">//! The entry point of the NLL borrow checker.
 
 </span><span class="kw">use </span>std::path::PathBuf;
 <span class="kw">use </span>std::rc::Rc;
@@ -349,17 +390,20 @@
 <span class="kw">use </span>rustc_data_structures::fx::FxIndexMap;
 <span class="kw">use </span>rustc_hir::def_id::LocalDefId;
 <span class="kw">use </span>rustc_index::IndexSlice;
+<span class="kw">use </span>rustc_middle::mir::pretty::{PrettyPrintMirOptions, dump_mir_with_options};
 <span class="kw">use </span>rustc_middle::mir::{
-    create_dump_file, dump_enabled, dump_mir, Body, ClosureOutlivesSubject,
-    ClosureRegionRequirements, PassWhere, Promoted,
+    Body, ClosureOutlivesSubject, ClosureRegionRequirements, PassWhere, Promoted, create_dump_file,
+    dump_enabled, dump_mir,
 };
 <span class="kw">use </span>rustc_middle::ty::print::with_no_trimmed_paths;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, OpaqueHiddenType, TyCtxt};
+<span class="kw">use </span>rustc_mir_dataflow::ResultsCursor;
 <span class="kw">use </span>rustc_mir_dataflow::impls::MaybeInitializedPlaces;
 <span class="kw">use </span>rustc_mir_dataflow::move_paths::MoveData;
 <span class="kw">use </span>rustc_mir_dataflow::points::DenseLocationMap;
-<span class="kw">use </span>rustc_mir_dataflow::ResultsCursor;
+<span class="kw">use </span>rustc_session::config::MirIncludeSpans;
 <span class="kw">use </span>rustc_span::symbol::sym;
+<span class="kw">use </span>tracing::{debug, instrument};
 
 <span class="kw">use </span><span class="kw">crate</span>::borrow_set::BorrowSet;
 <span class="kw">use </span><span class="kw">crate</span>::consumers::ConsumerOptions;
@@ -369,7 +413,7 @@
 <span class="kw">use </span><span class="kw">crate</span>::region_infer::RegionInferenceContext;
 <span class="kw">use </span><span class="kw">crate</span>::type_check::{<span class="self">self</span>, MirTypeckRegionConstraints, MirTypeckResults};
 <span class="kw">use </span><span class="kw">crate</span>::universal_regions::UniversalRegions;
-<span class="kw">use crate</span>::{polonius, renumber, BorrowckInferCtxt};
+<span class="kw">use crate</span>::{BorrowckInferCtxt, polonius, renumber};
 
 <span class="kw">pub type </span>PoloniusOutput = Output&lt;RustcFacts&gt;;
 
@@ -412,14 +456,14 @@
 <span class="doccomment">/// Computes the (non-lexical) regions from the input MIR.
 ///
 /// This may result in errors being reported.
-</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>compute_regions&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;(
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>compute_regions&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;(
     infcx: <span class="kw-2">&amp;</span>BorrowckInferCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     universal_regions: UniversalRegions&lt;<span class="lifetime">'tcx</span>&gt;,
     body: <span class="kw-2">&amp;</span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
     promoted: <span class="kw-2">&amp;</span>IndexSlice&lt;Promoted, Body&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
     location_table: <span class="kw-2">&amp;</span>LocationTable,
     param_env: ty::ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
-    flow_inits: <span class="kw-2">&amp;mut </span>ResultsCursor&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>, MaybeInitializedPlaces&lt;<span class="lifetime">'_</span>, <span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
+    flow_inits: <span class="kw-2">&amp;mut </span>ResultsCursor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, MaybeInitializedPlaces&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
     move_data: <span class="kw-2">&amp;</span>MoveData&lt;<span class="lifetime">'tcx</span>&gt;,
     borrow_set: <span class="kw-2">&amp;</span>BorrowSet&lt;<span class="lifetime">'tcx</span>&gt;,
     upvars: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>ty::CapturedPlace&lt;<span class="lifetime">'tcx</span>&gt;],
@@ -548,65 +592,103 @@
     }
 }
 
-<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>dump_mir_results&lt;<span class="lifetime">'tcx</span>&gt;(
+<span class="doccomment">/// `-Zdump-mir=nll` dumps MIR annotated with NLL specific information:
+/// - free regions
+/// - inferred region values
+/// - region liveness
+/// - inference constraints and their causes
+///
+/// As well as graphviz `.dot` visualizations of:
+/// - the region constraints graph
+/// - the region SCC graph
+</span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>dump_nll_mir&lt;<span class="lifetime">'tcx</span>&gt;(
     infcx: <span class="kw-2">&amp;</span>BorrowckInferCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     body: <span class="kw-2">&amp;</span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
     regioncx: <span class="kw-2">&amp;</span>RegionInferenceContext&lt;<span class="lifetime">'tcx</span>&gt;,
     closure_region_requirements: <span class="kw-2">&amp;</span><span class="prelude-ty">Option</span>&lt;ClosureRegionRequirements&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+    borrow_set: <span class="kw-2">&amp;</span>BorrowSet&lt;<span class="lifetime">'tcx</span>&gt;,
 ) {
-    <span class="kw">if </span>!dump_enabled(infcx.tcx, <span class="string">"nll"</span>, body.source.def_id()) {
+    <span class="kw">let </span>tcx = infcx.tcx;
+    <span class="kw">if </span>!dump_enabled(tcx, <span class="string">"nll"</span>, body.source.def_id()) {
         <span class="kw">return</span>;
     }
 
-    dump_mir(infcx.tcx, <span class="bool-val">false</span>, <span class="string">"nll"</span>, <span class="kw-2">&amp;</span><span class="number">0</span>, body, |pass_where, out| {
-        <span class="kw">match </span>pass_where {
-            <span class="comment">// Before the CFG, dump out the values for each region variable.
-            </span>PassWhere::BeforeCFG =&gt; {
-                regioncx.dump_mir(infcx.tcx, out)<span class="question-mark">?</span>;
-                <span class="macro">writeln!</span>(out, <span class="string">"|"</span>)<span class="question-mark">?</span>;
-
-                <span class="kw">if let </span><span class="prelude-val">Some</span>(closure_region_requirements) = closure_region_requirements {
-                    <span class="macro">writeln!</span>(out, <span class="string">"| Free Region Constraints"</span>)<span class="question-mark">?</span>;
-                    for_each_region_constraint(
-                        infcx.tcx,
-                        closure_region_requirements,
-                        <span class="kw-2">&amp;mut </span>|msg| <span class="macro">writeln!</span>(out, <span class="string">"| {msg}"</span>),
-                    )<span class="question-mark">?</span>;
+    <span class="comment">// We want the NLL extra comments printed by default in NLL MIR dumps (they were removed in
+    // #112346). Specifying `-Z mir-include-spans` on the CLI still has priority: for example,
+    // they're always disabled in mir-opt tests to make working with blessed dumps easier.
+    </span><span class="kw">let </span>options = PrettyPrintMirOptions {
+        include_extra_comments: <span class="macro">matches!</span>(
+            infcx.tcx.sess.opts.unstable_opts.mir_include_spans,
+            MirIncludeSpans::On | MirIncludeSpans::Nll
+        ),
+    };
+    dump_mir_with_options(
+        tcx,
+        <span class="bool-val">false</span>,
+        <span class="string">"nll"</span>,
+        <span class="kw-2">&amp;</span><span class="number">0</span>,
+        body,
+        |pass_where, out| {
+            <span class="kw">match </span>pass_where {
+                <span class="comment">// Before the CFG, dump out the values for each region variable.
+                </span>PassWhere::BeforeCFG =&gt; {
+                    regioncx.dump_mir(tcx, out)<span class="question-mark">?</span>;
                     <span class="macro">writeln!</span>(out, <span class="string">"|"</span>)<span class="question-mark">?</span>;
+
+                    <span class="kw">if let </span><span class="prelude-val">Some</span>(closure_region_requirements) = closure_region_requirements {
+                        <span class="macro">writeln!</span>(out, <span class="string">"| Free Region Constraints"</span>)<span class="question-mark">?</span>;
+                        for_each_region_constraint(tcx, closure_region_requirements, <span class="kw-2">&amp;mut </span>|msg| {
+                            <span class="macro">writeln!</span>(out, <span class="string">"| {msg}"</span>)
+                        })<span class="question-mark">?</span>;
+                        <span class="macro">writeln!</span>(out, <span class="string">"|"</span>)<span class="question-mark">?</span>;
+                    }
+
+                    <span class="kw">if </span>borrow_set.len() &gt; <span class="number">0 </span>{
+                        <span class="macro">writeln!</span>(out, <span class="string">"| Borrows"</span>)<span class="question-mark">?</span>;
+                        <span class="kw">for </span>(borrow_idx, borrow_data) <span class="kw">in </span>borrow_set.iter_enumerated() {
+                            <span class="macro">writeln!</span>(
+                                out,
+                                <span class="string">"| {:?}: issued at {:?} in {:?}"</span>,
+                                borrow_idx, borrow_data.reserve_location, borrow_data.region
+                            )<span class="question-mark">?</span>;
+                        }
+                        <span class="macro">writeln!</span>(out, <span class="string">"|"</span>)<span class="question-mark">?</span>;
+                    }
                 }
+
+                PassWhere::BeforeLocation(<span class="kw">_</span>) =&gt; {}
+
+                PassWhere::AfterTerminator(<span class="kw">_</span>) =&gt; {}
+
+                PassWhere::BeforeBlock(<span class="kw">_</span>) | PassWhere::AfterLocation(<span class="kw">_</span>) | PassWhere::AfterCFG =&gt; {}
             }
+            <span class="prelude-val">Ok</span>(())
+        },
+        options,
+    );
 
-            PassWhere::BeforeLocation(<span class="kw">_</span>) =&gt; {}
-
-            PassWhere::AfterTerminator(<span class="kw">_</span>) =&gt; {}
-
-            PassWhere::BeforeBlock(<span class="kw">_</span>) | PassWhere::AfterLocation(<span class="kw">_</span>) | PassWhere::AfterCFG =&gt; {}
-        }
-        <span class="prelude-val">Ok</span>(())
-    });
-
-    <span class="comment">// Also dump the inference graph constraints as a graphviz file.
+    <span class="comment">// Also dump the region constraint graph as a graphviz file.
     </span><span class="kw">let _</span>: io::Result&lt;()&gt; = <span class="kw">try </span>{
-        <span class="kw">let </span><span class="kw-2">mut </span>file = create_dump_file(infcx.tcx, <span class="string">"regioncx.all.dot"</span>, <span class="bool-val">false</span>, <span class="string">"nll"</span>, <span class="kw-2">&amp;</span><span class="number">0</span>, body)<span class="question-mark">?</span>;
+        <span class="kw">let </span><span class="kw-2">mut </span>file = create_dump_file(tcx, <span class="string">"regioncx.all.dot"</span>, <span class="bool-val">false</span>, <span class="string">"nll"</span>, <span class="kw-2">&amp;</span><span class="number">0</span>, body)<span class="question-mark">?</span>;
         regioncx.dump_graphviz_raw_constraints(<span class="kw-2">&amp;mut </span>file)<span class="question-mark">?</span>;
     };
 
-    <span class="comment">// Also dump the inference graph constraints as a graphviz file.
+    <span class="comment">// Also dump the region constraint SCC graph as a graphviz file.
     </span><span class="kw">let _</span>: io::Result&lt;()&gt; = <span class="kw">try </span>{
-        <span class="kw">let </span><span class="kw-2">mut </span>file = create_dump_file(infcx.tcx, <span class="string">"regioncx.scc.dot"</span>, <span class="bool-val">false</span>, <span class="string">"nll"</span>, <span class="kw-2">&amp;</span><span class="number">0</span>, body)<span class="question-mark">?</span>;
+        <span class="kw">let </span><span class="kw-2">mut </span>file = create_dump_file(tcx, <span class="string">"regioncx.scc.dot"</span>, <span class="bool-val">false</span>, <span class="string">"nll"</span>, <span class="kw-2">&amp;</span><span class="number">0</span>, body)<span class="question-mark">?</span>;
         regioncx.dump_graphviz_scc_constraints(<span class="kw-2">&amp;mut </span>file)<span class="question-mark">?</span>;
     };
 }
 
 <span class="attr">#[allow(rustc::diagnostic_outside_of_impl)]
 #[allow(rustc::untranslatable_diagnostic)]
-</span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>dump_annotation&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'cx</span>&gt;(
-    infcx: <span class="kw-2">&amp;</span><span class="lifetime">'cx </span>BorrowckInferCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
+</span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>dump_annotation&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'infcx</span>&gt;(
+    infcx: <span class="kw-2">&amp;</span><span class="lifetime">'infcx </span>BorrowckInferCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     body: <span class="kw-2">&amp;</span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
     regioncx: <span class="kw-2">&amp;</span>RegionInferenceContext&lt;<span class="lifetime">'tcx</span>&gt;,
     closure_region_requirements: <span class="kw-2">&amp;</span><span class="prelude-ty">Option</span>&lt;ClosureRegionRequirements&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
     opaque_type_values: <span class="kw-2">&amp;</span>FxIndexMap&lt;LocalDefId, OpaqueHiddenType&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
-    diags: <span class="kw-2">&amp;mut </span><span class="kw">crate</span>::diags::BorrowckDiags&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
+    diags: <span class="kw-2">&amp;mut </span><span class="kw">crate</span>::diags::BorrowckDiags&lt;<span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt;,
 ) {
     <span class="kw">let </span>tcx = infcx.tcx;
     <span class="kw">let </span>base_def_id = tcx.typeck_root_def_id(body.source.def_id());

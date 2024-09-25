@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["InitOnceStatus"],"struct":["InitOnce","InitOnceId"],"trait":["EvalContextExt","EvalContextExtPriv"]};
+window.SIDEBAR_ITEMS = {"enum":["InitOnceStatus"],"struct":["InitOnce","InitOnceId"],"trait":["EvalContextExt"]};

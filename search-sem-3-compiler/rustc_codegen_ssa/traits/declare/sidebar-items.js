@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"trait":["PreDefineMethods"]};
+window.SIDEBAR_ITEMS = {"trait":["PreDefineCodegenMethods"]};

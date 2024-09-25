@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"trait":["MiscMethods"]};
+window.SIDEBAR_ITEMS = {"trait":["MiscCodegenMethods"]};

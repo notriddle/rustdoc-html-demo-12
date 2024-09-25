@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_typeck/src/check.rs`."><title>check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_typeck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_typeck/src/check.rs`."><title>check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_typeck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_typeck/</div>check.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -260,14 +261,7 @@
 <a href="#260" id="260">260</a>
 <a href="#261" id="261">261</a>
 <a href="#262" id="262">262</a>
-<a href="#263" id="263">263</a>
-<a href="#264" id="264">264</a>
-<a href="#265" id="265">265</a>
-<a href="#266" id="266">266</a>
-<a href="#267" id="267">267</a>
-<a href="#268" id="268">268</a>
-<a href="#269" id="269">269</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::cell::RefCell;
+<a href="#263" id="263">263</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::cell::RefCell;
 
 <span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
 <span class="kw">use </span>rustc_hir::def::DefKind;
@@ -281,6 +275,7 @@
 <span class="kw">use </span>rustc_span::symbol::sym;
 <span class="kw">use </span>rustc_target::spec::abi::Abi;
 <span class="kw">use </span>rustc_trait_selection::traits::{ObligationCause, ObligationCauseCode};
+<span class="kw">use </span>tracing::{debug, instrument};
 
 <span class="kw">use </span><span class="kw">crate</span>::coercion::CoerceMany;
 <span class="kw">use </span><span class="kw">crate</span>::gather_locals::GatherLocalsVisitor;
@@ -429,15 +424,11 @@
     </span>fcx.demand_suptype(span, ret_ty, actual_return_ty);
 
     <span class="comment">// Check that a function marked as `#[panic_handler]` has signature `fn(&amp;PanicInfo) -&gt; !`
-    </span><span class="kw">if let </span><span class="prelude-val">Some</span>(panic_impl_did) = tcx.lang_items().panic_impl()
-        &amp;&amp; panic_impl_did == fn_def_id.to_def_id()
-    {
-        check_panic_info_fn(tcx, panic_impl_did.expect_local(), fn_sig);
+    </span><span class="kw">if </span>tcx.is_lang_item(fn_def_id.to_def_id(), LangItem::PanicImpl) {
+        check_panic_info_fn(tcx, fn_def_id, fn_sig);
     }
 
-    <span class="kw">if let </span><span class="prelude-val">Some</span>(lang_start_defid) = tcx.lang_items().start_fn()
-        &amp;&amp; lang_start_defid == fn_def_id.to_def_id()
-    {
+    <span class="kw">if </span>tcx.is_lang_item(fn_def_id.to_def_id(), LangItem::Start) {
         check_lang_start_fn(tcx, fn_sig, fn_def_id);
     }
 
@@ -463,21 +454,18 @@
     <span class="kw">let </span>panic_info_did = tcx.require_lang_item(hir::LangItem::PanicInfo, <span class="prelude-val">Some</span>(span));
 
     <span class="comment">// build type `for&lt;'a, 'b&gt; fn(&amp;'a PanicInfo&lt;'b&gt;) -&gt; !`
-    </span><span class="kw">let </span>panic_info_ty = tcx.type_of(panic_info_did).instantiate(
-        tcx,
-        <span class="kw-2">&amp;</span>[ty::GenericArg::from(ty::Region::new_bound(
-            tcx,
-            ty::INNERMOST,
-            ty::BoundRegion { var: ty::BoundVar::from_u32(<span class="number">1</span>), kind: ty::BrAnon },
-        ))],
-    );
+    </span><span class="kw">let </span>panic_info_ty = tcx.type_of(panic_info_did).instantiate(tcx, <span class="kw-2">&amp;</span>[ty::GenericArg::from(
+        ty::Region::new_bound(tcx, ty::INNERMOST, ty::BoundRegion {
+            var: ty::BoundVar::from_u32(<span class="number">1</span>),
+            kind: ty::BrAnon,
+        }),
+    )]);
     <span class="kw">let </span>panic_info_ref_ty = Ty::new_imm_ref(
         tcx,
-        ty::Region::new_bound(
-            tcx,
-            ty::INNERMOST,
-            ty::BoundRegion { var: ty::BoundVar::ZERO, kind: ty::BrAnon },
-        ),
+        ty::Region::new_bound(tcx, ty::INNERMOST, ty::BoundRegion {
+            var: ty::BoundVar::ZERO,
+            kind: ty::BrAnon,
+        }),
         panic_info_ty,
     );
 

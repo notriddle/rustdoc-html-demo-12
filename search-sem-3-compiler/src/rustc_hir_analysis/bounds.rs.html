@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/bounds.rs`."><title>bounds.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/bounds.rs`."><title>bounds.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_analysis/</div>bounds.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -185,16 +186,20 @@
 <a href="#185" id="185">185</a>
 <a href="#186" id="186">186</a>
 <a href="#187" id="187">187</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! Bounds are restrictions applied to some types after they've been lowered from the HIR to the
+<a href="#188" id="188">188</a>
+<a href="#189" id="189">189</a>
+<a href="#190" id="190">190</a></pre></div><pre class="rust"><code><span class="doccomment">//! Bounds are restrictions applied to some types after they've been lowered from the HIR to the
 //! [`rustc_middle::ty`] form.
 
 </span><span class="kw">use </span>rustc_data_structures::fx::FxIndexMap;
-<span class="kw">use </span>rustc_hir::def::DefKind;
 <span class="kw">use </span>rustc_hir::LangItem;
+<span class="kw">use </span>rustc_hir::def::DefKind;
 <span class="kw">use </span>rustc_middle::ty::fold::FnMutDelegate;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Ty, TyCtxt, Upcast};
-<span class="kw">use </span>rustc_span::def_id::DefId;
 <span class="kw">use </span>rustc_span::Span;
+<span class="kw">use </span>rustc_span::def_id::DefId;
+
+<span class="kw">use </span><span class="kw">crate</span>::hir_ty_lowering::OnlySelfBounds;
 
 <span class="doccomment">/// Collects together a list of type bounds. These lists of bounds occur in many places
 /// in Rust's syntax:
@@ -213,13 +218,13 @@
 /// Our representation is a bit mixed here -- in some cases, we
 /// include the self type (e.g., `trait_bounds`) but in others we do not
 </span><span class="attr">#[derive(Default, PartialEq, Eq, Clone, Debug)]
-</span><span class="kw">pub struct </span>Bounds&lt;<span class="lifetime">'tcx</span>&gt; {
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>Bounds&lt;<span class="lifetime">'tcx</span>&gt; {
     clauses: Vec&lt;(ty::Clause&lt;<span class="lifetime">'tcx</span>&gt;, Span)&gt;,
     effects_min_tys: FxIndexMap&lt;Ty&lt;<span class="lifetime">'tcx</span>&gt;, Span&gt;,
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; Bounds&lt;<span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">pub fn </span>push_region_bound(
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>push_region_bound(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
         region: ty::PolyTypeOutlivesPredicate&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -229,7 +234,7 @@
             .push((region.map_bound(|p| ty::ClauseKind::TypeOutlives(p)).upcast(tcx), span));
     }
 
-    <span class="kw">pub fn </span>push_trait_bound(
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>push_trait_bound(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
         defining_def_id: DefId,
@@ -237,6 +242,7 @@
         span: Span,
         polarity: ty::PredicatePolarity,
         constness: ty::BoundConstness,
+        only_self_bounds: OnlySelfBounds,
     ) {
         <span class="kw">let </span>clause = (
             bound_trait_ref
@@ -253,7 +259,10 @@
             <span class="self">self</span>.clauses.push(clause);
         }
 
-        <span class="kw">if </span>!tcx.features().effects {
+        <span class="comment">// FIXME(effects): Lift this out of `push_trait_bound`, and move it somewhere else.
+        // Perhaps moving this into `lower_poly_trait_ref`, just like we lower associated
+        // type bounds.
+        </span><span class="kw">if </span>!tcx.features().effects || only_self_bounds.<span class="number">0 </span>{
             <span class="kw">return</span>;
         }
         <span class="comment">// For `T: ~const Tr` or `T: const Tr`, we need to add an additional bound on the
@@ -293,14 +302,11 @@
                 // This should work for any bound variables as long as they don't have any
                 // bounds e.g. `for&lt;T: Trait&gt;`.
                 // FIXME(effects) reconsider this approach to allow compatibility with `for&lt;T: Tr&gt;`
-                </span><span class="kw">let </span>ty = tcx.replace_bound_vars_uncached(
-                    ty,
-                    FnMutDelegate {
-                        regions: <span class="kw-2">&amp;mut </span>|<span class="kw">_</span>| tcx.lifetimes.re_static,
-                        types: <span class="kw-2">&amp;mut </span>|<span class="kw">_</span>| tcx.types.unit,
-                        consts: <span class="kw-2">&amp;mut </span>|<span class="kw">_</span>| <span class="macro">unimplemented!</span>(<span class="string">"`~const` does not support const binders"</span>),
-                    },
-                );
+                </span><span class="kw">let </span>ty = tcx.replace_bound_vars_uncached(ty, FnMutDelegate {
+                    regions: <span class="kw-2">&amp;mut </span>|<span class="kw">_</span>| tcx.lifetimes.re_static,
+                    types: <span class="kw-2">&amp;mut </span>|<span class="kw">_</span>| tcx.types.unit,
+                    consts: <span class="kw-2">&amp;mut </span>|<span class="kw">_</span>| <span class="macro">unimplemented!</span>(<span class="string">"`~const` does not support const binders"</span>),
+                });
 
                 <span class="self">self</span>.effects_min_tys.insert(ty, span);
                 <span class="kw">return</span>;
@@ -333,15 +339,15 @@
         };
         <span class="kw">let </span>self_ty = Ty::new_projection(tcx, assoc, bound_trait_ref.skip_binder().args);
         <span class="comment">// make `&lt;T as Tr&gt;::Effects: Compat&lt;runtime&gt;`
-        </span><span class="kw">let </span>new_trait_ref = ty::TraitRef::new(
-            tcx,
-            tcx.require_lang_item(LangItem::EffectsCompat, <span class="prelude-val">Some</span>(span)),
-            [ty::GenericArg::from(self_ty), compat_val.into()],
-        );
+        </span><span class="kw">let </span>new_trait_ref =
+            ty::TraitRef::new(tcx, tcx.require_lang_item(LangItem::EffectsCompat, <span class="prelude-val">Some</span>(span)), [
+                ty::GenericArg::from(self_ty),
+                compat_val.into(),
+            ]);
         <span class="self">self</span>.clauses.push((bound_trait_ref.rebind(new_trait_ref).upcast(tcx), span));
     }
 
-    <span class="kw">pub fn </span>push_projection_bound(
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>push_projection_bound(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
         projection: ty::PolyProjectionPredicate&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -353,14 +359,14 @@
         ));
     }
 
-    <span class="kw">pub fn </span>push_sized(<span class="kw-2">&amp;mut </span><span class="self">self</span>, tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;, span: Span) {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>push_sized(<span class="kw-2">&amp;mut </span><span class="self">self</span>, tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;, span: Span) {
         <span class="kw">let </span>sized_def_id = tcx.require_lang_item(LangItem::Sized, <span class="prelude-val">Some</span>(span));
         <span class="kw">let </span>trait_ref = ty::TraitRef::new(tcx, sized_def_id, [ty]);
         <span class="comment">// Preferable to put this obligation first, since we report better errors for sized ambiguity.
         </span><span class="self">self</span>.clauses.insert(<span class="number">0</span>, (trait_ref.upcast(tcx), span));
     }
 
-    <span class="kw">pub fn </span>clauses(
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>clauses(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         <span class="comment">// FIXME(effects): remove tcx
         </span>_tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -368,7 +374,7 @@
         <span class="self">self</span>.clauses.iter().cloned()
     }
 
-    <span class="kw">pub fn </span>effects_min_tys(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = Ty&lt;<span class="lifetime">'tcx</span>&gt;&gt; + <span class="lifetime">'_ </span>{
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>effects_min_tys(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = Ty&lt;<span class="lifetime">'tcx</span>&gt;&gt; + <span class="lifetime">'_ </span>{
         <span class="self">self</span>.effects_min_tys.keys().copied()
     }
 }

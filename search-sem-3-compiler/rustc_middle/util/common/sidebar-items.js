@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["c_name","to_readable_str"]};
+window.SIDEBAR_ITEMS = {"fn":["to_readable_str"]};

@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/check/wfcheck.rs`."><title>wfcheck.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/check/wfcheck.rs`."><title>wfcheck.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_analysis/check/</div>wfcheck.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -2262,17 +2263,61 @@
 <a href="#2262" id="2262">2262</a>
 <a href="#2263" id="2263">2263</a>
 <a href="#2264" id="2264">2264</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::cell::LazyCell;
+<a href="#2265" id="2265">2265</a>
+<a href="#2266" id="2266">2266</a>
+<a href="#2267" id="2267">2267</a>
+<a href="#2268" id="2268">2268</a>
+<a href="#2269" id="2269">2269</a>
+<a href="#2270" id="2270">2270</a>
+<a href="#2271" id="2271">2271</a>
+<a href="#2272" id="2272">2272</a>
+<a href="#2273" id="2273">2273</a>
+<a href="#2274" id="2274">2274</a>
+<a href="#2275" id="2275">2275</a>
+<a href="#2276" id="2276">2276</a>
+<a href="#2277" id="2277">2277</a>
+<a href="#2278" id="2278">2278</a>
+<a href="#2279" id="2279">2279</a>
+<a href="#2280" id="2280">2280</a>
+<a href="#2281" id="2281">2281</a>
+<a href="#2282" id="2282">2282</a>
+<a href="#2283" id="2283">2283</a>
+<a href="#2284" id="2284">2284</a>
+<a href="#2285" id="2285">2285</a>
+<a href="#2286" id="2286">2286</a>
+<a href="#2287" id="2287">2287</a>
+<a href="#2288" id="2288">2288</a>
+<a href="#2289" id="2289">2289</a>
+<a href="#2290" id="2290">2290</a>
+<a href="#2291" id="2291">2291</a>
+<a href="#2292" id="2292">2292</a>
+<a href="#2293" id="2293">2293</a>
+<a href="#2294" id="2294">2294</a>
+<a href="#2295" id="2295">2295</a>
+<a href="#2296" id="2296">2296</a>
+<a href="#2297" id="2297">2297</a>
+<a href="#2298" id="2298">2298</a>
+<a href="#2299" id="2299">2299</a>
+<a href="#2300" id="2300">2300</a>
+<a href="#2301" id="2301">2301</a>
+<a href="#2302" id="2302">2302</a>
+<a href="#2303" id="2303">2303</a>
+<a href="#2304" id="2304">2304</a>
+<a href="#2305" id="2305">2305</a>
+<a href="#2306" id="2306">2306</a>
+<a href="#2307" id="2307">2307</a>
+<a href="#2308" id="2308">2308</a>
+<a href="#2309" id="2309">2309</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::cell::LazyCell;
 <span class="kw">use </span>std::ops::{ControlFlow, Deref};
 
 <span class="kw">use </span>hir::intravisit::{<span class="self">self</span>, Visitor};
 <span class="kw">use </span>rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexSet};
 <span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
-<span class="kw">use </span>rustc_errors::{pluralize, struct_span_code_err, Applicability, ErrorGuaranteed};
+<span class="kw">use </span>rustc_errors::{Applicability, ErrorGuaranteed, pluralize, struct_span_code_err};
+<span class="kw">use </span>rustc_hir::ItemKind;
 <span class="kw">use </span>rustc_hir::def::{DefKind, Res};
 <span class="kw">use </span>rustc_hir::def_id::{DefId, LocalDefId, LocalModDefId};
 <span class="kw">use </span>rustc_hir::lang_items::LangItem;
-<span class="kw">use </span>rustc_hir::ItemKind;
 <span class="kw">use </span>rustc_infer::infer::outlives::env::OutlivesEnvironment;
 <span class="kw">use </span>rustc_infer::infer::{<span class="self">self</span>, InferCtxt, TyCtxtInferExt};
 <span class="kw">use </span>rustc_macros::LintDiagnostic;
@@ -2285,26 +2330,27 @@
 };
 <span class="kw">use </span>rustc_middle::{bug, span_bug};
 <span class="kw">use </span>rustc_session::parse::feature_err;
-<span class="kw">use </span>rustc_span::symbol::{sym, Ident};
-<span class="kw">use </span>rustc_span::{Span, DUMMY_SP};
+<span class="kw">use </span>rustc_span::symbol::{Ident, sym};
+<span class="kw">use </span>rustc_span::{DUMMY_SP, Span};
 <span class="kw">use </span>rustc_target::spec::abi::Abi;
 <span class="kw">use </span>rustc_trait_selection::error_reporting::InferCtxtErrorExt;
 <span class="kw">use </span>rustc_trait_selection::regions::InferCtxtRegionExt;
 <span class="kw">use </span>rustc_trait_selection::traits::misc::{
-    type_allowed_to_implement_const_param_ty, ConstParamTyImplementationError,
+    ConstParamTyImplementationError, type_allowed_to_implement_const_param_ty,
 };
 <span class="kw">use </span>rustc_trait_selection::traits::outlives_bounds::InferCtxtExt <span class="kw">as _</span>;
 <span class="kw">use </span>rustc_trait_selection::traits::query::evaluate_obligation::InferCtxtExt <span class="kw">as _</span>;
 <span class="kw">use </span>rustc_trait_selection::traits::{
     <span class="self">self</span>, FulfillmentError, ObligationCause, ObligationCauseCode, ObligationCtxt, WellFormedLoc,
 };
-<span class="kw">use </span>rustc_type_ir::solve::NoSolution;
 <span class="kw">use </span>rustc_type_ir::TypeFlags;
+<span class="kw">use </span>rustc_type_ir::solve::NoSolution;
+<span class="kw">use </span>tracing::{debug, instrument};
 <span class="kw">use </span>{rustc_ast <span class="kw">as </span>ast, rustc_hir <span class="kw">as </span>hir};
 
 <span class="kw">use </span><span class="kw">crate</span>::autoderef::Autoderef;
 <span class="kw">use </span><span class="kw">crate</span>::collect::CollectItemTypesVisitor;
-<span class="kw">use </span><span class="kw">crate</span>::constrained_generic_params::{identify_constrained_generic_params, Parameter};
+<span class="kw">use </span><span class="kw">crate</span>::constrained_generic_params::{Parameter, identify_constrained_generic_params};
 <span class="kw">use crate</span>::{errors, fluent_generated <span class="kw">as </span>fluent};
 
 <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>WfCheckingCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
@@ -2614,8 +2660,8 @@
     );
 
     <span class="kw">match </span>item.kind {
-        hir::ForeignItemKind::Fn(decl, ..) =&gt; {
-            check_item_fn(tcx, def_id, item.ident, item.span, decl)
+        hir::ForeignItemKind::Fn(sig, ..) =&gt; {
+            check_item_fn(tcx, def_id, item.ident, item.span, sig.decl)
         }
         hir::ForeignItemKind::Static(ty, ..) =&gt; {
             check_item_type(tcx, def_id, ty.span, UnsizedHandling::AllowIfForeignTail)
@@ -2927,10 +2973,10 @@
                 <span class="comment">// Same for the region. In our example, 'a corresponds
                 // to the 'me parameter.
                 </span><span class="kw">let </span>region_param = gat_generics.param_at(<span class="kw-2">*</span>region_a_idx, tcx);
-                <span class="kw">let </span>region_param = ty::Region::new_early_param(
-                    tcx,
-                    ty::EarlyParamRegion { index: region_param.index, name: region_param.name },
-                );
+                <span class="kw">let </span>region_param = ty::Region::new_early_param(tcx, ty::EarlyParamRegion {
+                    index: region_param.index,
+                    name: region_param.name,
+                });
                 <span class="comment">// The predicate we expect to see. (In our example,
                 // `Self: 'me`.)
                 </span>bounds.insert(
@@ -2956,16 +3002,16 @@
                 <span class="macro">debug!</span>(<span class="string">"required clause: {region_a} must outlive {region_b}"</span>);
                 <span class="comment">// Translate into the generic parameters of the GAT.
                 </span><span class="kw">let </span>region_a_param = gat_generics.param_at(<span class="kw-2">*</span>region_a_idx, tcx);
-                <span class="kw">let </span>region_a_param = ty::Region::new_early_param(
-                    tcx,
-                    ty::EarlyParamRegion { index: region_a_param.index, name: region_a_param.name },
-                );
+                <span class="kw">let </span>region_a_param = ty::Region::new_early_param(tcx, ty::EarlyParamRegion {
+                    index: region_a_param.index,
+                    name: region_a_param.name,
+                });
                 <span class="comment">// Same for the region.
                 </span><span class="kw">let </span>region_b_param = gat_generics.param_at(<span class="kw-2">*</span>region_b_idx, tcx);
-                <span class="kw">let </span>region_b_param = ty::Region::new_early_param(
-                    tcx,
-                    ty::EarlyParamRegion { index: region_b_param.index, name: region_b_param.name },
-                );
+                <span class="kw">let </span>region_b_param = ty::Region::new_early_param(tcx, ty::EarlyParamRegion {
+                    index: region_b_param.index,
+                    name: region_b_param.name,
+                });
                 <span class="comment">// The predicate we expect to see.
                 </span>bounds.insert(
                     ty::ClauseKind::RegionOutlives(ty::OutlivesPredicate(
@@ -3011,7 +3057,7 @@
     region_b: ty::Region&lt;<span class="lifetime">'tcx</span>&gt;,
 ) -&gt; bool {
     test_region_obligations(tcx, id, param_env, wf_tys, |infcx| {
-        infcx.sub_regions(infer::RelateRegionParamBound(DUMMY_SP), region_b, region_a);
+        infcx.sub_regions(infer::RelateRegionParamBound(DUMMY_SP, <span class="prelude-val">None</span>), region_b, region_a);
     })
 }
 
@@ -3215,7 +3261,7 @@
             } <span class="kw">else </span>{
                 <span class="kw">let </span><span class="kw-2">mut </span>diag = <span class="kw">match </span>ty.kind() {
                     ty::Bool | ty::Char | ty::Int(<span class="kw">_</span>) | ty::Uint(<span class="kw">_</span>) | ty::Error(<span class="kw">_</span>) =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(()),
-                    ty::FnPtr(<span class="kw">_</span>) =&gt; tcx.dcx().struct_span_err(
+                    ty::FnPtr(..) =&gt; tcx.dcx().struct_span_err(
                         hir_ty.span,
                         <span class="string">"using function pointers as const generic parameters is forbidden"</span>,
                     ),
@@ -3279,7 +3325,7 @@
                             sym::adt_const_params,
                         )])
                     }
-                    <span class="comment">// Implments `ConstParamTy`, suggest adding the feature to enable.
+                    <span class="comment">// Implements `ConstParamTy`, suggest adding the feature to enable.
                     </span><span class="prelude-val">Ok</span>(..) =&gt; <span class="prelude-val">Some</span>(<span class="macro">vec!</span>[(adt_const_params_feature_string, sym::adt_const_params)]),
                 };
                 <span class="kw">if let </span><span class="prelude-val">Some</span>(features) = may_suggest_feature {
@@ -3865,7 +3911,7 @@
                     function: def_id,
                     <span class="comment">// Note that the `param_idx` of the output type is
                     // one greater than the index of the last input type.
-                    </span>param_idx: idx.try_into().unwrap(),
+                    </span>param_idx: idx,
                 }),
                 ty,
             )
@@ -3874,7 +3920,7 @@
     <span class="kw">for </span>(idx, ty) <span class="kw">in </span>sig.inputs_and_output.iter().enumerate() {
         wfcx.register_wf_obligation(
             arg_span(idx),
-            <span class="prelude-val">Some</span>(WellFormedLoc::Param { function: def_id, param_idx: idx.try_into().unwrap() }),
+            <span class="prelude-val">Some</span>(WellFormedLoc::Param { function: def_id, param_idx: idx }),
             ty.into(),
         );
     }
@@ -3915,6 +3961,13 @@
     }
 }
 
+<span class="doccomment">/// The `arbitrary_self_types_pointers` feature implies `arbitrary_self_types`.
+</span><span class="attr">#[derive(Clone, Copy, PartialEq)]
+</span><span class="kw">enum </span>ArbitrarySelfTypesLevel {
+    Basic,        <span class="comment">// just arbitrary_self_types
+    </span>WithPointers, <span class="comment">// both arbitrary_self_types and arbitrary_self_types_pointers
+</span>}
+
 <span class="attr">#[instrument(level = <span class="string">"debug"</span>, skip(wfcx))]
 </span><span class="kw">fn </span>check_method_receiver&lt;<span class="lifetime">'tcx</span>&gt;(
     wfcx: <span class="kw-2">&amp;</span>WfCheckingCtxt&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
@@ -3947,14 +4000,27 @@
         <span class="kw">return </span><span class="prelude-val">Ok</span>(());
     }
 
-    <span class="kw">if </span>tcx.features().arbitrary_self_types {
-        <span class="kw">if </span>!receiver_is_valid(wfcx, span, receiver_ty, self_ty, <span class="bool-val">true</span>) {
-            <span class="comment">// Report error; `arbitrary_self_types` was enabled.
-            </span><span class="kw">return </span><span class="prelude-val">Err</span>(tcx.dcx().emit_err(errors::InvalidReceiverTy { span, receiver_ty }));
-        }
+    <span class="kw">let </span>arbitrary_self_types_level = <span class="kw">if </span>tcx.features().arbitrary_self_types_pointers {
+        <span class="prelude-val">Some</span>(ArbitrarySelfTypesLevel::WithPointers)
+    } <span class="kw">else if </span>tcx.features().arbitrary_self_types {
+        <span class="prelude-val">Some</span>(ArbitrarySelfTypesLevel::Basic)
     } <span class="kw">else </span>{
-        <span class="kw">if </span>!receiver_is_valid(wfcx, span, receiver_ty, self_ty, <span class="bool-val">false</span>) {
-            <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="kw">if </span>receiver_is_valid(wfcx, span, receiver_ty, self_ty, <span class="bool-val">true</span>) {
+        <span class="prelude-val">None
+    </span>};
+
+    <span class="kw">if </span>!receiver_is_valid(wfcx, span, receiver_ty, self_ty, arbitrary_self_types_level) {
+        <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="kw">match </span>arbitrary_self_types_level {
+            <span class="comment">// Wherever possible, emit a message advising folks that the features
+            // `arbitrary_self_types` or `arbitrary_self_types_pointers` might
+            // have helped.
+            </span><span class="prelude-val">None </span><span class="kw">if </span>receiver_is_valid(
+                wfcx,
+                span,
+                receiver_ty,
+                self_ty,
+                <span class="prelude-val">Some</span>(ArbitrarySelfTypesLevel::Basic),
+            ) =&gt;
+            {
                 <span class="comment">// Report error; would have worked with `arbitrary_self_types`.
                 </span>feature_err(
                     <span class="kw-2">&amp;</span>tcx.sess,
@@ -3962,25 +4028,49 @@
                     span,
                     <span class="macro">format!</span>(
                         <span class="string">"`{receiver_ty}` cannot be used as the type of `self` without \
-                         the `arbitrary_self_types` feature"</span>,
+                            the `arbitrary_self_types` feature"</span>,
                     ),
                 )
                 .with_help(fluent::hir_analysis_invalid_receiver_ty_help)
                 .emit()
-            } <span class="kw">else </span>{
-                <span class="comment">// Report error; would not have worked with `arbitrary_self_types`.
-                </span>tcx.dcx().emit_err(errors::InvalidReceiverTy { span, receiver_ty })
-            });
-        }
+            }
+            <span class="prelude-val">None </span>| <span class="prelude-val">Some</span>(ArbitrarySelfTypesLevel::Basic)
+                <span class="kw">if </span>receiver_is_valid(
+                    wfcx,
+                    span,
+                    receiver_ty,
+                    self_ty,
+                    <span class="prelude-val">Some</span>(ArbitrarySelfTypesLevel::WithPointers),
+                ) =&gt;
+            {
+                <span class="comment">// Report error; would have worked with `arbitrary_self_types_pointers`.
+                </span>feature_err(
+                    <span class="kw-2">&amp;</span>tcx.sess,
+                    sym::arbitrary_self_types_pointers,
+                    span,
+                    <span class="macro">format!</span>(
+                        <span class="string">"`{receiver_ty}` cannot be used as the type of `self` without \
+                            the `arbitrary_self_types_pointers` feature"</span>,
+                    ),
+                )
+                .with_help(fluent::hir_analysis_invalid_receiver_ty_help)
+                .emit()
+            }
+            <span class="kw">_ </span>=&gt;
+            <span class="comment">// Report error; would not have worked with `arbitrary_self_types[_pointers]`.
+            </span>{
+                tcx.dcx().emit_err(errors::InvalidReceiverTy { span, receiver_ty })
+            }
+        });
     }
     <span class="prelude-val">Ok</span>(())
 }
 
 <span class="doccomment">/// Returns whether `receiver_ty` would be considered a valid receiver type for `self_ty`. If
 /// `arbitrary_self_types` is enabled, `receiver_ty` must transitively deref to `self_ty`, possibly
-/// through a `*const/mut T` raw pointer. If the feature is not enabled, the requirements are more
-/// strict: `receiver_ty` must implement `Receiver` and directly implement
-/// `Deref&lt;Target = self_ty&gt;`.
+/// through a `*const/mut T` raw pointer if  `arbitrary_self_types_pointers` is also enabled.
+/// If neither feature is enabled, the requirements are more strict: `receiver_ty` must implement
+/// `Receiver` and directly implement `Deref&lt;Target = self_ty&gt;`.
 ///
 /// N.B., there are cases this function returns `true` but causes an error to be emitted,
 /// particularly when `receiver_ty` derefs to a type that is the same as `self_ty` but has the
@@ -3990,7 +4080,7 @@
     span: Span,
     receiver_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
     self_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
-    arbitrary_self_types_enabled: bool,
+    arbitrary_self_types_enabled: <span class="prelude-ty">Option</span>&lt;ArbitrarySelfTypesLevel&gt;,
 ) -&gt; bool {
     <span class="kw">let </span>infcx = wfcx.infcx;
     <span class="kw">let </span>tcx = wfcx.tcx();
@@ -4008,8 +4098,8 @@
 
     <span class="kw">let </span><span class="kw-2">mut </span>autoderef = Autoderef::new(infcx, wfcx.param_env, wfcx.body_def_id, span, receiver_ty);
 
-    <span class="comment">// The `arbitrary_self_types` feature allows raw pointer receivers like `self: *const Self`.
-    </span><span class="kw">if </span>arbitrary_self_types_enabled {
+    <span class="comment">// The `arbitrary_self_types_pointers` feature allows raw pointer receivers like `self: *const Self`.
+    </span><span class="kw">if </span>arbitrary_self_types_enabled == <span class="prelude-val">Some</span>(ArbitrarySelfTypesLevel::WithPointers) {
         autoderef = autoderef.include_raw_pointers();
     }
 
@@ -4035,7 +4125,7 @@
 
         <span class="comment">// Without `feature(arbitrary_self_types)`, we require that each step in the
         // deref chain implement `receiver`.
-        </span><span class="kw">if </span>!arbitrary_self_types_enabled {
+        </span><span class="kw">if </span>arbitrary_self_types_enabled.is_none() {
             <span class="kw">if </span>!receiver_is_implemented(
                 wfcx,
                 receiver_trait_def_id,
@@ -4236,8 +4326,7 @@
     }
 
     <span class="kw">let </span>const_param_help =
-        <span class="macro">matches!</span>(param.kind, hir::GenericParamKind::Type { .. } <span class="kw">if </span>!has_explicit_bounds)
-            .then_some(());
+        <span class="macro">matches!</span>(param.kind, hir::GenericParamKind::Type { .. } <span class="kw">if </span>!has_explicit_bounds);
 
     <span class="kw">let </span><span class="kw-2">mut </span>diag = tcx.dcx().create_err(errors::UnusedGenericParameter {
         span: param.span,
@@ -4439,7 +4528,8 @@
         | DefKind::Field
         | DefKind::LifetimeParam
         | DefKind::GlobalAsm
-        | DefKind::Closure =&gt; <span class="kw">return</span>,
+        | DefKind::Closure
+        | DefKind::SyntheticCoroutineBody =&gt; <span class="kw">return</span>,
     }
 
     <span class="comment">// The ordering of this lifetime map is a bit subtle.

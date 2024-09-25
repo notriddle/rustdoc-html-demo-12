@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["CandidateFilter"],"fn":["apply_merges","dest_prop_mir_dump","find_candidates","is_local_required","places_to_candidate_pair"],"struct":["Allocations","Candidates","DestinationPropagation","FilterInformation","FindAssignments","Merger","WriteInfo"]};
+window.SIDEBAR_ITEMS = {"enum":["CandidateFilter"],"fn":["apply_merges","dest_prop_mir_dump","is_local_required","places_to_candidate_pair"],"struct":["Candidates","DestinationPropagation","FilterInformation","FindAssignments","Merger","WriteInfo"]};

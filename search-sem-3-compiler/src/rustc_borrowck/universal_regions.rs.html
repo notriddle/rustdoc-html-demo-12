@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/universal_regions.rs`."><title>universal_regions.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/universal_regions.rs`."><title>universal_regions.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/</div>universal_regions.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -950,7 +951,17 @@
 <a href="#950" id="950">950</a>
 <a href="#951" id="951">951</a>
 <a href="#952" id="952">952</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! Code to extract the universally quantified regions declared on a
+<a href="#953" id="953">953</a>
+<a href="#954" id="954">954</a>
+<a href="#955" id="955">955</a>
+<a href="#956" id="956">956</a>
+<a href="#957" id="957">957</a>
+<a href="#958" id="958">958</a>
+<a href="#959" id="959">959</a>
+<a href="#960" id="960">960</a>
+<a href="#961" id="961">961</a>
+<a href="#962" id="962">962</a>
+<a href="#963" id="963">963</a></pre></div><pre class="rust"><code><span class="doccomment">//! Code to extract the universally quantified regions declared on a
 //! function and the relationships between them. For example:
 //!
 //! ```
@@ -972,26 +983,28 @@
 
 <span class="kw">use </span>rustc_data_structures::fx::FxIndexMap;
 <span class="kw">use </span>rustc_errors::Diag;
+<span class="kw">use </span>rustc_hir::BodyOwnerKind;
 <span class="kw">use </span>rustc_hir::def_id::{DefId, LocalDefId};
 <span class="kw">use </span>rustc_hir::lang_items::LangItem;
-<span class="kw">use </span>rustc_hir::BodyOwnerKind;
 <span class="kw">use </span>rustc_index::IndexVec;
 <span class="kw">use </span>rustc_infer::infer::NllRegionVariableOrigin;
 <span class="kw">use </span>rustc_macros::extension;
 <span class="kw">use </span>rustc_middle::ty::fold::TypeFoldable;
 <span class="kw">use </span>rustc_middle::ty::print::with_no_trimmed_paths;
 <span class="kw">use </span>rustc_middle::ty::{
-    <span class="self">self</span>, GenericArgs, GenericArgsRef, InlineConstArgs, InlineConstArgsParts, RegionVid, Ty, TyCtxt,
+    <span class="self">self</span>, GenericArgs, GenericArgsRef, InlineConstArgs, InlineConstArgsParts, RegionVid, Ty,
+    TyCtxt, TypeVisitableExt,
 };
 <span class="kw">use </span>rustc_middle::{bug, span_bug};
 <span class="kw">use </span>rustc_span::symbol::{kw, sym};
 <span class="kw">use </span>rustc_span::{ErrorGuaranteed, Symbol};
+<span class="kw">use </span>tracing::{debug, instrument};
 
-<span class="kw">use </span><span class="kw">crate</span>::renumber::RegionCtxt;
 <span class="kw">use </span><span class="kw">crate</span>::BorrowckInferCtxt;
+<span class="kw">use </span><span class="kw">crate</span>::renumber::RegionCtxt;
 
 <span class="attr">#[derive(Debug)]
-</span><span class="kw">pub struct </span>UniversalRegions&lt;<span class="lifetime">'tcx</span>&gt; {
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>UniversalRegions&lt;<span class="lifetime">'tcx</span>&gt; {
     indices: UniversalRegionIndices&lt;<span class="lifetime">'tcx</span>&gt;,
 
     <span class="doccomment">/// The vid assigned to `'static`
@@ -1047,7 +1060,7 @@
 /// regions appear free in the defining type and late-bound regions
 /// appear bound in the signature.
 </span><span class="attr">#[derive(Copy, Clone, Debug)]
-</span><span class="kw">pub enum </span>DefiningTy&lt;<span class="lifetime">'tcx</span>&gt; {
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum </span>DefiningTy&lt;<span class="lifetime">'tcx</span>&gt; {
     <span class="doccomment">/// The MIR is a closure. The signature is found via
     /// `ClosureArgs::closure_sig_ty`.
     </span>Closure(DefId, GenericArgsRef&lt;<span class="lifetime">'tcx</span>&gt;),
@@ -1083,7 +1096,7 @@
     /// not a closure or coroutine, there are no upvars, and hence it
     /// will be an empty list. The order of types in this list will
     /// match up with the upvar order in the HIR, typesystem, and MIR.
-    </span><span class="kw">pub fn </span>upvar_tys(<span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>ty::List&lt;Ty&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>upvar_tys(<span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>ty::List&lt;Ty&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
         <span class="kw">match </span><span class="self">self </span>{
             DefiningTy::Closure(<span class="kw">_</span>, args) =&gt; args.as_closure().upvar_tys(),
             DefiningTy::CoroutineClosure(<span class="kw">_</span>, args) =&gt; args.as_coroutine_closure().upvar_tys(),
@@ -1097,7 +1110,7 @@
     <span class="doccomment">/// Number of implicit inputs -- notably the "environment"
     /// parameter for closures -- that appear in MIR but not in the
     /// user's code.
-    </span><span class="kw">pub fn </span>implicit_inputs(<span class="self">self</span>) -&gt; usize {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>implicit_inputs(<span class="self">self</span>) -&gt; usize {
         <span class="kw">match </span><span class="self">self </span>{
             DefiningTy::Closure(..)
             | DefiningTy::CoroutineClosure(..)
@@ -1106,15 +1119,15 @@
         }
     }
 
-    <span class="kw">pub fn </span>is_fn_def(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>is_fn_def(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
         <span class="macro">matches!</span>(<span class="kw-2">*</span><span class="self">self</span>, DefiningTy::FnDef(..))
     }
 
-    <span class="kw">pub fn </span>is_const(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>is_const(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
         <span class="macro">matches!</span>(<span class="kw-2">*</span><span class="self">self</span>, DefiningTy::Const(..) | DefiningTy::InlineConst(..))
     }
 
-    <span class="kw">pub fn </span>def_id(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; DefId {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>def_id(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; DefId {
         <span class="kw">match </span><span class="kw-2">*</span><span class="self">self </span>{
             DefiningTy::Closure(def_id, ..)
             | DefiningTy::CoroutineClosure(def_id, ..)
@@ -1148,7 +1161,7 @@
 }
 
 <span class="attr">#[derive(Debug, PartialEq)]
-</span><span class="kw">pub enum </span>RegionClassification {
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum </span>RegionClassification {
     <span class="doccomment">/// A **global** region is one that can be named from
     /// anywhere. There is only one, `'static`.
     </span>Global,
@@ -1198,7 +1211,7 @@
     /// MIR -- that is, all the regions that appear in the function's
     /// signature. This will also compute the relationships that are
     /// known between those regions.
-    </span><span class="kw">pub fn </span>new(
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(
         infcx: <span class="kw-2">&amp;</span>BorrowckInferCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
         mir_def: LocalDefId,
         param_env: ty::ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -1215,7 +1228,7 @@
     /// if the `ClosureRegionRequirements` contains something like
     /// `'1: '2`, then the caller would impose the constraint that
     /// `V[1]: V[2]`.
-    </span><span class="kw">pub fn </span>closure_mapping(
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>closure_mapping(
         tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
         closure_args: GenericArgsRef&lt;<span class="lifetime">'tcx</span>&gt;,
         expected_num_vars: usize,
@@ -1241,13 +1254,13 @@
     }
 
     <span class="doccomment">/// Returns `true` if `r` is a member of this set of universal regions.
-    </span><span class="kw">pub fn </span>is_universal_region(<span class="kw-2">&amp;</span><span class="self">self</span>, r: RegionVid) -&gt; bool {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>is_universal_region(<span class="kw-2">&amp;</span><span class="self">self</span>, r: RegionVid) -&gt; bool {
         (FIRST_GLOBAL_INDEX..<span class="self">self</span>.num_universals).contains(<span class="kw-2">&amp;</span>r.index())
     }
 
     <span class="doccomment">/// Classifies `r` as a universal region, returning `None` if this
     /// is not a member of this set of universal regions.
-    </span><span class="kw">pub fn </span>region_classification(<span class="kw-2">&amp;</span><span class="self">self</span>, r: RegionVid) -&gt; <span class="prelude-ty">Option</span>&lt;RegionClassification&gt; {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>region_classification(<span class="kw-2">&amp;</span><span class="self">self</span>, r: RegionVid) -&gt; <span class="prelude-ty">Option</span>&lt;RegionClassification&gt; {
         <span class="kw">let </span>index = r.index();
         <span class="kw">if </span>(FIRST_GLOBAL_INDEX..<span class="self">self</span>.first_extern_index).contains(<span class="kw-2">&amp;</span>index) {
             <span class="prelude-val">Some</span>(RegionClassification::Global)
@@ -1262,17 +1275,17 @@
 
     <span class="doccomment">/// Returns an iterator over all the RegionVids corresponding to
     /// universally quantified free regions.
-    </span><span class="kw">pub fn </span>universal_regions(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = RegionVid&gt; {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>universal_regions(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = RegionVid&gt; {
         (FIRST_GLOBAL_INDEX..<span class="self">self</span>.num_universals).map(RegionVid::from_usize)
     }
 
     <span class="doccomment">/// Returns `true` if `r` is classified as a local region.
-    </span><span class="kw">pub fn </span>is_local_free_region(<span class="kw-2">&amp;</span><span class="self">self</span>, r: RegionVid) -&gt; bool {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>is_local_free_region(<span class="kw-2">&amp;</span><span class="self">self</span>, r: RegionVid) -&gt; bool {
         <span class="self">self</span>.region_classification(r) == <span class="prelude-val">Some</span>(RegionClassification::Local)
     }
 
     <span class="doccomment">/// Returns the number of universal regions created in any category.
-    </span><span class="kw">pub fn </span>len(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>len(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
         <span class="self">self</span>.num_universals
     }
 
@@ -1281,19 +1294,19 @@
     /// closure type (versus those bound in the closure
     /// signature). They are therefore the regions between which the
     /// closure may impose constraints that its creator must verify.
-    </span><span class="kw">pub fn </span>num_global_and_external_regions(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>num_global_and_external_regions(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
         <span class="self">self</span>.first_local_index
     }
 
     <span class="doccomment">/// Gets an iterator over all the early-bound regions that have names.
-    </span><span class="kw">pub fn </span>named_universal_regions&lt;<span class="lifetime">'s</span>&gt;(
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>named_universal_regions&lt;<span class="lifetime">'s</span>&gt;(
         <span class="kw-2">&amp;</span><span class="lifetime">'s </span><span class="self">self</span>,
     ) -&gt; <span class="kw">impl </span>Iterator&lt;Item = (ty::Region&lt;<span class="lifetime">'tcx</span>&gt;, ty::RegionVid)&gt; + <span class="lifetime">'s </span>{
         <span class="self">self</span>.indices.indices.iter().map(|(<span class="kw-2">&amp;</span>r, <span class="kw-2">&amp;</span>v)| (r, v))
     }
 
     <span class="doccomment">/// See `UniversalRegionIndices::to_region_vid`.
-    </span><span class="kw">pub fn </span>to_region_vid(<span class="kw-2">&amp;</span><span class="self">self</span>, r: ty::Region&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; RegionVid {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>to_region_vid(<span class="kw-2">&amp;</span><span class="self">self</span>, r: ty::Region&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; RegionVid {
         <span class="self">self</span>.indices.to_region_vid(r)
     }
 
@@ -1368,13 +1381,13 @@
         }
     }
 
-    <span class="kw">pub fn </span>tainted_by_errors(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;ErrorGuaranteed&gt; {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>tainted_by_errors(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;ErrorGuaranteed&gt; {
         <span class="self">self</span>.indices.tainted_by_errors.get()
     }
 }
 
-<span class="kw">struct </span>UniversalRegionsBuilder&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt; {
-    infcx: <span class="kw-2">&amp;</span><span class="lifetime">'cx </span>BorrowckInferCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
+<span class="kw">struct </span>UniversalRegionsBuilder&lt;<span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; {
+    infcx: <span class="kw-2">&amp;</span><span class="lifetime">'infcx </span>BorrowckInferCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     mir_def: LocalDefId,
     param_env: ty::ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
 }
@@ -1579,10 +1592,10 @@
                     </span><span class="kw">let </span>ty = tcx
                         .typeck(<span class="self">self</span>.mir_def)
                         .node_type(tcx.local_def_id_to_hir_id(<span class="self">self</span>.mir_def));
-                    <span class="kw">let </span>args = InlineConstArgs::new(
-                        tcx,
-                        InlineConstArgsParts { parent_args: identity_args, ty },
-                    )
+                    <span class="kw">let </span>args = InlineConstArgs::new(tcx, InlineConstArgsParts {
+                        parent_args: identity_args,
+                        ty,
+                    })
                     .args;
                     <span class="kw">let </span>args = <span class="self">self</span>.infcx.replace_free_regions_with_nll_infer_vars(FR, args);
                     DefiningTy::InlineConst(<span class="self">self</span>.mir_def.to_def_id(), args)
@@ -1639,7 +1652,8 @@
         defining_ty: DefiningTy&lt;<span class="lifetime">'tcx</span>&gt;,
     ) -&gt; ty::Binder&lt;<span class="lifetime">'tcx</span>, <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>ty::List&lt;Ty&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt; {
         <span class="kw">let </span>tcx = <span class="self">self</span>.infcx.tcx;
-        <span class="kw">match </span>defining_ty {
+
+        <span class="kw">let </span>inputs_and_output = <span class="kw">match </span>defining_ty {
             DefiningTy::Closure(def_id, args) =&gt; {
                 <span class="macro">assert_eq!</span>(<span class="self">self</span>.mir_def.to_def_id(), def_id);
                 <span class="kw">let </span>closure_sig = args.as_closure().sig();
@@ -1749,6 +1763,7 @@
                 // "output" (the type of the constant).
                 </span><span class="macro">assert_eq!</span>(<span class="self">self</span>.mir_def.to_def_id(), def_id);
                 <span class="kw">let </span>ty = tcx.type_of(<span class="self">self</span>.mir_def).instantiate_identity();
+
                 <span class="kw">let </span>ty = indices.fold_to_region_vids(tcx, ty);
                 ty::Binder::dummy(tcx.mk_type_list(<span class="kw-2">&amp;</span>[ty]))
             }
@@ -1758,7 +1773,14 @@
                 <span class="kw">let </span>ty = args.as_inline_const().ty();
                 ty::Binder::dummy(tcx.mk_type_list(<span class="kw-2">&amp;</span>[ty]))
             }
+        };
+
+        <span class="comment">// FIXME(#129952): We probably want a more principled approach here.
+        </span><span class="kw">if let </span><span class="prelude-val">Err</span>(terr) = inputs_and_output.skip_binder().error_reported() {
+            <span class="self">self</span>.infcx.set_tainted_by_errors(terr);
         }
+
+        inputs_and_output
     }
 }
 
@@ -1832,7 +1854,7 @@
     /// reference those regions from the `ParamEnv`. It is also used
     /// during initialization. Relies on the `indices` map having been
     /// fully initialized.
-    </span><span class="kw">pub fn </span>to_region_vid(<span class="kw-2">&amp;</span><span class="self">self</span>, r: ty::Region&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; RegionVid {
+    </span><span class="kw">fn </span>to_region_vid(<span class="kw-2">&amp;</span><span class="self">self</span>, r: ty::Region&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; RegionVid {
         <span class="kw">if let </span>ty::ReVar(..) = <span class="kw-2">*</span>r {
             r.as_var()
         } <span class="kw">else if let </span>ty::ReError(guar) = <span class="kw-2">*</span>r {
@@ -1851,7 +1873,7 @@
 
     <span class="doccomment">/// Replaces all free regions in `value` with region vids, as
     /// returned by `to_region_vid`.
-    </span><span class="kw">pub fn </span>fold_to_region_vids&lt;T&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, value: T) -&gt; T
+    </span><span class="kw">fn </span>fold_to_region_vids&lt;T&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, value: T) -&gt; T
     <span class="kw">where
         </span>T: TypeFoldable&lt;TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
     {

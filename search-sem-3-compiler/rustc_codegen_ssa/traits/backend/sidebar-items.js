@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"trait":["Backend","BackendTypes","CodegenBackend","ExtraBackendMethods"]};
+window.SIDEBAR_ITEMS = {"trait":["BackendTypes","CodegenBackend","ExtraBackendMethods"]};

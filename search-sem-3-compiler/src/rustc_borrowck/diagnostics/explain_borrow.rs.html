@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/diagnostics/explain_borrow.rs`."><title>explain_borrow.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/diagnostics/explain_borrow.rs`."><title>explain_borrow.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/diagnostics/</div>explain_borrow.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -724,7 +725,100 @@
 <a href="#724" id="724">724</a>
 <a href="#725" id="725">725</a>
 <a href="#726" id="726">726</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! Print diagnostics to explain why values are borrowed.
+<a href="#727" id="727">727</a>
+<a href="#728" id="728">728</a>
+<a href="#729" id="729">729</a>
+<a href="#730" id="730">730</a>
+<a href="#731" id="731">731</a>
+<a href="#732" id="732">732</a>
+<a href="#733" id="733">733</a>
+<a href="#734" id="734">734</a>
+<a href="#735" id="735">735</a>
+<a href="#736" id="736">736</a>
+<a href="#737" id="737">737</a>
+<a href="#738" id="738">738</a>
+<a href="#739" id="739">739</a>
+<a href="#740" id="740">740</a>
+<a href="#741" id="741">741</a>
+<a href="#742" id="742">742</a>
+<a href="#743" id="743">743</a>
+<a href="#744" id="744">744</a>
+<a href="#745" id="745">745</a>
+<a href="#746" id="746">746</a>
+<a href="#747" id="747">747</a>
+<a href="#748" id="748">748</a>
+<a href="#749" id="749">749</a>
+<a href="#750" id="750">750</a>
+<a href="#751" id="751">751</a>
+<a href="#752" id="752">752</a>
+<a href="#753" id="753">753</a>
+<a href="#754" id="754">754</a>
+<a href="#755" id="755">755</a>
+<a href="#756" id="756">756</a>
+<a href="#757" id="757">757</a>
+<a href="#758" id="758">758</a>
+<a href="#759" id="759">759</a>
+<a href="#760" id="760">760</a>
+<a href="#761" id="761">761</a>
+<a href="#762" id="762">762</a>
+<a href="#763" id="763">763</a>
+<a href="#764" id="764">764</a>
+<a href="#765" id="765">765</a>
+<a href="#766" id="766">766</a>
+<a href="#767" id="767">767</a>
+<a href="#768" id="768">768</a>
+<a href="#769" id="769">769</a>
+<a href="#770" id="770">770</a>
+<a href="#771" id="771">771</a>
+<a href="#772" id="772">772</a>
+<a href="#773" id="773">773</a>
+<a href="#774" id="774">774</a>
+<a href="#775" id="775">775</a>
+<a href="#776" id="776">776</a>
+<a href="#777" id="777">777</a>
+<a href="#778" id="778">778</a>
+<a href="#779" id="779">779</a>
+<a href="#780" id="780">780</a>
+<a href="#781" id="781">781</a>
+<a href="#782" id="782">782</a>
+<a href="#783" id="783">783</a>
+<a href="#784" id="784">784</a>
+<a href="#785" id="785">785</a>
+<a href="#786" id="786">786</a>
+<a href="#787" id="787">787</a>
+<a href="#788" id="788">788</a>
+<a href="#789" id="789">789</a>
+<a href="#790" id="790">790</a>
+<a href="#791" id="791">791</a>
+<a href="#792" id="792">792</a>
+<a href="#793" id="793">793</a>
+<a href="#794" id="794">794</a>
+<a href="#795" id="795">795</a>
+<a href="#796" id="796">796</a>
+<a href="#797" id="797">797</a>
+<a href="#798" id="798">798</a>
+<a href="#799" id="799">799</a>
+<a href="#800" id="800">800</a>
+<a href="#801" id="801">801</a>
+<a href="#802" id="802">802</a>
+<a href="#803" id="803">803</a>
+<a href="#804" id="804">804</a>
+<a href="#805" id="805">805</a>
+<a href="#806" id="806">806</a>
+<a href="#807" id="807">807</a>
+<a href="#808" id="808">808</a>
+<a href="#809" id="809">809</a>
+<a href="#810" id="810">810</a>
+<a href="#811" id="811">811</a>
+<a href="#812" id="812">812</a>
+<a href="#813" id="813">813</a>
+<a href="#814" id="814">814</a>
+<a href="#815" id="815">815</a>
+<a href="#816" id="816">816</a>
+<a href="#817" id="817">817</a>
+<a href="#818" id="818">818</a>
+<a href="#819" id="819">819</a>
+<a href="#820" id="820">820</a></pre></div><pre class="rust"><code><span class="doccomment">//! Print diagnostics to explain why values are borrowed.
 
 </span><span class="attr">#![allow(rustc::diagnostic_outside_of_impl)]
 #![allow(rustc::untranslatable_diagnostic)]
@@ -743,11 +837,12 @@
 };
 <span class="kw">use </span>rustc_middle::ty::adjustment::PointerCoercion;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, RegionVid, Ty, TyCtxt};
-<span class="kw">use </span>rustc_span::symbol::{kw, Symbol};
-<span class="kw">use </span>rustc_span::{sym, DesugaringKind, Span};
+<span class="kw">use </span>rustc_span::symbol::{Symbol, kw};
+<span class="kw">use </span>rustc_span::{DesugaringKind, Span, sym};
 <span class="kw">use </span>rustc_trait_selection::error_reporting::traits::FindExprBySpan;
+<span class="kw">use </span>tracing::{debug, instrument};
 
-<span class="kw">use super</span>::{find_use, RegionName, UseSpans};
+<span class="kw">use super</span>::{RegionName, UseSpans, find_use};
 <span class="kw">use </span><span class="kw">crate</span>::borrow_set::BorrowData;
 <span class="kw">use </span><span class="kw">crate</span>::nll::ConstraintDescription;
 <span class="kw">use </span><span class="kw">crate</span>::region_infer::{BlameConstraint, Cause, ExtraConstraintInfo};
@@ -755,7 +850,7 @@
 
 <span class="attr">#[derive(Debug)]
 </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum </span>BorrowExplanation&lt;<span class="lifetime">'tcx</span>&gt; {
-    UsedLater(LaterUseKind, Span, <span class="prelude-ty">Option</span>&lt;Span&gt;),
+    UsedLater(Local, LaterUseKind, Span, <span class="prelude-ty">Option</span>&lt;Span&gt;),
     UsedLaterInLoop(LaterUseKind, Span, <span class="prelude-ty">Option</span>&lt;Span&gt;),
     UsedLaterWhenDropped {
         drop_loc: Location,
@@ -824,7 +919,12 @@
             }
         }
         <span class="kw">match </span><span class="kw-2">*</span><span class="self">self </span>{
-            BorrowExplanation::UsedLater(later_use_kind, var_or_use_span, path_span) =&gt; {
+            BorrowExplanation::UsedLater(
+                dropped_local,
+                later_use_kind,
+                var_or_use_span,
+                path_span,
+            ) =&gt; {
                 <span class="kw">let </span>message = <span class="kw">match </span>later_use_kind {
                     LaterUseKind::TraitCapture =&gt; <span class="string">"captured here by trait object"</span>,
                     LaterUseKind::ClosureCapture =&gt; <span class="string">"captured here by closure"</span>,
@@ -832,9 +932,26 @@
                     LaterUseKind::FakeLetRead =&gt; <span class="string">"stored here"</span>,
                     LaterUseKind::Other =&gt; <span class="string">"used here"</span>,
                 };
-                <span class="comment">// We can use `var_or_use_span` if either `path_span` is not present, or both spans are the same
-                </span><span class="kw">if </span>path_span.map(|path_span| path_span == var_or_use_span).unwrap_or(<span class="bool-val">true</span>) {
-                    <span class="kw">if </span>borrow_span.map(|sp| !sp.overlaps(var_or_use_span)).unwrap_or(<span class="bool-val">true</span>) {
+                <span class="kw">let </span>local_decl = <span class="kw-2">&amp;</span>body.local_decls[dropped_local];
+
+                <span class="kw">if let </span><span class="kw-2">&amp;</span>LocalInfo::IfThenRescopeTemp { if_then } = local_decl.local_info()
+                    &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>((<span class="kw">_</span>, hir::Node::Expr(expr))) = tcx.hir().parent_iter(if_then).next()
+                    &amp;&amp; <span class="kw">let </span>hir::ExprKind::If(cond, conseq, alt) = expr.kind
+                    &amp;&amp; <span class="kw">let </span>hir::ExprKind::Let(<span class="kw-2">&amp;</span>hir::LetExpr {
+                        span: <span class="kw">_</span>,
+                        pat,
+                        init,
+                        <span class="comment">// FIXME(#101728): enable rewrite when type ascription is stabilized again
+                        </span>ty: <span class="prelude-val">None</span>,
+                        recovered: <span class="kw">_</span>,
+                    }) = cond.kind
+                    &amp;&amp; pat.span.can_be_used_for_suggestions()
+                    &amp;&amp; <span class="kw">let </span><span class="prelude-val">Ok</span>(pat) = tcx.sess.source_map().span_to_snippet(pat.span)
+                {
+                    suggest_rewrite_if_let(tcx, expr, <span class="kw-2">&amp;</span>pat, init, conseq, alt, err);
+                } <span class="kw">else if </span>path_span.map_or(<span class="bool-val">true</span>, |path_span| path_span == var_or_use_span) {
+                    <span class="comment">// We can use `var_or_use_span` if either `path_span` is not present, or both spans are the same
+                    </span><span class="kw">if </span>borrow_span.map_or(<span class="bool-val">true</span>, |sp| !sp.overlaps(var_or_use_span)) {
                         err.span_label(
                             var_or_use_span,
                             <span class="macro">format!</span>(<span class="string">"{borrow_desc}borrow later {message}"</span>),
@@ -980,6 +1097,22 @@
                                     Applicability::MaybeIncorrect,
                                 );
                             };
+                        } <span class="kw">else if let </span><span class="kw-2">&amp;</span>LocalInfo::IfThenRescopeTemp { if_then } =
+                            local_decl.local_info()
+                            &amp;&amp; <span class="kw">let </span>hir::Node::Expr(expr) = tcx.hir_node(if_then)
+                            &amp;&amp; <span class="kw">let </span>hir::ExprKind::If(cond, conseq, alt) = expr.kind
+                            &amp;&amp; <span class="kw">let </span>hir::ExprKind::Let(<span class="kw-2">&amp;</span>hir::LetExpr {
+                                span: <span class="kw">_</span>,
+                                pat,
+                                init,
+                                <span class="comment">// FIXME(#101728): enable rewrite when type ascription is stabilized again
+                                </span>ty: <span class="prelude-val">None</span>,
+                                recovered: <span class="kw">_</span>,
+                            }) = cond.kind
+                            &amp;&amp; pat.span.can_be_used_for_suggestions()
+                            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Ok</span>(pat) = tcx.sess.source_map().span_to_snippet(pat.span)
+                        {
+                            suggest_rewrite_if_let(tcx, expr, <span class="kw-2">&amp;</span>pat, init, conseq, alt, err);
                         }
                     }
                 }
@@ -1115,7 +1248,54 @@
     }
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirBorrowckCtxt&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
+<span class="kw">fn </span>suggest_rewrite_if_let(
+    tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;,
+    expr: <span class="kw-2">&amp;</span>hir::Expr&lt;<span class="lifetime">'_</span>&gt;,
+    pat: <span class="kw-2">&amp;</span>str,
+    init: <span class="kw-2">&amp;</span>hir::Expr&lt;<span class="lifetime">'_</span>&gt;,
+    conseq: <span class="kw-2">&amp;</span>hir::Expr&lt;<span class="lifetime">'_</span>&gt;,
+    alt: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>hir::Expr&lt;<span class="lifetime">'_</span>&gt;&gt;,
+    err: <span class="kw-2">&amp;mut </span>Diag&lt;<span class="lifetime">'_</span>&gt;,
+) {
+    <span class="kw">let </span>source_map = tcx.sess.source_map();
+    err.span_note(
+        source_map.end_point(conseq.span),
+        <span class="string">"lifetimes for temporaries generated in `if let`s have been shortened in Edition 2024 so that they are dropped here instead"</span>,
+    );
+    <span class="kw">if </span>expr.span.can_be_used_for_suggestions() &amp;&amp; conseq.span.can_be_used_for_suggestions() {
+        <span class="kw">let </span>needs_block = <span class="kw">if let </span><span class="prelude-val">Some</span>(hir::Node::Expr(expr)) =
+            alt.and_then(|alt| tcx.hir().parent_iter(alt.hir_id).next()).map(|(<span class="kw">_</span>, node)| node)
+        {
+            <span class="macro">matches!</span>(expr.kind, hir::ExprKind::If(..))
+        } <span class="kw">else </span>{
+            <span class="bool-val">false
+        </span>};
+        <span class="kw">let </span><span class="kw-2">mut </span>sugg = <span class="macro">vec!</span>[
+            (
+                expr.span.shrink_to_lo().between(init.span),
+                <span class="kw">if </span>needs_block { <span class="string">"{ match "</span>.into() } <span class="kw">else </span>{ <span class="string">"match "</span>.into() },
+            ),
+            (conseq.span.shrink_to_lo(), <span class="macro">format!</span>(<span class="string">" {{ {pat} =&gt; "</span>)),
+        ];
+        <span class="kw">let </span>expr_end = expr.span.shrink_to_hi();
+        <span class="kw">let </span><span class="kw-2">mut </span>expr_end_code;
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(alt) = alt {
+            sugg.push((conseq.span.between(alt.span), <span class="string">" _ =&gt; "</span>.into()));
+            expr_end_code = <span class="string">"}"</span>.to_string();
+        } <span class="kw">else </span>{
+            expr_end_code = <span class="string">" _ =&gt; {} }"</span>.into();
+        }
+        expr_end_code.push(<span class="string">'}'</span>);
+        sugg.push((expr_end, expr_end_code));
+        err.multipart_suggestion(
+            <span class="string">"consider rewriting the `if` into `match` which preserves the extended lifetime"</span>,
+            sugg,
+            Applicability::MaybeIncorrect,
+        );
+    }
+}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirBorrowckCtxt&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">fn </span>free_region_constraint_info(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         borrow_region: RegionVid,
@@ -1190,14 +1370,21 @@
                     .or_else(|| <span class="self">self</span>.borrow_spans(span, location));
 
                 <span class="kw">if </span>use_in_later_iteration_of_loop {
-                    <span class="kw">let </span>later_use = <span class="self">self</span>.later_use_kind(borrow, spans, use_location);
-                    BorrowExplanation::UsedLaterInLoop(later_use.<span class="number">0</span>, later_use.<span class="number">1</span>, later_use.<span class="number">2</span>)
+                    <span class="kw">let </span>(later_use_kind, var_or_use_span, path_span) =
+                        <span class="self">self</span>.later_use_kind(borrow, spans, use_location);
+                    BorrowExplanation::UsedLaterInLoop(later_use_kind, var_or_use_span, path_span)
                 } <span class="kw">else </span>{
                     <span class="comment">// Check if the location represents a `FakeRead`, and adapt the error
                     // message to the `FakeReadCause` it is from: in particular,
                     // the ones inserted in optimized `let var = &lt;expr&gt;` patterns.
-                    </span><span class="kw">let </span>later_use = <span class="self">self</span>.later_use_kind(borrow, spans, location);
-                    BorrowExplanation::UsedLater(later_use.<span class="number">0</span>, later_use.<span class="number">1</span>, later_use.<span class="number">2</span>)
+                    </span><span class="kw">let </span>(later_use_kind, var_or_use_span, path_span) =
+                        <span class="self">self</span>.later_use_kind(borrow, spans, location);
+                    BorrowExplanation::UsedLater(
+                        borrow.borrowed_place.local,
+                        later_use_kind,
+                        var_or_use_span,
+                        path_span,
+                    )
                 }
             }
 
@@ -1387,9 +1574,10 @@
                                                 <span class="comment">// `&amp;dyn Trait`
                                                 </span>ty::Ref(<span class="kw">_</span>, ty, <span class="kw">_</span>) <span class="kw">if </span>ty.is_trait() =&gt; <span class="bool-val">true</span>,
                                                 <span class="comment">// `Box&lt;dyn Trait&gt;`
-                                                </span><span class="kw">_ if </span>ty.is_box() &amp;&amp; ty.boxed_ty().is_trait() =&gt; {
+                                                </span><span class="kw">_ if </span>ty.boxed_ty().is_some_and(Ty::is_trait) =&gt; {
                                                     <span class="bool-val">true
                                                 </span>}
+
                                                 <span class="comment">// `dyn Trait`
                                                 </span><span class="kw">_ if </span>ty.is_trait() =&gt; <span class="bool-val">true</span>,
                                                 <span class="comment">// Anything else.

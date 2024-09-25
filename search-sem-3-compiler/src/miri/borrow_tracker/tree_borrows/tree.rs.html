@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/tree_borrows/tree.rs`."><title>tree.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/tree_borrows/tree.rs`."><title>tree.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/borrow_tracker/tree_borrows/</div>tree.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -805,7 +806,221 @@
 <a href="#805" id="805">805</a>
 <a href="#806" id="806">806</a>
 <a href="#807" id="807">807</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! In this file we handle the "Tree" part of Tree Borrows, i.e. all tree
+<a href="#808" id="808">808</a>
+<a href="#809" id="809">809</a>
+<a href="#810" id="810">810</a>
+<a href="#811" id="811">811</a>
+<a href="#812" id="812">812</a>
+<a href="#813" id="813">813</a>
+<a href="#814" id="814">814</a>
+<a href="#815" id="815">815</a>
+<a href="#816" id="816">816</a>
+<a href="#817" id="817">817</a>
+<a href="#818" id="818">818</a>
+<a href="#819" id="819">819</a>
+<a href="#820" id="820">820</a>
+<a href="#821" id="821">821</a>
+<a href="#822" id="822">822</a>
+<a href="#823" id="823">823</a>
+<a href="#824" id="824">824</a>
+<a href="#825" id="825">825</a>
+<a href="#826" id="826">826</a>
+<a href="#827" id="827">827</a>
+<a href="#828" id="828">828</a>
+<a href="#829" id="829">829</a>
+<a href="#830" id="830">830</a>
+<a href="#831" id="831">831</a>
+<a href="#832" id="832">832</a>
+<a href="#833" id="833">833</a>
+<a href="#834" id="834">834</a>
+<a href="#835" id="835">835</a>
+<a href="#836" id="836">836</a>
+<a href="#837" id="837">837</a>
+<a href="#838" id="838">838</a>
+<a href="#839" id="839">839</a>
+<a href="#840" id="840">840</a>
+<a href="#841" id="841">841</a>
+<a href="#842" id="842">842</a>
+<a href="#843" id="843">843</a>
+<a href="#844" id="844">844</a>
+<a href="#845" id="845">845</a>
+<a href="#846" id="846">846</a>
+<a href="#847" id="847">847</a>
+<a href="#848" id="848">848</a>
+<a href="#849" id="849">849</a>
+<a href="#850" id="850">850</a>
+<a href="#851" id="851">851</a>
+<a href="#852" id="852">852</a>
+<a href="#853" id="853">853</a>
+<a href="#854" id="854">854</a>
+<a href="#855" id="855">855</a>
+<a href="#856" id="856">856</a>
+<a href="#857" id="857">857</a>
+<a href="#858" id="858">858</a>
+<a href="#859" id="859">859</a>
+<a href="#860" id="860">860</a>
+<a href="#861" id="861">861</a>
+<a href="#862" id="862">862</a>
+<a href="#863" id="863">863</a>
+<a href="#864" id="864">864</a>
+<a href="#865" id="865">865</a>
+<a href="#866" id="866">866</a>
+<a href="#867" id="867">867</a>
+<a href="#868" id="868">868</a>
+<a href="#869" id="869">869</a>
+<a href="#870" id="870">870</a>
+<a href="#871" id="871">871</a>
+<a href="#872" id="872">872</a>
+<a href="#873" id="873">873</a>
+<a href="#874" id="874">874</a>
+<a href="#875" id="875">875</a>
+<a href="#876" id="876">876</a>
+<a href="#877" id="877">877</a>
+<a href="#878" id="878">878</a>
+<a href="#879" id="879">879</a>
+<a href="#880" id="880">880</a>
+<a href="#881" id="881">881</a>
+<a href="#882" id="882">882</a>
+<a href="#883" id="883">883</a>
+<a href="#884" id="884">884</a>
+<a href="#885" id="885">885</a>
+<a href="#886" id="886">886</a>
+<a href="#887" id="887">887</a>
+<a href="#888" id="888">888</a>
+<a href="#889" id="889">889</a>
+<a href="#890" id="890">890</a>
+<a href="#891" id="891">891</a>
+<a href="#892" id="892">892</a>
+<a href="#893" id="893">893</a>
+<a href="#894" id="894">894</a>
+<a href="#895" id="895">895</a>
+<a href="#896" id="896">896</a>
+<a href="#897" id="897">897</a>
+<a href="#898" id="898">898</a>
+<a href="#899" id="899">899</a>
+<a href="#900" id="900">900</a>
+<a href="#901" id="901">901</a>
+<a href="#902" id="902">902</a>
+<a href="#903" id="903">903</a>
+<a href="#904" id="904">904</a>
+<a href="#905" id="905">905</a>
+<a href="#906" id="906">906</a>
+<a href="#907" id="907">907</a>
+<a href="#908" id="908">908</a>
+<a href="#909" id="909">909</a>
+<a href="#910" id="910">910</a>
+<a href="#911" id="911">911</a>
+<a href="#912" id="912">912</a>
+<a href="#913" id="913">913</a>
+<a href="#914" id="914">914</a>
+<a href="#915" id="915">915</a>
+<a href="#916" id="916">916</a>
+<a href="#917" id="917">917</a>
+<a href="#918" id="918">918</a>
+<a href="#919" id="919">919</a>
+<a href="#920" id="920">920</a>
+<a href="#921" id="921">921</a>
+<a href="#922" id="922">922</a>
+<a href="#923" id="923">923</a>
+<a href="#924" id="924">924</a>
+<a href="#925" id="925">925</a>
+<a href="#926" id="926">926</a>
+<a href="#927" id="927">927</a>
+<a href="#928" id="928">928</a>
+<a href="#929" id="929">929</a>
+<a href="#930" id="930">930</a>
+<a href="#931" id="931">931</a>
+<a href="#932" id="932">932</a>
+<a href="#933" id="933">933</a>
+<a href="#934" id="934">934</a>
+<a href="#935" id="935">935</a>
+<a href="#936" id="936">936</a>
+<a href="#937" id="937">937</a>
+<a href="#938" id="938">938</a>
+<a href="#939" id="939">939</a>
+<a href="#940" id="940">940</a>
+<a href="#941" id="941">941</a>
+<a href="#942" id="942">942</a>
+<a href="#943" id="943">943</a>
+<a href="#944" id="944">944</a>
+<a href="#945" id="945">945</a>
+<a href="#946" id="946">946</a>
+<a href="#947" id="947">947</a>
+<a href="#948" id="948">948</a>
+<a href="#949" id="949">949</a>
+<a href="#950" id="950">950</a>
+<a href="#951" id="951">951</a>
+<a href="#952" id="952">952</a>
+<a href="#953" id="953">953</a>
+<a href="#954" id="954">954</a>
+<a href="#955" id="955">955</a>
+<a href="#956" id="956">956</a>
+<a href="#957" id="957">957</a>
+<a href="#958" id="958">958</a>
+<a href="#959" id="959">959</a>
+<a href="#960" id="960">960</a>
+<a href="#961" id="961">961</a>
+<a href="#962" id="962">962</a>
+<a href="#963" id="963">963</a>
+<a href="#964" id="964">964</a>
+<a href="#965" id="965">965</a>
+<a href="#966" id="966">966</a>
+<a href="#967" id="967">967</a>
+<a href="#968" id="968">968</a>
+<a href="#969" id="969">969</a>
+<a href="#970" id="970">970</a>
+<a href="#971" id="971">971</a>
+<a href="#972" id="972">972</a>
+<a href="#973" id="973">973</a>
+<a href="#974" id="974">974</a>
+<a href="#975" id="975">975</a>
+<a href="#976" id="976">976</a>
+<a href="#977" id="977">977</a>
+<a href="#978" id="978">978</a>
+<a href="#979" id="979">979</a>
+<a href="#980" id="980">980</a>
+<a href="#981" id="981">981</a>
+<a href="#982" id="982">982</a>
+<a href="#983" id="983">983</a>
+<a href="#984" id="984">984</a>
+<a href="#985" id="985">985</a>
+<a href="#986" id="986">986</a>
+<a href="#987" id="987">987</a>
+<a href="#988" id="988">988</a>
+<a href="#989" id="989">989</a>
+<a href="#990" id="990">990</a>
+<a href="#991" id="991">991</a>
+<a href="#992" id="992">992</a>
+<a href="#993" id="993">993</a>
+<a href="#994" id="994">994</a>
+<a href="#995" id="995">995</a>
+<a href="#996" id="996">996</a>
+<a href="#997" id="997">997</a>
+<a href="#998" id="998">998</a>
+<a href="#999" id="999">999</a>
+<a href="#1000" id="1000">1000</a>
+<a href="#1001" id="1001">1001</a>
+<a href="#1002" id="1002">1002</a>
+<a href="#1003" id="1003">1003</a>
+<a href="#1004" id="1004">1004</a>
+<a href="#1005" id="1005">1005</a>
+<a href="#1006" id="1006">1006</a>
+<a href="#1007" id="1007">1007</a>
+<a href="#1008" id="1008">1008</a>
+<a href="#1009" id="1009">1009</a>
+<a href="#1010" id="1010">1010</a>
+<a href="#1011" id="1011">1011</a>
+<a href="#1012" id="1012">1012</a>
+<a href="#1013" id="1013">1013</a>
+<a href="#1014" id="1014">1014</a>
+<a href="#1015" id="1015">1015</a>
+<a href="#1016" id="1016">1016</a>
+<a href="#1017" id="1017">1017</a>
+<a href="#1018" id="1018">1018</a>
+<a href="#1019" id="1019">1019</a>
+<a href="#1020" id="1020">1020</a>
+<a href="#1021" id="1021">1021</a>
+<a href="#1022" id="1022">1022</a></pre></div><pre class="rust"><code><span class="doccomment">//! In this file we handle the "Tree" part of Tree Borrows, i.e. all tree
 //! traversal functions, optimizations to trim branches, and keeping track of
 //! the relative position of the access to each node being updated. This of course
 //! also includes the definition of the tree structure.
@@ -817,7 +1032,7 @@
 //!   and the relative position of the access;
 //! - idempotency properties asserted in `perms.rs` (for optimizations)
 
-</span><span class="kw">use </span>std::fmt;
+</span><span class="kw">use </span>std::{fmt, mem};
 
 <span class="kw">use </span>smallvec::SmallVec;
 
@@ -826,10 +1041,10 @@
 <span class="kw">use </span>rustc_target::abi::Size;
 
 <span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::tree_borrows::{
+    Permission,
     diagnostics::{<span class="self">self</span>, NodeDebugInfo, TbError, TransitionError},
     perms::PermTransition,
     unimap::{UniEntry, UniIndex, UniKeyMap, UniValMap},
-    Permission,
 };
 <span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::{GlobalState, ProtectorKind};
 <span class="kw">use crate</span>::<span class="kw-2">*</span>;
@@ -935,6 +1150,22 @@
         <span class="prelude-val">Ok</span>(transition)
     }
 
+    <span class="doccomment">/// Like `perform_access`, but ignores the concrete error cause and also uses state-passing
+    /// rather than a mutable reference. As such, it returns `Some(x)` if the transition succeeded,
+    /// or `None` if there was an error.
+    </span><span class="attr">#[cfg(test)]
+    </span><span class="kw">fn </span>perform_access_no_fluff(
+        <span class="kw-2">mut </span><span class="self">self</span>,
+        access_kind: AccessKind,
+        rel_pos: AccessRelatedness,
+        protected: bool,
+    ) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="self">Self</span>&gt; {
+        <span class="kw">match </span><span class="self">self</span>.perform_access(access_kind, rel_pos, protected) {
+            <span class="prelude-val">Ok</span>(<span class="kw">_</span>) =&gt; <span class="prelude-val">Some</span>(<span class="self">self</span>),
+            <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; <span class="prelude-val">None</span>,
+        }
+    }
+
     <span class="comment">// Helper to optimize the tree traversal.
     // The optimization here consists of observing thanks to the tests
     // `foreign_read_is_noop_after_foreign_write` and `all_transitions_idempotent`,
@@ -956,9 +1187,11 @@
     // is possible, it also updates the internal state to keep track of whether
     // the propagation can be skipped next time.
     // It is a performance loss not to call this function when a foreign access occurs.
-    // It is unsound not to call this function when a child access occurs.
+    // FIXME: This optimization is wrong, and is currently disabled (by ignoring the
+    // result returned here). Since we presumably want an optimization like this,
+    // we should add it back. See #3864 for more information.
     </span><span class="kw">fn </span>skip_if_known_noop(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
         access_kind: AccessKind,
         rel_pos: AccessRelatedness,
     ) -&gt; ContinueTraversal {
@@ -981,20 +1214,35 @@
                 // No need to update `self.latest_foreign_access`,
                 // the type of the current streak among nonempty read-only
                 // or nonempty with at least one write has not changed.
-                </span>ContinueTraversal::SkipChildren
+                </span>ContinueTraversal::SkipSelfAndChildren
             } <span class="kw">else </span>{
                 <span class="comment">// Otherwise propagate this time, and also record the
                 // access that just occurred so that we can skip the propagation
                 // next time.
-                </span><span class="self">self</span>.latest_foreign_access = <span class="prelude-val">Some</span>(access_kind);
-                ContinueTraversal::Recurse
+                </span>ContinueTraversal::Recurse
             }
         } <span class="kw">else </span>{
             <span class="comment">// A child access occurred, this breaks the streak of foreign
             // accesses in a row and the sequence since the previous child access
             // is now empty.
-            </span><span class="self">self</span>.latest_foreign_access = <span class="prelude-val">None</span>;
-            ContinueTraversal::Recurse
+            </span>ContinueTraversal::Recurse
+        }
+    }
+
+    <span class="doccomment">/// Records a new access, so that future access can potentially be skipped
+    /// by `skip_if_known_noop`.
+    /// The invariants for this function are closely coupled to the function above:
+    /// It MUST be called on child accesses, and on foreign accesses MUST be called
+    /// when `skip_if_know_noop` returns `Recurse`, and MUST NOT be called otherwise.
+    /// FIXME: This optimization is wrong, and is currently disabled (by ignoring the
+    /// result returned here). Since we presumably want an optimization like this,
+    /// we should add it back. See #3864 for more information.
+    </span><span class="attr">#[allow(unused)]
+    </span><span class="kw">fn </span>record_new_access(<span class="kw-2">&amp;mut </span><span class="self">self</span>, access_kind: AccessKind, rel_pos: AccessRelatedness) {
+        <span class="kw">if </span>rel_pos.is_foreign() {
+            <span class="self">self</span>.latest_foreign_access = <span class="prelude-val">Some</span>(access_kind);
+        } <span class="kw">else </span>{
+            <span class="self">self</span>.latest_foreign_access = <span class="prelude-val">None</span>;
         }
     }
 }
@@ -1089,13 +1337,29 @@
 <span class="doccomment">/// Whether to continue exploring the children recursively or not.
 </span><span class="kw">enum </span>ContinueTraversal {
     Recurse,
-    SkipChildren,
+    SkipSelfAndChildren,
+}
+
+<span class="attr">#[derive(Clone, Copy)]
+</span><span class="kw">pub enum </span>ChildrenVisitMode {
+    VisitChildrenOfAccessed,
+    SkipChildrenOfAccessed,
+}
+
+<span class="kw">enum </span>RecursionState {
+    BeforeChildren,
+    AfterChildren,
 }
 
 <span class="doccomment">/// Stack of nodes left to explore in a tree traversal.
-</span><span class="kw">struct </span>TreeVisitorStack&lt;NodeApp, ErrHandler&gt; {
+/// See the docs of `traverse_this_parents_children_other` for details on the
+/// traversal order.
+</span><span class="kw">struct </span>TreeVisitorStack&lt;NodeContinue, NodeApp, ErrHandler&gt; {
     <span class="doccomment">/// Identifier of the original access.
     </span>initial: UniIndex,
+    <span class="doccomment">/// Function describing whether to continue at a tag.
+    /// This is only invoked for foreign accesses.
+    </span>f_continue: NodeContinue,
     <span class="doccomment">/// Function to apply to each tag.
     </span>f_propagate: NodeApp,
     <span class="doccomment">/// Handler to add the required context to diagnostics.
@@ -1103,152 +1367,232 @@
     <span class="doccomment">/// Mutable state of the visit: the tags left to handle.
     /// Every tag pushed should eventually be handled,
     /// and the precise order is relevant for diagnostics.
-    </span>stack: Vec&lt;(UniIndex, AccessRelatedness)&gt;,
+    /// Since the traversal is piecewise bottom-up, we need to
+    /// remember whether we're here initially, or after visiting all children.
+    /// The last element indicates this.
+    /// This is just an artifact of how you hand-roll recursion,
+    /// it does not have a deeper meaning otherwise.
+    </span>stack: Vec&lt;(UniIndex, AccessRelatedness, RecursionState)&gt;,
 }
 
-<span class="kw">impl</span>&lt;NodeApp, InnErr, OutErr, ErrHandler&gt; TreeVisitorStack&lt;NodeApp, ErrHandler&gt;
+<span class="kw">impl</span>&lt;NodeContinue, NodeApp, InnErr, OutErr, ErrHandler&gt;
+    TreeVisitorStack&lt;NodeContinue, NodeApp, ErrHandler&gt;
 <span class="kw">where
-    </span>NodeApp: Fn(NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;ContinueTraversal, InnErr&gt;,
+    </span>NodeContinue: Fn(<span class="kw-2">&amp;</span>NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;) -&gt; ContinueTraversal,
+    NodeApp: Fn(NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;(), InnErr&gt;,
     ErrHandler: Fn(ErrHandlerArgs&lt;<span class="lifetime">'_</span>, InnErr&gt;) -&gt; OutErr,
 {
-    <span class="doccomment">/// Apply the function to the current `tag`, and push its children
-    /// to the stack of future tags to visit.
-    </span><span class="kw">fn </span>exec_and_visit(
+    <span class="kw">fn </span>should_continue_at(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        this: <span class="kw-2">&amp;mut </span>TreeVisitor&lt;<span class="lifetime">'_</span>&gt;,
+        idx: UniIndex,
+        rel_pos: AccessRelatedness,
+    ) -&gt; ContinueTraversal {
+        <span class="kw">let </span>node = this.nodes.get_mut(idx).unwrap();
+        <span class="kw">let </span>args = NodeAppArgs { node, perm: this.perms.entry(idx), rel_pos };
+        (<span class="self">self</span>.f_continue)(<span class="kw-2">&amp;</span>args)
+    }
+
+    <span class="kw">fn </span>propagate_at(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         this: <span class="kw-2">&amp;mut </span>TreeVisitor&lt;<span class="lifetime">'_</span>&gt;,
         idx: UniIndex,
-        exclude: <span class="prelude-ty">Option</span>&lt;UniIndex&gt;,
         rel_pos: AccessRelatedness,
     ) -&gt; <span class="prelude-ty">Result</span>&lt;(), OutErr&gt; {
-        <span class="comment">// 1. apply the propagation function
-        </span><span class="kw">let </span>node = this.nodes.get_mut(idx).unwrap();
-        <span class="kw">let </span>recurse =
-            (<span class="self">self</span>.f_propagate)(NodeAppArgs { node, perm: this.perms.entry(idx), rel_pos })
-                .map_err(|error_kind| {
-                    (<span class="self">self</span>.err_builder)(ErrHandlerArgs {
-                        error_kind,
-                        conflicting_info: <span class="kw-2">&amp;</span>this.nodes.get(idx).unwrap().debug_info,
-                        accessed_info: <span class="kw-2">&amp;</span>this.nodes.get(<span class="self">self</span>.initial).unwrap().debug_info,
-                    })
-                })<span class="question-mark">?</span>;
-        <span class="kw">let </span>node = this.nodes.get(idx).unwrap();
-        <span class="comment">// 2. add the children to the stack for future traversal
-        </span><span class="kw">if </span><span class="macro">matches!</span>(recurse, ContinueTraversal::Recurse) {
-            <span class="kw">let </span>general_child_rel = rel_pos.for_child();
-            <span class="kw">for </span><span class="kw-2">&amp;</span>child <span class="kw">in </span>node.children.iter() {
-                <span class="comment">// Some child might be excluded from here and handled separately,
-                // e.g. the initially accessed tag.
-                </span><span class="kw">if </span><span class="prelude-val">Some</span>(child) != exclude {
-                    <span class="comment">// We should still ensure that if we don't skip the initially accessed
-                    // it will receive the proper `AccessRelatedness`.
-                    </span><span class="kw">let </span>this_child_rel = <span class="kw">if </span>child == <span class="self">self</span>.initial {
-                        AccessRelatedness::This
-                    } <span class="kw">else </span>{
-                        general_child_rel
-                    };
-                    <span class="self">self</span>.stack.push((child, this_child_rel));
+        <span class="kw">let </span>node = this.nodes.get_mut(idx).unwrap();
+        (<span class="self">self</span>.f_propagate)(NodeAppArgs { node, perm: this.perms.entry(idx), rel_pos }).map_err(
+            |error_kind| {
+                (<span class="self">self</span>.err_builder)(ErrHandlerArgs {
+                    error_kind,
+                    conflicting_info: <span class="kw-2">&amp;</span>this.nodes.get(idx).unwrap().debug_info,
+                    accessed_info: <span class="kw-2">&amp;</span>this.nodes.get(<span class="self">self</span>.initial).unwrap().debug_info,
+                })
+            },
+        )
+    }
+
+    <span class="kw">fn </span>go_upwards_from_accessed(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        this: <span class="kw-2">&amp;mut </span>TreeVisitor&lt;<span class="lifetime">'_</span>&gt;,
+        accessed_node: UniIndex,
+        visit_children: ChildrenVisitMode,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), OutErr&gt; {
+        <span class="comment">// We want to visit the accessed node's children first.
+        // However, we will below walk up our parents and push their children (our cousins)
+        // onto the stack. To ensure correct iteration order, this method thus finishes
+        // by reversing the stack. This only works if the stack is empty initially.
+        </span><span class="macro">assert!</span>(<span class="self">self</span>.stack.is_empty());
+        <span class="comment">// First, handle accessed node. A bunch of things need to
+        // be handled differently here compared to the further parents
+        // of `accesssed_node`.
+        </span>{
+            <span class="self">self</span>.propagate_at(this, accessed_node, AccessRelatedness::This)<span class="question-mark">?</span>;
+            <span class="kw">if </span><span class="macro">matches!</span>(visit_children, ChildrenVisitMode::VisitChildrenOfAccessed) {
+                <span class="kw">let </span>accessed_node = this.nodes.get(accessed_node).unwrap();
+                <span class="comment">// We `rev()` here because we reverse the entire stack later.
+                </span><span class="kw">for </span><span class="kw-2">&amp;</span>child <span class="kw">in </span>accessed_node.children.iter().rev() {
+                    <span class="self">self</span>.stack.push((
+                        child,
+                        AccessRelatedness::AncestorAccess,
+                        RecursionState::BeforeChildren,
+                    ));
+                }
+            }
+        }
+        <span class="comment">// Then, handle the accessed node's parents. Here, we need to
+        // make sure we only mark the "cousin" subtrees for later visitation,
+        // not the subtree that contains the accessed node.
+        </span><span class="kw">let </span><span class="kw-2">mut </span>last_node = accessed_node;
+        <span class="kw">while let </span><span class="prelude-val">Some</span>(current) = this.nodes.get(last_node).unwrap().parent {
+            <span class="self">self</span>.propagate_at(this, current, AccessRelatedness::StrictChildAccess)<span class="question-mark">?</span>;
+            <span class="kw">let </span>node = this.nodes.get(current).unwrap();
+            <span class="comment">// We `rev()` here because we reverse the entire stack later.
+            </span><span class="kw">for </span><span class="kw-2">&amp;</span>child <span class="kw">in </span>node.children.iter().rev() {
+                <span class="kw">if </span>last_node == child {
+                    <span class="kw">continue</span>;
+                }
+                <span class="self">self</span>.stack.push((
+                    child,
+                    AccessRelatedness::DistantAccess,
+                    RecursionState::BeforeChildren,
+                ));
+            }
+            last_node = current;
+        }
+        <span class="comment">// Reverse the stack, as discussed above.
+        </span><span class="self">self</span>.stack.reverse();
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="kw">fn </span>finish_foreign_accesses(<span class="kw-2">&amp;mut </span><span class="self">self</span>, this: <span class="kw-2">&amp;mut </span>TreeVisitor&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;(), OutErr&gt; {
+        <span class="kw">while let </span><span class="prelude-val">Some</span>((idx, rel_pos, step)) = <span class="self">self</span>.stack.last_mut() {
+            <span class="kw">let </span>idx = <span class="kw-2">*</span>idx;
+            <span class="kw">let </span>rel_pos = <span class="kw-2">*</span>rel_pos;
+            <span class="kw">match </span><span class="kw-2">*</span>step {
+                <span class="comment">// How to do bottom-up traversal, 101: Before you handle a node, you handle all children.
+                // For this, you must first find the children, which is what this code here does.
+                </span>RecursionState::BeforeChildren =&gt; {
+                    <span class="comment">// Next time we come back will be when all the children are handled.
+                    </span><span class="kw-2">*</span>step = RecursionState::AfterChildren;
+                    <span class="comment">// Now push the children, except if we are told to skip this subtree.
+                    </span><span class="kw">let </span>handle_children = <span class="self">self</span>.should_continue_at(this, idx, rel_pos);
+                    <span class="kw">match </span>handle_children {
+                        ContinueTraversal::Recurse =&gt; {
+                            <span class="kw">let </span>node = this.nodes.get(idx).unwrap();
+                            <span class="kw">for </span><span class="kw-2">&amp;</span>child <span class="kw">in </span>node.children.iter() {
+                                <span class="self">self</span>.stack.push((child, rel_pos, RecursionState::BeforeChildren));
+                            }
+                        }
+                        ContinueTraversal::SkipSelfAndChildren =&gt; {
+                            <span class="comment">// skip self
+                            </span><span class="self">self</span>.stack.pop();
+                            <span class="kw">continue</span>;
+                        }
+                    }
+                }
+                <span class="comment">// All the children are handled, let's actually visit this node
+                </span>RecursionState::AfterChildren =&gt; {
+                    <span class="self">self</span>.stack.pop();
+                    <span class="self">self</span>.propagate_at(this, idx, rel_pos)<span class="question-mark">?</span>;
                 }
             }
         }
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="kw">fn </span>new(initial: UniIndex, f_propagate: NodeApp, err_builder: ErrHandler) -&gt; <span class="self">Self </span>{
-        <span class="self">Self </span>{ initial, f_propagate, err_builder, stack: Vec::new() }
-    }
-
-    <span class="doccomment">/// Finish the exploration by applying `exec_and_visit` until
-    /// the stack is empty.
-    </span><span class="kw">fn </span>finish(<span class="kw-2">&amp;mut </span><span class="self">self</span>, visitor: <span class="kw-2">&amp;mut </span>TreeVisitor&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;(), OutErr&gt; {
-        <span class="kw">while let </span><span class="prelude-val">Some</span>((idx, rel_pos)) = <span class="self">self</span>.stack.pop() {
-            <span class="self">self</span>.exec_and_visit(visitor, idx, <span class="comment">/* no children to exclude */ </span><span class="prelude-val">None</span>, rel_pos)<span class="question-mark">?</span>;
-        }
-        <span class="prelude-val">Ok</span>(())
-    }
-
-    <span class="doccomment">/// Push all ancestors to the exploration stack in order of nearest ancestor
-    /// towards the top.
-    </span><span class="kw">fn </span>push_and_visit_strict_ancestors(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        visitor: <span class="kw-2">&amp;mut </span>TreeVisitor&lt;<span class="lifetime">'_</span>&gt;,
-    ) -&gt; <span class="prelude-ty">Result</span>&lt;(), OutErr&gt; {
-        <span class="kw">let </span><span class="kw-2">mut </span>path_ascend = Vec::new();
-        <span class="comment">// First climb to the root while recording the path
-        </span><span class="kw">let </span><span class="kw-2">mut </span>curr = <span class="self">self</span>.initial;
-        <span class="kw">while let </span><span class="prelude-val">Some</span>(ancestor) = visitor.nodes.get(curr).unwrap().parent {
-            path_ascend.push((ancestor, curr));
-            curr = ancestor;
-        }
-        <span class="comment">// Then descend:
-        // - execute f_propagate on each node
-        // - record children in visit
-        </span><span class="kw">while let </span><span class="prelude-val">Some</span>((ancestor, next_in_path)) = path_ascend.pop() {
-            <span class="comment">// Explore ancestors in descending order.
-            // `next_in_path` is excluded from the recursion because it
-            // will be the `ancestor` of the next iteration.
-            // It also needs a different `AccessRelatedness` than the other
-            // children of `ancestor`.
-            </span><span class="self">self</span>.exec_and_visit(
-                visitor,
-                ancestor,
-                <span class="prelude-val">Some</span>(next_in_path),
-                AccessRelatedness::StrictChildAccess,
-            )<span class="question-mark">?</span>;
-        }
-        <span class="prelude-val">Ok</span>(())
+    <span class="kw">fn </span>new(
+        initial: UniIndex,
+        f_continue: NodeContinue,
+        f_propagate: NodeApp,
+        err_builder: ErrHandler,
+    ) -&gt; <span class="self">Self </span>{
+        <span class="self">Self </span>{ initial, f_continue, f_propagate, err_builder, stack: Vec::new() }
     }
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tree</span>&gt; TreeVisitor&lt;<span class="lifetime">'tree</span>&gt; {
-    <span class="comment">// Applies `f_propagate` to every vertex of the tree top-down in the following order: first
-    // all ancestors of `start`, then `start` itself, then children of `start`, then the rest.
-    // This ensures that errors are triggered in the following order
-    // - first invalid accesses with insufficient permissions, closest to the root first,
-    // - then protector violations, closest to `start` first.
-    //
-    // `f_propagate` should follow the following format: for a given `Node` it updates its
-    // `Permission` depending on the position relative to `start` (given by an
-    // `AccessRelatedness`).
-    // It outputs whether the tree traversal for this subree should continue or not.
-    </span><span class="kw">fn </span>traverse_parents_this_children_others&lt;InnErr, OutErr&gt;(
+    <span class="doccomment">/// Applies `f_propagate` to every vertex of the tree in a piecewise bottom-up way: First, visit
+    /// all ancestors of `start` (starting with `start` itself), then children of `start`, then the rest,
+    /// going bottom-up in each of these two "pieces" / sections.
+    /// This ensures that errors are triggered in the following order
+    /// - first invalid accesses with insufficient permissions, closest to the accessed node first,
+    /// - then protector violations, bottom-up, starting with the children of the accessed node, and then
+    ///   going upwards and outwards.
+    ///
+    /// The following graphic visualizes it, with numbers indicating visitation order and `start` being
+    /// the node that is visited first ("1"):
+    ///
+    /// ```text
+    ///         3
+    ///        /|
+    ///       / |
+    ///      9  2
+    ///      |  |\
+    ///      |  | \
+    ///      8  1  7
+    ///        / \
+    ///       4   6
+    ///           |
+    ///           5
+    /// ```
+    ///
+    /// `f_propagate` should follow the following format: for a given `Node` it updates its
+    /// `Permission` depending on the position relative to `start` (given by an
+    /// `AccessRelatedness`).
+    /// `f_continue` is called earlier on foreign nodes, and describes whether to even start
+    /// visiting the subtree at that node. If it e.g. returns `SkipSelfAndChildren` on node 6
+    /// above, then nodes 5 _and_ 6 would not be visited by `f_propagate`. It is not used for
+    /// notes having a child access (nodes 1, 2, 3).
+    ///
+    /// Finally, remember that the iteration order is not relevant for UB, it only affects
+    /// diagnostics. It also affects tree traversal optimizations built on top of this, so
+    /// those need to be reviewed carefully as well whenever this changes.
+    </span><span class="kw">fn </span>traverse_this_parents_children_other&lt;InnErr, OutErr&gt;(
         <span class="kw-2">mut </span><span class="self">self</span>,
         start: BorTag,
-        f_propagate: <span class="kw">impl </span>Fn(NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;ContinueTraversal, InnErr&gt;,
+        f_continue: <span class="kw">impl </span>Fn(<span class="kw-2">&amp;</span>NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;) -&gt; ContinueTraversal,
+        f_propagate: <span class="kw">impl </span>Fn(NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;(), InnErr&gt;,
         err_builder: <span class="kw">impl </span>Fn(ErrHandlerArgs&lt;<span class="lifetime">'_</span>, InnErr&gt;) -&gt; OutErr,
     ) -&gt; <span class="prelude-ty">Result</span>&lt;(), OutErr&gt; {
         <span class="kw">let </span>start_idx = <span class="self">self</span>.tag_mapping.get(<span class="kw-2">&amp;</span>start).unwrap();
-        <span class="kw">let </span><span class="kw-2">mut </span>stack = TreeVisitorStack::new(start_idx, f_propagate, err_builder);
-        stack.push_and_visit_strict_ancestors(<span class="kw-2">&amp;mut </span><span class="self">self</span>)<span class="question-mark">?</span>;
-        <span class="comment">// All (potentially zero) ancestors have been explored,
-        // it's time to explore the `start` tag.
-        </span>stack.exec_and_visit(
+        <span class="kw">let </span><span class="kw-2">mut </span>stack = TreeVisitorStack::new(start_idx, f_continue, f_propagate, err_builder);
+        <span class="comment">// Visits the accessed node itself, and all its parents, i.e. all nodes
+        // undergoing a child access. Also pushes the children and the other
+        // cousin nodes (i.e. all nodes undergoing a foreign access) to the stack
+        // to be processed later.
+        </span>stack.go_upwards_from_accessed(
             <span class="kw-2">&amp;mut </span><span class="self">self</span>,
             start_idx,
-            <span class="comment">/* no children to exclude */ </span><span class="prelude-val">None</span>,
-            AccessRelatedness::This,
+            ChildrenVisitMode::VisitChildrenOfAccessed,
         )<span class="question-mark">?</span>;
-        <span class="comment">// Then finish with a normal DFS.
-        </span>stack.finish(<span class="kw-2">&amp;mut </span><span class="self">self</span>)
+        <span class="comment">// Now visit all the foreign nodes we remembered earlier.
+        // For this we go bottom-up, but also allow f_continue to skip entire
+        // subtrees from being visited if it would be a NOP.
+        </span>stack.finish_foreign_accesses(<span class="kw-2">&amp;mut </span><span class="self">self</span>)
     }
 
-    <span class="comment">// Applies `f_propagate` to every non-child vertex of the tree (ancestors first).
-    //
-    // `f_propagate` should follow the following format: for a given `Node` it updates its
-    // `Permission` depending on the position relative to `start` (given by an
-    // `AccessRelatedness`).
-    // It outputs whether the tree traversal for this subree should continue or not.
+    <span class="doccomment">/// Like `traverse_this_parents_children_other`, but skips the children of `start`.
     </span><span class="kw">fn </span>traverse_nonchildren&lt;InnErr, OutErr&gt;(
         <span class="kw-2">mut </span><span class="self">self</span>,
         start: BorTag,
-        f_propagate: <span class="kw">impl </span>Fn(NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;ContinueTraversal, InnErr&gt;,
+        f_continue: <span class="kw">impl </span>Fn(<span class="kw-2">&amp;</span>NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;) -&gt; ContinueTraversal,
+        f_propagate: <span class="kw">impl </span>Fn(NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;(), InnErr&gt;,
         err_builder: <span class="kw">impl </span>Fn(ErrHandlerArgs&lt;<span class="lifetime">'_</span>, InnErr&gt;) -&gt; OutErr,
     ) -&gt; <span class="prelude-ty">Result</span>&lt;(), OutErr&gt; {
         <span class="kw">let </span>start_idx = <span class="self">self</span>.tag_mapping.get(<span class="kw-2">&amp;</span>start).unwrap();
-        <span class="kw">let </span><span class="kw-2">mut </span>stack = TreeVisitorStack::new(start_idx, f_propagate, err_builder);
-        stack.push_and_visit_strict_ancestors(<span class="kw-2">&amp;mut </span><span class="self">self</span>)<span class="question-mark">?</span>;
-        <span class="comment">// We *don't* visit the `start` tag, and we don't push its children.
-        // Only finish the DFS with the cousins.
-        </span>stack.finish(<span class="kw-2">&amp;mut </span><span class="self">self</span>)
+        <span class="kw">let </span><span class="kw-2">mut </span>stack = TreeVisitorStack::new(start_idx, f_continue, f_propagate, err_builder);
+        <span class="comment">// Visits the accessed node itself, and all its parents, i.e. all nodes
+        // undergoing a child access. Also pushes the other cousin nodes to the
+        // stack, but not the children of the accessed node.
+        </span>stack.go_upwards_from_accessed(
+            <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+            start_idx,
+            ChildrenVisitMode::SkipChildrenOfAccessed,
+        )<span class="question-mark">?</span>;
+        <span class="comment">// Now visit all the foreign nodes we remembered earlier.
+        // For this we go bottom-up, but also allow f_continue to skip entire
+        // subtrees from being visited if it would be a NOP.
+        </span>stack.finish_foreign_accesses(<span class="kw-2">&amp;mut </span><span class="self">self</span>)
     }
 }
 
@@ -1265,16 +1609,13 @@
             <span class="kw">let </span><span class="kw-2">mut </span>debug_info = NodeDebugInfo::new(root_tag, root_default_perm, span);
             <span class="comment">// name the root so that all allocations contain one named pointer
             </span>debug_info.add_name(<span class="string">"root of the allocation"</span>);
-            nodes.insert(
-                root_idx,
-                Node {
-                    tag: root_tag,
-                    parent: <span class="prelude-val">None</span>,
-                    children: SmallVec::default(),
-                    default_initial_perm: root_default_perm,
-                    debug_info,
-                },
-            );
+            nodes.insert(root_idx, Node {
+                tag: root_tag,
+                parent: <span class="prelude-val">None</span>,
+                children: SmallVec::default(),
+                default_initial_perm: root_default_perm,
+                debug_info,
+            });
             nodes
         };
         <span class="kw">let </span>rperms = {
@@ -1304,16 +1645,13 @@
         <span class="kw">let </span>idx = <span class="self">self</span>.tag_mapping.insert(new_tag);
         <span class="kw">let </span>parent_idx = <span class="self">self</span>.tag_mapping.get(<span class="kw-2">&amp;</span>parent_tag).unwrap();
         <span class="comment">// Create the node
-        </span><span class="self">self</span>.nodes.insert(
-            idx,
-            Node {
-                tag: new_tag,
-                parent: <span class="prelude-val">Some</span>(parent_idx),
-                children: SmallVec::default(),
-                default_initial_perm,
-                debug_info: NodeDebugInfo::new(new_tag, default_initial_perm, span),
-            },
-        );
+        </span><span class="self">self</span>.nodes.insert(idx, Node {
+            tag: new_tag,
+            parent: <span class="prelude-val">Some</span>(parent_idx),
+            children: SmallVec::default(),
+            default_initial_perm,
+            debug_info: NodeDebugInfo::new(new_tag, default_initial_perm, span),
+        });
         <span class="comment">// Register new_tag as a child of parent_tag
         </span><span class="self">self</span>.nodes.get_mut(parent_idx).unwrap().children.push(idx);
         <span class="comment">// Initialize perms
@@ -1345,16 +1683,18 @@
         )<span class="question-mark">?</span>;
         <span class="kw">for </span>(perms_range, perms) <span class="kw">in </span><span class="self">self</span>.rperms.iter_mut(access_range.start, access_range.size) {
             TreeVisitor { nodes: <span class="kw-2">&amp;mut </span><span class="self">self</span>.nodes, tag_mapping: <span class="kw-2">&amp;</span><span class="self">self</span>.tag_mapping, perms }
-                .traverse_parents_this_children_others(
+                .traverse_this_parents_children_other(
                     tag,
-                    |args: NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;| -&gt; <span class="prelude-ty">Result</span>&lt;ContinueTraversal, TransitionError&gt; {
+                    <span class="comment">// visit all children, skipping none
+                    </span>|<span class="kw">_</span>| ContinueTraversal::Recurse,
+                    |args: NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;| -&gt; <span class="prelude-ty">Result</span>&lt;(), TransitionError&gt; {
                         <span class="kw">let </span>NodeAppArgs { node, .. } = args;
                         <span class="kw">if </span>global.borrow().protected_tags.get(<span class="kw-2">&amp;</span>node.tag)
                             == <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>ProtectorKind::StrongProtector)
                         {
                             <span class="prelude-val">Err</span>(TransitionError::ProtectedDealloc)
                         } <span class="kw">else </span>{
-                            <span class="prelude-val">Ok</span>(ContinueTraversal::Recurse)
+                            <span class="prelude-val">Ok</span>(())
                         }
                     },
                     |args: ErrHandlerArgs&lt;<span class="lifetime">'_</span>, TransitionError&gt;| -&gt; InterpError&lt;<span class="lifetime">'tcx</span>&gt; {
@@ -1411,21 +1751,30 @@
         //
         // `perms_range` is only for diagnostics (it is the range of
         // the `RangeMap` on which we are currently working).
-        </span><span class="kw">let </span>node_app = |perms_range: Range&lt;u64&gt;,
+        </span><span class="kw">let </span>node_skipper = |access_kind: AccessKind, args: <span class="kw-2">&amp;</span>NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;| -&gt; ContinueTraversal {
+            <span class="kw">let </span>NodeAppArgs { node, perm, rel_pos } = args;
+
+            <span class="kw">let </span>old_state = perm
+                .get()
+                .copied()
+                .unwrap_or_else(|| LocationState::new_uninit(node.default_initial_perm));
+            <span class="comment">// FIXME: See #3684
+            </span><span class="kw">let </span>_would_skip_if_not_for_fixme = old_state.skip_if_known_noop(access_kind, <span class="kw-2">*</span>rel_pos);
+            ContinueTraversal::Recurse
+        };
+        <span class="kw">let </span>node_app = |perms_range: Range&lt;u64&gt;,
                         access_kind: AccessKind,
                         access_cause: diagnostics::AccessCause,
                         args: NodeAppArgs&lt;<span class="lifetime">'_</span>&gt;|
-         -&gt; <span class="prelude-ty">Result</span>&lt;ContinueTraversal, TransitionError&gt; {
+         -&gt; <span class="prelude-ty">Result</span>&lt;(), TransitionError&gt; {
             <span class="kw">let </span>NodeAppArgs { node, <span class="kw-2">mut </span>perm, rel_pos } = args;
 
             <span class="kw">let </span>old_state = perm.or_insert(LocationState::new_uninit(node.default_initial_perm));
 
-            <span class="kw">match </span>old_state.skip_if_known_noop(access_kind, rel_pos) {
-                ContinueTraversal::SkipChildren =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(ContinueTraversal::SkipChildren),
-                <span class="kw">_ </span>=&gt; {}
-            }
+            <span class="comment">// FIXME: See #3684
+            // old_state.record_new_access(access_kind, rel_pos);
 
-            <span class="kw">let </span>protected = global.borrow().protected_tags.contains_key(<span class="kw-2">&amp;</span>node.tag);
+            </span><span class="kw">let </span>protected = global.borrow().protected_tags.contains_key(<span class="kw-2">&amp;</span>node.tag);
             <span class="kw">let </span>transition = old_state.perform_access(access_kind, rel_pos, protected)<span class="question-mark">?</span>;
             <span class="comment">// Record the event as part of the history
             </span><span class="kw">if </span>!transition.is_noop() {
@@ -1438,7 +1787,7 @@
                     span,
                 });
             }
-            <span class="prelude-val">Ok</span>(ContinueTraversal::Recurse)
+            <span class="prelude-val">Ok</span>(())
         };
 
         <span class="comment">// Error handler in case `node_app` goes wrong.
@@ -1465,8 +1814,9 @@
             </span><span class="kw">for </span>(perms_range, perms) <span class="kw">in </span><span class="self">self</span>.rperms.iter_mut(access_range.start, access_range.size)
             {
                 TreeVisitor { nodes: <span class="kw-2">&amp;mut </span><span class="self">self</span>.nodes, tag_mapping: <span class="kw-2">&amp;</span><span class="self">self</span>.tag_mapping, perms }
-                    .traverse_parents_this_children_others(
+                    .traverse_this_parents_children_other(
                         tag,
+                        |args| node_skipper(access_kind, args),
                         |args| node_app(perms_range.clone(), access_kind, access_cause, args),
                         |args| err_handler(perms_range.clone(), access_cause, args),
                     )<span class="question-mark">?</span>;
@@ -1493,6 +1843,7 @@
                     TreeVisitor { nodes: <span class="kw-2">&amp;mut </span><span class="self">self</span>.nodes, tag_mapping: <span class="kw-2">&amp;</span><span class="self">self</span>.tag_mapping, perms }
                         .traverse_nonchildren(
                         tag,
+                        |args| node_skipper(access_kind, args),
                         |args| node_app(perms_range.clone(), access_kind, access_cause, args),
                         |args| err_handler(perms_range.clone(), access_cause, args),
                     )<span class="question-mark">?</span>;
@@ -1506,8 +1857,7 @@
 <span class="doccomment">/// Integration with the BorTag garbage collector
 </span><span class="kw">impl </span>Tree {
     <span class="kw">pub fn </span>remove_unreachable_tags(<span class="kw-2">&amp;mut </span><span class="self">self</span>, live_tags: <span class="kw-2">&amp;</span>FxHashSet&lt;BorTag&gt;) {
-        <span class="kw">let </span>root_is_needed = <span class="self">self</span>.keep_only_needed(<span class="self">self</span>.root, live_tags); <span class="comment">// root can't be removed
-        </span><span class="macro">assert!</span>(root_is_needed);
+        <span class="self">self</span>.remove_useless_children(<span class="self">self</span>.root, live_tags);
         <span class="comment">// Right after the GC runs is a good moment to check if we can
         // merge some adjacent ranges that were made equal by the removal of some
         // tags (this does not necessarily mean that they have identical internal representations,
@@ -1515,9 +1865,70 @@
         </span><span class="self">self</span>.rperms.merge_adjacent_thorough();
     }
 
+    <span class="doccomment">/// Checks if a node is useless and should be GC'ed.
+    /// A node is useless if it has no children and also the tag is no longer live.
+    </span><span class="kw">fn </span>is_useless(<span class="kw-2">&amp;</span><span class="self">self</span>, idx: UniIndex, live: <span class="kw-2">&amp;</span>FxHashSet&lt;BorTag&gt;) -&gt; bool {
+        <span class="kw">let </span>node = <span class="self">self</span>.nodes.get(idx).unwrap();
+        node.children.is_empty() &amp;&amp; !live.contains(<span class="kw-2">&amp;</span>node.tag)
+    }
+
+    <span class="doccomment">/// Checks whether a node can be replaced by its only child.
+    /// If so, returns the index of said only child.
+    /// If not, returns none.
+    </span><span class="kw">fn </span>can_be_replaced_by_single_child(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        idx: UniIndex,
+        live: <span class="kw-2">&amp;</span>FxHashSet&lt;BorTag&gt;,
+    ) -&gt; <span class="prelude-ty">Option</span>&lt;UniIndex&gt; {
+        <span class="kw">let </span>node = <span class="self">self</span>.nodes.get(idx).unwrap();
+
+        <span class="comment">// We never want to replace the root node, as it is also kept in `root_ptr_tags`.
+        </span><span class="kw">if </span>node.children.len() != <span class="number">1 </span>|| live.contains(<span class="kw-2">&amp;</span>node.tag) || node.parent.is_none() {
+            <span class="kw">return </span><span class="prelude-val">None</span>;
+        }
+        <span class="comment">// Since protected nodes are never GC'd (see `borrow_tracker::FrameExtra::visit_provenance`),
+        // we know that `node` is not protected because otherwise `live` would
+        // have contained `node.tag`.
+        </span><span class="kw">let </span>child_idx = node.children[<span class="number">0</span>];
+        <span class="kw">let </span>child = <span class="self">self</span>.nodes.get(child_idx).unwrap();
+        <span class="comment">// Check that for that one child, `can_be_replaced_by_child` holds for the permission
+        // on all locations.
+        </span><span class="kw">for </span>(<span class="kw">_</span>, data) <span class="kw">in </span><span class="self">self</span>.rperms.iter_all() {
+            <span class="kw">let </span>parent_perm =
+                data.get(idx).map(|x| x.permission).unwrap_or_else(|| node.default_initial_perm);
+            <span class="kw">let </span>child_perm = data
+                .get(child_idx)
+                .map(|x| x.permission)
+                .unwrap_or_else(|| child.default_initial_perm);
+            <span class="kw">if </span>!parent_perm.can_be_replaced_by_child(child_perm) {
+                <span class="kw">return </span><span class="prelude-val">None</span>;
+            }
+        }
+
+        <span class="prelude-val">Some</span>(child_idx)
+    }
+
+    <span class="doccomment">/// Properly removes a node.
+    /// The node to be removed should not otherwise be usable. It also
+    /// should have no children, but this is not checked, so that nodes
+    /// whose children were rotated somewhere else can be deleted without
+    /// having to first modify them to clear that array.
+    </span><span class="kw">fn </span>remove_useless_node(<span class="kw-2">&amp;mut </span><span class="self">self</span>, this: UniIndex) {
+        <span class="comment">// Due to the API of UniMap we must make sure to call
+        // `UniValMap::remove` for the key of this node on *all* maps that used it
+        // (which are `self.nodes` and every range of `self.rperms`)
+        // before we can safely apply `UniKeyMap::remove` to truly remove
+        // this tag from the `tag_mapping`.
+        </span><span class="kw">let </span>node = <span class="self">self</span>.nodes.remove(this).unwrap();
+        <span class="kw">for </span>(_perms_range, perms) <span class="kw">in </span><span class="self">self</span>.rperms.iter_mut_all() {
+            perms.remove(this);
+        }
+        <span class="self">self</span>.tag_mapping.remove(<span class="kw-2">&amp;</span>node.tag);
+    }
+
     <span class="doccomment">/// Traverses the entire tree looking for useless tags.
-    /// Returns true iff the tag it was called on is still live or has live children,
-    /// and removes from the tree all tags that have no live children.
+    /// Removes from the tree all useless child nodes of root.
+    /// It will not delete the root itself.
     ///
     /// NOTE: This leaves in the middle of the tree tags that are unreachable but have
     /// reachable children. There is a potential for compacting the tree by reassigning
@@ -1528,43 +1939,62 @@
     /// `child: Reserved`. This tree can exist. If we blindly delete `parent` and reassign
     /// `child` to be a direct child of `root` then Writes to `child` are now permitted
     /// whereas they were not when `parent` was still there.
-    </span><span class="kw">fn </span>keep_only_needed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, idx: UniIndex, live: <span class="kw-2">&amp;</span>FxHashSet&lt;BorTag&gt;) -&gt; bool {
-        <span class="kw">let </span>node = <span class="self">self</span>.nodes.get(idx).unwrap();
-        <span class="comment">// FIXME: this function does a lot of cloning, a 2-pass approach is possibly
-        // more efficient. It could consist of
-        // 1. traverse the Tree, collect all useless tags in a Vec
-        // 2. traverse the Vec, remove all tags previously selected
-        // Bench it.
-        </span><span class="kw">let </span>children: SmallVec&lt;<span class="kw">_</span>&gt; = node
-            .children
-            .clone()
-            .into_iter()
-            .filter(|child| <span class="self">self</span>.keep_only_needed(<span class="kw-2">*</span>child, live))
-            .collect();
-        <span class="kw">let </span>no_children = children.is_empty();
-        <span class="kw">let </span>node = <span class="self">self</span>.nodes.get_mut(idx).unwrap();
-        node.children = children;
-        <span class="kw">if </span>!live.contains(<span class="kw-2">&amp;</span>node.tag) &amp;&amp; no_children {
-            <span class="comment">// All of the children and this node are unreachable, delete this tag
-            // from the tree (the children have already been deleted by recursive
-            // calls).
-            // Due to the API of UniMap we must absolutely call
-            // `UniValMap::remove` for the key of this tag on *all* maps that used it
-            // (which are `self.nodes` and every range of `self.rperms`)
-            // before we can safely apply `UniValMap::forget` to truly remove
-            // the tag from the mapping.
-            </span><span class="kw">let </span>tag = node.tag;
-            <span class="self">self</span>.nodes.remove(idx);
-            <span class="kw">for </span>(_perms_range, perms) <span class="kw">in </span><span class="self">self</span>.rperms.iter_mut_all() {
-                perms.remove(idx);
+    </span><span class="kw">fn </span>remove_useless_children(<span class="kw-2">&amp;mut </span><span class="self">self</span>, root: UniIndex, live: <span class="kw-2">&amp;</span>FxHashSet&lt;BorTag&gt;) {
+        <span class="comment">// To avoid stack overflows, we roll our own stack.
+        // Each element in the stack consists of the current tag, and the number of the
+        // next child to be processed.
+
+        // The other functions are written using the `TreeVisitorStack`, but that does not work here
+        // since we need to 1) do a post-traversal and 2) remove nodes from the tree.
+        // Since we do a post-traversal (by deleting nodes only after handling all children),
+        // we also need to be a bit smarter than "pop node, push all children."
+        </span><span class="kw">let </span><span class="kw-2">mut </span>stack = <span class="macro">vec!</span>[(root, <span class="number">0</span>)];
+        <span class="kw">while let </span><span class="prelude-val">Some</span>((tag, nth_child)) = stack.last_mut() {
+            <span class="kw">let </span>node = <span class="self">self</span>.nodes.get(<span class="kw-2">*</span>tag).unwrap();
+            <span class="kw">if </span><span class="kw-2">*</span>nth_child &lt; node.children.len() {
+                <span class="comment">// Visit the child by pushing it to the stack.
+                // Also increase `nth_child` so that when we come back to the `tag` node, we
+                // look at the next child.
+                </span><span class="kw">let </span>next_child = node.children[<span class="kw-2">*</span>nth_child];
+                <span class="kw-2">*</span>nth_child += <span class="number">1</span>;
+                stack.push((next_child, <span class="number">0</span>));
+                <span class="kw">continue</span>;
+            } <span class="kw">else </span>{
+                <span class="comment">// We have processed all children of `node`, so now it is time to process `node` itself.
+                // First, get the current children of `node`. To appease the borrow checker,
+                // we have to temporarily move the list out of the node, and then put the
+                // list of remaining children back in.
+                </span><span class="kw">let </span><span class="kw-2">mut </span>children_of_node =
+                    mem::take(<span class="kw-2">&amp;mut </span><span class="self">self</span>.nodes.get_mut(<span class="kw-2">*</span>tag).unwrap().children);
+                <span class="comment">// Remove all useless children.
+                </span>children_of_node.retain_mut(|idx| {
+                    <span class="kw">if </span><span class="self">self</span>.is_useless(<span class="kw-2">*</span>idx, live) {
+                        <span class="comment">// Delete `idx` node everywhere else.
+                        </span><span class="self">self</span>.remove_useless_node(<span class="kw-2">*</span>idx);
+                        <span class="comment">// And delete it from children_of_node.
+                        </span><span class="bool-val">false
+                    </span>} <span class="kw">else </span>{
+                        <span class="kw">if let </span><span class="prelude-val">Some</span>(nextchild) = <span class="self">self</span>.can_be_replaced_by_single_child(<span class="kw-2">*</span>idx, live) {
+                            <span class="comment">// `nextchild` is our grandchild, and will become our direct child.
+                            // Delete the in-between node, `idx`.
+                            </span><span class="self">self</span>.remove_useless_node(<span class="kw-2">*</span>idx);
+                            <span class="comment">// Set the new child's parent.
+                            </span><span class="self">self</span>.nodes.get_mut(nextchild).unwrap().parent = <span class="prelude-val">Some</span>(<span class="kw-2">*</span>tag);
+                            <span class="comment">// Save the new child in children_of_node.
+                            </span><span class="kw-2">*</span>idx = nextchild;
+                        }
+                        <span class="comment">// retain it
+                        </span><span class="bool-val">true
+                    </span>}
+                });
+                <span class="comment">// Put back the now-filtered vector.
+                </span><span class="self">self</span>.nodes.get_mut(<span class="kw-2">*</span>tag).unwrap().children = children_of_node;
+
+                <span class="comment">// We are done, the parent can continue.
+                </span>stack.pop();
+                <span class="kw">continue</span>;
             }
-            <span class="self">self</span>.tag_mapping.remove(<span class="kw-2">&amp;</span>tag);
-            <span class="comment">// The tag has been deleted, inform the caller
-            </span><span class="bool-val">false
-        </span>} <span class="kw">else </span>{
-            <span class="comment">// The tag is still live or has live children, it must be kept
-            </span><span class="bool-val">true
-        </span>}
+        }
     }
 }
 

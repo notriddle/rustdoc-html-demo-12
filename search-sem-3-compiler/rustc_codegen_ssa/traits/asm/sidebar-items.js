@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["GlobalAsmOperandRef","InlineAsmOperandRef"],"trait":["AsmBuilderMethods","AsmMethods"]};
+window.SIDEBAR_ITEMS = {"enum":["GlobalAsmOperandRef","InlineAsmOperandRef"],"trait":["AsmBuilderMethods","AsmCodegenMethods"]};

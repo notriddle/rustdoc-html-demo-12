@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/provenance_gc.rs`."><title>provenance_gc.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/provenance_gc.rs`."><title>provenance_gc.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/</div>provenance_gc.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -227,7 +228,8 @@
 <a href="#227" id="227">227</a>
 <a href="#228" id="228">228</a>
 <a href="#229" id="229">229</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>either::Either;
+<a href="#230" id="230">230</a>
+<a href="#231" id="231">231</a></pre></div><pre class="rust"><code><span class="kw">use </span>either::Either;
 
 <span class="kw">use </span>rustc_data_structures::fx::FxHashSet;
 
@@ -413,13 +415,36 @@
     }
 }
 
+<span class="kw">fn </span>remove_unreachable_tags&lt;<span class="lifetime">'tcx</span>&gt;(this: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;, tags: FxHashSet&lt;BorTag&gt;) {
+    <span class="comment">// Avoid iterating all allocations if there's no borrow tracker anyway.
+    </span><span class="kw">if </span>this.machine.borrow_tracker.is_some() {
+        this.memory.alloc_map().iter(|it| {
+            <span class="kw">for </span>(_id, (_kind, alloc)) <span class="kw">in </span>it {
+                alloc.extra.borrow_tracker.as_ref().unwrap().remove_unreachable_tags(<span class="kw-2">&amp;</span>tags);
+            }
+        });
+    }
+}
+
+<span class="kw">fn </span>remove_unreachable_allocs&lt;<span class="lifetime">'tcx</span>&gt;(this: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;, allocs: FxHashSet&lt;AllocId&gt;) {
+    <span class="kw">let </span>allocs = LiveAllocs { ecx: this, collected: allocs };
+    this.machine.allocation_spans.borrow_mut().retain(|id, <span class="kw">_</span>| allocs.is_live(<span class="kw-2">*</span>id));
+    this.machine.symbolic_alignment.borrow_mut().retain(|id, <span class="kw">_</span>| allocs.is_live(<span class="kw-2">*</span>id));
+    this.machine.alloc_addresses.borrow_mut().remove_unreachable_allocs(<span class="kw-2">&amp;</span>allocs);
+    <span class="kw">if let </span><span class="prelude-val">Some</span>(borrow_tracker) = <span class="kw-2">&amp;</span>this.machine.borrow_tracker {
+        borrow_tracker.borrow_mut().remove_unreachable_allocs(<span class="kw-2">&amp;</span>allocs);
+    }
+    <span class="comment">// Clean up core (non-Miri-specific) state.
+    </span>this.remove_unreachable_allocs(<span class="kw-2">&amp;</span>allocs.collected);
+}
+
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; EvalContextExt&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><span class="kw">crate</span>::MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt; {}
 <span class="kw">pub trait </span>EvalContextExt&lt;<span class="lifetime">'tcx</span>&gt;: MiriInterpCxExt&lt;<span class="lifetime">'tcx</span>&gt; {
     <span class="kw">fn </span>run_provenance_gc(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
-        <span class="comment">// We collect all tags from various parts of the interpreter, but also
-        </span><span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
+        <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span><span class="kw-2">mut </span>tags = FxHashSet::default();
+        <span class="comment">// We collect all tags and AllocId from every part of the interpreter.
+        </span><span class="kw">let </span><span class="kw-2">mut </span>tags = FxHashSet::default();
         <span class="kw">let </span><span class="kw-2">mut </span>alloc_ids = FxHashSet::default();
         this.visit_provenance(<span class="kw-2">&amp;mut </span>|id, tag| {
             <span class="kw">if let </span><span class="prelude-val">Some</span>(id) = id {
@@ -429,31 +454,10 @@
                 tags.insert(tag);
             }
         });
-        <span class="self">self</span>.remove_unreachable_tags(tags);
-        <span class="self">self</span>.remove_unreachable_allocs(alloc_ids);
-    }
 
-    <span class="kw">fn </span>remove_unreachable_tags(<span class="kw-2">&amp;mut </span><span class="self">self</span>, tags: FxHashSet&lt;BorTag&gt;) {
-        <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
-        this.memory.alloc_map().iter(|it| {
-            <span class="kw">for </span>(_id, (_kind, alloc)) <span class="kw">in </span>it {
-                <span class="kw">if let </span><span class="prelude-val">Some</span>(bt) = <span class="kw-2">&amp;</span>alloc.extra.borrow_tracker {
-                    bt.remove_unreachable_tags(<span class="kw-2">&amp;</span>tags);
-                }
-            }
-        });
-    }
-
-    <span class="kw">fn </span>remove_unreachable_allocs(<span class="kw-2">&amp;mut </span><span class="self">self</span>, allocs: FxHashSet&lt;AllocId&gt;) {
-        <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
-        <span class="kw">let </span>allocs = LiveAllocs { ecx: this, collected: allocs };
-        this.machine.allocation_spans.borrow_mut().retain(|id, <span class="kw">_</span>| allocs.is_live(<span class="kw-2">*</span>id));
-        this.machine.symbolic_alignment.borrow_mut().retain(|id, <span class="kw">_</span>| allocs.is_live(<span class="kw-2">*</span>id));
-        this.machine.alloc_addresses.borrow_mut().remove_unreachable_allocs(<span class="kw-2">&amp;</span>allocs);
-        <span class="kw">if let </span><span class="prelude-val">Some</span>(borrow_tracker) = <span class="kw-2">&amp;</span>this.machine.borrow_tracker {
-            borrow_tracker.borrow_mut().remove_unreachable_allocs(<span class="kw-2">&amp;</span>allocs);
-        }
-        this.remove_unreachable_allocs(<span class="kw-2">&amp;</span>allocs.collected);
+        <span class="comment">// Based on this, clean up the interpreter state.
+        </span>remove_unreachable_tags(this, tags);
+        remove_unreachable_allocs(this, alloc_ids);
     }
 }
 </code></pre></div></section></main></body></html>

@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/librustdoc/clean/blanket_impl.rs`."><title>blanket_impl.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustdoc" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/librustdoc/clean/blanket_impl.rs`."><title>blanket_impl.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustdoc" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustdoc/clean/</div>blanket_impl.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -127,14 +128,17 @@
 <a href="#127" id="127">127</a>
 <a href="#128" id="128">128</a>
 <a href="#129" id="129">129</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
+<a href="#130" id="130">130</a>
+<a href="#131" id="131">131</a>
+<a href="#132" id="132">132</a></pre></div><pre class="rust"><code><span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
 <span class="kw">use </span>rustc_infer::infer::{DefineOpaqueTypes, InferOk, TyCtxtInferExt};
 <span class="kw">use </span>rustc_infer::traits;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Upcast};
-<span class="kw">use </span>rustc_span::def_id::DefId;
 <span class="kw">use </span>rustc_span::DUMMY_SP;
+<span class="kw">use </span>rustc_span::def_id::DefId;
 <span class="kw">use </span>rustc_trait_selection::traits::query::evaluate_obligation::InferCtxtExt;
 <span class="kw">use </span>thin_vec::ThinVec;
+<span class="kw">use </span>tracing::{debug, instrument, trace};
 
 <span class="kw">use </span><span class="kw">crate</span>::clean;
 <span class="kw">use </span><span class="kw">crate</span>::clean::{
@@ -153,7 +157,7 @@
     <span class="kw">let </span><span class="kw-2">mut </span>blanket_impls = Vec::new();
     <span class="kw">for </span>trait_def_id <span class="kw">in </span>tcx.all_traits() {
         <span class="kw">if </span>!cx.cache.effective_visibilities.is_reachable(tcx, trait_def_id)
-            || cx.generated_synthetics.get(<span class="kw-2">&amp;</span>(ty.skip_binder(), trait_def_id)).is_some()
+            || cx.generated_synthetics.contains(<span class="kw-2">&amp;</span>(ty.skip_binder(), trait_def_id))
         {
             <span class="kw">continue</span>;
         }
@@ -212,42 +216,44 @@
 
             blanket_impls.push(clean::Item {
                 name: <span class="prelude-val">None</span>,
-                attrs: Default::default(),
                 item_id: clean::ItemId::Blanket { impl_id: impl_def_id, for_: item_def_id },
-                kind: Box::new(clean::ImplItem(Box::new(clean::Impl {
-                    safety: hir::Safety::Safe,
-                    generics: clean_ty_generics(
-                        cx,
-                        tcx.generics_of(impl_def_id),
-                        tcx.explicit_predicates_of(impl_def_id),
-                    ),
-                    <span class="comment">// FIXME(eddyb) compute both `trait_` and `for_` from
-                    // the post-inference `trait_ref`, as it's more accurate.
-                    </span>trait_: <span class="prelude-val">Some</span>(clean_trait_ref_with_constraints(
-                        cx,
-                        ty::Binder::dummy(trait_ref.instantiate_identity()),
-                        ThinVec::new(),
-                    )),
-                    for_: clean_middle_ty(
-                        ty::Binder::dummy(ty.instantiate_identity()),
-                        cx,
-                        <span class="prelude-val">None</span>,
-                        <span class="prelude-val">None</span>,
-                    ),
-                    items: tcx
-                        .associated_items(impl_def_id)
-                        .in_definition_order()
-                        .filter(|item| !item.is_impl_trait_in_trait())
-                        .map(|item| clean_middle_assoc_item(item, cx))
-                        .collect(),
-                    polarity: ty::ImplPolarity::Positive,
-                    kind: clean::ImplKind::Blanket(Box::new(clean_middle_ty(
-                        ty::Binder::dummy(trait_ref.instantiate_identity().self_ty()),
-                        cx,
-                        <span class="prelude-val">None</span>,
-                        <span class="prelude-val">None</span>,
-                    ))),
-                }))),
+                inner: Box::new(clean::ItemInner {
+                    attrs: Default::default(),
+                    kind: clean::ImplItem(Box::new(clean::Impl {
+                        safety: hir::Safety::Safe,
+                        generics: clean_ty_generics(
+                            cx,
+                            tcx.generics_of(impl_def_id),
+                            tcx.explicit_predicates_of(impl_def_id),
+                        ),
+                        <span class="comment">// FIXME(eddyb) compute both `trait_` and `for_` from
+                        // the post-inference `trait_ref`, as it's more accurate.
+                        </span>trait_: <span class="prelude-val">Some</span>(clean_trait_ref_with_constraints(
+                            cx,
+                            ty::Binder::dummy(trait_ref.instantiate_identity()),
+                            ThinVec::new(),
+                        )),
+                        for_: clean_middle_ty(
+                            ty::Binder::dummy(ty.instantiate_identity()),
+                            cx,
+                            <span class="prelude-val">None</span>,
+                            <span class="prelude-val">None</span>,
+                        ),
+                        items: tcx
+                            .associated_items(impl_def_id)
+                            .in_definition_order()
+                            .filter(|item| !item.is_impl_trait_in_trait())
+                            .map(|item| clean_middle_assoc_item(item, cx))
+                            .collect(),
+                        polarity: ty::ImplPolarity::Positive,
+                        kind: clean::ImplKind::Blanket(Box::new(clean_middle_ty(
+                            ty::Binder::dummy(trait_ref.instantiate_identity().self_ty()),
+                            cx,
+                            <span class="prelude-val">None</span>,
+                            <span class="prelude-val">None</span>,
+                        ))),
+                    })),
+                }),
                 cfg: <span class="prelude-val">None</span>,
                 inline_stmt_id: <span class="prelude-val">None</span>,
             });

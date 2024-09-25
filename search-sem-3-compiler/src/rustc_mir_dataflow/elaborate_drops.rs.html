@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_dataflow/src/elaborate_drops.rs`."><title>elaborate_drops.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_dataflow" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_dataflow/src/elaborate_drops.rs`."><title>elaborate_drops.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_dataflow" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_dataflow/</div>elaborate_drops.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -977,14 +978,7 @@
 <a href="#977" id="977">977</a>
 <a href="#978" id="978">978</a>
 <a href="#979" id="979">979</a>
-<a href="#980" id="980">980</a>
-<a href="#981" id="981">981</a>
-<a href="#982" id="982">982</a>
-<a href="#983" id="983">983</a>
-<a href="#984" id="984">984</a>
-<a href="#985" id="985">985</a>
-<a href="#986" id="986">986</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::{fmt, iter};
+<a href="#980" id="980">980</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::{fmt, iter};
 
 <span class="kw">use </span>rustc_hir::lang_items::LangItem;
 <span class="kw">use </span>rustc_index::Idx;
@@ -994,9 +988,9 @@
 <span class="kw">use </span>rustc_middle::traits::Reveal;
 <span class="kw">use </span>rustc_middle::ty::util::IntTypeExt;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, GenericArgsRef, Ty, TyCtxt};
-<span class="kw">use </span>rustc_span::source_map::Spanned;
 <span class="kw">use </span>rustc_span::DUMMY_SP;
-<span class="kw">use </span>rustc_target::abi::{FieldIdx, VariantIdx, FIRST_VARIANT};
+<span class="kw">use </span>rustc_span::source_map::Spanned;
+<span class="kw">use </span>rustc_target::abi::{FIRST_VARIANT, FieldIdx, VariantIdx};
 <span class="kw">use </span>tracing::{debug, instrument};
 
 <span class="doccomment">/// The value of an inserted drop flag.
@@ -1141,11 +1135,11 @@
 }
 
 <span class="attr">#[derive(Debug)]
-</span><span class="kw">struct </span>DropCtxt&lt;<span class="lifetime">'l</span>, <span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>, D&gt;
+</span><span class="kw">struct </span>DropCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>, D&gt;
 <span class="kw">where
     </span>D: DropElaborator&lt;<span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>&gt;,
 {
-    elaborator: <span class="kw-2">&amp;</span><span class="lifetime">'l </span><span class="kw-2">mut </span>D,
+    elaborator: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>D,
 
     source_info: SourceInfo,
 
@@ -1178,7 +1172,7 @@
     DropCtxt { elaborator, source_info, place, path, succ, unwind }.elaborate_drop(bb)
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'l</span>, <span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>, D&gt; DropCtxt&lt;<span class="lifetime">'l</span>, <span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>, D&gt;
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>, D&gt; DropCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>, D&gt;
 <span class="kw">where
     </span>D: DropElaborator&lt;<span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>&gt;,
     <span class="lifetime">'tcx</span>: <span class="lifetime">'b</span>,
@@ -1219,15 +1213,12 @@
                     .patch_terminator(bb, TerminatorKind::Goto { target: <span class="self">self</span>.succ });
             }
             DropStyle::Static =&gt; {
-                <span class="self">self</span>.elaborator.patch().patch_terminator(
-                    bb,
-                    TerminatorKind::Drop {
-                        place: <span class="self">self</span>.place,
-                        target: <span class="self">self</span>.succ,
-                        unwind: <span class="self">self</span>.unwind.into_action(),
-                        replace: <span class="bool-val">false</span>,
-                    },
-                );
+                <span class="self">self</span>.elaborator.patch().patch_terminator(bb, TerminatorKind::Drop {
+                    place: <span class="self">self</span>.place,
+                    target: <span class="self">self</span>.succ,
+                    unwind: <span class="self">self</span>.unwind.into_action(),
+                    replace: <span class="bool-val">false</span>,
+                });
             }
             DropStyle::Conditional =&gt; {
                 <span class="kw">let </span>drop_bb = <span class="self">self</span>.complete_drop(<span class="self">self</span>.succ, <span class="self">self</span>.unwind);
@@ -1689,7 +1680,7 @@
             statements: <span class="macro">vec!</span>[
                 <span class="self">self</span>.assign(
                     ptr,
-                    Rvalue::AddressOf(Mutability::Mut, tcx.mk_place_index(<span class="self">self</span>.place, cur)),
+                    Rvalue::RawPtr(Mutability::Mut, tcx.mk_place_index(<span class="self">self</span>.place, cur)),
                 ),
                 <span class="self">self</span>.assign(
                     cur.into(),
@@ -1718,15 +1709,12 @@
         };
         <span class="kw">let </span>loop_block = <span class="self">self</span>.elaborator.patch().new_block(loop_block);
 
-        <span class="self">self</span>.elaborator.patch().patch_terminator(
-            drop_block,
-            TerminatorKind::Drop {
-                place: tcx.mk_place_deref(ptr),
-                target: loop_block,
-                unwind: unwind.into_action(),
-                replace: <span class="bool-val">false</span>,
-            },
-        );
+        <span class="self">self</span>.elaborator.patch().patch_terminator(drop_block, TerminatorKind::Drop {
+            place: tcx.mk_place_deref(ptr),
+            target: loop_block,
+            unwind: unwind.into_action(),
+            replace: <span class="bool-val">false</span>,
+        });
 
         loop_block
     }

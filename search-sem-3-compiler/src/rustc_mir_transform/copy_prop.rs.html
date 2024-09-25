@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/copy_prop.rs`."><title>copy_prop.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/copy_prop.rs`."><title>copy_prop.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>copy_prop.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -167,13 +168,12 @@
 <a href="#167" id="167">167</a>
 <a href="#168" id="168">168</a>
 <a href="#169" id="169">169</a>
-<a href="#170" id="170">170</a>
-<a href="#171" id="171">171</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_index::bit_set::BitSet;
-<span class="kw">use </span>rustc_index::IndexSlice;
+<a href="#170" id="170">170</a></pre></div><pre class="rust"><code><span class="kw">use </span>rustc_index::IndexSlice;
+<span class="kw">use </span>rustc_index::bit_set::BitSet;
 <span class="kw">use </span>rustc_middle::mir::visit::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::ty::TyCtxt;
+<span class="kw">use </span>tracing::{debug, instrument};
 
 <span class="kw">use </span><span class="kw">crate</span>::ssa::SsaLocals;
 
@@ -187,9 +187,9 @@
 /// where each of the locals is only assigned once.
 ///
 /// We want to replace all those locals by `_a`, either copied or moved.
-</span><span class="kw">pub struct </span>CopyProp;
+</span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>CopyProp;
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>CopyProp {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">crate</span>::MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>CopyProp {
     <span class="kw">fn </span>is_enabled(<span class="kw-2">&amp;</span><span class="self">self</span>, sess: <span class="kw-2">&amp;</span>rustc_session::Session) -&gt; bool {
         sess.mir_opt_level() &gt;= <span class="number">1
     </span>}
@@ -197,37 +197,34 @@
     <span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>, tcx, body))]
     </span><span class="kw">fn </span>run_pass(<span class="kw-2">&amp;</span><span class="self">self</span>, tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;mut </span>Body&lt;<span class="lifetime">'tcx</span>&gt;) {
         <span class="macro">debug!</span>(def_id = <span class="question-mark">?</span>body.source.def_id());
-        propagate_ssa(tcx, body);
-    }
-}
 
-<span class="kw">fn </span>propagate_ssa&lt;<span class="lifetime">'tcx</span>&gt;(tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;mut </span>Body&lt;<span class="lifetime">'tcx</span>&gt;) {
-    <span class="kw">let </span>param_env = tcx.param_env_reveal_all_normalized(body.source.def_id());
-    <span class="kw">let </span>ssa = SsaLocals::new(tcx, body, param_env);
+        <span class="kw">let </span>param_env = tcx.param_env_reveal_all_normalized(body.source.def_id());
+        <span class="kw">let </span>ssa = SsaLocals::new(tcx, body, param_env);
 
-    <span class="kw">let </span>fully_moved = fully_moved_locals(<span class="kw-2">&amp;</span>ssa, body);
-    <span class="macro">debug!</span>(<span class="question-mark">?</span>fully_moved);
+        <span class="kw">let </span>fully_moved = fully_moved_locals(<span class="kw-2">&amp;</span>ssa, body);
+        <span class="macro">debug!</span>(<span class="question-mark">?</span>fully_moved);
 
-    <span class="kw">let </span><span class="kw-2">mut </span>storage_to_remove = BitSet::new_empty(fully_moved.domain_size());
-    <span class="kw">for </span>(local, <span class="kw-2">&amp;</span>head) <span class="kw">in </span>ssa.copy_classes().iter_enumerated() {
-        <span class="kw">if </span>local != head {
-            storage_to_remove.insert(head);
+        <span class="kw">let </span><span class="kw-2">mut </span>storage_to_remove = BitSet::new_empty(fully_moved.domain_size());
+        <span class="kw">for </span>(local, <span class="kw-2">&amp;</span>head) <span class="kw">in </span>ssa.copy_classes().iter_enumerated() {
+            <span class="kw">if </span>local != head {
+                storage_to_remove.insert(head);
+            }
         }
-    }
 
-    <span class="kw">let </span>any_replacement = ssa.copy_classes().iter_enumerated().any(|(l, <span class="kw-2">&amp;</span>h)| l != h);
+        <span class="kw">let </span>any_replacement = ssa.copy_classes().iter_enumerated().any(|(l, <span class="kw-2">&amp;</span>h)| l != h);
 
-    Replacer {
-        tcx,
-        copy_classes: ssa.copy_classes(),
-        fully_moved,
-        borrowed_locals: ssa.borrowed_locals(),
-        storage_to_remove,
-    }
-    .visit_body_preserves_cfg(body);
+        Replacer {
+            tcx,
+            copy_classes: ssa.copy_classes(),
+            fully_moved,
+            borrowed_locals: ssa.borrowed_locals(),
+            storage_to_remove,
+        }
+        .visit_body_preserves_cfg(body);
 
-    <span class="kw">if </span>any_replacement {
-        <span class="kw">crate</span>::simplify::remove_unused_definitions(body);
+        <span class="kw">if </span>any_replacement {
+            <span class="kw">crate</span>::simplify::remove_unused_definitions(body);
+        }
     }
 }
 
@@ -310,7 +307,8 @@
 
     <span class="kw">fn </span>visit_operand(<span class="kw-2">&amp;mut </span><span class="self">self</span>, operand: <span class="kw-2">&amp;mut </span>Operand&lt;<span class="lifetime">'tcx</span>&gt;, loc: Location) {
         <span class="kw">if let </span>Operand::Move(place) = <span class="kw-2">*</span>operand
-            <span class="comment">// A move out of a projection of a copy is equivalent to a copy of the original projection.
+            <span class="comment">// A move out of a projection of a copy is equivalent to a copy of the original
+            // projection.
             </span>&amp;&amp; !place.is_indirect_first_projection()
             &amp;&amp; !<span class="self">self</span>.fully_moved.contains(place.local)
         {

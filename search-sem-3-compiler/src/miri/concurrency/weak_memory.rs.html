@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/concurrency/weak_memory.rs`."><title>weak_memory.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/concurrency/weak_memory.rs`."><title>weak_memory.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/concurrency/</div>weak_memory.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -586,20 +587,7 @@
 <a href="#586" id="586">586</a>
 <a href="#587" id="587">587</a>
 <a href="#588" id="588">588</a>
-<a href="#589" id="589">589</a>
-<a href="#590" id="590">590</a>
-<a href="#591" id="591">591</a>
-<a href="#592" id="592">592</a>
-<a href="#593" id="593">593</a>
-<a href="#594" id="594">594</a>
-<a href="#595" id="595">595</a>
-<a href="#596" id="596">596</a>
-<a href="#597" id="597">597</a>
-<a href="#598" id="598">598</a>
-<a href="#599" id="599">599</a>
-<a href="#600" id="600">600</a>
-<a href="#601" id="601">601</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! Implementation of C++11-consistent weak memory emulation using store buffers
+<a href="#589" id="589">589</a></pre></div><pre class="rust"><code><span class="doccomment">//! Implementation of C++11-consistent weak memory emulation using store buffers
 //! based on Dynamic Race Detection for C++ ("the paper"):
 //! &lt;https://www.doc.ic.ac.uk/~afd/homepages/papers/pdfs/2017/POPL.pdf&gt;
 //!
@@ -640,11 +628,10 @@
 //! to attach store buffers to atomic objects. However, Rust follows LLVM in that it only has
 //! 'atomic accesses'. Therefore Miri cannot know when and where atomic 'objects' are being
 //! created or destroyed, to manage its store buffers. Instead, we hence lazily create an
-//! atomic object on the first atomic access to a given region, and we destroy that object
-//! on the next non-atomic or imperfectly overlapping atomic access to that region.
+//! atomic object on the first atomic write to a given region, and we destroy that object
+//! on the next non-atomic or imperfectly overlapping atomic write to that region.
 //! These lazy (de)allocations happen in memory_accessed() on non-atomic accesses, and
-//! get_or_create_store_buffer() on atomic accesses. This mostly works well, but it does
-//! lead to some issues (&lt;https://github.com/rust-lang/miri/issues/2164&gt;).
+//! get_or_create_store_buffer_mut() on atomic writes.
 //!
 //! One consequence of this difference is that safe/sound Rust allows for more operations on atomic locations
 //! than the C++20 atomic API was intended to allow, such as non-atomically accessing
@@ -745,11 +732,9 @@
 
     <span class="doccomment">/// The timestamp of the storing thread when it performed the store
     </span>timestamp: VTimestamp,
-    <span class="doccomment">/// The value of this store
-    </span><span class="comment">// FIXME: this means the store must be fully initialized;
-    // we will have to change this if we want to support atomics on
-    // (partially) uninitialized data.
-    </span>val: Scalar,
+    <span class="doccomment">/// The value of this store. `None` means uninitialized.
+    </span><span class="comment">// FIXME: Currently, we cannot represent partial initialization.
+    </span>val: <span class="prelude-ty">Option</span>&lt;Scalar&gt;,
 
     <span class="doccomment">/// Metadata about loads from this store element,
     /// behind a RefCell to keep load op take &amp;self
@@ -771,7 +756,7 @@
 
     <span class="doccomment">/// When a non-atomic access happens on a location that has been atomically accessed
     /// before without data race, we can determine that the non-atomic access fully happens
-    /// after all the prior atomic accesses so the location no longer needs to exhibit
+    /// after all the prior atomic writes so the location no longer needs to exhibit
     /// any weak memory behaviours until further atomic accesses.
     </span><span class="kw">pub fn </span>memory_accessed(<span class="kw-2">&amp;</span><span class="self">self</span>, range: AllocRange, global: <span class="kw-2">&amp;</span>DataRaceState) {
         <span class="kw">if </span>!global.ongoing_action_data_race_free() {
@@ -793,37 +778,29 @@
         }
     }
 
-    <span class="doccomment">/// Gets a store buffer associated with an atomic object in this allocation,
-    /// or creates one with the specified initial value if no atomic object exists yet.
-    </span><span class="kw">fn </span>get_or_create_store_buffer&lt;<span class="lifetime">'tcx</span>&gt;(
+    <span class="doccomment">/// Gets a store buffer associated with an atomic object in this allocation.
+    /// Returns `None` if there is no store buffer.
+    </span><span class="kw">fn </span>get_store_buffer&lt;<span class="lifetime">'tcx</span>&gt;(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         range: AllocRange,
-        init: Scalar,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Ref&lt;<span class="lifetime">'_</span>, StoreBuffer&gt;&gt; {
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;Ref&lt;<span class="lifetime">'_</span>, StoreBuffer&gt;&gt;&gt; {
         <span class="kw">let </span>access_type = <span class="self">self</span>.store_buffers.borrow().access_type(range);
         <span class="kw">let </span>pos = <span class="kw">match </span>access_type {
             AccessType::PerfectlyOverlapping(pos) =&gt; pos,
-            AccessType::Empty(pos) =&gt; {
-                <span class="kw">let </span><span class="kw-2">mut </span>buffers = <span class="self">self</span>.store_buffers.borrow_mut();
-                buffers.insert_at_pos(pos, range, StoreBuffer::new(init));
-                pos
-            }
-            AccessType::ImperfectlyOverlapping(pos_range) =&gt; {
-                <span class="comment">// Once we reach here we would've already checked that this access is not racy.
-                </span><span class="kw">let </span><span class="kw-2">mut </span>buffers = <span class="self">self</span>.store_buffers.borrow_mut();
-                buffers.remove_pos_range(pos_range.clone());
-                buffers.insert_at_pos(pos_range.start, range, StoreBuffer::new(init));
-                pos_range.start
-            }
+            <span class="comment">// If there is nothing here yet, that means there wasn't an atomic write yet so
+            // we can't return anything outdated.
+            </span><span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>),
         };
-        <span class="prelude-val">Ok</span>(Ref::map(<span class="self">self</span>.store_buffers.borrow(), |buffer| <span class="kw-2">&amp;</span>buffer[pos]))
+        <span class="kw">let </span>store_buffer = Ref::map(<span class="self">self</span>.store_buffers.borrow(), |buffer| <span class="kw-2">&amp;</span>buffer[pos]);
+        <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(store_buffer))
     }
 
-    <span class="doccomment">/// Gets a mutable store buffer associated with an atomic object in this allocation
+    <span class="doccomment">/// Gets a mutable store buffer associated with an atomic object in this allocation,
+    /// or creates one with the specified initial value if no atomic object exists yet.
     </span><span class="kw">fn </span>get_or_create_store_buffer_mut&lt;<span class="lifetime">'tcx</span>&gt;(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         range: AllocRange,
-        init: Scalar,
+        init: <span class="prelude-ty">Option</span>&lt;Scalar&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="kw-2">&amp;mut </span>StoreBuffer&gt; {
         <span class="kw">let </span>buffers = <span class="self">self</span>.store_buffers.get_mut();
         <span class="kw">let </span>access_type = buffers.access_type(range);
@@ -845,10 +822,8 @@
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; StoreBuffer {
-    <span class="kw">fn </span>new(init: Scalar) -&gt; <span class="self">Self </span>{
+    <span class="kw">fn </span>new(init: <span class="prelude-ty">Option</span>&lt;Scalar&gt;) -&gt; <span class="self">Self </span>{
         <span class="kw">let </span><span class="kw-2">mut </span>buffer = VecDeque::new();
-        buffer.reserve(STORE_BUFFER_LIMIT);
-        <span class="kw">let </span><span class="kw-2">mut </span>ret = <span class="self">Self </span>{ buffer };
         <span class="kw">let </span>store_elem = StoreElement {
             <span class="comment">// The thread index and timestamp of the initialisation write
             // are never meaningfully used, so it's fine to leave them as 0
@@ -858,11 +833,11 @@
             is_seqcst: <span class="bool-val">false</span>,
             load_info: RefCell::new(LoadInfo::default()),
         };
-        ret.buffer.push_back(store_elem);
-        ret
+        buffer.push_back(store_elem);
+        <span class="self">Self </span>{ buffer }
     }
 
-    <span class="doccomment">/// Reads from the last store in modification order
+    <span class="doccomment">/// Reads from the last store in modification order, if any.
     </span><span class="kw">fn </span>read_from_last_store(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         global: <span class="kw-2">&amp;</span>DataRaceState,
@@ -883,7 +858,7 @@
         is_seqcst: bool,
         rng: <span class="kw-2">&amp;mut </span>(<span class="kw">impl </span>rand::Rng + <span class="question-mark">?</span>Sized),
         validate: <span class="kw">impl </span>FnOnce() -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, (Scalar, LoadRecency)&gt; {
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, (<span class="prelude-ty">Option</span>&lt;Scalar&gt;, LoadRecency)&gt; {
         <span class="comment">// Having a live borrow to store_buffer while calling validate_atomic_load is fine
         // because the race detector doesn't touch store_buffer
 
@@ -1020,15 +995,15 @@
             <span class="comment">// In the language provided in the paper, an atomic store takes the value from a
             // non-atomic memory location.
             // But we already have the immediate value here so we don't need to do the memory
-            // access
-            </span>val,
+            // access.
+            </span>val: <span class="prelude-val">Some</span>(val),
             is_seqcst,
             load_info: RefCell::new(LoadInfo::default()),
         };
-        <span class="self">self</span>.buffer.push_back(store_elem);
-        <span class="kw">if </span><span class="self">self</span>.buffer.len() &gt; STORE_BUFFER_LIMIT {
+        <span class="kw">if </span><span class="self">self</span>.buffer.len() &gt;= STORE_BUFFER_LIMIT {
             <span class="self">self</span>.buffer.pop_front();
         }
+        <span class="self">self</span>.buffer.push_back(store_elem);
         <span class="kw">if </span>is_seqcst {
             <span class="comment">// Every store that happens before this needs to be marked as SC
             // so that in a later SC load, only the last SC store (i.e. this one) or stores that
@@ -1051,7 +1026,12 @@
     /// buffer regardless of subsequent loads by the same thread; if the earliest load of another
     /// thread doesn't happen before the current one, then no subsequent load by the other thread
     /// can happen before the current one.
-    </span><span class="kw">fn </span>load_impl(<span class="kw-2">&amp;</span><span class="self">self</span>, index: VectorIdx, clocks: <span class="kw-2">&amp;</span>ThreadClockSet, is_seqcst: bool) -&gt; Scalar {
+    </span><span class="kw">fn </span>load_impl(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        index: VectorIdx,
+        clocks: <span class="kw-2">&amp;</span>ThreadClockSet,
+        is_seqcst: bool,
+    ) -&gt; <span class="prelude-ty">Option</span>&lt;Scalar&gt; {
         <span class="kw">let </span><span class="kw-2">mut </span>load_info = <span class="self">self</span>.load_info.borrow_mut();
         load_info.sc_loaded |= is_seqcst;
         <span class="kw">let _ </span>= load_info.timestamps.try_insert(index, clocks.clock[index]);
@@ -1080,7 +1060,7 @@
                 global.sc_write(threads);
             }
             <span class="kw">let </span>range = alloc_range(base_offset, place.layout.size);
-            <span class="kw">let </span>buffer = alloc_buffers.get_or_create_store_buffer_mut(range, init)<span class="question-mark">?</span>;
+            <span class="kw">let </span>buffer = alloc_buffers.get_or_create_store_buffer_mut(range, <span class="prelude-val">Some</span>(init))<span class="question-mark">?</span>;
             buffer.read_from_last_store(global, threads, atomic == AtomicRwOrd::SeqCst);
             buffer.buffered_write(new_val, global, threads, atomic == AtomicRwOrd::SeqCst)<span class="question-mark">?</span>;
         }
@@ -1093,47 +1073,55 @@
         atomic: AtomicReadOrd,
         latest_in_mo: Scalar,
         validate: <span class="kw">impl </span>FnOnce() -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;Scalar&gt;&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_ref();
-        <span class="kw">if let </span><span class="prelude-val">Some</span>(global) = <span class="kw-2">&amp;</span>this.machine.data_race {
-            <span class="kw">let </span>(alloc_id, base_offset, ..) = this.ptr_get_alloc_id(place.ptr(), <span class="number">0</span>)<span class="question-mark">?</span>;
-            <span class="kw">if let </span><span class="prelude-val">Some</span>(alloc_buffers) = this.get_alloc_extra(alloc_id)<span class="question-mark">?</span>.weak_memory.as_ref() {
-                <span class="kw">if </span>atomic == AtomicReadOrd::SeqCst {
-                    global.sc_read(<span class="kw-2">&amp;</span>this.machine.threads);
-                }
-                <span class="kw">let </span><span class="kw-2">mut </span>rng = this.machine.rng.borrow_mut();
-                <span class="kw">let </span>buffer = alloc_buffers.get_or_create_store_buffer(
-                    alloc_range(base_offset, place.layout.size),
-                    latest_in_mo,
-                )<span class="question-mark">?</span>;
-                <span class="kw">let </span>(loaded, recency) = buffer.buffered_read(
-                    global,
-                    <span class="kw-2">&amp;</span>this.machine.threads,
-                    atomic == AtomicReadOrd::SeqCst,
-                    <span class="kw-2">&amp;mut *</span>rng,
-                    validate,
-                )<span class="question-mark">?</span>;
-                <span class="kw">if </span>global.track_outdated_loads &amp;&amp; recency == LoadRecency::Outdated {
-                    this.emit_diagnostic(NonHaltingDiagnostic::WeakMemoryOutdatedLoad {
-                        ptr: place.ptr(),
-                    });
-                }
+        <span class="lifetime">'fallback</span>: {
+            <span class="kw">if let </span><span class="prelude-val">Some</span>(global) = <span class="kw-2">&amp;</span>this.machine.data_race {
+                <span class="kw">let </span>(alloc_id, base_offset, ..) = this.ptr_get_alloc_id(place.ptr(), <span class="number">0</span>)<span class="question-mark">?</span>;
+                <span class="kw">if let </span><span class="prelude-val">Some</span>(alloc_buffers) = this.get_alloc_extra(alloc_id)<span class="question-mark">?</span>.weak_memory.as_ref() {
+                    <span class="kw">if </span>atomic == AtomicReadOrd::SeqCst {
+                        global.sc_read(<span class="kw-2">&amp;</span>this.machine.threads);
+                    }
+                    <span class="kw">let </span><span class="kw-2">mut </span>rng = this.machine.rng.borrow_mut();
+                    <span class="kw">let </span><span class="prelude-val">Some</span>(buffer) = alloc_buffers
+                        .get_store_buffer(alloc_range(base_offset, place.layout.size))<span class="question-mark">?
+                    </span><span class="kw">else </span>{
+                        <span class="comment">// No old writes available, fall back to base case.
+                        </span><span class="kw">break </span><span class="lifetime">'fallback</span>;
+                    };
+                    <span class="kw">let </span>(loaded, recency) = buffer.buffered_read(
+                        global,
+                        <span class="kw-2">&amp;</span>this.machine.threads,
+                        atomic == AtomicReadOrd::SeqCst,
+                        <span class="kw-2">&amp;mut *</span>rng,
+                        validate,
+                    )<span class="question-mark">?</span>;
+                    <span class="kw">if </span>global.track_outdated_loads &amp;&amp; recency == LoadRecency::Outdated {
+                        this.emit_diagnostic(NonHaltingDiagnostic::WeakMemoryOutdatedLoad {
+                            ptr: place.ptr(),
+                        });
+                    }
 
-                <span class="kw">return </span><span class="prelude-val">Ok</span>(loaded);
+                    <span class="kw">return </span><span class="prelude-val">Ok</span>(loaded);
+                }
             }
         }
 
         <span class="comment">// Race detector or weak memory disabled, simply read the latest value
         </span>validate()<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(latest_in_mo)
+        <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(latest_in_mo))
     }
 
-    <span class="kw">fn </span>buffered_atomic_write(
+    <span class="doccomment">/// Add the given write to the store buffer. (Does not change machine memory.)
+    ///
+    /// `init` says with which value to initialize the store buffer in case there wasn't a store
+    /// buffer for this memory range before.
+    </span><span class="kw">fn </span>buffered_atomic_write(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         val: Scalar,
         dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
         atomic: AtomicWriteOrd,
-        init: Scalar,
+        init: <span class="prelude-ty">Option</span>&lt;Scalar&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
         <span class="kw">let </span>(alloc_id, base_offset, ..) = this.ptr_get_alloc_id(dest.ptr(), <span class="number">0</span>)<span class="question-mark">?</span>;
@@ -1146,23 +1134,8 @@
                 global.sc_write(threads);
             }
 
-            <span class="comment">// UGLY HACK: in write_scalar_atomic() we don't know the value before our write,
-            // so init == val always. If the buffer is fresh then we would've duplicated an entry,
-            // so we need to remove it.
-            // See https://github.com/rust-lang/miri/issues/2164
-            </span><span class="kw">let </span>was_empty = <span class="macro">matches!</span>(
-                alloc_buffers
-                    .store_buffers
-                    .borrow()
-                    .access_type(alloc_range(base_offset, dest.layout.size)),
-                AccessType::Empty(<span class="kw">_</span>)
-            );
             <span class="kw">let </span>buffer = alloc_buffers
                 .get_or_create_store_buffer_mut(alloc_range(base_offset, dest.layout.size), init)<span class="question-mark">?</span>;
-            <span class="kw">if </span>was_empty {
-                buffer.buffer.pop_front();
-            }
-
             buffer.buffered_write(val, global, threads, atomic == AtomicWriteOrd::SeqCst)<span class="question-mark">?</span>;
         }
 
@@ -1177,7 +1150,6 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         place: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
         atomic: AtomicReadOrd,
-        init: Scalar,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_ref();
 
@@ -1188,8 +1160,12 @@
             <span class="kw">let </span>size = place.layout.size;
             <span class="kw">let </span>(alloc_id, base_offset, ..) = this.ptr_get_alloc_id(place.ptr(), <span class="number">0</span>)<span class="question-mark">?</span>;
             <span class="kw">if let </span><span class="prelude-val">Some</span>(alloc_buffers) = this.get_alloc_extra(alloc_id)<span class="question-mark">?</span>.weak_memory.as_ref() {
-                <span class="kw">let </span>buffer = alloc_buffers
-                    .get_or_create_store_buffer(alloc_range(base_offset, size), init)<span class="question-mark">?</span>;
+                <span class="kw">let </span><span class="prelude-val">Some</span>(buffer) =
+                    alloc_buffers.get_store_buffer(alloc_range(base_offset, size))<span class="question-mark">?
+                </span><span class="kw">else </span>{
+                    <span class="comment">// No store buffer, nothing to do.
+                    </span><span class="kw">return </span><span class="prelude-val">Ok</span>(());
+                };
                 buffer.read_from_last_store(
                     global,
                     <span class="kw-2">&amp;</span>this.machine.threads,

@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/place.rs`."><title>place.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/place.rs`."><title>place.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_const_eval/interpret/</div>place.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1047,7 +1048,21 @@
 <a href="#1047" id="1047">1047</a>
 <a href="#1048" id="1048">1048</a>
 <a href="#1049" id="1049">1049</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! Computations on places -- field projections, going from mir::Place, and writing
+<a href="#1050" id="1050">1050</a>
+<a href="#1051" id="1051">1051</a>
+<a href="#1052" id="1052">1052</a>
+<a href="#1053" id="1053">1053</a>
+<a href="#1054" id="1054">1054</a>
+<a href="#1055" id="1055">1055</a>
+<a href="#1056" id="1056">1056</a>
+<a href="#1057" id="1057">1057</a>
+<a href="#1058" id="1058">1058</a>
+<a href="#1059" id="1059">1059</a>
+<a href="#1060" id="1060">1060</a>
+<a href="#1061" id="1061">1061</a>
+<a href="#1062" id="1062">1062</a>
+<a href="#1063" id="1063">1063</a>
+<a href="#1064" id="1064">1064</a></pre></div><pre class="rust"><code><span class="doccomment">//! Computations on places -- field projections, going from mir::Place, and writing
 //! into a place.
 //! All high-level functions to write to memory work on places as destinations.
 
@@ -1055,16 +1070,16 @@
 
 <span class="kw">use </span>either::{Either, Left, Right};
 <span class="kw">use </span>rustc_ast::Mutability;
-<span class="kw">use </span>rustc_middle::ty::layout::{LayoutOf, TyAndLayout};
 <span class="kw">use </span>rustc_middle::ty::Ty;
+<span class="kw">use </span>rustc_middle::ty::layout::{LayoutOf, TyAndLayout};
 <span class="kw">use </span>rustc_middle::{bug, mir, span_bug};
 <span class="kw">use </span>rustc_target::abi::{Abi, Align, HasDataLayout, Size};
 <span class="kw">use </span>tracing::{instrument, trace};
 
 <span class="kw">use super</span>::{
-    alloc_range, mir_assign_valid_types, AllocRef, AllocRefMut, CheckAlignMsg, CtfeProvenance,
-    ImmTy, Immediate, InterpCx, InterpResult, Machine, MemoryKind, Misalignment, OffsetMode, OpTy,
-    Operand, Pointer, Projectable, Provenance, Readable, Scalar,
+    AllocRef, AllocRefMut, CheckAlignMsg, CtfeProvenance, ImmTy, Immediate, InterpCx, InterpResult,
+    Machine, MemoryKind, Misalignment, OffsetMode, OpTy, Operand, Pointer, Projectable, Provenance,
+    Scalar, alloc_range, mir_assign_valid_types,
 };
 
 <span class="attr">#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
@@ -1110,13 +1125,13 @@
 
 <span class="kw">impl</span>&lt;Prov: Provenance&gt; MemPlace&lt;Prov&gt; {
     <span class="doccomment">/// Adjust the provenance of the main pointer (metadata is unaffected).
-    </span><span class="kw">pub fn </span>map_provenance(<span class="self">self</span>, f: <span class="kw">impl </span>FnOnce(Prov) -&gt; Prov) -&gt; <span class="self">Self </span>{
+    </span><span class="kw">fn </span>map_provenance(<span class="self">self</span>, f: <span class="kw">impl </span>FnOnce(Prov) -&gt; Prov) -&gt; <span class="self">Self </span>{
         MemPlace { ptr: <span class="self">self</span>.ptr.map_provenance(|p| p.map(f)), ..<span class="self">self </span>}
     }
 
     <span class="doccomment">/// Turn a mplace into a (thin or wide) pointer, as a reference, pointing to the same space.
     </span><span class="attr">#[inline]
-    </span><span class="kw">pub fn </span>to_ref(<span class="self">self</span>, cx: <span class="kw-2">&amp;</span><span class="kw">impl </span>HasDataLayout) -&gt; Immediate&lt;Prov&gt; {
+    </span><span class="kw">fn </span>to_ref(<span class="self">self</span>, cx: <span class="kw-2">&amp;</span><span class="kw">impl </span>HasDataLayout) -&gt; Immediate&lt;Prov&gt; {
         Immediate::new_pointer_with_meta(<span class="self">self</span>.ptr, <span class="self">self</span>.meta, cx)
     }
 
@@ -1215,7 +1230,8 @@
         <span class="prelude-val">Ok</span>(MPlaceTy { mplace: <span class="self">self</span>.mplace.offset_with_meta_(offset, mode, meta, ecx)<span class="question-mark">?</span>, layout })
     }
 
-    <span class="kw">fn </span>to_op&lt;M: Machine&lt;<span class="lifetime">'tcx</span>, Provenance = Prov&gt;&gt;(
+    <span class="attr">#[inline(always)]
+    </span><span class="kw">fn </span>to_op&lt;M: Machine&lt;<span class="lifetime">'tcx</span>, Provenance = Prov&gt;&gt;(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         _ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="lifetime">'tcx</span>, M&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, OpTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt; {
@@ -1229,13 +1245,14 @@
     </span>Ptr(MemPlace&lt;Prov&gt;),
 
     <span class="doccomment">/// To support alloc-free locals, we are able to write directly to a local. The offset indicates
-    /// where in the local this place is located; if it is `None`, no projection has been applied.
+    /// where in the local this place is located; if it is `None`, no projection has been applied
+    /// and the type of the place is exactly the type of the local.
     /// Such projections are meaningful even if the offset is 0, since they can change layouts.
     /// (Without that optimization, we'd just always be a `MemPlace`.)
     /// `Local` places always refer to the current stack frame, so they are unstable under
     /// function calls/returns and switching betweens stacks of different threads!
     /// We carry around the address of the `locals` buffer of the correct stack frame as a sanity
-    /// chec to be able to catch some cases of using a dangling `Place`.
+    /// check to be able to catch some cases of using a dangling `Place`.
     ///
     /// This variant shall not be used for unsized types -- those must always live in memory.
     </span>Local { local: mir::Local, offset: <span class="prelude-ty">Option</span>&lt;Size&gt;, locals_addr: usize },
@@ -1280,10 +1297,12 @@
     </span><span class="attr">#[inline(always)]
     </span><span class="kw">pub fn </span>as_mplace_or_local(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-    ) -&gt; Either&lt;MPlaceTy&lt;<span class="lifetime">'tcx</span>, Prov&gt;, (mir::Local, <span class="prelude-ty">Option</span>&lt;Size&gt;, usize)&gt; {
+    ) -&gt; Either&lt;MPlaceTy&lt;<span class="lifetime">'tcx</span>, Prov&gt;, (mir::Local, <span class="prelude-ty">Option</span>&lt;Size&gt;, usize, TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;)&gt; {
         <span class="kw">match </span><span class="self">self</span>.place {
             Place::Ptr(mplace) =&gt; Left(MPlaceTy { mplace, layout: <span class="self">self</span>.layout }),
-            Place::Local { local, offset, locals_addr } =&gt; Right((local, offset, locals_addr)),
+            Place::Local { local, offset, locals_addr } =&gt; {
+                Right((local, offset, locals_addr, <span class="self">self</span>.layout))
+            }
         }
     }
 
@@ -1326,7 +1345,7 @@
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt; {
         <span class="prelude-val">Ok</span>(<span class="kw">match </span><span class="self">self</span>.as_mplace_or_local() {
             Left(mplace) =&gt; mplace.offset_with_meta(offset, mode, meta, layout, ecx)<span class="question-mark">?</span>.into(),
-            Right((local, old_offset, locals_addr)) =&gt; {
+            Right((local, old_offset, locals_addr, <span class="kw">_</span>)) =&gt; {
                 <span class="macro">debug_assert!</span>(layout.is_sized(), <span class="string">"unsized locals should live in memory"</span>);
                 <span class="macro">assert_matches!</span>(meta, MemPlaceMeta::None); <span class="comment">// we couldn't store it anyway...
                 // `Place::Local` are always in-bounds of their surrounding local, so we can just
@@ -1345,7 +1364,8 @@
         })
     }
 
-    <span class="kw">fn </span>to_op&lt;M: Machine&lt;<span class="lifetime">'tcx</span>, Provenance = Prov&gt;&gt;(
+    <span class="attr">#[inline(always)]
+    </span><span class="kw">fn </span>to_op&lt;M: Machine&lt;<span class="lifetime">'tcx</span>, Provenance = Prov&gt;&gt;(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="lifetime">'tcx</span>, M&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, OpTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt; {
@@ -1377,9 +1397,7 @@
 
 <span class="doccomment">/// The `Weiteable` trait describes interpreter values that can be written to.
 </span><span class="kw">pub trait </span>Writeable&lt;<span class="lifetime">'tcx</span>, Prov: Provenance&gt;: Projectable&lt;<span class="lifetime">'tcx</span>, Prov&gt; {
-    <span class="kw">fn </span>as_mplace_or_local(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-    ) -&gt; Either&lt;MPlaceTy&lt;<span class="lifetime">'tcx</span>, Prov&gt;, (mir::Local, <span class="prelude-ty">Option</span>&lt;Size&gt;, usize, TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;)&gt;;
+    <span class="kw">fn </span>to_place(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PlaceTy&lt;<span class="lifetime">'tcx</span>, Prov&gt;;
 
     <span class="kw">fn </span>force_mplace&lt;M: Machine&lt;<span class="lifetime">'tcx</span>, Provenance = Prov&gt;&gt;(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
@@ -1389,11 +1407,8 @@
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, Prov: Provenance&gt; Writeable&lt;<span class="lifetime">'tcx</span>, Prov&gt; <span class="kw">for </span>PlaceTy&lt;<span class="lifetime">'tcx</span>, Prov&gt; {
     <span class="attr">#[inline(always)]
-    </span><span class="kw">fn </span>as_mplace_or_local(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-    ) -&gt; Either&lt;MPlaceTy&lt;<span class="lifetime">'tcx</span>, Prov&gt;, (mir::Local, <span class="prelude-ty">Option</span>&lt;Size&gt;, usize, TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;)&gt; {
-        <span class="self">self</span>.as_mplace_or_local()
-            .map_right(|(local, offset, locals_addr)| (local, offset, locals_addr, <span class="self">self</span>.layout))
+    </span><span class="kw">fn </span>to_place(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PlaceTy&lt;<span class="lifetime">'tcx</span>, Prov&gt; {
+        <span class="self">self</span>.clone()
     }
 
     <span class="attr">#[inline(always)]
@@ -1407,10 +1422,8 @@
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, Prov: Provenance&gt; Writeable&lt;<span class="lifetime">'tcx</span>, Prov&gt; <span class="kw">for </span>MPlaceTy&lt;<span class="lifetime">'tcx</span>, Prov&gt; {
     <span class="attr">#[inline(always)]
-    </span><span class="kw">fn </span>as_mplace_or_local(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-    ) -&gt; Either&lt;MPlaceTy&lt;<span class="lifetime">'tcx</span>, Prov&gt;, (mir::Local, <span class="prelude-ty">Option</span>&lt;Size&gt;, usize, TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;)&gt; {
-        Left(<span class="self">self</span>.clone())
+    </span><span class="kw">fn </span>to_place(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PlaceTy&lt;<span class="lifetime">'tcx</span>, Prov&gt; {
+        <span class="self">self</span>.clone().into()
     }
 
     <span class="attr">#[inline(always)]
@@ -1428,13 +1441,15 @@
     </span>Prov: Provenance,
     M: Machine&lt;<span class="lifetime">'tcx</span>, Provenance = Prov&gt;,
 {
-    <span class="kw">pub fn </span>ptr_with_meta_to_mplace(
+    <span class="kw">fn </span>ptr_with_meta_to_mplace(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         ptr: Pointer&lt;<span class="prelude-ty">Option</span>&lt;M::Provenance&gt;&gt;,
         meta: MemPlaceMeta&lt;M::Provenance&gt;,
         layout: TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;,
+        unaligned: bool,
     ) -&gt; MPlaceTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt; {
-        <span class="kw">let </span>misaligned = <span class="self">self</span>.is_ptr_misaligned(ptr, layout.align.abi);
+        <span class="kw">let </span>misaligned =
+            <span class="kw">if </span>unaligned { <span class="prelude-val">None </span>} <span class="kw">else </span>{ <span class="self">self</span>.is_ptr_misaligned(ptr, layout.align.abi) };
         MPlaceTy { mplace: MemPlace { ptr, meta, misaligned }, layout }
     }
 
@@ -1444,7 +1459,16 @@
         layout: TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;,
     ) -&gt; MPlaceTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt; {
         <span class="macro">assert!</span>(layout.is_sized());
-        <span class="self">self</span>.ptr_with_meta_to_mplace(ptr, MemPlaceMeta::None, layout)
+        <span class="self">self</span>.ptr_with_meta_to_mplace(ptr, MemPlaceMeta::None, layout, <span class="comment">/*unaligned*/ </span><span class="bool-val">false</span>)
+    }
+
+    <span class="kw">pub fn </span>ptr_to_mplace_unaligned(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        ptr: Pointer&lt;<span class="prelude-ty">Option</span>&lt;M::Provenance&gt;&gt;,
+        layout: TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;,
+    ) -&gt; MPlaceTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt; {
+        <span class="macro">assert!</span>(layout.is_sized());
+        <span class="self">self</span>.ptr_with_meta_to_mplace(ptr, MemPlaceMeta::None, layout, <span class="comment">/*unaligned*/ </span><span class="bool-val">true</span>)
     }
 
     <span class="doccomment">/// Take a value, which represents a (thin or wide) reference, and make it a place.
@@ -1465,7 +1489,7 @@
         <span class="comment">// `ref_to_mplace` is called on raw pointers even if they don't actually get dereferenced;
         // we hence can't call `size_and_align_of` since that asserts more validity than we want.
         </span><span class="kw">let </span>ptr = ptr.to_pointer(<span class="self">self</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(<span class="self">self</span>.ptr_with_meta_to_mplace(ptr, meta, layout))
+        <span class="prelude-val">Ok</span>(<span class="self">self</span>.ptr_with_meta_to_mplace(ptr, meta, layout, <span class="comment">/*unaligned*/ </span><span class="bool-val">false</span>))
     }
 
     <span class="doccomment">/// Turn a mplace into a (thin or wide) mutable raw pointer, pointing to the same space.
@@ -1485,15 +1509,17 @@
     </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
     </span><span class="kw">pub fn </span>deref_pointer(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
-        src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Readable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
+        src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Projectable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, MPlaceTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt; {
+        <span class="kw">if </span>src.layout().ty.is_box() {
+            <span class="comment">// Derefer should have removed all Box derefs.
+            // Some `Box` are not immediates (if they have a custom allocator)
+            // so the code below would fail.
+            </span><span class="macro">bug!</span>(<span class="string">"dereferencing {}"</span>, src.layout().ty);
+        }
+
         <span class="kw">let </span>val = <span class="self">self</span>.read_immediate(src)<span class="question-mark">?</span>;
         <span class="macro">trace!</span>(<span class="string">"deref to {} on {:?}"</span>, val.layout.ty, <span class="kw-2">*</span>val);
-
-        <span class="kw">if </span>val.layout.ty.is_box() {
-            <span class="comment">// Derefer should have removed all Box derefs
-            </span><span class="macro">bug!</span>(<span class="string">"dereferencing {}"</span>, val.layout.ty);
-        }
 
         <span class="kw">let </span>mplace = <span class="self">self</span>.ref_to_mplace(<span class="kw-2">&amp;</span>val)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(mplace)
@@ -1533,37 +1559,18 @@
         <span class="prelude-val">Ok</span>(a)
     }
 
-    <span class="doccomment">/// Converts a repr(simd) place into a place where `place_index` accesses the SIMD elements.
-    /// Also returns the number of elements.
-    </span><span class="kw">pub fn </span>mplace_to_simd(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        mplace: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, (MPlaceTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;, u64)&gt; {
-        <span class="comment">// Basically we want to transmute this place into an array following simd_size_and_type.
-        </span><span class="kw">let </span>(len, e_ty) = mplace.layout.ty.simd_size_and_type(<span class="kw-2">*</span><span class="self">self</span>.tcx);
-        <span class="comment">// Some SIMD types have padding, so `len` many `e_ty` does not cover the entire place.
-        // Therefore we cannot transmute, and instead we project at offset 0, which side-steps
-        // the size check.
-        </span><span class="kw">let </span>array_layout = <span class="self">self</span>.layout_of(Ty::new_array(<span class="self">self</span>.tcx.tcx, e_ty, len))<span class="question-mark">?</span>;
-        <span class="macro">assert!</span>(array_layout.size &lt;= mplace.layout.size);
-        <span class="kw">let </span>mplace = mplace.offset(Size::ZERO, array_layout, <span class="self">self</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>((mplace, len))
-    }
-
     <span class="doccomment">/// Turn a local in the current frame into a place.
     </span><span class="kw">pub fn </span>local_to_place(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         local: mir::Local,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, PlaceTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt; {
-        <span class="comment">// Other parts of the system rely on `Place::Local` never being unsized.
-        // So we eagerly check here if this local has an MPlace, and if yes we use it.
-        </span><span class="kw">let </span>frame = <span class="self">self</span>.frame();
+        <span class="kw">let </span>frame = <span class="self">self</span>.frame();
         <span class="kw">let </span>layout = <span class="self">self</span>.layout_of_local(frame, local, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
         <span class="kw">let </span>place = <span class="kw">if </span>layout.is_sized() {
             <span class="comment">// We can just always use the `Local` for sized values.
             </span>Place::Local { local, offset: <span class="prelude-val">None</span>, locals_addr: frame.locals_addr() }
         } <span class="kw">else </span>{
-            <span class="comment">// Unsized `Local` isn't okay (we cannot store the metadata).
+            <span class="comment">// Other parts of the system rely on `Place::Local` never being unsized.
             </span><span class="kw">match </span>frame.locals[local].access()<span class="question-mark">? </span>{
                 Operand::Immediate(<span class="kw">_</span>) =&gt; <span class="macro">bug!</span>(),
                 Operand::Indirect(mplace) =&gt; Place::Ptr(<span class="kw-2">*</span>mplace),
@@ -1609,6 +1616,44 @@
         <span class="prelude-val">Ok</span>(place)
     }
 
+    <span class="doccomment">/// Given a place, returns either the underlying mplace or a reference to where the value of
+    /// this place is stored.
+    </span><span class="attr">#[inline(always)]
+    </span><span class="kw">fn </span>as_mplace_or_mutable_local(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        place: <span class="kw-2">&amp;</span>PlaceTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
+    ) -&gt; InterpResult&lt;
+        <span class="lifetime">'tcx</span>,
+        Either&lt;
+            MPlaceTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
+            (<span class="kw-2">&amp;mut </span>Immediate&lt;M::Provenance&gt;, TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;, mir::Local),
+        &gt;,
+    &gt; {
+        <span class="prelude-val">Ok</span>(<span class="kw">match </span>place.to_place().as_mplace_or_local() {
+            Left(mplace) =&gt; Left(mplace),
+            Right((local, offset, locals_addr, layout)) =&gt; {
+                <span class="kw">if </span>offset.is_some() {
+                    <span class="comment">// This has been projected to a part of this local, or had the type changed.
+                    // FIMXE: there are cases where we could still avoid allocating an mplace.
+                    </span>Left(place.force_mplace(<span class="self">self</span>)<span class="question-mark">?</span>)
+                } <span class="kw">else </span>{
+                    <span class="macro">debug_assert_eq!</span>(locals_addr, <span class="self">self</span>.frame().locals_addr());
+                    <span class="macro">debug_assert_eq!</span>(<span class="self">self</span>.layout_of_local(<span class="self">self</span>.frame(), local, <span class="prelude-val">None</span>)<span class="question-mark">?</span>, layout);
+                    <span class="kw">match </span><span class="self">self</span>.frame_mut().locals[local].access_mut()<span class="question-mark">? </span>{
+                        Operand::Indirect(mplace) =&gt; {
+                            <span class="comment">// The local is in memory.
+                            </span>Left(MPlaceTy { mplace: <span class="kw-2">*</span>mplace, layout })
+                        }
+                        Operand::Immediate(local_val) =&gt; {
+                            <span class="comment">// The local still has the optimized representation.
+                            </span>Right((local_val, layout, local))
+                        }
+                    }
+                }
+            }
+        })
+    }
+
     <span class="doccomment">/// Write an immediate to a place
     </span><span class="attr">#[inline(always)]
     #[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
@@ -1621,9 +1666,11 @@
 
         <span class="kw">if </span>M::enforce_validity(<span class="self">self</span>, dest.layout()) {
             <span class="comment">// Data got changed, better make sure it matches the type!
+            // Also needed to reset padding.
             </span><span class="self">self</span>.validate_operand(
-                <span class="kw-2">&amp;</span>dest.to_op(<span class="self">self</span>)<span class="question-mark">?</span>,
+                <span class="kw-2">&amp;</span>dest.to_place(),
                 M::enforce_validity_recursively(<span class="self">self</span>, dest.layout()),
+                <span class="comment">/*reset_provenance_and_padding*/ </span><span class="bool-val">true</span>,
             )<span class="question-mark">?</span>;
         }
 
@@ -1653,67 +1700,31 @@
     <span class="doccomment">/// Write an immediate to a place.
     /// If you use this you are responsible for validating that things got copied at the
     /// right type.
-    </span><span class="kw">fn </span>write_immediate_no_validate(
+    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>write_immediate_no_validate(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         src: Immediate&lt;M::Provenance&gt;,
         dest: <span class="kw-2">&amp;</span><span class="kw">impl </span>Writeable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="macro">assert!</span>(dest.layout().is_sized(), <span class="string">"Cannot write unsized immediate data"</span>);
 
-        <span class="comment">// See if we can avoid an allocation. This is the counterpart to `read_immediate_raw`,
-        // but not factored as a separate function.
-        </span><span class="kw">let </span>mplace = <span class="kw">match </span>dest.as_mplace_or_local() {
-            Right((local, offset, locals_addr, layout)) =&gt; {
-                <span class="kw">if </span>offset.is_some() {
-                    <span class="comment">// This has been projected to a part of this local. We could have complicated
-                    // logic to still keep this local as an `Operand`... but it's much easier to
-                    // just fall back to the indirect path.
-                    </span>dest.force_mplace(<span class="self">self</span>)<span class="question-mark">?
-                </span>} <span class="kw">else </span>{
-                    <span class="macro">debug_assert_eq!</span>(locals_addr, <span class="self">self</span>.frame().locals_addr());
-                    <span class="kw">match </span><span class="self">self</span>.frame_mut().locals[local].access_mut()<span class="question-mark">? </span>{
-                        Operand::Immediate(local_val) =&gt; {
-                            <span class="comment">// Local can be updated in-place.
-                            </span><span class="kw-2">*</span>local_val = src;
-                            <span class="comment">// Double-check that the value we are storing and the local fit to each other.
-                            // (*After* doing the update for borrow checker reasons.)
-                            </span><span class="kw">if </span><span class="macro">cfg!</span>(debug_assertions) {
-                                <span class="kw">let </span>local_layout =
-                                    <span class="self">self</span>.layout_of_local(<span class="kw-2">&amp;</span><span class="self">self</span>.frame(), local, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
-                                <span class="kw">match </span>(src, local_layout.abi) {
-                                    (Immediate::Scalar(scalar), Abi::Scalar(s)) =&gt; {
-                                        <span class="macro">assert_eq!</span>(scalar.size(), s.size(<span class="self">self</span>))
-                                    }
-                                    (
-                                        Immediate::ScalarPair(a_val, b_val),
-                                        Abi::ScalarPair(a, b),
-                                    ) =&gt; {
-                                        <span class="macro">assert_eq!</span>(a_val.size(), a.size(<span class="self">self</span>));
-                                        <span class="macro">assert_eq!</span>(b_val.size(), b.size(<span class="self">self</span>));
-                                    }
-                                    (Immediate::Uninit, <span class="kw">_</span>) =&gt; {}
-                                    (src, abi) =&gt; {
-                                        <span class="macro">bug!</span>(
-                                            <span class="string">"value {src:?} cannot be written into local with type {} (ABI {abi:?})"</span>,
-                                            local_layout.ty
-                                        )
-                                    }
-                                };
-                            }
-                            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
-                        }
-                        Operand::Indirect(mplace) =&gt; {
-                            <span class="comment">// The local is in memory, go on below.
-                            </span>MPlaceTy { mplace: <span class="kw-2">*</span>mplace, layout }
-                        }
-                    }
+        <span class="kw">match </span><span class="self">self</span>.as_mplace_or_mutable_local(<span class="kw-2">&amp;</span>dest.to_place())<span class="question-mark">? </span>{
+            Right((local_val, local_layout, local)) =&gt; {
+                <span class="comment">// Local can be updated in-place.
+                </span><span class="kw-2">*</span>local_val = src;
+                <span class="comment">// Call the machine hook (the data race detector needs to know about this write).
+                </span><span class="kw">if </span>!<span class="self">self</span>.validation_in_progress() {
+                    M::after_local_write(<span class="self">self</span>, local, <span class="comment">/*storage_live*/ </span><span class="bool-val">false</span>)<span class="question-mark">?</span>;
+                }
+                <span class="comment">// Double-check that the value we are storing and the local fit to each other.
+                </span><span class="kw">if </span><span class="macro">cfg!</span>(debug_assertions) {
+                    src.assert_matches_abi(local_layout.abi, <span class="self">self</span>);
                 }
             }
-            Left(mplace) =&gt; mplace, <span class="comment">// already referring to memory
-        </span>};
-
-        <span class="comment">// This is already in memory, write there.
-        </span><span class="self">self</span>.write_immediate_to_mplace_no_validate(src, mplace.layout, mplace.mplace)
+            Left(mplace) =&gt; {
+                <span class="self">self</span>.write_immediate_to_mplace_no_validate(src, mplace.layout, mplace.mplace)<span class="question-mark">?</span>;
+            }
+        }
+        <span class="prelude-val">Ok</span>(())
     }
 
     <span class="doccomment">/// Write an immediate to memory.
@@ -1725,6 +1736,9 @@
         layout: TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;,
         dest: MemPlace&lt;M::Provenance&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="kw">if </span><span class="macro">cfg!</span>(debug_assertions) {
+            value.assert_matches_abi(layout.abi, <span class="self">self</span>);
+        }
         <span class="comment">// Note that it is really important that the type here is the right one, and matches the
         // type things are read at. In case `value` is a `ScalarPair`, we don't do any magic here
         // to handle padding properly, which is only correct if we never look at this data with the
@@ -1738,15 +1752,7 @@
 
         <span class="kw">match </span>value {
             Immediate::Scalar(scalar) =&gt; {
-                <span class="kw">let </span>Abi::Scalar(s) = layout.abi <span class="kw">else </span>{
-                    <span class="macro">span_bug!</span>(
-                        <span class="self">self</span>.cur_span(),
-                        <span class="string">"write_immediate_to_mplace: invalid Scalar layout: {layout:#?}"</span>,
-                    )
-                };
-                <span class="kw">let </span>size = s.size(<span class="kw-2">&amp;</span>tcx);
-                <span class="macro">assert_eq!</span>(size, layout.size, <span class="string">"abi::Scalar size does not match layout size"</span>);
-                alloc.write_scalar(alloc_range(Size::ZERO, size), scalar)
+                alloc.write_scalar(alloc_range(Size::ZERO, scalar.size()), scalar)
             }
             Immediate::ScalarPair(a_val, b_val) =&gt; {
                 <span class="kw">let </span>Abi::ScalarPair(a, b) = layout.abi <span class="kw">else </span>{
@@ -1756,18 +1762,19 @@
                         layout
                     )
                 };
-                <span class="kw">let </span>(a_size, b_size) = (a.size(<span class="kw-2">&amp;</span>tcx), b.size(<span class="kw-2">&amp;</span>tcx));
-                <span class="kw">let </span>b_offset = a_size.align_to(b.align(<span class="kw-2">&amp;</span>tcx).abi);
+                <span class="kw">let </span>b_offset = a.size(<span class="kw-2">&amp;</span>tcx).align_to(b.align(<span class="kw-2">&amp;</span>tcx).abi);
                 <span class="macro">assert!</span>(b_offset.bytes() &gt; <span class="number">0</span>); <span class="comment">// in `operand_field` we use the offset to tell apart the fields
 
                 // It is tempting to verify `b_offset` against `layout.fields.offset(1)`,
                 // but that does not work: We could be a newtype around a pair, then the
                 // fields do not match the `ScalarPair` components.
 
-                </span>alloc.write_scalar(alloc_range(Size::ZERO, a_size), a_val)<span class="question-mark">?</span>;
-                alloc.write_scalar(alloc_range(b_offset, b_size), b_val)
+                </span>alloc.write_scalar(alloc_range(Size::ZERO, a_val.size()), a_val)<span class="question-mark">?</span>;
+                alloc.write_scalar(alloc_range(b_offset, b_val.size()), b_val)<span class="question-mark">?</span>;
+                <span class="comment">// We don't have to reset padding here, `write_immediate` will anyway do a validation run.
+                </span><span class="prelude-val">Ok</span>(())
             }
-            Immediate::Uninit =&gt; alloc.write_uninit(),
+            Immediate::Uninit =&gt; alloc.write_uninit_full(),
         }
     }
 
@@ -1775,35 +1782,46 @@
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         dest: <span class="kw-2">&amp;</span><span class="kw">impl </span>Writeable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
-        <span class="kw">let </span>mplace = <span class="kw">match </span>dest.as_mplace_or_local() {
-            Left(mplace) =&gt; mplace,
-            Right((local, offset, locals_addr, layout)) =&gt; {
-                <span class="kw">if </span>offset.is_some() {
-                    <span class="comment">// This has been projected to a part of this local. We could have complicated
-                    // logic to still keep this local as an `Operand`... but it's much easier to
-                    // just fall back to the indirect path.
-                    // FIXME: share the logic with `write_immediate_no_validate`.
-                    </span>dest.force_mplace(<span class="self">self</span>)<span class="question-mark">?
-                </span>} <span class="kw">else </span>{
-                    <span class="macro">debug_assert_eq!</span>(locals_addr, <span class="self">self</span>.frame().locals_addr());
-                    <span class="kw">match </span><span class="self">self</span>.frame_mut().locals[local].access_mut()<span class="question-mark">? </span>{
-                        Operand::Immediate(local) =&gt; {
-                            <span class="kw-2">*</span>local = Immediate::Uninit;
-                            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
-                        }
-                        Operand::Indirect(mplace) =&gt; {
-                            <span class="comment">// The local is in memory, go on below.
-                            </span>MPlaceTy { mplace: <span class="kw-2">*</span>mplace, layout }
-                        }
-                    }
+        <span class="kw">match </span><span class="self">self</span>.as_mplace_or_mutable_local(<span class="kw-2">&amp;</span>dest.to_place())<span class="question-mark">? </span>{
+            Right((local_val, _local_layout, local)) =&gt; {
+                <span class="kw-2">*</span>local_val = Immediate::Uninit;
+                <span class="comment">// Call the machine hook (the data race detector needs to know about this write).
+                </span><span class="kw">if </span>!<span class="self">self</span>.validation_in_progress() {
+                    M::after_local_write(<span class="self">self</span>, local, <span class="comment">/*storage_live*/ </span><span class="bool-val">false</span>)<span class="question-mark">?</span>;
                 }
             }
-        };
-        <span class="kw">let </span><span class="prelude-val">Some</span>(<span class="kw-2">mut </span>alloc) = <span class="self">self</span>.get_place_alloc_mut(<span class="kw-2">&amp;</span>mplace)<span class="question-mark">? </span><span class="kw">else </span>{
-            <span class="comment">// Zero-sized access
-            </span><span class="kw">return </span><span class="prelude-val">Ok</span>(());
-        };
-        alloc.write_uninit()<span class="question-mark">?</span>;
+            Left(mplace) =&gt; {
+                <span class="kw">let </span><span class="prelude-val">Some</span>(<span class="kw-2">mut </span>alloc) = <span class="self">self</span>.get_place_alloc_mut(<span class="kw-2">&amp;</span>mplace)<span class="question-mark">? </span><span class="kw">else </span>{
+                    <span class="comment">// Zero-sized access
+                    </span><span class="kw">return </span><span class="prelude-val">Ok</span>(());
+                };
+                alloc.write_uninit_full()<span class="question-mark">?</span>;
+            }
+        }
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="doccomment">/// Remove all provenance in the given place.
+    </span><span class="kw">pub fn </span>clear_provenance(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        dest: <span class="kw-2">&amp;</span><span class="kw">impl </span>Writeable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="kw">match </span><span class="self">self</span>.as_mplace_or_mutable_local(<span class="kw-2">&amp;</span>dest.to_place())<span class="question-mark">? </span>{
+            Right((local_val, _local_layout, local)) =&gt; {
+                local_val.clear_provenance()<span class="question-mark">?</span>;
+                <span class="comment">// Call the machine hook (the data race detector needs to know about this write).
+                </span><span class="kw">if </span>!<span class="self">self</span>.validation_in_progress() {
+                    M::after_local_write(<span class="self">self</span>, local, <span class="comment">/*storage_live*/ </span><span class="bool-val">false</span>)<span class="question-mark">?</span>;
+                }
+            }
+            Left(mplace) =&gt; {
+                <span class="kw">let </span><span class="prelude-val">Some</span>(<span class="kw-2">mut </span>alloc) = <span class="self">self</span>.get_place_alloc_mut(<span class="kw-2">&amp;</span>mplace)<span class="question-mark">? </span><span class="kw">else </span>{
+                    <span class="comment">// Zero-sized access
+                    </span><span class="kw">return </span><span class="prelude-val">Ok</span>(());
+                };
+                alloc.clear_provenance()<span class="question-mark">?</span>;
+            }
+        }
         <span class="prelude-val">Ok</span>(())
     }
 
@@ -1815,7 +1833,7 @@
     </span><span class="attr">#[inline(always)]
     </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>copy_op_no_dest_validation(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Readable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
+        src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Projectable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
         dest: <span class="kw-2">&amp;</span><span class="kw">impl </span>Writeable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.copy_op_inner(
@@ -1828,7 +1846,7 @@
     </span><span class="attr">#[inline(always)]
     </span><span class="kw">pub fn </span>copy_op_allow_transmute(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Readable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
+        src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Projectable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
         dest: <span class="kw-2">&amp;</span><span class="kw">impl </span>Writeable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.copy_op_inner(
@@ -1841,7 +1859,7 @@
     </span><span class="attr">#[inline(always)]
     </span><span class="kw">pub fn </span>copy_op(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Readable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
+        src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Projectable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
         dest: <span class="kw-2">&amp;</span><span class="kw">impl </span>Writeable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.copy_op_inner(
@@ -1855,28 +1873,35 @@
     #[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
     </span><span class="kw">fn </span>copy_op_inner(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Readable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
+        src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Projectable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
         dest: <span class="kw-2">&amp;</span><span class="kw">impl </span>Writeable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
         allow_transmute: bool,
         validate_dest: bool,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
-        <span class="comment">// Generally for transmutation, data must be valid both at the old and new type.
-        // But if the types are the same, the 2nd validation below suffices.
-        </span><span class="kw">if </span>src.layout().ty != dest.layout().ty &amp;&amp; M::enforce_validity(<span class="self">self</span>, src.layout()) {
-            <span class="self">self</span>.validate_operand(
-                <span class="kw-2">&amp;</span>src.to_op(<span class="self">self</span>)<span class="question-mark">?</span>,
-                M::enforce_validity_recursively(<span class="self">self</span>, src.layout()),
-            )<span class="question-mark">?</span>;
-        }
+        <span class="comment">// These are technically *two* typed copies: `src` is a not-yet-loaded value,
+        // so we're going a typed copy at `src` type from there to some intermediate storage.
+        // And then we're doing a second typed copy from that intermediate storage to `dest`.
+        // But as an optimization, we only make a single direct copy here.
 
-        <span class="comment">// Do the actual copy.
+        // Do the actual copy.
         </span><span class="self">self</span>.copy_op_no_validate(src, dest, allow_transmute)<span class="question-mark">?</span>;
 
         <span class="kw">if </span>validate_dest &amp;&amp; M::enforce_validity(<span class="self">self</span>, dest.layout()) {
-            <span class="comment">// Data got changed, better make sure it matches the type!
-            </span><span class="self">self</span>.validate_operand(
-                <span class="kw-2">&amp;</span>dest.to_op(<span class="self">self</span>)<span class="question-mark">?</span>,
+            <span class="kw">let </span>dest = dest.to_place();
+            <span class="comment">// Given that there were two typed copies, we have to ensure this is valid at both types,
+            // and we have to ensure this loses provenance and padding according to both types.
+            // But if the types are identical, we only do one pass.
+            </span><span class="kw">if </span>allow_transmute &amp;&amp; src.layout().ty != dest.layout().ty {
+                <span class="self">self</span>.validate_operand(
+                    <span class="kw-2">&amp;</span>dest.transmute(src.layout(), <span class="self">self</span>)<span class="question-mark">?</span>,
+                    M::enforce_validity_recursively(<span class="self">self</span>, src.layout()),
+                    <span class="comment">/*reset_provenance_and_padding*/ </span><span class="bool-val">true</span>,
+                )<span class="question-mark">?</span>;
+            }
+            <span class="self">self</span>.validate_operand(
+                <span class="kw-2">&amp;</span>dest,
                 M::enforce_validity_recursively(<span class="self">self</span>, dest.layout()),
+                <span class="comment">/*reset_provenance_and_padding*/ </span><span class="bool-val">true</span>,
             )<span class="question-mark">?</span>;
         }
 
@@ -1890,7 +1915,7 @@
     </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
     </span><span class="kw">fn </span>copy_op_no_validate(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Readable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
+        src: <span class="kw-2">&amp;</span><span class="kw">impl </span>Projectable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
         dest: <span class="kw-2">&amp;</span><span class="kw">impl </span>Writeable&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
         allow_transmute: bool,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
@@ -1993,7 +2018,7 @@
                                 mplace.mplace,
                             )<span class="question-mark">?</span>;
                         }
-                        M::after_local_allocated(<span class="self">self</span>, local, <span class="kw-2">&amp;</span>mplace)<span class="question-mark">?</span>;
+                        M::after_local_moved_to_memory(<span class="self">self</span>, local, <span class="kw-2">&amp;</span>mplace)<span class="question-mark">?</span>;
                         <span class="comment">// Now we can call `access_mut` again, asserting it goes well, and actually
                         // overwrite things. This points to the entire allocation, not just the part
                         // the place refers to, i.e. we do this before we apply `offset`.
@@ -2032,7 +2057,7 @@
             <span class="macro">span_bug!</span>(<span class="self">self</span>.cur_span(), <span class="string">"cannot allocate space for `extern` type, size is not known"</span>)
         };
         <span class="kw">let </span>ptr = <span class="self">self</span>.allocate_ptr(size, align, kind)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(<span class="self">self</span>.ptr_with_meta_to_mplace(ptr.into(), meta, layout))
+        <span class="prelude-val">Ok</span>(<span class="self">self</span>.ptr_with_meta_to_mplace(ptr.into(), meta, layout, <span class="comment">/*unaligned*/ </span><span class="bool-val">false</span>))
     }
 
     <span class="kw">pub fn </span>allocate(
@@ -2067,7 +2092,12 @@
         </span>};
         <span class="kw">let </span>meta = Scalar::from_target_usize(u64::try_from(str.len()).unwrap(), <span class="self">self</span>);
         <span class="kw">let </span>layout = <span class="self">self</span>.layout_of(<span class="self">self</span>.tcx.types.str_).unwrap();
-        <span class="prelude-val">Ok</span>(<span class="self">self</span>.ptr_with_meta_to_mplace(ptr.into(), MemPlaceMeta::Meta(meta), layout))
+        <span class="prelude-val">Ok</span>(<span class="self">self</span>.ptr_with_meta_to_mplace(
+            ptr.into(),
+            MemPlaceMeta::Meta(meta),
+            layout,
+            <span class="comment">/*unaligned*/ </span><span class="bool-val">false</span>,
+        ))
     }
 
     <span class="kw">pub fn </span>raw_const_to_mplace(

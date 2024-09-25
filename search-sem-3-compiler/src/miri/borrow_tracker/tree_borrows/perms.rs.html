@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/tree_borrows/perms.rs`."><title>perms.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/tree_borrows/perms.rs`."><title>perms.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/borrow_tracker/tree_borrows/</div>perms.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -603,20 +604,103 @@
 <a href="#603" id="603">603</a>
 <a href="#604" id="604">604</a>
 <a href="#605" id="605">605</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::cmp::{Ordering, PartialOrd};
+<a href="#606" id="606">606</a>
+<a href="#607" id="607">607</a>
+<a href="#608" id="608">608</a>
+<a href="#609" id="609">609</a>
+<a href="#610" id="610">610</a>
+<a href="#611" id="611">611</a>
+<a href="#612" id="612">612</a>
+<a href="#613" id="613">613</a>
+<a href="#614" id="614">614</a>
+<a href="#615" id="615">615</a>
+<a href="#616" id="616">616</a>
+<a href="#617" id="617">617</a>
+<a href="#618" id="618">618</a>
+<a href="#619" id="619">619</a>
+<a href="#620" id="620">620</a>
+<a href="#621" id="621">621</a>
+<a href="#622" id="622">622</a>
+<a href="#623" id="623">623</a>
+<a href="#624" id="624">624</a>
+<a href="#625" id="625">625</a>
+<a href="#626" id="626">626</a>
+<a href="#627" id="627">627</a>
+<a href="#628" id="628">628</a>
+<a href="#629" id="629">629</a>
+<a href="#630" id="630">630</a>
+<a href="#631" id="631">631</a>
+<a href="#632" id="632">632</a>
+<a href="#633" id="633">633</a>
+<a href="#634" id="634">634</a>
+<a href="#635" id="635">635</a>
+<a href="#636" id="636">636</a>
+<a href="#637" id="637">637</a>
+<a href="#638" id="638">638</a>
+<a href="#639" id="639">639</a>
+<a href="#640" id="640">640</a>
+<a href="#641" id="641">641</a>
+<a href="#642" id="642">642</a>
+<a href="#643" id="643">643</a>
+<a href="#644" id="644">644</a>
+<a href="#645" id="645">645</a>
+<a href="#646" id="646">646</a>
+<a href="#647" id="647">647</a>
+<a href="#648" id="648">648</a>
+<a href="#649" id="649">649</a>
+<a href="#650" id="650">650</a>
+<a href="#651" id="651">651</a>
+<a href="#652" id="652">652</a>
+<a href="#653" id="653">653</a>
+<a href="#654" id="654">654</a>
+<a href="#655" id="655">655</a>
+<a href="#656" id="656">656</a>
+<a href="#657" id="657">657</a>
+<a href="#658" id="658">658</a>
+<a href="#659" id="659">659</a>
+<a href="#660" id="660">660</a>
+<a href="#661" id="661">661</a>
+<a href="#662" id="662">662</a>
+<a href="#663" id="663">663</a>
+<a href="#664" id="664">664</a>
+<a href="#665" id="665">665</a>
+<a href="#666" id="666">666</a>
+<a href="#667" id="667">667</a>
+<a href="#668" id="668">668</a>
+<a href="#669" id="669">669</a>
+<a href="#670" id="670">670</a>
+<a href="#671" id="671">671</a>
+<a href="#672" id="672">672</a>
+<a href="#673" id="673">673</a>
+<a href="#674" id="674">674</a>
+<a href="#675" id="675">675</a>
+<a href="#676" id="676">676</a>
+<a href="#677" id="677">677</a>
+<a href="#678" id="678">678</a>
+<a href="#679" id="679">679</a>
+<a href="#680" id="680">680</a>
+<a href="#681" id="681">681</a>
+<a href="#682" id="682">682</a>
+<a href="#683" id="683">683</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::cmp::{Ordering, PartialOrd};
 <span class="kw">use </span>std::fmt;
 
+<span class="kw">use </span><span class="kw">crate</span>::AccessKind;
 <span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::tree_borrows::diagnostics::TransitionError;
 <span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::tree_borrows::tree::AccessRelatedness;
-<span class="kw">use </span><span class="kw">crate</span>::AccessKind;
 
 <span class="doccomment">/// The activation states of a pointer.
 </span><span class="attr">#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 </span><span class="kw">enum </span>PermissionPriv {
-    <span class="doccomment">/// represents: a local reference that has not yet been written to;
-    /// allows: child reads, foreign reads, foreign writes if type is freeze;
+    <span class="doccomment">/// represents: a local mutable reference that has not yet been written to;
+    /// allows: child reads, foreign reads;
     /// affected by: child writes (becomes Active),
-    /// rejects: foreign writes (Disabled, except if type is not freeze).
+    /// rejects: foreign writes (Disabled).
+    ///
+    /// `ReservedFrz` is mostly for types that are `Freeze` (no interior mutability).
+    /// If the type has interior mutability, see `ReservedIM` instead.
+    /// (Note: since the discovery of `tests/fail/tree_borrows/reservedim_spurious_write.rs`,
+    /// we also use `ReservedFreeze` for mutable references that were retagged with a protector
+    /// independently of interior mutability)
     ///
     /// special case: behaves differently when protected, which is where `conflicted`
     /// is relevant
@@ -627,12 +711,12 @@
     /// - foreign-read then child-write is UB due to `conflicted`,
     /// - child-write then foreign-read is UB since child-write will activate and then
     ///   foreign-read disables a protected `Active`, which is UB.
-    ///
-    /// Note: since the discovery of `tests/fail/tree_borrows/reservedim_spurious_write.rs`,
-    /// `ty_is_freeze` does not strictly mean that the type has no interior mutability,
-    /// it could be an interior mutable type that lost its interior mutability privileges
-    /// when retagged with a protector.
-    </span>Reserved { ty_is_freeze: bool, conflicted: bool },
+    </span>ReservedFrz { conflicted: bool },
+    <span class="doccomment">/// Alternative version of `ReservedFrz` made for types with interior mutability.
+    /// allows: child reads, foreign reads, foreign writes (extra);
+    /// affected by: child writes (becomes Active);
+    /// rejects: nothing.
+    </span>ReservedIM,
     <span class="doccomment">/// represents: a unique pointer;
     /// allows: child reads, child writes;
     /// rejects: foreign reads (Frozen), foreign writes (Disabled).
@@ -646,7 +730,7 @@
     /// rejects: all child accesses (UB).
     </span>Disabled,
 }
-<span class="kw">use </span>PermissionPriv::<span class="kw-2">*</span>;
+<span class="kw">use </span><span class="self">self</span>::PermissionPriv::<span class="kw-2">*</span>;
 
 <span class="kw">impl </span>PartialOrd <span class="kw">for </span>PermissionPriv {
     <span class="doccomment">/// PermissionPriv is ordered by the reflexive transitive closure of
@@ -664,17 +748,14 @@
             (<span class="kw">_</span>, Frozen) =&gt; Less,
             (Active, <span class="kw">_</span>) =&gt; Greater,
             (<span class="kw">_</span>, Active) =&gt; Less,
-            (
-                Reserved { ty_is_freeze: f1, conflicted: c1 },
-                Reserved { ty_is_freeze: f2, conflicted: c2 },
-            ) =&gt; {
-                <span class="comment">// No transition ever changes `ty_is_freeze`.
-                </span><span class="kw">if </span>f1 != f2 {
-                    <span class="kw">return </span><span class="prelude-val">None</span>;
-                }
+            (ReservedIM, ReservedIM) =&gt; Equal,
+            (ReservedFrz { conflicted: c1 }, ReservedFrz { conflicted: c2 }) =&gt; {
                 <span class="comment">// `bool` is ordered such that `false &lt;= true`, so this works as intended.
                 </span>c1.cmp(c2)
             }
+            <span class="comment">// Versions of `Reserved` with different interior mutability are incomparable with each
+            // other.
+            </span>(ReservedIM, ReservedFrz { .. }) | (ReservedFrz { .. }, ReservedIM) =&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
         })
     }
 }
@@ -682,7 +763,12 @@
 <span class="kw">impl </span>PermissionPriv {
     <span class="doccomment">/// Check if `self` can be the initial state of a pointer.
     </span><span class="kw">fn </span>is_initial(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
-        <span class="macro">matches!</span>(<span class="self">self</span>, Reserved { conflicted: <span class="bool-val">false</span>, .. } | Frozen)
+        <span class="macro">matches!</span>(<span class="self">self</span>, ReservedFrz { conflicted: <span class="bool-val">false </span>} | Frozen | ReservedIM)
+    }
+
+    <span class="doccomment">/// Reject `ReservedIM` that cannot exist in the presence of a protector.
+    </span><span class="kw">fn </span>compatible_with_protector(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+        !<span class="macro">matches!</span>(<span class="self">self</span>, ReservedIM)
     }
 }
 
@@ -698,7 +784,7 @@
             Disabled =&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
             <span class="comment">// The inner data `ty_is_freeze` of `Reserved` is always irrelevant for Read
             // accesses, since the data is not being mutated. Hence the `{ .. }`.
-            </span>readable @ (Reserved { .. } | Active | Frozen) =&gt; readable,
+            </span>readable @ (ReservedFrz { .. } | ReservedIM | Active | Frozen) =&gt; readable,
         })
     }
 
@@ -714,15 +800,20 @@
 
             // Someone else read. To make sure we won't write before function exit,
             // we set the "conflicted" flag, which will disallow writes while we are protected.
-            </span>Reserved { ty_is_freeze, .. } <span class="kw">if </span>protected =&gt;
-                Reserved { ty_is_freeze, conflicted: <span class="bool-val">true </span>},
+            </span>ReservedFrz { .. } <span class="kw">if </span>protected =&gt; ReservedFrz { conflicted: <span class="bool-val">true </span>},
             <span class="comment">// Before activation and without protectors, foreign reads are fine.
             // That's the entire point of 2-phase borrows.
-            </span>res @ Reserved { .. } =&gt; res,
+            </span>res @ (ReservedFrz { .. } | ReservedIM) =&gt; {
+                <span class="comment">// Even though we haven't checked `ReservedIM if protected` separately,
+                // it is a state that cannot occur because under a protector we only
+                // create `ReservedFrz` never `ReservedIM`.
+                </span><span class="macro">assert!</span>(!protected);
+                res
+            }
             Active =&gt;
                 <span class="kw">if </span>protected {
                     <span class="comment">// We wrote, someone else reads -- that's bad.
-                    // (If this is initialized, this move-to-protected will mean insta-UB.)
+                    // (Since Active is always initialized, this move-to-protected will mean insta-UB.)
                     </span>Disabled
                 } <span class="kw">else </span>{
                     <span class="comment">// We don't want to disable here to allow read-read reordering: it is crucial
@@ -739,10 +830,10 @@
             <span class="comment">// If the `conflicted` flag is set, then there was a foreign read during
             // the function call that is still ongoing (still `protected`),
             // this is UB (`noalias` violation).
-            </span>Reserved { conflicted: <span class="bool-val">true</span>, .. } <span class="kw">if </span>protected =&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
+            </span>ReservedFrz { conflicted: <span class="bool-val">true </span>} <span class="kw">if </span>protected =&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
             <span class="comment">// A write always activates the 2-phase borrow, even with interior
             // mutability
-            </span>Reserved { .. } | Active =&gt; Active,
+            </span>ReservedFrz { .. } | ReservedIM | Active =&gt; Active,
             Frozen | Disabled =&gt; <span class="kw">return </span><span class="prelude-val">None</span>,
         })
     }
@@ -750,15 +841,15 @@
     <span class="doccomment">/// A non-child node was write-accessed: this makes everything `Disabled` except for
     /// non-protected interior mutable `Reserved` which stay the same.
     </span><span class="kw">fn </span>foreign_write(state: PermissionPriv, protected: bool) -&gt; <span class="prelude-ty">Option</span>&lt;PermissionPriv&gt; {
-        <span class="prelude-val">Some</span>(<span class="kw">match </span>state {
-            <span class="comment">// FIXME: since the fix related to reservedim_spurious_write, it is now possible
-            // to express these transitions of the state machine without an explicit dependency
-            // on `protected`: because `ty_is_freeze: false` implies `!protected` then
-            // the line handling `Reserved { .. } if protected` could be deleted.
-            // This will however require optimizations to the exhaustive tests because
-            // fewer initial conditions are valid.
-            </span>Reserved { .. } <span class="kw">if </span>protected =&gt; Disabled,
-            res @ Reserved { ty_is_freeze: <span class="bool-val">false</span>, .. } =&gt; res,
+        <span class="comment">// There is no explicit dependency on `protected`, but recall that interior mutable
+        // types receive a `ReservedFrz` instead of `ReservedIM` when retagged under a protector,
+        // so the result of this function does indirectly depend on (past) protector status.
+        </span><span class="prelude-val">Some</span>(<span class="kw">match </span>state {
+            res @ ReservedIM =&gt; {
+                <span class="comment">// We can never create a `ReservedIM` under a protector, only `ReservedFrz`.
+                </span><span class="macro">assert!</span>(!protected);
+                res
+            }
             <span class="kw">_ </span>=&gt; Disabled,
         })
     }
@@ -813,9 +904,23 @@
         <span class="self">Self </span>{ inner: Active }
     }
 
-    <span class="doccomment">/// Default initial permission of a reborrowed mutable reference.
-    </span><span class="kw">pub fn </span>new_reserved(ty_is_freeze: bool) -&gt; <span class="self">Self </span>{
-        <span class="self">Self </span>{ inner: Reserved { ty_is_freeze, conflicted: <span class="bool-val">false </span>} }
+    <span class="doccomment">/// Default initial permission of a reborrowed mutable reference that is either
+    /// protected or not interior mutable.
+    </span><span class="kw">fn </span>new_reserved_frz() -&gt; <span class="self">Self </span>{
+        <span class="self">Self </span>{ inner: ReservedFrz { conflicted: <span class="bool-val">false </span>} }
+    }
+
+    <span class="doccomment">/// Default initial permission of an unprotected interior mutable reference.
+    </span><span class="kw">fn </span>new_reserved_im() -&gt; <span class="self">Self </span>{
+        <span class="self">Self </span>{ inner: ReservedIM }
+    }
+
+    <span class="doccomment">/// Wrapper around `new_reserved_frz` and `new_reserved_im` that decides
+    /// which to call based on the interior mutability and the retag kind (whether there
+    /// is a protector is relevant because being protected takes priority over being
+    /// interior mutable)
+    </span><span class="kw">pub fn </span>new_reserved(ty_is_freeze: bool, protected: bool) -&gt; <span class="self">Self </span>{
+        <span class="kw">if </span>ty_is_freeze || protected { <span class="self">Self</span>::new_reserved_frz() } <span class="kw">else </span>{ <span class="self">Self</span>::new_reserved_im() }
     }
 
     <span class="doccomment">/// Default initial permission of a reborrowed shared reference.
@@ -829,6 +934,11 @@
         <span class="self">Self </span>{ inner: Disabled }
     }
 
+    <span class="doccomment">/// Reject `ReservedIM` that cannot exist in the presence of a protector.
+    </span><span class="kw">pub fn </span>compatible_with_protector(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+        <span class="self">self</span>.inner.compatible_with_protector()
+    }
+
     <span class="doccomment">/// Apply the transition to the inner PermissionPriv.
     </span><span class="kw">pub fn </span>perform_access(
         kind: AccessKind,
@@ -839,6 +949,44 @@
         <span class="kw">let </span>old_state = old_perm.inner;
         transition::perform_access(kind, rel_pos, old_state, protected)
             .map(|new_state| PermTransition { from: old_state, to: new_state })
+    }
+
+    <span class="doccomment">/// During a provenance GC, we want to compact the tree.
+    /// For this, we want to merge nodes upwards if they have a singleton parent.
+    /// But we need to be careful: If the parent is Frozen, and the child is Reserved,
+    /// we can not do such a merge. In general, such a merge is possible if the parent
+    /// allows similar accesses, and in particular if the parent never causes UB on its
+    /// own. This is enforced by a test, namely `tree_compacting_is_sound`. See that
+    /// test for more information.
+    /// This method is only sound if the parent is not protected. We never attempt to
+    /// remove protected parents.
+    </span><span class="kw">pub fn </span>can_be_replaced_by_child(<span class="self">self</span>, child: <span class="self">Self</span>) -&gt; bool {
+        <span class="kw">match </span>(<span class="self">self</span>.inner, child.inner) {
+            <span class="comment">// ReservedIM can be replaced by anything, as it allows all
+            // transitions.
+            </span>(ReservedIM, <span class="kw">_</span>) =&gt; <span class="bool-val">true</span>,
+            <span class="comment">// Reserved (as parent, where conflictedness does not matter)
+            // can be replaced by all but ReservedIM,
+            // since ReservedIM alone would survive foreign writes
+            </span>(ReservedFrz { .. }, ReservedIM) =&gt; <span class="bool-val">false</span>,
+            (ReservedFrz { .. }, <span class="kw">_</span>) =&gt; <span class="bool-val">true</span>,
+            <span class="comment">// Active can not be replaced by something surviving
+            // foreign reads and then remaining writable.
+            </span>(Active, ReservedIM) =&gt; <span class="bool-val">false</span>,
+            (Active, ReservedFrz { .. }) =&gt; <span class="bool-val">false</span>,
+            <span class="comment">// Replacing a state by itself is always okay, even if the child state is protected.
+            </span>(Active, Active) =&gt; <span class="bool-val">true</span>,
+            <span class="comment">// Active can be replaced by Frozen, since it is not protected.
+            </span>(Active, Frozen) =&gt; <span class="bool-val">true</span>,
+            (Active, Disabled) =&gt; <span class="bool-val">true</span>,
+            <span class="comment">// Frozen can only be replaced by Disabled (and itself).
+            </span>(Frozen, Frozen) =&gt; <span class="bool-val">true</span>,
+            (Frozen, Disabled) =&gt; <span class="bool-val">true</span>,
+            (Frozen, <span class="kw">_</span>) =&gt; <span class="bool-val">false</span>,
+            <span class="comment">// Disabled can not be replaced by anything else.
+            </span>(Disabled, Disabled) =&gt; <span class="bool-val">true</span>,
+            (Disabled, <span class="kw">_</span>) =&gt; <span class="bool-val">false</span>,
+        }
     }
 }
 
@@ -880,21 +1028,14 @@
     <span class="kw">use super</span>::<span class="kw-2">*</span>;
     <span class="kw">impl </span>fmt::Display <span class="kw">for </span>PermissionPriv {
         <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
-            <span class="macro">write!</span>(
-                f,
-                <span class="string">"{}"</span>,
-                <span class="kw">match </span><span class="self">self </span>{
-                    Reserved { ty_is_freeze: <span class="bool-val">true</span>, conflicted: <span class="bool-val">false </span>} =&gt; <span class="string">"Reserved"</span>,
-                    Reserved { ty_is_freeze: <span class="bool-val">true</span>, conflicted: <span class="bool-val">true </span>} =&gt; <span class="string">"Reserved (conflicted)"</span>,
-                    Reserved { ty_is_freeze: <span class="bool-val">false</span>, conflicted: <span class="bool-val">false </span>} =&gt;
-                        <span class="string">"Reserved (interior mutable)"</span>,
-                    Reserved { ty_is_freeze: <span class="bool-val">false</span>, conflicted: <span class="bool-val">true </span>} =&gt;
-                        <span class="string">"Reserved (interior mutable, conflicted)"</span>,
-                    Active =&gt; <span class="string">"Active"</span>,
-                    Frozen =&gt; <span class="string">"Frozen"</span>,
-                    Disabled =&gt; <span class="string">"Disabled"</span>,
-                }
-            )
+            <span class="macro">write!</span>(f, <span class="string">"{}"</span>, <span class="kw">match </span><span class="self">self </span>{
+                ReservedFrz { conflicted: <span class="bool-val">false </span>} =&gt; <span class="string">"Reserved"</span>,
+                ReservedFrz { conflicted: <span class="bool-val">true </span>} =&gt; <span class="string">"Reserved (conflicted)"</span>,
+                ReservedIM =&gt; <span class="string">"Reserved (interior mutable)"</span>,
+                Active =&gt; <span class="string">"Active"</span>,
+                Frozen =&gt; <span class="string">"Frozen"</span>,
+                Disabled =&gt; <span class="string">"Disabled"</span>,
+            })
         }
     }
 
@@ -917,10 +1058,9 @@
             // and also as `diagnostics::DisplayFmtPermission.uninit` otherwise
             // alignment will be incorrect.
             </span><span class="kw">match </span><span class="self">self</span>.inner {
-                Reserved { ty_is_freeze: <span class="bool-val">true</span>, conflicted: <span class="bool-val">false </span>} =&gt; <span class="string">"Rs  "</span>,
-                Reserved { ty_is_freeze: <span class="bool-val">true</span>, conflicted: <span class="bool-val">true </span>} =&gt; <span class="string">"RsC "</span>,
-                Reserved { ty_is_freeze: <span class="bool-val">false</span>, conflicted: <span class="bool-val">false </span>} =&gt; <span class="string">"RsM "</span>,
-                Reserved { ty_is_freeze: <span class="bool-val">false</span>, conflicted: <span class="bool-val">true </span>} =&gt; <span class="string">"RsCM"</span>,
+                ReservedFrz { conflicted: <span class="bool-val">false </span>} =&gt; <span class="string">"Res "</span>,
+                ReservedFrz { conflicted: <span class="bool-val">true </span>} =&gt; <span class="string">"ResC"</span>,
+                ReservedIM =&gt; <span class="string">"ReIM"</span>,
                 Active =&gt; <span class="string">"Act "</span>,
                 Frozen =&gt; <span class="string">"Frz "</span>,
                 Disabled =&gt; <span class="string">"Dis "</span>,
@@ -930,13 +1070,14 @@
 
     <span class="kw">impl </span>PermTransition {
         <span class="doccomment">/// Readable explanation of the consequences of an event.
-        /// Fits in the sentence "This accessed caused {trans.summary()}".
+        /// Fits in the sentence "This transition corresponds to {trans.summary()}".
         </span><span class="kw">pub fn </span>summary(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str {
             <span class="macro">assert!</span>(<span class="self">self</span>.is_possible());
+            <span class="macro">assert!</span>(!<span class="self">self</span>.is_noop());
             <span class="kw">match </span>(<span class="self">self</span>.from, <span class="self">self</span>.to) {
                 (<span class="kw">_</span>, Active) =&gt; <span class="string">"the first write to a 2-phase borrowed mutable reference"</span>,
                 (<span class="kw">_</span>, Frozen) =&gt; <span class="string">"a loss of write permissions"</span>,
-                (Reserved { conflicted: <span class="bool-val">false</span>, .. }, Reserved { conflicted: <span class="bool-val">true</span>, .. }) =&gt;
+                (ReservedFrz { conflicted: <span class="bool-val">false </span>}, ReservedFrz { conflicted: <span class="bool-val">true </span>}) =&gt;
                     <span class="string">"a temporary loss of write permissions until function exit"</span>,
                 (Frozen, Disabled) =&gt; <span class="string">"a loss of read permissions"</span>,
                 (<span class="kw">_</span>, Disabled) =&gt; <span class="string">"a loss of read and write permissions"</span>,
@@ -985,28 +1126,33 @@
                         (Frozen, Frozen) =&gt; <span class="bool-val">true</span>,
                         (Active, Frozen) =&gt; <span class="bool-val">true</span>,
                         (Disabled, Disabled) =&gt; <span class="bool-val">true</span>,
-                        (Reserved { conflicted: <span class="bool-val">true</span>, .. }, Reserved { conflicted: <span class="bool-val">true</span>, .. }) =&gt;
-                            <span class="bool-val">true</span>,
+                        (
+                            ReservedFrz { conflicted: <span class="bool-val">true</span>, .. },
+                            ReservedFrz { conflicted: <span class="bool-val">true</span>, .. },
+                        ) =&gt; <span class="bool-val">true</span>,
                         <span class="comment">// A pointer being `Disabled` is a strictly stronger source of
                         // errors than it being `Frozen`. If we try to access a `Disabled`,
                         // then where it became `Frozen` (or `Active` or `Reserved`) is the least
                         // of our concerns for now.
-                        </span>(Reserved { conflicted: <span class="bool-val">true</span>, .. } | Active | Frozen, Disabled) =&gt; <span class="bool-val">false</span>,
-                        (Reserved { conflicted: <span class="bool-val">true</span>, .. }, Frozen) =&gt; <span class="bool-val">false</span>,
+                        </span>(ReservedFrz { conflicted: <span class="bool-val">true </span>} | Active | Frozen, Disabled) =&gt; <span class="bool-val">false</span>,
+                        (ReservedFrz { conflicted: <span class="bool-val">true </span>}, Frozen) =&gt; <span class="bool-val">false</span>,
 
                         <span class="comment">// `Active` and `Reserved` have all permissions, so a
                         // `ChildAccessForbidden(Reserved | Active)` can never exist.
-                        </span>(<span class="kw">_</span>, Active) | (<span class="kw">_</span>, Reserved { conflicted: <span class="bool-val">false</span>, .. }) =&gt;
+                        </span>(<span class="kw">_</span>, Active) | (<span class="kw">_</span>, ReservedFrz { conflicted: <span class="bool-val">false </span>}) =&gt;
                             <span class="macro">unreachable!</span>(<span class="string">"this permission cannot cause an error"</span>),
-                        <span class="comment">// No transition has `Reserved(conflicted=false)` as its `.to` unless it's a noop.
-                        </span>(Reserved { conflicted: <span class="bool-val">false</span>, .. }, <span class="kw">_</span>) =&gt;
+                        <span class="comment">// No transition has `Reserved { conflicted: false }` or `ReservedIM`
+                        // as its `.to` unless it's a noop.
+                        </span>(ReservedFrz { conflicted: <span class="bool-val">false </span>} | ReservedIM, <span class="kw">_</span>) =&gt;
                             <span class="macro">unreachable!</span>(<span class="string">"self is a noop transition"</span>),
                         <span class="comment">// All transitions produced in normal executions (using `apply_access`)
                         // change permissions in the order `Reserved -&gt; Active -&gt; Frozen -&gt; Disabled`.
                         // We assume that the error was triggered on the same location that
                         // the transition `self` applies to, so permissions found must be increasing
                         // in the order `self.from &lt; self.to &lt;= insufficient.inner`
-                        </span>(Active | Frozen | Disabled, Reserved { .. }) | (Disabled, Frozen) =&gt;
+                        </span>(Active | Frozen | Disabled, ReservedFrz { .. } | ReservedIM)
+                        | (Disabled, Frozen)
+                        | (ReservedFrz { .. }, ReservedIM) =&gt;
                             <span class="macro">unreachable!</span>(<span class="string">"permissions between self and err must be increasing"</span>),
                     }
                 }
@@ -1020,8 +1166,10 @@
                         // conflicted.
                         </span>(Active, Active) =&gt; <span class="bool-val">true</span>,
                         (Frozen, Frozen) =&gt; <span class="bool-val">true</span>,
-                        (Reserved { conflicted: <span class="bool-val">true</span>, .. }, Reserved { conflicted: <span class="bool-val">true</span>, .. }) =&gt;
-                            <span class="bool-val">true</span>,
+                        (
+                            ReservedFrz { conflicted: <span class="bool-val">true</span>, .. },
+                            ReservedFrz { conflicted: <span class="bool-val">true</span>, .. },
+                        ) =&gt; <span class="bool-val">true</span>,
                         <span class="comment">// If the error is a transition `Frozen -&gt; Disabled`, then we don't really
                         // care whether before that was `Reserved -&gt; Active -&gt; Frozen` or
                         // `Frozen` directly.
@@ -1034,23 +1182,23 @@
                         //   -&gt; Reserved { conflicted: true }` is inexistant or irrelevant,
                         // and so is the `Reserved { conflicted: false } -&gt; Active`
                         </span>(Active, Frozen) =&gt; <span class="bool-val">false</span>,
-                        (Reserved { conflicted: <span class="bool-val">true</span>, .. }, <span class="kw">_</span>) =&gt; <span class="bool-val">false</span>,
+                        (ReservedFrz { conflicted: <span class="bool-val">true </span>}, <span class="kw">_</span>) =&gt; <span class="bool-val">false</span>,
 
                         (<span class="kw">_</span>, Disabled) =&gt;
                             <span class="macro">unreachable!</span>(
                                 <span class="string">"permission that results in Disabled should not itself be Disabled in the first place"
                             </span>),
-                        <span class="comment">// No transition has `Reserved { conflicted: false }` as its `.to`
+                        <span class="comment">// No transition has `Reserved { conflicted: false }` or `ReservedIM` as its `.to`
                         // unless it's a noop.
-                        </span>(Reserved { conflicted: <span class="bool-val">false</span>, .. }, <span class="kw">_</span>) =&gt;
+                        </span>(ReservedFrz { conflicted: <span class="bool-val">false </span>} | ReservedIM, <span class="kw">_</span>) =&gt;
                             <span class="macro">unreachable!</span>(<span class="string">"self is a noop transition"</span>),
 
                         <span class="comment">// Permissions only evolve in the order `Reserved -&gt; Active -&gt; Frozen -&gt; Disabled`,
                         // so permissions found must be increasing in the order
                         // `self.from &lt; self.to &lt;= forbidden.from &lt; forbidden.to`.
-                        </span>(Disabled, Reserved { .. } | Active | Frozen)
-                        | (Frozen, Reserved { .. } | Active)
-                        | (Active, Reserved { .. }) =&gt;
+                        </span>(Disabled, ReservedFrz { .. } | ReservedIM | Active | Frozen)
+                        | (Frozen, ReservedFrz { .. } | ReservedIM | Active)
+                        | (Active, ReservedFrz { .. } | ReservedIM) =&gt;
                             <span class="macro">unreachable!</span>(<span class="string">"permissions between self and err must be increasing"</span>),
                     }
                 }
@@ -1071,9 +1219,9 @@
 
 <span class="attr">#[cfg(test)]
 </span><span class="kw">impl </span>Permission {
-    <span class="kw">pub fn </span>is_reserved_with_conflicted(<span class="kw-2">&amp;</span><span class="self">self</span>, expected_conflicted: bool) -&gt; bool {
+    <span class="kw">pub fn </span>is_reserved_frz_with_conflicted(<span class="kw-2">&amp;</span><span class="self">self</span>, expected_conflicted: bool) -&gt; bool {
         <span class="kw">match </span><span class="self">self</span>.inner {
-            Reserved { conflicted, .. } =&gt; conflicted == expected_conflicted,
+            ReservedFrz { conflicted } =&gt; conflicted == expected_conflicted,
             <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
         }
     }
@@ -1082,15 +1230,14 @@
 <span class="attr">#[cfg(test)]
 </span><span class="kw">mod </span>propagation_optimization_checks {
     <span class="kw">pub use super</span>::<span class="kw-2">*</span>;
-    <span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::tree_borrows::exhaustive::{precondition, Exhaustive};
+    <span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::tree_borrows::exhaustive::{Exhaustive, precondition};
 
     <span class="kw">impl </span>Exhaustive <span class="kw">for </span>PermissionPriv {
         <span class="kw">fn </span>exhaustive() -&gt; Box&lt;<span class="kw">dyn </span>Iterator&lt;Item = <span class="self">Self</span>&gt;&gt; {
             Box::new(
-                <span class="macro">vec!</span>[Active, Frozen, Disabled].into_iter().chain(
-                    &lt;[bool; <span class="number">2</span>]&gt;::exhaustive()
-                        .map(|[ty_is_freeze, conflicted]| Reserved { ty_is_freeze, conflicted }),
-                ),
+                <span class="macro">vec!</span>[Active, Frozen, Disabled, ReservedIM]
+                    .into_iter()
+                    .chain(&lt;bool&gt;::exhaustive().map(|conflicted| ReservedFrz { conflicted })),
             )
         }
     }
@@ -1130,6 +1277,9 @@
                 // We thus eliminate from this test and all other tests
                 // the case where the tag is initially unprotected and later becomes protected.
                 </span><span class="macro">precondition!</span>(old_protected || !new_protected);
+                <span class="kw">if </span>old_protected {
+                    <span class="macro">precondition!</span>(old.compatible_with_protector());
+                }
                 <span class="kw">for </span>(access, rel_pos) <span class="kw">in </span>&lt;(AccessKind, AccessRelatedness)&gt;::exhaustive() {
                     <span class="kw">if let </span><span class="prelude-val">Some</span>(new) = perform_access(access, rel_pos, old, old_protected) {
                         <span class="macro">assert_eq!</span>(
@@ -1151,6 +1301,9 @@
         <span class="kw">for </span>old <span class="kw">in </span>PermissionPriv::exhaustive() {
             <span class="kw">for </span>[old_protected, new_protected] <span class="kw">in </span>&lt;[bool; <span class="number">2</span>]&gt;::exhaustive() {
                 <span class="macro">precondition!</span>(old_protected || !new_protected);
+                <span class="kw">if </span>old_protected {
+                    <span class="macro">precondition!</span>(old.compatible_with_protector());
+                }
                 <span class="kw">for </span>rel_pos <span class="kw">in </span>AccessRelatedness::exhaustive() {
                     <span class="macro">precondition!</span>(rel_pos.is_foreign());
                     <span class="kw">if let </span><span class="prelude-val">Some</span>(new) = perform_access(old_access, rel_pos, old, old_protected) {
@@ -1175,6 +1328,9 @@
                 reach.insert((start, start));
                 <span class="kw">for </span>(access, rel) <span class="kw">in </span>&lt;(AccessKind, AccessRelatedness)&gt;::exhaustive() {
                     <span class="kw">for </span>prot <span class="kw">in </span>bool::exhaustive() {
+                        <span class="kw">if </span>prot {
+                            <span class="macro">precondition!</span>(start.compatible_with_protector());
+                        }
                         <span class="kw">if let </span><span class="prelude-val">Some</span>(end) = transition::perform_access(access, rel, start, prot) {
                             reach.insert((start, end));
                         }

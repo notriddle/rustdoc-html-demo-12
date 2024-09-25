@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/dataflow_const_prop.rs`."><title>dataflow_const_prop.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/dataflow_const_prop.rs`."><title>dataflow_const_prop.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>dataflow_const_prop.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -871,11 +872,14 @@
 <a href="#871" id="871">871</a>
 <a href="#872" id="872">872</a>
 <a href="#873" id="873">873</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! A constant propagation optimization pass based on dataflow analysis.
+<a href="#874" id="874">874</a>
+<a href="#875" id="875">875</a>
+<a href="#876" id="876">876</a>
+<a href="#877" id="877">877</a></pre></div><pre class="rust"><code><span class="doccomment">//! A constant propagation optimization pass based on dataflow analysis.
 //!
 //! Currently, this pass only propagates scalar values.
 
-</span><span class="kw">use </span>rustc_const_eval::const_eval::{throw_machine_stop_str, DummyMachine};
+</span><span class="kw">use </span>rustc_const_eval::const_eval::{DummyMachine, throw_machine_stop_str};
 <span class="kw">use </span>rustc_const_eval::interpret::{ImmTy, Immediate, InterpCx, OpTy, PlaceTy, Projectable};
 <span class="kw">use </span>rustc_data_structures::fx::FxHashMap;
 <span class="kw">use </span>rustc_hir::def::DefKind;
@@ -891,16 +895,17 @@
 };
 <span class="kw">use </span>rustc_mir_dataflow::{Analysis, Results, ResultsVisitor};
 <span class="kw">use </span>rustc_span::DUMMY_SP;
-<span class="kw">use </span>rustc_target::abi::{Abi, FieldIdx, Size, VariantIdx, FIRST_VARIANT};
+<span class="kw">use </span>rustc_target::abi::{Abi, FIRST_VARIANT, FieldIdx, Size, VariantIdx};
+<span class="kw">use </span>tracing::{debug, debug_span, instrument};
 
 <span class="comment">// These constants are somewhat random guesses and have not been optimized.
 // If `tcx.sess.mir_opt_level() &gt;= 4`, we ignore the limits (this can become very expensive).
 </span><span class="kw">const </span>BLOCK_LIMIT: usize = <span class="number">100</span>;
 <span class="kw">const </span>PLACE_LIMIT: usize = <span class="number">100</span>;
 
-<span class="kw">pub struct </span>DataflowConstProp;
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>DataflowConstProp;
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>DataflowConstProp {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">crate</span>::MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>DataflowConstProp {
     <span class="kw">fn </span>is_enabled(<span class="kw-2">&amp;</span><span class="self">self</span>, sess: <span class="kw-2">&amp;</span>rustc_session::Session) -&gt; bool {
         sess.mir_opt_level() &gt;= <span class="number">3
     </span>}
@@ -1204,14 +1209,14 @@
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; ConstAnalysis&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">pub fn </span>new(tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Body&lt;<span class="lifetime">'tcx</span>&gt;, map: Map&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
+    <span class="kw">fn </span>new(tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Body&lt;<span class="lifetime">'tcx</span>&gt;, map: Map&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
         <span class="kw">let </span>param_env = tcx.param_env_reveal_all_normalized(body.source.def_id());
         <span class="self">Self </span>{
             map,
             tcx,
             local_decls: <span class="kw-2">&amp;</span>body.local_decls,
             ecx: InterpCx::new(tcx, DUMMY_SP, param_env, DummyMachine),
-            param_env: param_env,
+            param_env,
         }
     }
 
@@ -1255,7 +1260,7 @@
         place: PlaceIndex,
         <span class="kw-2">mut </span>operand: OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
         projection: <span class="kw-2">&amp;</span>[PlaceElem&lt;<span class="lifetime">'tcx</span>&gt;],
-    ) -&gt; <span class="prelude-ty">Option</span>&lt;!&gt; {
+    ) {
         <span class="kw">for </span><span class="kw-2">&amp;</span>(<span class="kw-2">mut </span>proj_elem) <span class="kw">in </span>projection {
             <span class="kw">if let </span>PlaceElem::Index(index) = proj_elem {
                 <span class="kw">if let </span>FlatSet::Elem(index) = state.get(index.into(), <span class="kw-2">&amp;</span><span class="self">self</span>.map)
@@ -1264,10 +1269,14 @@
                 {
                     proj_elem = PlaceElem::ConstantIndex { offset, min_length, from_end: <span class="bool-val">false </span>};
                 } <span class="kw">else </span>{
-                    <span class="kw">return </span><span class="prelude-val">None</span>;
+                    <span class="kw">return</span>;
                 }
             }
-            operand = <span class="self">self</span>.ecx.project(<span class="kw-2">&amp;</span>operand, proj_elem).ok()<span class="question-mark">?</span>;
+            operand = <span class="kw">if let </span><span class="prelude-val">Ok</span>(operand) = <span class="self">self</span>.ecx.project(<span class="kw-2">&amp;</span>operand, proj_elem) {
+                operand
+            } <span class="kw">else </span>{
+                <span class="kw">return</span>;
+            }
         }
 
         <span class="self">self</span>.map.for_each_projection_value(
@@ -1299,9 +1308,7 @@
                 }
             },
         );
-
-        <span class="prelude-val">None
-    </span>}
+    }
 
     <span class="kw">fn </span>binary_op(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
@@ -1424,13 +1431,13 @@
     }
 }
 
-<span class="kw">struct </span>Collector&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'locals</span>&gt; {
+<span class="kw">struct </span>Collector&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     patch: Patch&lt;<span class="lifetime">'tcx</span>&gt;,
-    local_decls: <span class="kw-2">&amp;</span><span class="lifetime">'locals </span>LocalDecls&lt;<span class="lifetime">'tcx</span>&gt;,
+    local_decls: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>LocalDecls&lt;<span class="lifetime">'tcx</span>&gt;,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'locals</span>&gt; Collector&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'locals</span>&gt; {
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, local_decls: <span class="kw-2">&amp;</span><span class="lifetime">'locals </span>LocalDecls&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; Collector&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, local_decls: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>LocalDecls&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
         <span class="self">Self </span>{ patch: Patch::new(tcx), local_decls }
     }
 
@@ -1517,7 +1524,8 @@
         </span>ty::FnDef(..) =&gt; {}
 
         <span class="comment">// Those are scalars, must be handled above.
-        </span>ty::Bool | ty::Int(<span class="kw">_</span>) | ty::Uint(<span class="kw">_</span>) | ty::Float(<span class="kw">_</span>) | ty::Char =&gt; <span class="macro">throw_machine_stop_str!</span>(<span class="string">"primitive type with provenance"</span>),
+        </span>ty::Bool | ty::Int(<span class="kw">_</span>) | ty::Uint(<span class="kw">_</span>) | ty::Float(<span class="kw">_</span>) | ty::Char =&gt;
+            <span class="macro">throw_machine_stop_str!</span>(<span class="string">"primitive type with provenance"</span>),
 
         ty::Tuple(elem_tys) =&gt; {
             <span class="kw">for </span>(i, elem) <span class="kw">in </span>elem_tys.iter().enumerate() {
@@ -1591,15 +1599,15 @@
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;
     ResultsVisitor&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>, Results&lt;<span class="lifetime">'tcx</span>, ValueAnalysisWrapper&lt;ConstAnalysis&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;&gt;&gt;&gt;
-    <span class="kw">for </span>Collector&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'_</span>&gt;
+    <span class="kw">for </span>Collector&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;
 {
-    <span class="kw">type </span>FlowState = State&lt;FlatSet&lt;Scalar&gt;&gt;;
+    <span class="kw">type </span>Domain = State&lt;FlatSet&lt;Scalar&gt;&gt;;
 
     <span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>, results, statement))]
     </span><span class="kw">fn </span>visit_statement_before_primary_effect(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         results: <span class="kw-2">&amp;mut </span>Results&lt;<span class="lifetime">'tcx</span>, ValueAnalysisWrapper&lt;ConstAnalysis&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;&gt;&gt;,
-        state: <span class="kw-2">&amp;</span><span class="self">Self</span>::FlowState,
+        state: <span class="kw-2">&amp;</span><span class="self">Self</span>::Domain,
         statement: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Statement&lt;<span class="lifetime">'tcx</span>&gt;,
         location: Location,
     ) {
@@ -1621,7 +1629,7 @@
     </span><span class="kw">fn </span>visit_statement_after_primary_effect(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         results: <span class="kw-2">&amp;mut </span>Results&lt;<span class="lifetime">'tcx</span>, ValueAnalysisWrapper&lt;ConstAnalysis&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;&gt;&gt;,
-        state: <span class="kw-2">&amp;</span><span class="self">Self</span>::FlowState,
+        state: <span class="kw-2">&amp;</span><span class="self">Self</span>::Domain,
         statement: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Statement&lt;<span class="lifetime">'tcx</span>&gt;,
         location: Location,
     ) {
@@ -1646,7 +1654,7 @@
     <span class="kw">fn </span>visit_terminator_before_primary_effect(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         results: <span class="kw-2">&amp;mut </span>Results&lt;<span class="lifetime">'tcx</span>, ValueAnalysisWrapper&lt;ConstAnalysis&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;&gt;&gt;,
-        state: <span class="kw-2">&amp;</span><span class="self">Self</span>::FlowState,
+        state: <span class="kw-2">&amp;</span><span class="self">Self</span>::Domain,
         terminator: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Terminator&lt;<span class="lifetime">'tcx</span>&gt;,
         location: Location,
     ) {
@@ -1708,14 +1716,14 @@
     }
 }
 
-<span class="kw">struct </span>OperandCollector&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'map</span>, <span class="lifetime">'locals</span>, <span class="lifetime">'a</span>&gt; {
+<span class="kw">struct </span>OperandCollector&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>&gt; {
     state: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>State&lt;FlatSet&lt;Scalar&gt;&gt;,
-    visitor: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>Collector&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'locals</span>&gt;,
-    ecx: <span class="kw-2">&amp;</span><span class="lifetime">'map </span><span class="kw-2">mut </span>InterpCx&lt;<span class="lifetime">'tcx</span>, DummyMachine&gt;,
-    map: <span class="kw-2">&amp;</span><span class="lifetime">'map </span>Map&lt;<span class="lifetime">'tcx</span>&gt;,
+    visitor: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>Collector&lt;<span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>&gt;,
+    ecx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>InterpCx&lt;<span class="lifetime">'tcx</span>, DummyMachine&gt;,
+    map: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Map&lt;<span class="lifetime">'tcx</span>&gt;,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; Visitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>OperandCollector&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; Visitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>OperandCollector&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">fn </span>visit_projection_elem(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         <span class="kw">_</span>: PlaceRef&lt;<span class="lifetime">'tcx</span>&gt;,

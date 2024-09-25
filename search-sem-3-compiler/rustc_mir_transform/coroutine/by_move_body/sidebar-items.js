@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["ByMoveBody","MakeByMoveBody"]};
+window.SIDEBAR_ITEMS = {"fn":["coroutine_by_move_body_def_id"],"struct":["MakeByMoveBody"]};

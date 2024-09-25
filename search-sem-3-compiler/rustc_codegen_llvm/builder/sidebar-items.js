@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["UNNAMED"],"macro":["builder_methods_for_value_instructions"],"struct":["Builder"]};
+window.SIDEBAR_ITEMS = {"constant":["UNNAMED"],"macro":["math_builder_methods","set_math_builder_methods"],"struct":["Builder"]};

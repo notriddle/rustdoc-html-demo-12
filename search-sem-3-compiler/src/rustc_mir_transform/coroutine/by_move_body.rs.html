@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/coroutine/by_move_body.rs`."><title>by_move_body.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/coroutine/by_move_body.rs`."><title>by_move_body.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/coroutine/</div>by_move_body.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -281,7 +282,46 @@
 <a href="#281" id="281">281</a>
 <a href="#282" id="282">282</a>
 <a href="#283" id="283">283</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! This pass constructs a second coroutine body sufficient for return from
+<a href="#284" id="284">284</a>
+<a href="#285" id="285">285</a>
+<a href="#286" id="286">286</a>
+<a href="#287" id="287">287</a>
+<a href="#288" id="288">288</a>
+<a href="#289" id="289">289</a>
+<a href="#290" id="290">290</a>
+<a href="#291" id="291">291</a>
+<a href="#292" id="292">292</a>
+<a href="#293" id="293">293</a>
+<a href="#294" id="294">294</a>
+<a href="#295" id="295">295</a>
+<a href="#296" id="296">296</a>
+<a href="#297" id="297">297</a>
+<a href="#298" id="298">298</a>
+<a href="#299" id="299">299</a>
+<a href="#300" id="300">300</a>
+<a href="#301" id="301">301</a>
+<a href="#302" id="302">302</a>
+<a href="#303" id="303">303</a>
+<a href="#304" id="304">304</a>
+<a href="#305" id="305">305</a>
+<a href="#306" id="306">306</a>
+<a href="#307" id="307">307</a>
+<a href="#308" id="308">308</a>
+<a href="#309" id="309">309</a>
+<a href="#310" id="310">310</a>
+<a href="#311" id="311">311</a>
+<a href="#312" id="312">312</a>
+<a href="#313" id="313">313</a>
+<a href="#314" id="314">314</a>
+<a href="#315" id="315">315</a>
+<a href="#316" id="316">316</a>
+<a href="#317" id="317">317</a>
+<a href="#318" id="318">318</a>
+<a href="#319" id="319">319</a>
+<a href="#320" id="320">320</a>
+<a href="#321" id="321">321</a>
+<a href="#322" id="322">322</a>
+<a href="#323" id="323">323</a></pre></div><pre class="rust"><code><span class="doccomment">//! This pass constructs a second coroutine body sufficient for return from
 //! `FnOnce`/`AsyncFnOnce` implementations for coroutine-closures (e.g. async closures).
 //!
 //! Consider an async closure like:
@@ -352,140 +392,180 @@
 //! in case precise captures (edition 2021 closure capture rules) caused the inner coroutine
 //! to split one field capture into two.
 
-</span><span class="kw">use </span>rustc_data_structures::unord::UnordMap;
+</span><span class="kw">use </span>rustc_data_structures::steal::Steal;
+<span class="kw">use </span>rustc_data_structures::unord::UnordMap;
 <span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
+<span class="kw">use </span>rustc_hir::def::DefKind;
+<span class="kw">use </span>rustc_hir::def_id::{DefId, LocalDefId};
 <span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::hir::place::{Projection, ProjectionKind};
 <span class="kw">use </span>rustc_middle::mir::visit::MutVisitor;
-<span class="kw">use </span>rustc_middle::mir::{<span class="self">self</span>, dump_mir, MirPass};
+<span class="kw">use </span>rustc_middle::mir::{<span class="self">self</span>, dump_mir};
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, InstanceKind, Ty, TyCtxt, TypeVisitableExt};
+<span class="kw">use </span>rustc_span::symbol::kw;
 <span class="kw">use </span>rustc_target::abi::{FieldIdx, VariantIdx};
 
-<span class="kw">pub struct </span>ByMoveBody;
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>coroutine_by_move_body_def_id&lt;<span class="lifetime">'tcx</span>&gt;(
+    tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
+    coroutine_def_id: LocalDefId,
+) -&gt; DefId {
+    <span class="kw">let </span>body = tcx.mir_built(coroutine_def_id).borrow();
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>ByMoveBody {
-    <span class="kw">fn </span>run_pass(<span class="kw-2">&amp;</span><span class="self">self</span>, tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;mut </span>mir::Body&lt;<span class="lifetime">'tcx</span>&gt;) {
-        <span class="comment">// We only need to generate by-move coroutine bodies for coroutines that come
-        // from coroutine-closures.
-        </span><span class="kw">let </span><span class="prelude-val">Some</span>(coroutine_def_id) = body.source.def_id().as_local() <span class="kw">else </span>{
-            <span class="kw">return</span>;
-        };
-        <span class="kw">let </span><span class="prelude-val">Some</span>(hir::CoroutineKind::Desugared(<span class="kw">_</span>, hir::CoroutineSource::Closure)) =
-            tcx.coroutine_kind(coroutine_def_id)
-        <span class="kw">else </span>{
-            <span class="kw">return</span>;
-        };
-
-        <span class="comment">// Also, let's skip processing any bodies with errors, since there's no guarantee
-        // the MIR body will be constructed well.
-        </span><span class="kw">let </span>coroutine_ty = body.local_decls[ty::CAPTURE_STRUCT_LOCAL].ty;
-        <span class="kw">if </span>coroutine_ty.references_error() {
-            <span class="kw">return</span>;
-        }
-
-        <span class="comment">// We don't need to generate a by-move coroutine if the coroutine body was
-        // produced by the `CoroutineKindShim`, since it's already by-move.
-        </span><span class="kw">if </span><span class="macro">matches!</span>(body.source.instance, ty::InstanceKind::CoroutineKindShim { .. }) {
-            <span class="kw">return</span>;
-        }
-
-        <span class="kw">let </span>ty::Coroutine(<span class="kw">_</span>, args) = <span class="kw-2">*</span>coroutine_ty.kind() <span class="kw">else </span>{ <span class="macro">bug!</span>(<span class="string">"{body:#?}"</span>) };
-        <span class="kw">let </span>args = args.as_coroutine();
-
-        <span class="kw">let </span>coroutine_kind = args.kind_ty().to_opt_closure_kind().unwrap();
-
-        <span class="kw">let </span>parent_def_id = tcx.local_parent(coroutine_def_id);
-        <span class="kw">let </span>ty::CoroutineClosure(<span class="kw">_</span>, parent_args) =
-            <span class="kw-2">*</span>tcx.type_of(parent_def_id).instantiate_identity().kind()
-        <span class="kw">else </span>{
-            <span class="macro">bug!</span>();
-        };
-        <span class="kw">let </span>parent_closure_args = parent_args.as_coroutine_closure();
-        <span class="kw">let </span>num_args = parent_closure_args
-            .coroutine_closure_sig()
-            .skip_binder()
-            .tupled_inputs_ty
-            .tuple_fields()
-            .len();
-
-        <span class="kw">let </span>field_remapping: UnordMap&lt;<span class="kw">_</span>, <span class="kw">_</span>&gt; = ty::analyze_coroutine_closure_captures(
-            tcx.closure_captures(parent_def_id).iter().copied(),
-            tcx.closure_captures(coroutine_def_id).iter().skip(num_args).copied(),
-            |(parent_field_idx, parent_capture), (child_field_idx, child_capture)| {
-                <span class="comment">// Store this set of additional projections (fields and derefs).
-                // We need to re-apply them later.
-                </span><span class="kw">let </span>child_precise_captures =
-                    <span class="kw-2">&amp;</span>child_capture.place.projections[parent_capture.place.projections.len()..];
-
-                <span class="comment">// If the parent captures by-move, and the child captures by-ref, then we
-                // need to peel an additional `deref` off of the body of the child.
-                </span><span class="kw">let </span>needs_deref = child_capture.is_by_ref() &amp;&amp; !parent_capture.is_by_ref();
-                <span class="kw">if </span>needs_deref {
-                    <span class="macro">assert_ne!</span>(
-                        coroutine_kind,
-                        ty::ClosureKind::FnOnce,
-                        <span class="string">"`FnOnce` coroutine-closures return coroutines that capture from \
-                        their body; it will always result in a borrowck error!"
-                    </span>);
-                }
-
-                <span class="comment">// Finally, store the type of the parent's captured place. We need
-                // this when building the field projection in the MIR body later on.
-                </span><span class="kw">let </span><span class="kw-2">mut </span>parent_capture_ty = parent_capture.place.ty();
-                parent_capture_ty = <span class="kw">match </span>parent_capture.info.capture_kind {
-                    ty::UpvarCapture::ByValue =&gt; parent_capture_ty,
-                    ty::UpvarCapture::ByRef(kind) =&gt; Ty::new_ref(
-                        tcx,
-                        tcx.lifetimes.re_erased,
-                        parent_capture_ty,
-                        kind.to_mutbl_lossy(),
-                    ),
-                };
-
-                (
-                    FieldIdx::from_usize(child_field_idx + num_args),
-                    (
-                        FieldIdx::from_usize(parent_field_idx + num_args),
-                        parent_capture_ty,
-                        needs_deref,
-                        child_precise_captures,
-                    ),
-                )
-            },
-        )
-        .collect();
-
-        <span class="kw">if </span>coroutine_kind == ty::ClosureKind::FnOnce {
-            <span class="macro">assert_eq!</span>(field_remapping.len(), tcx.closure_captures(parent_def_id).len());
-            <span class="kw">return</span>;
-        }
-
-        <span class="kw">let </span>by_move_coroutine_ty = tcx
-            .instantiate_bound_regions_with_erased(parent_closure_args.coroutine_closure_sig())
-            .to_coroutine_given_kind_and_upvars(
-                tcx,
-                parent_closure_args.parent_args(),
-                coroutine_def_id.to_def_id(),
-                ty::ClosureKind::FnOnce,
-                tcx.lifetimes.re_erased,
-                parent_closure_args.tupled_upvars_ty(),
-                parent_closure_args.coroutine_captures_by_ref_ty(),
-            );
-
-        <span class="kw">let </span><span class="kw-2">mut </span>by_move_body = body.clone();
-        MakeByMoveBody { tcx, field_remapping, by_move_coroutine_ty }.visit_body(<span class="kw-2">&amp;mut </span>by_move_body);
-        dump_mir(tcx, <span class="bool-val">false</span>, <span class="string">"coroutine_by_move"</span>, <span class="kw-2">&amp;</span><span class="number">0</span>, <span class="kw-2">&amp;</span>by_move_body, |<span class="kw">_</span>, <span class="kw">_</span>| <span class="prelude-val">Ok</span>(()));
-        <span class="comment">// FIXME: use query feeding to generate the body right here and then only store the `DefId` of the new body.
-        </span>by_move_body.source = mir::MirSource::from_instance(InstanceKind::CoroutineKindShim {
-            coroutine_def_id: coroutine_def_id.to_def_id(),
-        });
-        body.coroutine.as_mut().unwrap().by_move_body = <span class="prelude-val">Some</span>(by_move_body);
+    <span class="comment">// If the typeck results are tainted, no need to make a by-ref body.
+    </span><span class="kw">if </span>body.tainted_by_errors.is_some() {
+        <span class="kw">return </span>coroutine_def_id.to_def_id();
     }
+
+    <span class="kw">let </span><span class="prelude-val">Some</span>(hir::CoroutineKind::Desugared(<span class="kw">_</span>, hir::CoroutineSource::Closure)) =
+        tcx.coroutine_kind(coroutine_def_id)
+    <span class="kw">else </span>{
+        <span class="macro">bug!</span>(<span class="string">"should only be invoked on coroutine-closures"</span>);
+    };
+
+    <span class="comment">// Also, let's skip processing any bodies with errors, since there's no guarantee
+    // the MIR body will be constructed well.
+    </span><span class="kw">let </span>coroutine_ty = body.local_decls[ty::CAPTURE_STRUCT_LOCAL].ty;
+
+    <span class="kw">let </span>ty::Coroutine(<span class="kw">_</span>, args) = <span class="kw-2">*</span>coroutine_ty.kind() <span class="kw">else </span>{
+        <span class="macro">bug!</span>(<span class="string">"tried to create by-move body of non-coroutine receiver"</span>);
+    };
+    <span class="kw">let </span>args = args.as_coroutine();
+
+    <span class="kw">let </span>coroutine_kind = args.kind_ty().to_opt_closure_kind().unwrap();
+
+    <span class="kw">let </span>parent_def_id = tcx.local_parent(coroutine_def_id);
+    <span class="kw">let </span>ty::CoroutineClosure(<span class="kw">_</span>, parent_args) =
+        <span class="kw-2">*</span>tcx.type_of(parent_def_id).instantiate_identity().kind()
+    <span class="kw">else </span>{
+        <span class="macro">bug!</span>(<span class="string">"coroutine's parent was not a coroutine-closure"</span>);
+    };
+    <span class="kw">if </span>parent_args.references_error() {
+        <span class="kw">return </span>coroutine_def_id.to_def_id();
+    }
+
+    <span class="kw">let </span>parent_closure_args = parent_args.as_coroutine_closure();
+    <span class="kw">let </span>num_args = parent_closure_args
+        .coroutine_closure_sig()
+        .skip_binder()
+        .tupled_inputs_ty
+        .tuple_fields()
+        .len();
+
+    <span class="kw">let </span>field_remapping: UnordMap&lt;<span class="kw">_</span>, <span class="kw">_</span>&gt; = ty::analyze_coroutine_closure_captures(
+        tcx.closure_captures(parent_def_id).iter().copied(),
+        tcx.closure_captures(coroutine_def_id).iter().skip(num_args).copied(),
+        |(parent_field_idx, parent_capture), (child_field_idx, child_capture)| {
+            <span class="comment">// Store this set of additional projections (fields and derefs).
+            // We need to re-apply them later.
+            </span><span class="kw">let </span><span class="kw-2">mut </span>child_precise_captures =
+                child_capture.place.projections[parent_capture.place.projections.len()..].to_vec();
+
+            <span class="comment">// If the parent capture is by-ref, then we need to apply an additional
+            // deref before applying any further projections to this place.
+            </span><span class="kw">if </span>parent_capture.is_by_ref() {
+                child_precise_captures.insert(<span class="number">0</span>, Projection {
+                    ty: parent_capture.place.ty(),
+                    kind: ProjectionKind::Deref,
+                });
+            }
+            <span class="comment">// If the child capture is by-ref, then we need to apply a "ref"
+            // projection (i.e. `&amp;`) at the end. But wait! We don't have that
+            // as a projection kind. So instead, we can apply its dual and
+            // *peel* a deref off of the place when it shows up in the MIR body.
+            // Luckily, by construction this is always possible.
+            </span><span class="kw">let </span>peel_deref = <span class="kw">if </span>child_capture.is_by_ref() {
+                <span class="macro">assert!</span>(
+                    parent_capture.is_by_ref() || coroutine_kind != ty::ClosureKind::FnOnce,
+                    <span class="string">"`FnOnce` coroutine-closures return coroutines that capture from \
+                        their body; it will always result in a borrowck error!"
+                </span>);
+                <span class="bool-val">true
+            </span>} <span class="kw">else </span>{
+                <span class="bool-val">false
+            </span>};
+
+            <span class="comment">// Regarding the behavior above, you may think that it's redundant to both
+            // insert a deref and then peel a deref if the parent and child are both
+            // captured by-ref. This would be correct, except for the case where we have
+            // precise capturing projections, since the inserted deref is to the *beginning*
+            // and the peeled deref is at the *end*. I cannot seem to actually find a
+            // case where this happens, though, but let's keep this code flexible.
+
+            // Finally, store the type of the parent's captured place. We need
+            // this when building the field projection in the MIR body later on.
+            </span><span class="kw">let </span><span class="kw-2">mut </span>parent_capture_ty = parent_capture.place.ty();
+            parent_capture_ty = <span class="kw">match </span>parent_capture.info.capture_kind {
+                ty::UpvarCapture::ByValue =&gt; parent_capture_ty,
+                ty::UpvarCapture::ByRef(kind) =&gt; Ty::new_ref(
+                    tcx,
+                    tcx.lifetimes.re_erased,
+                    parent_capture_ty,
+                    kind.to_mutbl_lossy(),
+                ),
+            };
+
+            (
+                FieldIdx::from_usize(child_field_idx + num_args),
+                (
+                    FieldIdx::from_usize(parent_field_idx + num_args),
+                    parent_capture_ty,
+                    peel_deref,
+                    child_precise_captures,
+                ),
+            )
+        },
+    )
+    .collect();
+
+    <span class="kw">if </span>coroutine_kind == ty::ClosureKind::FnOnce {
+        <span class="macro">assert_eq!</span>(field_remapping.len(), tcx.closure_captures(parent_def_id).len());
+        <span class="comment">// The by-move body is just the body :)
+        </span><span class="kw">return </span>coroutine_def_id.to_def_id();
+    }
+
+    <span class="kw">let </span>by_move_coroutine_ty = tcx
+        .instantiate_bound_regions_with_erased(parent_closure_args.coroutine_closure_sig())
+        .to_coroutine_given_kind_and_upvars(
+            tcx,
+            parent_closure_args.parent_args(),
+            coroutine_def_id.to_def_id(),
+            ty::ClosureKind::FnOnce,
+            tcx.lifetimes.re_erased,
+            parent_closure_args.tupled_upvars_ty(),
+            parent_closure_args.coroutine_captures_by_ref_ty(),
+        );
+
+    <span class="kw">let </span><span class="kw-2">mut </span>by_move_body = body.clone();
+    MakeByMoveBody { tcx, field_remapping, by_move_coroutine_ty }.visit_body(<span class="kw-2">&amp;mut </span>by_move_body);
+
+    <span class="comment">// This will always be `{closure#1}`, since the original coroutine is `{closure#0}`.
+    </span><span class="kw">let </span>body_def = tcx.create_def(parent_def_id, kw::Empty, DefKind::SyntheticCoroutineBody);
+    by_move_body.source =
+        mir::MirSource::from_instance(InstanceKind::Item(body_def.def_id().to_def_id()));
+    dump_mir(tcx, <span class="bool-val">false</span>, <span class="string">"built"</span>, <span class="kw-2">&amp;</span><span class="string">"after"</span>, <span class="kw-2">&amp;</span>by_move_body, |<span class="kw">_</span>, <span class="kw">_</span>| <span class="prelude-val">Ok</span>(()));
+
+    <span class="comment">// Inherited from the by-ref coroutine.
+    </span>body_def.codegen_fn_attrs(tcx.codegen_fn_attrs(coroutine_def_id).clone());
+    body_def.constness(tcx.constness(coroutine_def_id).clone());
+    body_def.coroutine_kind(tcx.coroutine_kind(coroutine_def_id).clone());
+    body_def.def_ident_span(tcx.def_ident_span(coroutine_def_id));
+    body_def.def_span(tcx.def_span(coroutine_def_id));
+    body_def.explicit_predicates_of(tcx.explicit_predicates_of(coroutine_def_id).clone());
+    body_def.generics_of(tcx.generics_of(coroutine_def_id).clone());
+    body_def.param_env(tcx.param_env(coroutine_def_id).clone());
+    body_def.predicates_of(tcx.predicates_of(coroutine_def_id).clone());
+
+    <span class="comment">// The type of the coroutine is the `by_move_coroutine_ty`.
+    </span>body_def.type_of(ty::EarlyBinder::bind(by_move_coroutine_ty));
+
+    body_def.mir_built(tcx.arena.alloc(Steal::new(by_move_body)));
+
+    body_def.def_id().to_def_id()
 }
 
 <span class="kw">struct </span>MakeByMoveBody&lt;<span class="lifetime">'tcx</span>&gt; {
     tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
-    field_remapping: UnordMap&lt;FieldIdx, (FieldIdx, Ty&lt;<span class="lifetime">'tcx</span>&gt;, bool, <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>[Projection&lt;<span class="lifetime">'tcx</span>&gt;])&gt;,
+    field_remapping: UnordMap&lt;FieldIdx, (FieldIdx, Ty&lt;<span class="lifetime">'tcx</span>&gt;, bool, Vec&lt;Projection&lt;<span class="lifetime">'tcx</span>&gt;&gt;)&gt;,
     by_move_coroutine_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
 }
 
@@ -506,14 +586,14 @@
         </span><span class="kw">if </span>place.local == ty::CAPTURE_STRUCT_LOCAL
             &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>((<span class="kw-2">&amp;</span>mir::ProjectionElem::Field(idx, <span class="kw">_</span>), projection)) =
                 place.projection.split_first()
-            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>(remapped_idx, remapped_ty, needs_deref, bridging_projections)) =
+            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>(remapped_idx, remapped_ty, peel_deref, <span class="kw-2">ref </span>bridging_projections)) =
                 <span class="self">self</span>.field_remapping.get(<span class="kw-2">&amp;</span>idx)
         {
             <span class="comment">// As noted before, if the parent closure captures a field by value, and
             // the child captures a field by ref, then for the by-move body we're
             // generating, we also are taking that field by value. Peel off a deref,
             // since a layer of ref'ing has now become redundant.
-            </span><span class="kw">let </span>final_projections = <span class="kw">if </span>needs_deref {
+            </span><span class="kw">let </span>final_projections = <span class="kw">if </span>peel_deref {
                 <span class="kw">let </span><span class="prelude-val">Some</span>((mir::ProjectionElem::Deref, projection)) = projection.split_first()
                 <span class="kw">else </span>{
                     <span class="macro">bug!</span>(

@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_build/src/thir/pattern/check_match.rs`."><title>check_match.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_mir_build" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_build/src/thir/pattern/check_match.rs`."><title>check_match.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_mir_build" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_build/thir/pattern/</div>check_match.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1280,12 +1281,56 @@
 <a href="#1280" id="1280">1280</a>
 <a href="#1281" id="1281">1281</a>
 <a href="#1282" id="1282">1282</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_arena::{DroplessArena, TypedArena};
+<a href="#1283" id="1283">1283</a>
+<a href="#1284" id="1284">1284</a>
+<a href="#1285" id="1285">1285</a>
+<a href="#1286" id="1286">1286</a>
+<a href="#1287" id="1287">1287</a>
+<a href="#1288" id="1288">1288</a>
+<a href="#1289" id="1289">1289</a>
+<a href="#1290" id="1290">1290</a>
+<a href="#1291" id="1291">1291</a>
+<a href="#1292" id="1292">1292</a>
+<a href="#1293" id="1293">1293</a>
+<a href="#1294" id="1294">1294</a>
+<a href="#1295" id="1295">1295</a>
+<a href="#1296" id="1296">1296</a>
+<a href="#1297" id="1297">1297</a>
+<a href="#1298" id="1298">1298</a>
+<a href="#1299" id="1299">1299</a>
+<a href="#1300" id="1300">1300</a>
+<a href="#1301" id="1301">1301</a>
+<a href="#1302" id="1302">1302</a>
+<a href="#1303" id="1303">1303</a>
+<a href="#1304" id="1304">1304</a>
+<a href="#1305" id="1305">1305</a>
+<a href="#1306" id="1306">1306</a>
+<a href="#1307" id="1307">1307</a>
+<a href="#1308" id="1308">1308</a>
+<a href="#1309" id="1309">1309</a>
+<a href="#1310" id="1310">1310</a>
+<a href="#1311" id="1311">1311</a>
+<a href="#1312" id="1312">1312</a>
+<a href="#1313" id="1313">1313</a>
+<a href="#1314" id="1314">1314</a>
+<a href="#1315" id="1315">1315</a>
+<a href="#1316" id="1316">1316</a>
+<a href="#1317" id="1317">1317</a>
+<a href="#1318" id="1318">1318</a>
+<a href="#1319" id="1319">1319</a>
+<a href="#1320" id="1320">1320</a>
+<a href="#1321" id="1321">1321</a>
+<a href="#1322" id="1322">1322</a>
+<a href="#1323" id="1323">1323</a>
+<a href="#1324" id="1324">1324</a>
+<a href="#1325" id="1325">1325</a>
+<a href="#1326" id="1326">1326</a>
+<a href="#1327" id="1327">1327</a></pre></div><pre class="rust"><code><span class="kw">use </span>rustc_arena::{DroplessArena, TypedArena};
 <span class="kw">use </span>rustc_ast::Mutability;
 <span class="kw">use </span>rustc_data_structures::fx::FxIndexSet;
 <span class="kw">use </span>rustc_data_structures::stack::ensure_sufficient_stack;
 <span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
-<span class="kw">use </span>rustc_errors::{struct_span_code_err, Applicability, ErrorGuaranteed, MultiSpan};
+<span class="kw">use </span>rustc_errors::{Applicability, ErrorGuaranteed, MultiSpan, struct_span_code_err};
 <span class="kw">use </span>rustc_hir::def::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_hir::def_id::LocalDefId;
 <span class="kw">use </span>rustc_hir::{<span class="self">self </span><span class="kw">as </span>hir, BindingMode, ByRef, HirId};
@@ -1304,7 +1349,7 @@
     BINDINGS_WITH_VARIANT_NAME, IRREFUTABLE_LET_PATTERNS, UNREACHABLE_PATTERNS,
 };
 <span class="kw">use </span>rustc_span::hygiene::DesugaringKind;
-<span class="kw">use </span>rustc_span::{sym, Span};
+<span class="kw">use </span>rustc_span::{Span, sym};
 <span class="kw">use </span>tracing::instrument;
 
 <span class="kw">use </span><span class="kw">crate</span>::errors::<span class="kw-2">*</span>;
@@ -1607,7 +1652,7 @@
             </span>Assign { .. } | AssignOp { .. } | InlineAsm { .. } | Let { .. } =&gt; <span class="bool-val">true</span>,
 
             <span class="comment">// These evaluate to a value.
-            </span>AddressOf { .. }
+            </span>RawBorrow { .. }
             | Adt { .. }
             | Array { .. }
             | Binary { .. }
@@ -1695,7 +1740,7 @@
                 <span class="comment">// Emit lints in the order in which they occur in the file.
                 </span>redundant_subpats.sort_unstable_by_key(|(pat, <span class="kw">_</span>)| pat.data().span);
                 <span class="kw">for </span>(pat, explanation) <span class="kw">in </span>redundant_subpats {
-                    report_unreachable_pattern(cx, arm.arm_data, pat, <span class="kw-2">&amp;</span>explanation)
+                    report_unreachable_pattern(cx, arm.arm_data, pat, <span class="kw-2">&amp;</span>explanation, <span class="prelude-val">None</span>)
                 }
             }
         }
@@ -1756,7 +1801,11 @@
             hir::MatchSource::ForLoopDesugar
             | hir::MatchSource::Postfix
             | hir::MatchSource::Normal
-            | hir::MatchSource::FormatArgs =&gt; report_arm_reachability(<span class="kw-2">&amp;</span>cx, <span class="kw-2">&amp;</span>report),
+            | hir::MatchSource::FormatArgs =&gt; {
+                <span class="kw">let </span>is_match_arm =
+                    <span class="macro">matches!</span>(source, hir::MatchSource::Postfix | hir::MatchSource::Normal);
+                report_arm_reachability(<span class="kw-2">&amp;</span>cx, <span class="kw-2">&amp;</span>report, is_match_arm);
+            }
             <span class="comment">// Unreachable patterns in try and await expressions occur when one of
             // the arms are an uninhabited type. Which is OK.
             </span>hir::MatchSource::AwaitDesugar | hir::MatchSource::TryDesugar(<span class="kw">_</span>) =&gt; {}
@@ -1908,7 +1957,7 @@
     ) -&gt; <span class="prelude-ty">Result</span>&lt;RefutableFlag, ErrorGuaranteed&gt; {
         <span class="kw">let </span>(cx, report) = <span class="self">self</span>.analyze_binding(pat, Refutable, scrut)<span class="question-mark">?</span>;
         <span class="comment">// Report if the pattern is unreachable, which can only occur when the type is uninhabited.
-        </span>report_arm_reachability(<span class="kw-2">&amp;</span>cx, <span class="kw-2">&amp;</span>report);
+        </span>report_arm_reachability(<span class="kw-2">&amp;</span>cx, <span class="kw-2">&amp;</span>report, <span class="bool-val">false</span>);
         <span class="comment">// If the list of witnesses is empty, the match is exhaustive, i.e. the `if let` pattern is
         // irrefutable.
         </span><span class="prelude-val">Ok</span>(<span class="kw">if </span>report.non_exhaustiveness_witnesses.is_empty() { Irrefutable } <span class="kw">else </span>{ Refutable })
@@ -1984,10 +2033,12 @@
             &amp;&amp; adt.is_enum()
             &amp;&amp; <span class="kw">let </span>Constructor::Variant(variant_index) = witness_1.ctor()
         {
-            <span class="kw">let </span>variant = adt.variant(<span class="kw-2">*</span>variant_index);
-            <span class="kw">let </span>inhabited = variant.inhabited_predicate(<span class="self">self</span>.tcx, <span class="kw-2">*</span>adt).instantiate(<span class="self">self</span>.tcx, args);
-            <span class="macro">assert!</span>(inhabited.apply(<span class="self">self</span>.tcx, cx.param_env, cx.module));
-            !inhabited.apply_ignore_module(<span class="self">self</span>.tcx, cx.param_env)
+            <span class="kw">let </span>variant_inhabited = adt
+                .variant(<span class="kw-2">*</span>variant_index)
+                .inhabited_predicate(<span class="self">self</span>.tcx, <span class="kw-2">*</span>adt)
+                .instantiate(<span class="self">self</span>.tcx, args);
+            variant_inhabited.apply(<span class="self">self</span>.tcx, cx.param_env, cx.module)
+                &amp;&amp; !variant_inhabited.apply_ignore_module(<span class="self">self</span>.tcx, cx.param_env)
         } <span class="kw">else </span>{
             <span class="bool-val">false
         </span>};
@@ -1998,7 +2049,7 @@
             uncovered: Uncovered::new(pat.span, <span class="kw-2">&amp;</span>cx, witnesses),
             inform,
             interpreted_as_const,
-            witness_1_is_privately_uninhabited: witness_1_is_privately_uninhabited.then_some(()),
+            witness_1_is_privately_uninhabited,
             _p: (),
             pattern_ty,
             let_suggestion,
@@ -2196,23 +2247,32 @@
     hir_id: HirId,
     pat: <span class="kw-2">&amp;</span>DeconstructedPat&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;,
     explanation: <span class="kw-2">&amp;</span>RedundancyExplanation&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;,
+    whole_arm_span: <span class="prelude-ty">Option</span>&lt;Span&gt;,
 ) {
+    <span class="kw">static </span>CAP_COVERED_BY_MANY: usize = <span class="number">4</span>;
     <span class="kw">let </span>pat_span = pat.data().span;
     <span class="kw">let </span><span class="kw-2">mut </span>lint = UnreachablePattern {
         span: <span class="prelude-val">Some</span>(pat_span),
         matches_no_values: <span class="prelude-val">None</span>,
+        matches_no_values_ty: <span class="kw-2">**</span>pat.ty(),
+        uninhabited_note: <span class="prelude-val">None</span>,
         covered_by_catchall: <span class="prelude-val">None</span>,
         covered_by_one: <span class="prelude-val">None</span>,
         covered_by_many: <span class="prelude-val">None</span>,
+        covered_by_many_n_more_count: <span class="number">0</span>,
+        suggest_remove: <span class="prelude-val">None</span>,
     };
     <span class="kw">match </span>explanation.covered_by.as_slice() {
         [] =&gt; {
             <span class="comment">// Empty pattern; we report the uninhabited type that caused the emptiness.
             </span>lint.span = <span class="prelude-val">None</span>; <span class="comment">// Don't label the pattern itself
+            </span>lint.uninhabited_note = <span class="prelude-val">Some</span>(()); <span class="comment">// Give a link about empty types
+            </span>lint.matches_no_values = <span class="prelude-val">Some</span>(pat_span);
+            lint.suggest_remove = whole_arm_span; <span class="comment">// Suggest to remove the match arm
             </span>pat.walk(<span class="kw-2">&amp;mut </span>|subpat| {
                 <span class="kw">let </span>ty = <span class="kw-2">**</span>subpat.ty();
                 <span class="kw">if </span>cx.is_uninhabited(ty) {
-                    lint.matches_no_values = <span class="prelude-val">Some</span>(UnreachableMatchesNoValues { ty });
+                    lint.matches_no_values_ty = ty;
                     <span class="bool-val">false </span><span class="comment">// No need to dig further.
                 </span>} <span class="kw">else if </span><span class="macro">matches!</span>(subpat.ctor(), Constructor::Ref | Constructor::UnionField) {
                     <span class="bool-val">false </span><span class="comment">// Don't explore further since they are not by-value.
@@ -2228,15 +2288,27 @@
             lint.covered_by_one = <span class="prelude-val">Some</span>(covering_pat.data().span);
         }
         covering_pats =&gt; {
+            <span class="kw">let </span><span class="kw-2">mut </span>iter = covering_pats.iter();
             <span class="kw">let </span><span class="kw-2">mut </span>multispan = MultiSpan::from_span(pat_span);
-            <span class="kw">for </span>p <span class="kw">in </span>covering_pats {
+            <span class="kw">for </span>p <span class="kw">in </span>iter.by_ref().take(CAP_COVERED_BY_MANY) {
                 multispan.push_span_label(
                     p.data().span,
                     fluent::mir_build_unreachable_matches_same_values,
                 );
             }
-            multispan
-                .push_span_label(pat_span, fluent::mir_build_unreachable_making_this_unreachable);
+            <span class="kw">let </span>remain = iter.count();
+            <span class="kw">if </span>remain == <span class="number">0 </span>{
+                multispan.push_span_label(
+                    pat_span,
+                    fluent::mir_build_unreachable_making_this_unreachable,
+                );
+            } <span class="kw">else </span>{
+                lint.covered_by_many_n_more_count = remain;
+                multispan.push_span_label(
+                    pat_span,
+                    fluent::mir_build_unreachable_making_this_unreachable_n_more,
+                );
+            }
             lint.covered_by_many = <span class="prelude-val">Some</span>(multispan);
         }
     }
@@ -2244,10 +2316,28 @@
 }
 
 <span class="doccomment">/// Report unreachable arms, if any.
-</span><span class="kw">fn </span>report_arm_reachability&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;(cx: <span class="kw-2">&amp;</span>PatCtxt&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;, report: <span class="kw-2">&amp;</span>UsefulnessReport&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;) {
+</span><span class="kw">fn </span>report_arm_reachability&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;(
+    cx: <span class="kw-2">&amp;</span>PatCtxt&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;,
+    report: <span class="kw-2">&amp;</span>UsefulnessReport&lt;<span class="lifetime">'p</span>, <span class="lifetime">'tcx</span>&gt;,
+    is_match_arm: bool,
+) {
+    <span class="kw">let </span>sm = cx.tcx.sess.source_map();
     <span class="kw">for </span>(arm, is_useful) <span class="kw">in </span>report.arm_usefulness.iter() {
         <span class="kw">if let </span>Usefulness::Redundant(explanation) = is_useful {
-            report_unreachable_pattern(cx, arm.arm_data, arm.pat, explanation)
+            <span class="kw">let </span>hir_id = arm.arm_data;
+            <span class="kw">let </span>arm_span = cx.tcx.hir().span(hir_id);
+            <span class="kw">let </span>whole_arm_span = <span class="kw">if </span>is_match_arm {
+                <span class="comment">// If the arm is followed by a comma, extend the span to include it.
+                </span><span class="kw">let </span>with_whitespace = sm.span_extend_while_whitespace(arm_span);
+                <span class="kw">if let </span><span class="prelude-val">Some</span>(comma) = sm.span_look_ahead(with_whitespace, <span class="string">","</span>, <span class="prelude-val">Some</span>(<span class="number">1</span>)) {
+                    <span class="prelude-val">Some</span>(arm_span.to(comma))
+                } <span class="kw">else </span>{
+                    <span class="prelude-val">Some</span>(arm_span)
+                }
+            } <span class="kw">else </span>{
+                <span class="prelude-val">None
+            </span>};
+            report_unreachable_pattern(cx, hir_id, arm.pat, explanation, whole_arm_span)
         }
     }
 }

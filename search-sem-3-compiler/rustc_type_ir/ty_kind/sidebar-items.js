@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["AliasTyKind","DynKind","FloatTy","FloatVarValue","InferTy","IntTy","IntVarValue","TyKind","UintTy"],"mod":["closure"],"struct":["AliasTy","FloatVid","FnSig","IntVid","TyVid","TypeAndMut"]};
+window.SIDEBAR_ITEMS = {"enum":["AliasTyKind","DynKind","FloatTy","FloatVarValue","InferTy","IntTy","IntVarValue","TyKind","UintTy"],"mod":["closure"],"struct":["AliasTy","FloatVid","FnHeader","FnSig","FnSigTys","IntVid","TyVid","TypeAndMut"]};

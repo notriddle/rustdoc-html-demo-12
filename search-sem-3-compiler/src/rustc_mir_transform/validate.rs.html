@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/validate.rs`."><title>validate.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/validate.rs`."><title>validate.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>validate.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1533,23 +1534,12 @@
 <a href="#1533" id="1533">1533</a>
 <a href="#1534" id="1534">1534</a>
 <a href="#1535" id="1535">1535</a>
-<a href="#1536" id="1536">1536</a>
-<a href="#1537" id="1537">1537</a>
-<a href="#1538" id="1538">1538</a>
-<a href="#1539" id="1539">1539</a>
-<a href="#1540" id="1540">1540</a>
-<a href="#1541" id="1541">1541</a>
-<a href="#1542" id="1542">1542</a>
-<a href="#1543" id="1543">1543</a>
-<a href="#1544" id="1544">1544</a>
-<a href="#1545" id="1545">1545</a>
-<a href="#1546" id="1546">1546</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! Validates the MIR to ensure that invariants are upheld.
+<a href="#1536" id="1536">1536</a></pre></div><pre class="rust"><code><span class="doccomment">//! Validates the MIR to ensure that invariants are upheld.
 
 </span><span class="kw">use </span>rustc_data_structures::fx::{FxHashMap, FxHashSet};
 <span class="kw">use </span>rustc_hir::LangItem;
-<span class="kw">use </span>rustc_index::bit_set::BitSet;
 <span class="kw">use </span>rustc_index::IndexVec;
+<span class="kw">use </span>rustc_index::bit_set::BitSet;
 <span class="kw">use </span>rustc_infer::traits::Reveal;
 <span class="kw">use </span>rustc_middle::mir::coverage::CoverageKind;
 <span class="kw">use </span>rustc_middle::mir::visit::{NonUseContext, PlaceContext, Visitor};
@@ -1560,7 +1550,7 @@
     Variance,
 };
 <span class="kw">use </span>rustc_middle::{bug, span_bug};
-<span class="kw">use </span>rustc_target::abi::{Size, FIRST_VARIANT};
+<span class="kw">use </span>rustc_target::abi::{FIRST_VARIANT, Size};
 <span class="kw">use </span>rustc_target::spec::abi::Abi;
 
 <span class="kw">use </span><span class="kw">crate</span>::util::{is_within_packed, relate_types};
@@ -1571,7 +1561,7 @@
     Normal,
 }
 
-<span class="kw">pub struct </span>Validator {
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>Validator {
     <span class="doccomment">/// Describes at which point in the pipeline this validation is happening.
     </span><span class="kw">pub </span>when: String,
     <span class="doccomment">/// The phase for which we are upholding the dialect. If the given phase forbids a specific
@@ -1582,7 +1572,7 @@
     </span><span class="kw">pub </span>mir_phase: MirPhase,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>Validator {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">crate</span>::MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>Validator {
     <span class="kw">fn </span>run_pass(<span class="kw-2">&amp;</span><span class="self">self</span>, tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;mut </span>Body&lt;<span class="lifetime">'tcx</span>&gt;) {
         <span class="comment">// FIXME(JakobDegen): These bodies never instantiated in codegend anyway, so it's not
         // terribly important that they pass the validator. However, I think other passes might
@@ -1646,25 +1636,6 @@
                         <span class="macro">format!</span>(<span class="string">"Free regions in optimized {} MIR"</span>, body.phase.name()),
                     );
                 }
-            }
-        }
-
-        <span class="comment">// Enforce that coroutine-closure layouts are identical.
-        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(layout) = body.coroutine_layout_raw()
-            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(by_move_body) = body.coroutine_by_move_body()
-            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(by_move_layout) = by_move_body.coroutine_layout_raw()
-        {
-            <span class="comment">// FIXME(async_closures): We could do other validation here?
-            </span><span class="kw">if </span>layout.variant_fields.len() != by_move_layout.variant_fields.len() {
-                cfg_checker.fail(
-                    Location::START,
-                    <span class="macro">format!</span>(
-                        <span class="string">"Coroutine layout has different number of variant fields from \
-                        by-move coroutine layout:\n\
-                        layout: {layout:#?}\n\
-                        by_move_layout: {by_move_layout:#?}"</span>,
-                    ),
-                );
             }
         }
     }
@@ -1952,10 +1923,11 @@
                     }
                     <span class="self">self</span>.check_unwind_edge(location, unwind);
 
-                    <span class="comment">// The code generation assumes that there are no critical call edges. The assumption
-                    // is used to simplify inserting code that should be executed along the return edge
-                    // from the call. FIXME(tmiasko): Since this is a strictly code generation concern,
-                    // the code generation should be responsible for handling it.
+                    <span class="comment">// The code generation assumes that there are no critical call edges. The
+                    // assumption is used to simplify inserting code that should be executed along
+                    // the return edge from the call. FIXME(tmiasko): Since this is a strictly code
+                    // generation concern, the code generation should be responsible for handling
+                    // it.
                     </span><span class="kw">if </span><span class="self">self</span>.mir_phase &gt;= MirPhase::Runtime(RuntimePhase::Optimized)
                         &amp;&amp; <span class="self">self</span>.is_critical_call_edge(target, unwind)
                     {
@@ -1968,8 +1940,8 @@
                         );
                     }
 
-                    <span class="comment">// The call destination place and Operand::Move place used as an argument might be
-                    // passed by a reference to the callee. Consequently they cannot be packed.
+                    <span class="comment">// The call destination place and Operand::Move place used as an argument might
+                    // be passed by a reference to the callee. Consequently they cannot be packed.
                     </span><span class="kw">if </span>is_within_packed(<span class="self">self</span>.tcx, <span class="kw-2">&amp;</span><span class="self">self</span>.body.local_decls, destination).is_some() {
                         <span class="comment">// This is bad! The callee will expect the memory to be aligned.
                         </span><span class="self">self</span>.fail(
@@ -2095,7 +2067,7 @@
 ///
 /// `caller_body` is used to detect cycles in MIR inlining and MIR validation before
 /// `optimized_mir` is available.
-</span><span class="kw">pub fn </span>validate_types&lt;<span class="lifetime">'tcx</span>&gt;(
+</span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>validate_types&lt;<span class="lifetime">'tcx</span>&gt;(
     tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     mir_phase: MirPhase,
     param_env: ty::ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -2279,7 +2251,14 @@
                             // since we may be in the process of computing this MIR in the
                             // first place.
                             </span><span class="kw">let </span>layout = <span class="kw">if </span>def_id == <span class="self">self</span>.caller_body.source.def_id() {
-                                <span class="comment">// FIXME: This is not right for async closures.
+                                <span class="self">self</span>.caller_body.coroutine_layout_raw()
+                            } <span class="kw">else if </span><span class="self">self</span>.tcx.needs_coroutine_by_move_body_def_id(def_id)
+                                &amp;&amp; <span class="kw">let </span>ty::ClosureKind::FnOnce =
+                                    args.as_coroutine().kind_ty().to_opt_closure_kind().unwrap()
+                                &amp;&amp; <span class="self">self</span>.caller_body.source.def_id()
+                                    == <span class="self">self</span>.tcx.coroutine_by_move_body_def_id(def_id)
+                            {
+                                <span class="comment">// Same if this is the by-move body of a coroutine-closure.
                                 </span><span class="self">self</span>.caller_body.coroutine_layout_raw()
                             } <span class="kw">else </span>{
                                 <span class="self">self</span>.tcx.coroutine_layout(def_id, args.as_coroutine().kind_ty())
@@ -2507,9 +2486,9 @@
                 }
                 AggregateKind::RawPtr(pointee_ty, mutability) =&gt; {
                     <span class="kw">if </span>!<span class="macro">matches!</span>(<span class="self">self</span>.mir_phase, MirPhase::Runtime(<span class="kw">_</span>)) {
-                        <span class="comment">// It would probably be fine to support this in earlier phases,
-                        // but at the time of writing it's only ever introduced from intrinsic lowering,
-                        // so earlier things just `bug!` on it.
+                        <span class="comment">// It would probably be fine to support this in earlier phases, but at the
+                        // time of writing it's only ever introduced from intrinsic lowering, so
+                        // earlier things just `bug!` on it.
                         </span><span class="self">self</span>.fail(location, <span class="string">"RawPtr should be in runtime MIR only"</span>);
                     }
 
@@ -2663,10 +2642,10 @@
                     }
                     UnOp::PtrMetadata =&gt; {
                         <span class="kw">if </span>!<span class="macro">matches!</span>(<span class="self">self</span>.mir_phase, MirPhase::Runtime(<span class="kw">_</span>)) {
-                            <span class="comment">// It would probably be fine to support this in earlier phases,
-                            // but at the time of writing it's only ever introduced from intrinsic lowering
-                            // or other runtime-phase optimization passes,
-                            // so earlier things can just `bug!` on it.
+                            <span class="comment">// It would probably be fine to support this in earlier phases, but at
+                            // the time of writing it's only ever introduced from intrinsic
+                            // lowering or other runtime-phase optimization passes, so earlier
+                            // things can just `bug!` on it.
                             </span><span class="self">self</span>.fail(location, <span class="string">"PtrMetadata should be in runtime MIR only"</span>);
                         }
 
@@ -2891,7 +2870,7 @@
             }
             Rvalue::Repeat(<span class="kw">_</span>, <span class="kw">_</span>)
             | Rvalue::ThreadLocalRef(<span class="kw">_</span>)
-            | Rvalue::AddressOf(<span class="kw">_</span>, <span class="kw">_</span>)
+            | Rvalue::RawPtr(<span class="kw">_</span>, <span class="kw">_</span>)
             | Rvalue::NullaryOp(NullOp::SizeOf | NullOp::AlignOf | NullOp::UbChecks, <span class="kw">_</span>)
             | Rvalue::Discriminant(<span class="kw">_</span>) =&gt; {}
         }
@@ -3060,7 +3039,8 @@
                 }
 
                 <span class="kw">if let </span>TerminatorKind::TailCall { .. } = terminator.kind {
-                    <span class="comment">// FIXME(explicit_tail_calls): implement tail-call specific checks here (such as signature matching, forbidding closures, etc)
+                    <span class="comment">// FIXME(explicit_tail_calls): implement tail-call specific checks here (such
+                    // as signature matching, forbidding closures, etc)
                 </span>}
             }
             TerminatorKind::Assert { cond, .. } =&gt; {

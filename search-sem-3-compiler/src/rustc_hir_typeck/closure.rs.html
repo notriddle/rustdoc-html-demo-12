@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_typeck/src/closure.rs`."><title>closure.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_typeck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_typeck/src/closure.rs`."><title>closure.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_typeck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_typeck/</div>closure.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1090,7 +1091,22 @@
 <a href="#1090" id="1090">1090</a>
 <a href="#1091" id="1091">1091</a>
 <a href="#1092" id="1092">1092</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! Code for type-checking closure expressions.
+<a href="#1093" id="1093">1093</a>
+<a href="#1094" id="1094">1094</a>
+<a href="#1095" id="1095">1095</a>
+<a href="#1096" id="1096">1096</a>
+<a href="#1097" id="1097">1097</a>
+<a href="#1098" id="1098">1098</a>
+<a href="#1099" id="1099">1099</a>
+<a href="#1100" id="1100">1100</a>
+<a href="#1101" id="1101">1101</a>
+<a href="#1102" id="1102">1102</a>
+<a href="#1103" id="1103">1103</a>
+<a href="#1104" id="1104">1104</a>
+<a href="#1105" id="1105">1105</a>
+<a href="#1106" id="1106">1106</a>
+<a href="#1107" id="1107">1107</a>
+<a href="#1108" id="1108">1108</a></pre></div><pre class="rust"><code><span class="doccomment">//! Code for type-checking closure expressions.
 
 </span><span class="kw">use </span>std::iter;
 <span class="kw">use </span>std::ops::ControlFlow;
@@ -1106,13 +1122,14 @@
 <span class="kw">use </span>rustc_middle::ty::visit::{TypeVisitable, TypeVisitableExt};
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, GenericArgs, Ty, TyCtxt, TypeSuperVisitable, TypeVisitor};
 <span class="kw">use </span>rustc_span::def_id::LocalDefId;
-<span class="kw">use </span>rustc_span::Span;
+<span class="kw">use </span>rustc_span::{DUMMY_SP, Span};
 <span class="kw">use </span>rustc_target::spec::abi::Abi;
 <span class="kw">use </span>rustc_trait_selection::error_reporting::traits::ArgKind;
 <span class="kw">use </span>rustc_trait_selection::traits;
 <span class="kw">use </span>rustc_type_ir::ClosureKind;
+<span class="kw">use </span>tracing::{debug, instrument, trace};
 
-<span class="kw">use super</span>::{check_fn, CoroutineTypes, Expectation, FnCtxt};
+<span class="kw">use super</span>::{CoroutineTypes, Expectation, FnCtxt, check_fn};
 
 <span class="doccomment">/// What signature do we *expect* the closure to have from context?
 </span><span class="attr">#[derive(Debug, Clone, TypeFoldable, TypeVisitable)]
@@ -1194,15 +1211,12 @@
                     </span><span class="prelude-val">None </span>=&gt; <span class="self">self</span>.next_ty_var(expr_span),
                 };
 
-                <span class="kw">let </span>closure_args = ty::ClosureArgs::new(
-                    tcx,
-                    ty::ClosureArgsParts {
-                        parent_args,
-                        closure_kind_ty,
-                        closure_sig_as_fn_ptr_ty: Ty::new_fn_ptr(tcx, sig),
-                        tupled_upvars_ty,
-                    },
-                );
+                <span class="kw">let </span>closure_args = ty::ClosureArgs::new(tcx, ty::ClosureArgsParts {
+                    parent_args,
+                    closure_kind_ty,
+                    closure_sig_as_fn_ptr_ty: Ty::new_fn_ptr(tcx, sig),
+                    tupled_upvars_ty,
+                });
 
                 (Ty::new_closure(tcx, expr_def_id.to_def_id(), closure_args.args), <span class="prelude-val">None</span>)
             }
@@ -1271,18 +1285,15 @@
                     <span class="kw">_ </span>=&gt; tcx.types.unit,
                 };
 
-                <span class="kw">let </span>coroutine_args = ty::CoroutineArgs::new(
-                    tcx,
-                    ty::CoroutineArgsParts {
-                        parent_args,
-                        kind_ty,
-                        resume_ty,
-                        yield_ty,
-                        return_ty: liberated_sig.output(),
-                        witness: interior,
-                        tupled_upvars_ty,
-                    },
-                );
+                <span class="kw">let </span>coroutine_args = ty::CoroutineArgs::new(tcx, ty::CoroutineArgsParts {
+                    parent_args,
+                    kind_ty,
+                    resume_ty,
+                    yield_ty,
+                    return_ty: liberated_sig.output(),
+                    witness: interior,
+                    tupled_upvars_ty,
+                });
 
                 (
                     Ty::new_coroutine(tcx, expr_def_id.to_def_id(), coroutine_args.args),
@@ -1313,9 +1324,8 @@
                 };
 
                 <span class="kw">let </span>coroutine_captures_by_ref_ty = <span class="self">self</span>.next_ty_var(expr_span);
-                <span class="kw">let </span>closure_args = ty::CoroutineClosureArgs::new(
-                    tcx,
-                    ty::CoroutineClosureArgsParts {
+                <span class="kw">let </span>closure_args =
+                    ty::CoroutineClosureArgs::new(tcx, ty::CoroutineClosureArgsParts {
                         parent_args,
                         closure_kind_ty,
                         signature_parts_ty: Ty::new_fn_ptr(
@@ -1336,8 +1346,7 @@
                         tupled_upvars_ty,
                         coroutine_captures_by_ref_ty,
                         coroutine_witness_ty: interior,
-                    },
-                );
+                    });
 
                 <span class="kw">let </span>coroutine_kind_ty = <span class="kw">match </span>expected_kind {
                     <span class="prelude-val">Some</span>(kind) =&gt; Ty::from_coroutine_closure_kind(tcx, kind),
@@ -1428,9 +1437,9 @@
                     .into_iter()
                     .map(|obl| (obl.predicate, obl.cause.span)),
             ),
-            ty::FnPtr(sig) =&gt; <span class="kw">match </span>closure_kind {
+            ty::FnPtr(sig_tys, hdr) =&gt; <span class="kw">match </span>closure_kind {
                 hir::ClosureKind::Closure =&gt; {
-                    <span class="kw">let </span>expected_sig = ExpectedSig { cause_span: <span class="prelude-val">None</span>, sig };
+                    <span class="kw">let </span>expected_sig = ExpectedSig { cause_span: <span class="prelude-val">None</span>, sig: sig_tys.with(hdr) };
                     (<span class="prelude-val">Some</span>(expected_sig), <span class="prelude-val">Some</span>(ty::ClosureKind::Fn))
                 }
                 hir::ClosureKind::Coroutine(<span class="kw">_</span>) | hir::ClosureKind::CoroutineClosure(<span class="kw">_</span>) =&gt; {
@@ -1631,6 +1640,10 @@
     /// we identify the `FnOnce&lt;Args, Output = ?Fut&gt;` bound, and if the output type is
     /// an inference variable `?Fut`, we check if that is bounded by a `Future&lt;Output = Ty&gt;`
     /// projection.
+    ///
+    /// This function is actually best-effort with the return type; if we don't find a
+    /// `Future` projection, we still will return arguments that we extracted from the `FnOnce`
+    /// projection, and the output will be an unconstrained type variable instead.
     </span><span class="kw">fn </span>extract_sig_from_projection_and_future_bound(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         cause_span: <span class="prelude-ty">Option</span>&lt;Span&gt;,
@@ -1656,25 +1669,44 @@
         };
 
         <span class="comment">// FIXME: We may want to elaborate here, though I assume this will be exceedingly rare.
-        </span><span class="kw">for </span>bound <span class="kw">in </span><span class="self">self</span>.obligations_for_self_ty(return_vid) {
+        </span><span class="kw">let </span><span class="kw-2">mut </span>return_ty = <span class="prelude-val">None</span>;
+        <span class="kw">for </span>bound <span class="kw">in </span><span class="self">self</span>.obligations_for_self_ty(return_vid) {
             <span class="kw">if let </span><span class="prelude-val">Some</span>(ret_projection) = bound.predicate.as_projection_clause()
                 &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(ret_projection) = ret_projection.no_bound_vars()
                 &amp;&amp; <span class="self">self</span>.tcx.is_lang_item(ret_projection.def_id(), LangItem::FutureOutput)
             {
-                <span class="kw">let </span>sig = projection.rebind(<span class="self">self</span>.tcx.mk_fn_sig(
-                    input_tys,
-                    ret_projection.term.expect_type(),
-                    <span class="bool-val">false</span>,
-                    hir::Safety::Safe,
-                    Abi::Rust,
-                ));
-
-                <span class="kw">return </span><span class="prelude-val">Some</span>(ExpectedSig { cause_span, sig });
+                return_ty = <span class="prelude-val">Some</span>(ret_projection.term.expect_type());
+                <span class="kw">break</span>;
             }
         }
 
-        <span class="prelude-val">None
-    </span>}
+        <span class="comment">// SUBTLE: If we didn't find a `Future&lt;Output = ...&gt;` bound for the return
+        // vid, we still want to attempt to provide inference guidance for the async
+        // closure's arguments. Instantiate a new vid to plug into the output type.
+        //
+        // You may be wondering, what if it's higher-ranked? Well, given that we
+        // found a type variable for the `FnOnce::Output` projection above, we know
+        // that the output can't mention any of the vars.
+        //
+        // Also note that we use a fresh var here for the signature since the signature
+        // records the output of the *future*, and `return_vid` above is the type
+        // variable of the future, not its output.
+        //
+        // FIXME: We probably should store this signature inference output in a way
+        // that does not misuse a `FnSig` type, but that can be done separately.
+        </span><span class="kw">let </span>return_ty =
+            return_ty.unwrap_or_else(|| <span class="self">self</span>.next_ty_var(cause_span.unwrap_or(DUMMY_SP)));
+
+        <span class="kw">let </span>sig = projection.rebind(<span class="self">self</span>.tcx.mk_fn_sig(
+            input_tys,
+            return_ty,
+            <span class="bool-val">false</span>,
+            hir::Safety::Safe,
+            Abi::Rust,
+        ));
+
+        <span class="prelude-val">Some</span>(ExpectedSig { cause_span, sig })
+    }
 
     <span class="kw">fn </span>sig_of_closure(
         <span class="kw-2">&amp;</span><span class="self">self</span>,

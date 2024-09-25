@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/ref_prop.rs`."><title>ref_prop.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/ref_prop.rs`."><title>ref_prop.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>ref_prop.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -413,21 +414,19 @@
 <a href="#413" id="413">413</a>
 <a href="#414" id="414">414</a>
 <a href="#415" id="415">415</a>
-<a href="#416" id="416">416</a>
-<a href="#417" id="417">417</a>
-<a href="#418" id="418">418</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::borrow::Cow;
+<a href="#416" id="416">416</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::borrow::Cow;
 
 <span class="kw">use </span>rustc_data_structures::fx::FxHashSet;
-<span class="kw">use </span>rustc_index::bit_set::BitSet;
 <span class="kw">use </span>rustc_index::IndexVec;
+<span class="kw">use </span>rustc_index::bit_set::BitSet;
 <span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::mir::visit::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::ty::TyCtxt;
+<span class="kw">use </span>rustc_mir_dataflow::Analysis;
 <span class="kw">use </span>rustc_mir_dataflow::impls::MaybeStorageDead;
 <span class="kw">use </span>rustc_mir_dataflow::storage::always_storage_live_locals;
-<span class="kw">use </span>rustc_mir_dataflow::Analysis;
+<span class="kw">use </span>tracing::{debug, instrument};
 
 <span class="kw">use </span><span class="kw">crate</span>::ssa::{SsaLocals, StorageLiveLocals};
 
@@ -487,9 +486,9 @@
 ///
 /// For immutable borrows, we do not need to preserve such uniqueness property,
 /// so we perform all the possible instantiations without removing the `_1 = &amp;_2` statement.
-</span><span class="kw">pub struct </span>ReferencePropagation;
+</span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>ReferencePropagation;
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>ReferencePropagation {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">crate</span>::MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>ReferencePropagation {
     <span class="kw">fn </span>is_enabled(<span class="kw-2">&amp;</span><span class="self">self</span>, sess: <span class="kw-2">&amp;</span>rustc_session::Session) -&gt; bool {
         sess.mir_opt_level() &gt;= <span class="number">2
     </span>}
@@ -645,7 +644,7 @@
                     }
                 }
             }
-            Rvalue::Ref(<span class="kw">_</span>, <span class="kw">_</span>, place) | Rvalue::AddressOf(<span class="kw">_</span>, place) =&gt; {
+            Rvalue::Ref(<span class="kw">_</span>, <span class="kw">_</span>, place) | Rvalue::RawPtr(<span class="kw">_</span>, place) =&gt; {
                 <span class="kw">let </span><span class="kw-2">mut </span>place = <span class="kw-2">*</span>place;
                 <span class="comment">// Try to see through `place` in order to collapse reborrow chains.
                 </span><span class="kw">if </span>place.projection.first() == <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>PlaceElem::Deref)
@@ -670,11 +669,8 @@
 
     <span class="macro">debug!</span>(<span class="question-mark">?</span>targets);
 
-    <span class="kw">let </span><span class="kw-2">mut </span>finder = ReplacementFinder {
-        targets: <span class="kw-2">&amp;mut </span>targets,
-        can_perform_opt,
-        allowed_replacements: FxHashSet::default(),
-    };
+    <span class="kw">let </span><span class="kw-2">mut </span>finder =
+        ReplacementFinder { targets, can_perform_opt, allowed_replacements: FxHashSet::default() };
     <span class="kw">let </span>reachable_blocks = traversal::reachable_as_bitset(body);
     <span class="kw">for </span>(bb, bbdata) <span class="kw">in </span>body.basic_blocks.iter_enumerated() {
         <span class="comment">// Only visit reachable blocks as we rely on dataflow.
@@ -686,19 +682,19 @@
     <span class="kw">let </span>allowed_replacements = finder.allowed_replacements;
     <span class="kw">return </span>Replacer {
         tcx,
-        targets,
+        targets: finder.targets,
         storage_to_remove,
         allowed_replacements,
         any_replacement: <span class="bool-val">false</span>,
     };
 
-    <span class="kw">struct </span>ReplacementFinder&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, F&gt; {
-        targets: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>IndexVec&lt;Local, Value&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+    <span class="kw">struct </span>ReplacementFinder&lt;<span class="lifetime">'tcx</span>, F&gt; {
+        targets: IndexVec&lt;Local, Value&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
         can_perform_opt: F,
         allowed_replacements: FxHashSet&lt;(Local, Location)&gt;,
     }
 
-    <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, F&gt; Visitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>ReplacementFinder&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>, F&gt;
+    <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, F&gt; Visitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>ReplacementFinder&lt;<span class="lifetime">'tcx</span>, F&gt;
     <span class="kw">where
         </span>F: FnMut(Place&lt;<span class="lifetime">'tcx</span>&gt;, Location) -&gt; bool,
     {
@@ -762,7 +758,7 @@
     replacable
 }
 
-<span class="doccomment">/// Utility to help performing subtitution of `*pattern` by `target`.
+<span class="doccomment">/// Utility to help performing substitution of `*pattern` by `target`.
 </span><span class="kw">struct </span>Replacer&lt;<span class="lifetime">'tcx</span>&gt; {
     tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     targets: IndexVec&lt;Local, Value&lt;<span class="lifetime">'tcx</span>&gt;&gt;,

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["subtype_finder"],"struct":["SubTypeChecker","Subtyper"]};
+window.SIDEBAR_ITEMS = {"struct":["SubTypeChecker","Subtyper"]};

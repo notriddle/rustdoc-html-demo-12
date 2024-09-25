@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["lower_slice_len_call","lower_slice_len_calls"],"struct":["LowerSliceLenCalls"]};
+window.SIDEBAR_ITEMS = {"fn":["lower_slice_len_call"],"struct":["LowerSliceLenCalls"]};

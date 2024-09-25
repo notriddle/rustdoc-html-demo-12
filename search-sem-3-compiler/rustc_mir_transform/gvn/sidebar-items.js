@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["AddressKind","AggregateTy","Value"],"fn":["op_to_prop_const","propagate_ssa"],"struct":["GVN","StorageRemover","VnIndex","VnState"]};
+window.SIDEBAR_ITEMS = {"enum":["AddressKind","AggregateTy","Value"],"fn":["op_to_prop_const"],"struct":["GVN","StorageRemover","VnIndex","VnState"]};

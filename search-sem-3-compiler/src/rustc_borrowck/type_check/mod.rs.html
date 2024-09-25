@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/type_check/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/type_check/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/type_check/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -2911,7 +2912,62 @@
 <a href="#2911" id="2911">2911</a>
 <a href="#2912" id="2912">2912</a>
 <a href="#2913" id="2913">2913</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! This pass type-checks the MIR to ensure it is not broken.
+<a href="#2914" id="2914">2914</a>
+<a href="#2915" id="2915">2915</a>
+<a href="#2916" id="2916">2916</a>
+<a href="#2917" id="2917">2917</a>
+<a href="#2918" id="2918">2918</a>
+<a href="#2919" id="2919">2919</a>
+<a href="#2920" id="2920">2920</a>
+<a href="#2921" id="2921">2921</a>
+<a href="#2922" id="2922">2922</a>
+<a href="#2923" id="2923">2923</a>
+<a href="#2924" id="2924">2924</a>
+<a href="#2925" id="2925">2925</a>
+<a href="#2926" id="2926">2926</a>
+<a href="#2927" id="2927">2927</a>
+<a href="#2928" id="2928">2928</a>
+<a href="#2929" id="2929">2929</a>
+<a href="#2930" id="2930">2930</a>
+<a href="#2931" id="2931">2931</a>
+<a href="#2932" id="2932">2932</a>
+<a href="#2933" id="2933">2933</a>
+<a href="#2934" id="2934">2934</a>
+<a href="#2935" id="2935">2935</a>
+<a href="#2936" id="2936">2936</a>
+<a href="#2937" id="2937">2937</a>
+<a href="#2938" id="2938">2938</a>
+<a href="#2939" id="2939">2939</a>
+<a href="#2940" id="2940">2940</a>
+<a href="#2941" id="2941">2941</a>
+<a href="#2942" id="2942">2942</a>
+<a href="#2943" id="2943">2943</a>
+<a href="#2944" id="2944">2944</a>
+<a href="#2945" id="2945">2945</a>
+<a href="#2946" id="2946">2946</a>
+<a href="#2947" id="2947">2947</a>
+<a href="#2948" id="2948">2948</a>
+<a href="#2949" id="2949">2949</a>
+<a href="#2950" id="2950">2950</a>
+<a href="#2951" id="2951">2951</a>
+<a href="#2952" id="2952">2952</a>
+<a href="#2953" id="2953">2953</a>
+<a href="#2954" id="2954">2954</a>
+<a href="#2955" id="2955">2955</a>
+<a href="#2956" id="2956">2956</a>
+<a href="#2957" id="2957">2957</a>
+<a href="#2958" id="2958">2958</a>
+<a href="#2959" id="2959">2959</a>
+<a href="#2960" id="2960">2960</a>
+<a href="#2961" id="2961">2961</a>
+<a href="#2962" id="2962">2962</a>
+<a href="#2963" id="2963">2963</a>
+<a href="#2964" id="2964">2964</a>
+<a href="#2965" id="2965">2965</a>
+<a href="#2966" id="2966">2966</a>
+<a href="#2967" id="2967">2967</a>
+<a href="#2968" id="2968">2968</a>
+<a href="#2969" id="2969">2969</a></pre></div><pre class="rust"><code><span class="doccomment">//! This pass type-checks the MIR to ensure it is not broken.
 
 </span><span class="kw">use </span>std::rc::Rc;
 <span class="kw">use </span>std::{fmt, iter, mem};
@@ -2944,20 +3000,21 @@
     UserType, UserTypeAnnotationIndex,
 };
 <span class="kw">use </span>rustc_middle::{bug, span_bug};
+<span class="kw">use </span>rustc_mir_dataflow::ResultsCursor;
 <span class="kw">use </span>rustc_mir_dataflow::impls::MaybeInitializedPlaces;
 <span class="kw">use </span>rustc_mir_dataflow::move_paths::MoveData;
 <span class="kw">use </span>rustc_mir_dataflow::points::DenseLocationMap;
-<span class="kw">use </span>rustc_mir_dataflow::ResultsCursor;
 <span class="kw">use </span>rustc_span::def_id::CRATE_DEF_ID;
 <span class="kw">use </span>rustc_span::source_map::Spanned;
 <span class="kw">use </span>rustc_span::symbol::sym;
-<span class="kw">use </span>rustc_span::{Span, DUMMY_SP};
-<span class="kw">use </span>rustc_target::abi::{FieldIdx, FIRST_VARIANT};
+<span class="kw">use </span>rustc_span::{DUMMY_SP, Span};
+<span class="kw">use </span>rustc_target::abi::{FIRST_VARIANT, FieldIdx};
+<span class="kw">use </span>rustc_trait_selection::traits::PredicateObligation;
 <span class="kw">use </span>rustc_trait_selection::traits::query::type_op::custom::{
-    scrape_region_constraints, CustomTypeOp,
+    CustomTypeOp, scrape_region_constraints,
 };
 <span class="kw">use </span>rustc_trait_selection::traits::query::type_op::{TypeOp, TypeOpOutput};
-<span class="kw">use </span>rustc_trait_selection::traits::PredicateObligation;
+<span class="kw">use </span>tracing::{debug, instrument, trace};
 
 <span class="kw">use </span><span class="kw">crate</span>::borrow_set::BorrowSet;
 <span class="kw">use </span><span class="kw">crate</span>::constraints::{OutlivesConstraint, OutlivesConstraintSet};
@@ -2965,13 +3022,13 @@
 <span class="kw">use </span><span class="kw">crate</span>::facts::AllFacts;
 <span class="kw">use </span><span class="kw">crate</span>::location::LocationTable;
 <span class="kw">use </span><span class="kw">crate</span>::member_constraints::MemberConstraintSet;
-<span class="kw">use </span><span class="kw">crate</span>::region_infer::values::{LivenessValues, PlaceholderIndex, PlaceholderIndices};
 <span class="kw">use </span><span class="kw">crate</span>::region_infer::TypeTest;
+<span class="kw">use </span><span class="kw">crate</span>::region_infer::values::{LivenessValues, PlaceholderIndex, PlaceholderIndices};
 <span class="kw">use </span><span class="kw">crate</span>::renumber::RegionCtxt;
 <span class="kw">use </span><span class="kw">crate</span>::session_diagnostics::{MoveUnsized, SimdIntrinsicArgConst};
 <span class="kw">use </span><span class="kw">crate</span>::type_check::free_region_relations::{CreateResult, UniversalRegionRelations};
 <span class="kw">use </span><span class="kw">crate</span>::universal_regions::{DefiningTy, UniversalRegions};
-<span class="kw">use crate</span>::{path_utils, BorrowckInferCtxt};
+<span class="kw">use crate</span>::{BorrowckInferCtxt, path_utils};
 
 <span class="macro">macro_rules!</span> span_mirbug {
     (<span class="macro-nonterminal">$context</span>:expr, <span class="macro-nonterminal">$elem</span>:expr, $(<span class="macro-nonterminal">$message</span>:tt)<span class="kw-2">*</span>) =&gt; ({
@@ -2999,7 +3056,7 @@
 
 <span class="kw">mod </span>canonical;
 <span class="kw">mod </span>constraint_conversion;
-<span class="kw">pub mod </span>free_region_relations;
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod </span>free_region_relations;
 <span class="kw">mod </span>input_output;
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod </span>liveness;
 <span class="kw">mod </span>relate_tys;
@@ -3028,7 +3085,7 @@
 /// - `flow_inits` -- results of a maybe-init dataflow analysis
 /// - `move_data` -- move-data constructed when performing the maybe-init dataflow analysis
 /// - `elements` -- MIR region map
-</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>type_check&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;(
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>type_check&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;(
     infcx: <span class="kw-2">&amp;</span>BorrowckInferCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     param_env: ty::ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
     body: <span class="kw-2">&amp;</span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -3037,7 +3094,7 @@
     location_table: <span class="kw-2">&amp;</span>LocationTable,
     borrow_set: <span class="kw-2">&amp;</span>BorrowSet&lt;<span class="lifetime">'tcx</span>&gt;,
     all_facts: <span class="kw-2">&amp;mut </span><span class="prelude-ty">Option</span>&lt;AllFacts&gt;,
-    flow_inits: <span class="kw-2">&amp;mut </span>ResultsCursor&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>, MaybeInitializedPlaces&lt;<span class="lifetime">'_</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
+    flow_inits: <span class="kw-2">&amp;mut </span>ResultsCursor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, MaybeInitializedPlaces&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
     move_data: <span class="kw-2">&amp;</span>MoveData&lt;<span class="lifetime">'tcx</span>&gt;,
     elements: <span class="kw-2">&amp;</span>Rc&lt;DenseLocationMap&gt;,
     upvars: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>ty::CapturedPlace&lt;<span class="lifetime">'tcx</span>&gt;],
@@ -3669,7 +3726,7 @@
             PlaceContext::MutatingUse(<span class="kw">_</span>) =&gt; ty::Invariant,
             PlaceContext::NonUse(StorageDead | StorageLive | VarDebugInfo) =&gt; ty::Invariant,
             PlaceContext::NonMutatingUse(
-                Inspect | Copy | Move | PlaceMention | SharedBorrow | FakeBorrow | AddressOf
+                Inspect | Copy | Move | PlaceMention | SharedBorrow | FakeBorrow | RawBorrow
                 | Projection,
             ) =&gt; ty::Covariant,
             PlaceContext::NonUse(AscribeUserTy(variance)) =&gt; variance,
@@ -4277,7 +4334,7 @@
                 <span class="macro">debug!</span>(<span class="string">"func_ty.kind: {:?}"</span>, func_ty.kind());
 
                 <span class="kw">let </span>sig = <span class="kw">match </span>func_ty.kind() {
-                    ty::FnDef(..) | ty::FnPtr(<span class="kw">_</span>) =&gt; func_ty.fn_sig(tcx),
+                    ty::FnDef(..) | ty::FnPtr(..) =&gt; func_ty.fn_sig(tcx),
                     <span class="kw">_ </span>=&gt; {
                         <span class="macro">span_mirbug!</span>(<span class="self">self</span>, term, <span class="string">"call to non-function {:?}"</span>, func_ty);
                         <span class="kw">return</span>;
@@ -4856,11 +4913,10 @@
             }
 
             <span class="kw-2">&amp;</span>Rvalue::NullaryOp(NullOp::SizeOf | NullOp::AlignOf, ty) =&gt; {
-                <span class="kw">let </span>trait_ref = ty::TraitRef::new(
-                    tcx,
-                    tcx.require_lang_item(LangItem::Sized, <span class="prelude-val">Some</span>(span)),
-                    [ty],
-                );
+                <span class="kw">let </span>trait_ref =
+                    ty::TraitRef::new(tcx, tcx.require_lang_item(LangItem::Sized, <span class="prelude-val">Some</span>(span)), [
+                        ty,
+                    ]);
 
                 <span class="self">self</span>.prove_trait_ref(
                     trait_ref,
@@ -4873,11 +4929,10 @@
             Rvalue::ShallowInitBox(operand, ty) =&gt; {
                 <span class="self">self</span>.check_operand(operand, location);
 
-                <span class="kw">let </span>trait_ref = ty::TraitRef::new(
-                    tcx,
-                    tcx.require_lang_item(LangItem::Sized, <span class="prelude-val">Some</span>(span)),
-                    [<span class="kw-2">*</span>ty],
-                );
+                <span class="kw">let </span>trait_ref =
+                    ty::TraitRef::new(tcx, tcx.require_lang_item(LangItem::Sized, <span class="prelude-val">Some</span>(span)), [
+                        <span class="kw-2">*</span>ty,
+                    ]);
 
                 <span class="self">self</span>.prove_trait_ref(
                     trait_ref,
@@ -4891,20 +4946,77 @@
 
                 <span class="kw">match </span>cast_kind {
                     CastKind::PointerCoercion(PointerCoercion::ReifyFnPointer) =&gt; {
-                        <span class="kw">let </span>fn_sig = op.ty(body, tcx).fn_sig(tcx);
+                        <span class="kw">let </span>src_sig = op.ty(body, tcx).fn_sig(tcx);
+
+                        <span class="comment">// HACK: This shouldn't be necessary... We can remove this when we actually
+                        // get binders with where clauses, then elaborate implied bounds into that
+                        // binder, and implement a higher-ranked subtyping algorithm that actually
+                        // respects these implied bounds.
+                        //
+                        // This protects against the case where we are casting from a higher-ranked
+                        // fn item to a non-higher-ranked fn pointer, where the cast throws away
+                        // implied bounds that would've needed to be checked at the call site. This
+                        // only works when we're casting to a non-higher-ranked fn ptr, since
+                        // placeholders in the target signature could have untracked implied
+                        // bounds, resulting in incorrect errors.
+                        //
+                        // We check that this signature is WF before subtyping the signature with
+                        // the target fn sig.
+                        </span><span class="kw">if </span>src_sig.has_bound_regions()
+                            &amp;&amp; <span class="kw">let </span>ty::FnPtr(target_fn_tys, target_hdr) = <span class="kw-2">*</span>ty.kind()
+                            &amp;&amp; <span class="kw">let </span>target_sig = target_fn_tys.with(target_hdr)
+                            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(target_sig) = target_sig.no_bound_vars()
+                        {
+                            <span class="kw">let </span>src_sig = <span class="self">self</span>.infcx.instantiate_binder_with_fresh_vars(
+                                span,
+                                BoundRegionConversionTime::HigherRankedType,
+                                src_sig,
+                            );
+                            <span class="kw">let </span>src_ty = Ty::new_fn_ptr(<span class="self">self</span>.tcx(), ty::Binder::dummy(src_sig));
+                            <span class="self">self</span>.prove_predicate(
+                                ty::ClauseKind::WellFormed(src_ty.into()),
+                                location.to_locations(),
+                                ConstraintCategory::Cast { unsize_to: <span class="prelude-val">None </span>},
+                            );
+
+                            <span class="kw">let </span>src_ty = <span class="self">self</span>.normalize(src_ty, location);
+                            <span class="kw">if let </span><span class="prelude-val">Err</span>(terr) = <span class="self">self</span>.sub_types(
+                                src_ty,
+                                <span class="kw-2">*</span>ty,
+                                location.to_locations(),
+                                ConstraintCategory::Cast { unsize_to: <span class="prelude-val">None </span>},
+                            ) {
+                                <span class="macro">span_mirbug!</span>(
+                                    <span class="self">self</span>,
+                                    rvalue,
+                                    <span class="string">"equating {:?} with {:?} yields {:?}"</span>,
+                                    target_sig,
+                                    src_sig,
+                                    terr
+                                );
+                            };
+                        }
+
+                        <span class="kw">let </span>src_ty = Ty::new_fn_ptr(tcx, src_sig);
+                        <span class="comment">// HACK: We want to assert that the signature of the source fn is
+                        // well-formed, because we don't enforce that via the WF of FnDef
+                        // types normally. This should be removed when we improve the tracking
+                        // of implied bounds of fn signatures.
+                        </span><span class="self">self</span>.prove_predicate(
+                            ty::ClauseKind::WellFormed(src_ty.into()),
+                            location.to_locations(),
+                            ConstraintCategory::Cast { unsize_to: <span class="prelude-val">None </span>},
+                        );
 
                         <span class="comment">// The type that we see in the fcx is like
                         // `foo::&lt;'a, 'b&gt;`, where `foo` is the path to a
                         // function definition. When we extract the
                         // signature, it comes from the `fn_sig` query,
                         // and hence may contain unnormalized results.
-                        </span><span class="kw">let </span>fn_sig = <span class="self">self</span>.normalize(fn_sig, location);
-
-                        <span class="kw">let </span>ty_fn_ptr_from = Ty::new_fn_ptr(tcx, fn_sig);
-
-                        <span class="kw">if let </span><span class="prelude-val">Err</span>(terr) = <span class="self">self</span>.eq_types(
+                        </span><span class="kw">let </span>src_ty = <span class="self">self</span>.normalize(src_ty, location);
+                        <span class="kw">if let </span><span class="prelude-val">Err</span>(terr) = <span class="self">self</span>.sub_types(
+                            src_ty,
                             <span class="kw-2">*</span>ty,
-                            ty_fn_ptr_from,
                             location.to_locations(),
                             ConstraintCategory::Cast { unsize_to: <span class="prelude-val">None </span>},
                         ) {
@@ -4912,7 +5024,7 @@
                                 <span class="self">self</span>,
                                 rvalue,
                                 <span class="string">"equating {:?} with {:?} yields {:?}"</span>,
-                                ty_fn_ptr_from,
+                                src_ty,
                                 ty,
                                 terr
                             );
@@ -4927,9 +5039,9 @@
                         <span class="kw">let </span>ty_fn_ptr_from =
                             Ty::new_fn_ptr(tcx, tcx.signature_unclosure(sig, <span class="kw-2">*</span>safety));
 
-                        <span class="kw">if let </span><span class="prelude-val">Err</span>(terr) = <span class="self">self</span>.eq_types(
-                            <span class="kw-2">*</span>ty,
+                        <span class="kw">if let </span><span class="prelude-val">Err</span>(terr) = <span class="self">self</span>.sub_types(
                             ty_fn_ptr_from,
+                            <span class="kw-2">*</span>ty,
                             location.to_locations(),
                             ConstraintCategory::Cast { unsize_to: <span class="prelude-val">None </span>},
                         ) {
@@ -4956,9 +5068,9 @@
 
                         <span class="kw">let </span>ty_fn_ptr_from = tcx.safe_to_unsafe_fn_ty(fn_sig);
 
-                        <span class="kw">if let </span><span class="prelude-val">Err</span>(terr) = <span class="self">self</span>.eq_types(
-                            <span class="kw-2">*</span>ty,
+                        <span class="kw">if let </span><span class="prelude-val">Err</span>(terr) = <span class="self">self</span>.sub_types(
                             ty_fn_ptr_from,
+                            <span class="kw-2">*</span>ty,
                             location.to_locations(),
                             ConstraintCategory::Cast { unsize_to: <span class="prelude-val">None </span>},
                         ) {
@@ -5324,7 +5436,7 @@
                 <span class="kw">let </span>ty_left = left.ty(body, tcx);
                 <span class="kw">match </span>ty_left.kind() {
                     <span class="comment">// Types with regions are comparable if they have a common super-type.
-                    </span>ty::RawPtr(<span class="kw">_</span>, <span class="kw">_</span>) | ty::FnPtr(<span class="kw">_</span>) =&gt; {
+                    </span>ty::RawPtr(<span class="kw">_</span>, <span class="kw">_</span>) | ty::FnPtr(..) =&gt; {
                         <span class="kw">let </span>ty_right = right.ty(body, tcx);
                         <span class="kw">let </span>common_ty = <span class="self">self</span>.infcx.next_ty_var(body.source_info(location).span);
                         <span class="self">self</span>.sub_types(
@@ -5381,7 +5493,7 @@
                 <span class="self">self</span>.check_operand(right, location);
             }
 
-            Rvalue::AddressOf(..)
+            Rvalue::RawPtr(..)
             | Rvalue::ThreadLocalRef(..)
             | Rvalue::Len(..)
             | Rvalue::Discriminant(..)
@@ -5398,7 +5510,7 @@
             | Rvalue::ThreadLocalRef(<span class="kw">_</span>)
             | Rvalue::Repeat(..)
             | Rvalue::Ref(..)
-            | Rvalue::AddressOf(..)
+            | Rvalue::RawPtr(..)
             | Rvalue::Len(..)
             | Rvalue::Cast(..)
             | Rvalue::ShallowInitBox(..)

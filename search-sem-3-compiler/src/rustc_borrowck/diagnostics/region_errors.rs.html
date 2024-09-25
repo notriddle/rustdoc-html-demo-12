@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/diagnostics/region_errors.rs`."><title>region_errors.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/diagnostics/region_errors.rs`."><title>region_errors.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/diagnostics/</div>region_errors.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1217,34 +1218,34 @@
 <a href="#1217" id="1217">1217</a>
 <a href="#1218" id="1218">1218</a>
 <a href="#1219" id="1219">1219</a>
-<a href="#1220" id="1220">1220</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! Error reporting machinery for lifetime errors.
+<a href="#1220" id="1220">1220</a></pre></div><pre class="rust"><code><span class="doccomment">//! Error reporting machinery for lifetime errors.
 
 </span><span class="kw">use </span>rustc_data_structures::fx::FxIndexSet;
 <span class="kw">use </span>rustc_errors::{Applicability, Diag, ErrorGuaranteed, MultiSpan};
 <span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
-<span class="kw">use </span>rustc_hir::def::Res::Def;
-<span class="kw">use </span>rustc_hir::def_id::DefId;
-<span class="kw">use </span>rustc_hir::intravisit::Visitor;
 <span class="kw">use </span>rustc_hir::GenericBound::Trait;
 <span class="kw">use </span>rustc_hir::QPath::Resolved;
 <span class="kw">use </span>rustc_hir::WherePredicate::BoundPredicate;
+<span class="kw">use </span>rustc_hir::def::Res::Def;
+<span class="kw">use </span>rustc_hir::def_id::DefId;
+<span class="kw">use </span>rustc_hir::intravisit::Visitor;
 <span class="kw">use </span>rustc_hir::{PolyTraitRef, TyKind, WhereBoundPredicate};
 <span class="kw">use </span>rustc_infer::infer::{NllRegionVariableOrigin, RelateParamBound};
 <span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::hir::place::PlaceBase;
 <span class="kw">use </span>rustc_middle::mir::{ConstraintCategory, ReturnConstraint};
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, GenericArgs, Region, RegionVid, Ty, TyCtxt, TypeVisitor};
-<span class="kw">use </span>rustc_span::symbol::{kw, Ident};
 <span class="kw">use </span>rustc_span::Span;
+<span class="kw">use </span>rustc_span::symbol::{Ident, kw};
+<span class="kw">use </span>rustc_trait_selection::error_reporting::InferCtxtErrorExt;
 <span class="kw">use </span>rustc_trait_selection::error_reporting::infer::nice_region_error::{
-    <span class="self">self</span>, find_anon_type, find_param_with_region, suggest_adding_lifetime_params,
-    HirTraitObjectVisitor, NiceRegionError, TraitObjectVisitor,
+    <span class="self">self</span>, HirTraitObjectVisitor, NiceRegionError, TraitObjectVisitor, find_anon_type,
+    find_param_with_region, suggest_adding_lifetime_params,
 };
 <span class="kw">use </span>rustc_trait_selection::error_reporting::infer::region::unexpected_hidden_region_diagnostic;
-<span class="kw">use </span>rustc_trait_selection::error_reporting::InferCtxtErrorExt;
 <span class="kw">use </span>rustc_trait_selection::infer::InferCtxtExt;
 <span class="kw">use </span>rustc_trait_selection::traits::{Obligation, ObligationCtxt};
+<span class="kw">use </span>tracing::{debug, instrument, trace};
 
 <span class="kw">use super</span>::{OutlivesSuggestionBuilder, RegionName, RegionNameSource};
 <span class="kw">use </span><span class="kw">crate</span>::nll::ConstraintDescription;
@@ -1255,7 +1256,7 @@
     LifetimeReturnCategoryErr, RequireStaticErr, VarHereDenote,
 };
 <span class="kw">use </span><span class="kw">crate</span>::universal_regions::DefiningTy;
-<span class="kw">use crate</span>::{borrowck_errors, fluent_generated <span class="kw">as </span>fluent, MirBorrowckCtxt};
+<span class="kw">use crate</span>::{MirBorrowckCtxt, borrowck_errors, fluent_generated <span class="kw">as </span>fluent};
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; ConstraintDescription <span class="kw">for </span>ConstraintCategory&lt;<span class="lifetime">'tcx</span>&gt; {
     <span class="kw">fn </span>description(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str {
@@ -1292,22 +1293,24 @@
 </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>RegionErrors&lt;<span class="lifetime">'tcx</span>&gt;(Vec&lt;(RegionErrorKind&lt;<span class="lifetime">'tcx</span>&gt;, ErrorGuaranteed)&gt;, TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;);
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; RegionErrors&lt;<span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">pub fn </span>new(tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
         <span class="self">Self</span>(<span class="macro">vec!</span>[], tcx)
     }
     <span class="attr">#[track_caller]
-    </span><span class="kw">pub fn </span>push(<span class="kw-2">&amp;mut </span><span class="self">self</span>, val: <span class="kw">impl </span>Into&lt;RegionErrorKind&lt;<span class="lifetime">'tcx</span>&gt;&gt;) {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>push(<span class="kw-2">&amp;mut </span><span class="self">self</span>, val: <span class="kw">impl </span>Into&lt;RegionErrorKind&lt;<span class="lifetime">'tcx</span>&gt;&gt;) {
         <span class="kw">let </span>val = val.into();
         <span class="kw">let </span>guar = <span class="self">self</span>.<span class="number">1</span>.sess.dcx().delayed_bug(<span class="macro">format!</span>(<span class="string">"{val:?}"</span>));
         <span class="self">self</span>.<span class="number">0</span>.push((val, guar));
     }
-    <span class="kw">pub fn </span>is_empty(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>is_empty(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
         <span class="self">self</span>.<span class="number">0</span>.is_empty()
     }
-    <span class="kw">pub fn </span>into_iter(<span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = (RegionErrorKind&lt;<span class="lifetime">'tcx</span>&gt;, ErrorGuaranteed)&gt; {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>into_iter(
+        <span class="self">self</span>,
+    ) -&gt; <span class="kw">impl </span>Iterator&lt;Item = (RegionErrorKind&lt;<span class="lifetime">'tcx</span>&gt;, ErrorGuaranteed)&gt; {
         <span class="self">self</span>.<span class="number">0</span>.into_iter()
     }
-    <span class="kw">pub fn </span>has_errors(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;ErrorGuaranteed&gt; {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>has_errors(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;ErrorGuaranteed&gt; {
         <span class="self">self</span>.<span class="number">0</span>.get(<span class="number">0</span>).map(|x| x.<span class="number">1</span>)
     }
 }
@@ -1361,7 +1364,7 @@
 
 <span class="doccomment">/// Information about the various region constraints involved in a borrow checker error.
 </span><span class="attr">#[derive(Clone, Debug)]
-</span><span class="kw">pub struct </span>ErrorConstraintInfo&lt;<span class="lifetime">'tcx</span>&gt; {
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>ErrorConstraintInfo&lt;<span class="lifetime">'tcx</span>&gt; {
     <span class="comment">// fr: outlived_fr
     </span><span class="kw">pub</span>(<span class="kw">super</span>) fr: RegionVid,
     <span class="kw">pub</span>(<span class="kw">super</span>) fr_is_local: bool,
@@ -1373,7 +1376,7 @@
     <span class="kw">pub</span>(<span class="kw">super</span>) span: Span,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; MirBorrowckCtxt&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; MirBorrowckCtxt&lt;<span class="lifetime">'_</span>, <span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="doccomment">/// Converts a region inference variable into a `ty::Region` that
     /// we can use for error reporting. If `r` is universally bound,
     /// then we use the name that we have on record for it. If `r` is
@@ -2325,15 +2328,12 @@
         <span class="kw">let </span>closure_ty = Ty::new_closure(
             tcx,
             closure_def_id.to_def_id(),
-            ty::ClosureArgs::new(
-                tcx,
-                ty::ClosureArgsParts {
-                    parent_args: args.parent_args(),
-                    closure_kind_ty: args.kind_ty(),
-                    tupled_upvars_ty: args.tupled_upvars_ty(),
-                    closure_sig_as_fn_ptr_ty,
-                },
-            )
+            ty::ClosureArgs::new(tcx, ty::ClosureArgsParts {
+                parent_args: args.parent_args(),
+                closure_kind_ty: args.kind_ty(),
+                tupled_upvars_ty: args.tupled_upvars_ty(),
+                closure_sig_as_fn_ptr_ty,
+            })
             .args,
         );
 

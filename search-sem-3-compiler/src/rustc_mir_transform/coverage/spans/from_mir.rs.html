@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/coverage/spans/from_mir.rs`."><title>from_mir.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/coverage/spans/from_mir.rs`."><title>from_mir.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/coverage/spans/</div>from_mir.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -231,20 +232,19 @@
 <a href="#231" id="231">231</a>
 <a href="#232" id="232">232</a>
 <a href="#233" id="233">233</a>
-<a href="#234" id="234">234</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_middle::bug;
+<a href="#234" id="234">234</a></pre></div><pre class="rust"><code><span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::mir::coverage::CoverageKind;
 <span class="kw">use </span>rustc_middle::mir::{
     <span class="self">self</span>, FakeReadCause, Statement, StatementKind, Terminator, TerminatorKind,
 };
-<span class="kw">use </span>rustc_span::{Span, Symbol};
+<span class="kw">use </span>rustc_span::{ExpnKind, Span};
 
+<span class="kw">use </span><span class="kw">crate</span>::coverage::ExtractedHirInfo;
 <span class="kw">use </span><span class="kw">crate</span>::coverage::graph::{
     BasicCoverageBlock, BasicCoverageBlockData, CoverageGraph, START_BCB,
 };
 <span class="kw">use </span><span class="kw">crate</span>::coverage::spans::Covspan;
-<span class="kw">use </span><span class="kw">crate</span>::coverage::unexpand::unexpand_into_body_span_with_visible_macro;
-<span class="kw">use </span><span class="kw">crate</span>::coverage::ExtractedHirInfo;
+<span class="kw">use </span><span class="kw">crate</span>::coverage::unexpand::unexpand_into_body_span_with_expn_kind;
 
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>ExtractedCovspans {
     <span class="kw">pub</span>(<span class="kw">crate</span>) covspans: Vec&lt;SpanFromMir&gt;,
@@ -294,7 +294,7 @@
         <span class="kw">let </span>data = <span class="kw-2">&amp;</span>mir_body[bb];
 
         <span class="kw">let </span>unexpand = <span class="kw">move </span>|expn_span| {
-            unexpand_into_body_span_with_visible_macro(expn_span, body_span)
+            unexpand_into_body_span_with_expn_kind(expn_span, body_span)
                 <span class="comment">// Discard any spans that fill the entire body, because they tend
                 // to represent compiler-inserted code, e.g. implicitly returning `()`.
                 </span>.filter(|(span, <span class="kw">_</span>)| !span.source_equal(body_span))
@@ -302,9 +302,9 @@
 
         <span class="kw">let </span><span class="kw-2">mut </span>extract_statement_span = |statement| {
             <span class="kw">let </span>expn_span = filtered_statement_span(statement)<span class="question-mark">?</span>;
-            <span class="kw">let </span>(span, visible_macro) = unexpand(expn_span)<span class="question-mark">?</span>;
+            <span class="kw">let </span>(span, expn_kind) = unexpand(expn_span)<span class="question-mark">?</span>;
 
-            initial_covspans.push(SpanFromMir::new(span, visible_macro, bcb));
+            initial_covspans.push(SpanFromMir::new(span, expn_kind, bcb));
             <span class="prelude-val">Some</span>(())
         };
         <span class="kw">for </span>statement <span class="kw">in </span>data.statements.iter() {
@@ -313,9 +313,9 @@
 
         <span class="kw">let </span><span class="kw-2">mut </span>extract_terminator_span = |terminator| {
             <span class="kw">let </span>expn_span = filtered_terminator_span(terminator)<span class="question-mark">?</span>;
-            <span class="kw">let </span>(span, visible_macro) = unexpand(expn_span)<span class="question-mark">?</span>;
+            <span class="kw">let </span>(span, expn_kind) = unexpand(expn_span)<span class="question-mark">?</span>;
 
-            initial_covspans.push(SpanFromMir::new(span, visible_macro, bcb));
+            initial_covspans.push(SpanFromMir::new(span, expn_kind, bcb));
             <span class="prelude-val">Some</span>(())
         };
         extract_terminator_span(data.terminator());
@@ -448,7 +448,7 @@
     /// With the exception of `fn_sig_span`, this should always be contained
     /// within `body_span`.
     </span><span class="kw">pub</span>(<span class="kw">crate</span>) span: Span,
-    <span class="kw">pub</span>(<span class="kw">crate</span>) visible_macro: <span class="prelude-ty">Option</span>&lt;Symbol&gt;,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) expn_kind: <span class="prelude-ty">Option</span>&lt;ExpnKind&gt;,
     <span class="kw">pub</span>(<span class="kw">crate</span>) bcb: BasicCoverageBlock,
 }
 
@@ -457,12 +457,12 @@
         <span class="self">Self</span>::new(fn_sig_span, <span class="prelude-val">None</span>, START_BCB)
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(span: Span, visible_macro: <span class="prelude-ty">Option</span>&lt;Symbol&gt;, bcb: BasicCoverageBlock) -&gt; <span class="self">Self </span>{
-        <span class="self">Self </span>{ span, visible_macro, bcb }
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(span: Span, expn_kind: <span class="prelude-ty">Option</span>&lt;ExpnKind&gt;, bcb: BasicCoverageBlock) -&gt; <span class="self">Self </span>{
+        <span class="self">Self </span>{ span, expn_kind, bcb }
     }
 
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>into_covspan(<span class="self">self</span>) -&gt; Covspan {
-        <span class="kw">let </span><span class="self">Self </span>{ span, visible_macro: <span class="kw">_</span>, bcb } = <span class="self">self</span>;
+        <span class="kw">let </span><span class="self">Self </span>{ span, expn_kind: <span class="kw">_</span>, bcb } = <span class="self">self</span>;
         Covspan { span, bcb }
     }
 }

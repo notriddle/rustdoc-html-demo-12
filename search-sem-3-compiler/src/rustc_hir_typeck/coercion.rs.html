@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_typeck/src/coercion.rs`."><title>coercion.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_typeck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_typeck/src/coercion.rs`."><title>coercion.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_typeck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_typeck/</div>coercion.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1965,7 +1966,62 @@
 <a href="#1965" id="1965">1965</a>
 <a href="#1966" id="1966">1966</a>
 <a href="#1967" id="1967">1967</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! # Type Coercion
+<a href="#1968" id="1968">1968</a>
+<a href="#1969" id="1969">1969</a>
+<a href="#1970" id="1970">1970</a>
+<a href="#1971" id="1971">1971</a>
+<a href="#1972" id="1972">1972</a>
+<a href="#1973" id="1973">1973</a>
+<a href="#1974" id="1974">1974</a>
+<a href="#1975" id="1975">1975</a>
+<a href="#1976" id="1976">1976</a>
+<a href="#1977" id="1977">1977</a>
+<a href="#1978" id="1978">1978</a>
+<a href="#1979" id="1979">1979</a>
+<a href="#1980" id="1980">1980</a>
+<a href="#1981" id="1981">1981</a>
+<a href="#1982" id="1982">1982</a>
+<a href="#1983" id="1983">1983</a>
+<a href="#1984" id="1984">1984</a>
+<a href="#1985" id="1985">1985</a>
+<a href="#1986" id="1986">1986</a>
+<a href="#1987" id="1987">1987</a>
+<a href="#1988" id="1988">1988</a>
+<a href="#1989" id="1989">1989</a>
+<a href="#1990" id="1990">1990</a>
+<a href="#1991" id="1991">1991</a>
+<a href="#1992" id="1992">1992</a>
+<a href="#1993" id="1993">1993</a>
+<a href="#1994" id="1994">1994</a>
+<a href="#1995" id="1995">1995</a>
+<a href="#1996" id="1996">1996</a>
+<a href="#1997" id="1997">1997</a>
+<a href="#1998" id="1998">1998</a>
+<a href="#1999" id="1999">1999</a>
+<a href="#2000" id="2000">2000</a>
+<a href="#2001" id="2001">2001</a>
+<a href="#2002" id="2002">2002</a>
+<a href="#2003" id="2003">2003</a>
+<a href="#2004" id="2004">2004</a>
+<a href="#2005" id="2005">2005</a>
+<a href="#2006" id="2006">2006</a>
+<a href="#2007" id="2007">2007</a>
+<a href="#2008" id="2008">2008</a>
+<a href="#2009" id="2009">2009</a>
+<a href="#2010" id="2010">2010</a>
+<a href="#2011" id="2011">2011</a>
+<a href="#2012" id="2012">2012</a>
+<a href="#2013" id="2013">2013</a>
+<a href="#2014" id="2014">2014</a>
+<a href="#2015" id="2015">2015</a>
+<a href="#2016" id="2016">2016</a>
+<a href="#2017" id="2017">2017</a>
+<a href="#2018" id="2018">2018</a>
+<a href="#2019" id="2019">2019</a>
+<a href="#2020" id="2020">2020</a>
+<a href="#2021" id="2021">2021</a>
+<a href="#2022" id="2022">2022</a>
+<a href="#2023" id="2023">2023</a></pre></div><pre class="rust"><code><span class="doccomment">//! # Type Coercion
 //!
 //! Under certain circumstances we will coerce from one type to another,
 //! for example by auto-borrowing. This occurs in situations where the
@@ -2005,7 +2061,7 @@
 </span><span class="kw">use </span>std::ops::Deref;
 
 <span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
-<span class="kw">use </span>rustc_errors::{struct_span_code_err, Applicability, Diag};
+<span class="kw">use </span>rustc_errors::{Applicability, Diag, struct_span_code_err};
 <span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
 <span class="kw">use </span>rustc_hir::def_id::{DefId, LocalDefId};
 <span class="kw">use </span>rustc_hir_analysis::hir_ty_lowering::HirTyLowerer;
@@ -2025,17 +2081,18 @@
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, GenericArgsRef, Ty, TyCtxt};
 <span class="kw">use </span>rustc_session::parse::feature_err;
 <span class="kw">use </span>rustc_span::symbol::sym;
-<span class="kw">use </span>rustc_span::{BytePos, DesugaringKind, Span, DUMMY_SP};
+<span class="kw">use </span>rustc_span::{BytePos, DUMMY_SP, DesugaringKind, Span};
 <span class="kw">use </span>rustc_target::spec::abi::Abi;
 <span class="kw">use </span>rustc_trait_selection::infer::InferCtxtExt <span class="kw">as _</span>;
 <span class="kw">use </span>rustc_trait_selection::traits::query::evaluate_obligation::InferCtxtExt;
 <span class="kw">use </span>rustc_trait_selection::traits::{
     <span class="self">self</span>, NormalizeExt, ObligationCause, ObligationCauseCode, ObligationCtxt,
 };
-<span class="kw">use </span>smallvec::{smallvec, SmallVec};
+<span class="kw">use </span>smallvec::{SmallVec, smallvec};
+<span class="kw">use </span>tracing::{debug, instrument};
 
-<span class="kw">use </span><span class="kw">crate</span>::errors::SuggestBoxingForReturnImplTrait;
 <span class="kw">use </span><span class="kw">crate</span>::FnCtxt;
+<span class="kw">use </span><span class="kw">crate</span>::errors::SuggestBoxingForReturnImplTrait;
 
 <span class="kw">struct </span>Coerce&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     fcx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>FnCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;,
@@ -2073,7 +2130,7 @@
     <span class="macro">vec!</span>[]
 }
 
-<span class="kw">fn </span>simple&lt;<span class="lifetime">'tcx</span>&gt;(kind: Adjust&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="kw">impl </span>FnOnce(Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; Vec&lt;Adjustment&lt;<span class="lifetime">'_</span>&gt;&gt; {
+<span class="kw">fn </span>simple&lt;<span class="lifetime">'tcx</span>&gt;(kind: Adjust&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="kw">impl </span>FnOnce(Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; Vec&lt;Adjustment&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
     <span class="kw">move </span>|target| <span class="macro">vec!</span>[Adjustment { kind, target }]
 }
 
@@ -2104,7 +2161,7 @@
                 at.lub(DefineOpaqueTypes::Yes, b, a)
             } <span class="kw">else </span>{
                 at.sup(DefineOpaqueTypes::Yes, b, a)
-                    .map(|InferOk { value: (), obligations }| InferOk { value: a, obligations })
+                    .map(|InferOk { value: (), obligations }| InferOk { value: b, obligations })
             };
 
             <span class="comment">// In the new solver, lazy norm may allow us to shallowly equate
@@ -2180,6 +2237,12 @@
             ty::Dynamic(predicates, region, ty::DynStar) <span class="kw">if </span><span class="self">self</span>.tcx.features().dyn_star =&gt; {
                 <span class="kw">return </span><span class="self">self</span>.coerce_dyn_star(a, b, predicates, region);
             }
+            ty::Adt(pin, <span class="kw">_</span>)
+                <span class="kw">if </span><span class="self">self</span>.tcx.features().pin_ergonomics
+                    &amp;&amp; <span class="self">self</span>.tcx.is_lang_item(pin.did(), hir::LangItem::Pin) =&gt;
+            {
+                <span class="kw">return </span><span class="self">self</span>.coerce_pin(a, b);
+            }
             <span class="kw">_ </span>=&gt; {}
         }
 
@@ -2192,10 +2255,10 @@
                 // items to drop the unsafe qualifier.
                 </span><span class="self">self</span>.coerce_from_fn_item(a, b)
             }
-            ty::FnPtr(a_f) =&gt; {
+            ty::FnPtr(a_sig_tys, a_hdr) =&gt; {
                 <span class="comment">// We permit coercion of fn pointers to drop the
                 // unsafe qualifier.
-                </span><span class="self">self</span>.coerce_from_fn_pointer(a, a_f, b)
+                </span><span class="self">self</span>.coerce_from_fn_pointer(a, a_sig_tys.with(a_hdr), b)
             }
             ty::Closure(closure_def_id_a, args_a) =&gt; {
                 <span class="comment">// Non-capturing closures are coercible to
@@ -2494,24 +2557,18 @@
                 // the reborrow in coerce_borrowed_ptr will pick it up.
                 </span><span class="kw">let </span>mutbl = AutoBorrowMutability::new(mutbl_b, AllowTwoPhase::No);
 
-                <span class="prelude-val">Some</span>((
-                    Adjustment { kind: Adjust::Deref(<span class="prelude-val">None</span>), target: ty_a },
-                    Adjustment {
-                        kind: Adjust::Borrow(AutoBorrow::Ref(r_borrow, mutbl)),
-                        target: Ty::new_ref(<span class="self">self</span>.tcx, r_borrow, ty_a, mutbl_b),
-                    },
-                ))
+                <span class="prelude-val">Some</span>((Adjustment { kind: Adjust::Deref(<span class="prelude-val">None</span>), target: ty_a }, Adjustment {
+                    kind: Adjust::Borrow(AutoBorrow::Ref(r_borrow, mutbl)),
+                    target: Ty::new_ref(<span class="self">self</span>.tcx, r_borrow, ty_a, mutbl_b),
+                }))
             }
             (<span class="kw-2">&amp;</span>ty::Ref(<span class="kw">_</span>, ty_a, mt_a), <span class="kw-2">&amp;</span>ty::RawPtr(<span class="kw">_</span>, mt_b)) =&gt; {
                 coerce_mutbls(mt_a, mt_b)<span class="question-mark">?</span>;
 
-                <span class="prelude-val">Some</span>((
-                    Adjustment { kind: Adjust::Deref(<span class="prelude-val">None</span>), target: ty_a },
-                    Adjustment {
-                        kind: Adjust::Borrow(AutoBorrow::RawPtr(mt_b)),
-                        target: Ty::new_ptr(<span class="self">self</span>.tcx, ty_a, mt_b),
-                    },
-                ))
+                <span class="prelude-val">Some</span>((Adjustment { kind: Adjust::Deref(<span class="prelude-val">None</span>), target: ty_a }, Adjustment {
+                    kind: Adjust::Borrow(AutoBorrow::RawPtr(mt_b)),
+                    target: Ty::new_ptr(<span class="self">self</span>.tcx, ty_a, mt_b),
+                }))
             }
             <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
         };
@@ -2533,11 +2590,11 @@
         <span class="kw">let </span><span class="kw-2">mut </span>selcx = traits::SelectionContext::new(<span class="self">self</span>);
 
         <span class="comment">// Create an obligation for `Source: CoerceUnsized&lt;Target&gt;`.
-        </span><span class="kw">let </span>cause = ObligationCause::new(
-            <span class="self">self</span>.cause.span,
-            <span class="self">self</span>.body_id,
-            ObligationCauseCode::Coercion { source, target },
-        );
+        </span><span class="kw">let </span>cause =
+            ObligationCause::new(<span class="self">self</span>.cause.span, <span class="self">self</span>.body_id, ObligationCauseCode::Coercion {
+                source,
+                target,
+            });
 
         <span class="comment">// Use a FIFO queue for this custom fulfillment procedure.
         //
@@ -2740,6 +2797,62 @@
         })
     }
 
+    <span class="doccomment">/// Applies reborrowing for `Pin`
+    ///
+    /// We currently only support reborrowing `Pin&lt;&amp;mut T&gt;` as `Pin&lt;&amp;mut T&gt;`. This is accomplished
+    /// by inserting a call to `Pin::as_mut` during MIR building.
+    ///
+    /// In the future we might want to support other reborrowing coercions, such as:
+    /// - `Pin&lt;&amp;mut T&gt;` as `Pin&lt;&amp;T&gt;`
+    /// - `Pin&lt;&amp;T&gt;` as `Pin&lt;&amp;T&gt;`
+    /// - `Pin&lt;Box&lt;T&gt;&gt;` as `Pin&lt;&amp;T&gt;`
+    /// - `Pin&lt;Box&lt;T&gt;&gt;` as `Pin&lt;&amp;mut T&gt;`
+    </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
+    </span><span class="kw">fn </span>coerce_pin(<span class="kw-2">&amp;</span><span class="self">self</span>, a: Ty&lt;<span class="lifetime">'tcx</span>&gt;, b: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; CoerceResult&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="comment">// We need to make sure the two types are compatible for coercion.
+        // Then we will build a ReborrowPin adjustment and return that as an InferOk.
+
+        // Right now we can only reborrow if this is a `Pin&lt;&amp;mut T&gt;`.
+        </span><span class="kw">let </span>extract_pin_mut = |ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;| {
+            <span class="comment">// Get the T out of Pin&lt;T&gt;
+            </span><span class="kw">let </span>(pin, ty) = <span class="kw">match </span>ty.kind() {
+                ty::Adt(pin, args) <span class="kw">if </span><span class="self">self</span>.tcx.is_lang_item(pin.did(), hir::LangItem::Pin) =&gt; {
+                    (<span class="kw-2">*</span>pin, args[<span class="number">0</span>].expect_ty())
+                }
+                <span class="kw">_ </span>=&gt; {
+                    <span class="macro">debug!</span>(<span class="string">"can't reborrow {:?} as pinned"</span>, ty);
+                    <span class="kw">return </span><span class="prelude-val">Err</span>(TypeError::Mismatch);
+                }
+            };
+            <span class="comment">// Make sure the T is something we understand (just `&amp;mut U` for now)
+            </span><span class="kw">match </span>ty.kind() {
+                ty::Ref(region, ty, mutbl) =&gt; <span class="prelude-val">Ok</span>((pin, <span class="kw-2">*</span>region, <span class="kw-2">*</span>ty, <span class="kw-2">*</span>mutbl)),
+                <span class="kw">_ </span>=&gt; {
+                    <span class="macro">debug!</span>(<span class="string">"can't reborrow pin of inner type {:?}"</span>, ty);
+                    <span class="prelude-val">Err</span>(TypeError::Mismatch)
+                }
+            }
+        };
+
+        <span class="kw">let </span>(pin, a_region, a_ty, mut_a) = extract_pin_mut(a)<span class="question-mark">?</span>;
+        <span class="kw">let </span>(<span class="kw">_</span>, b_region, _b_ty, mut_b) = extract_pin_mut(b)<span class="question-mark">?</span>;
+
+        coerce_mutbls(mut_a, mut_b)<span class="question-mark">?</span>;
+
+        <span class="comment">// update a with b's mutability since we'll be coercing mutability
+        </span><span class="kw">let </span>a = Ty::new_adt(
+            <span class="self">self</span>.tcx,
+            pin,
+            <span class="self">self</span>.tcx.mk_args(<span class="kw-2">&amp;</span>[Ty::new_ref(<span class="self">self</span>.tcx, a_region, a_ty, mut_b).into()]),
+        );
+
+        <span class="comment">// To complete the reborrow, we need to make sure we can unify the inner types, and if so we
+        // add the adjustments.
+        </span><span class="self">self</span>.unify_and(a, b, |_inner_ty| {
+            <span class="macro">vec!</span>[Adjustment { kind: Adjust::ReborrowPin(b_region, mut_b), target: b }]
+        })
+    }
+
     <span class="kw">fn </span>coerce_from_safe_fn&lt;F, G&gt;(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         a: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -2755,9 +2868,8 @@
         <span class="self">self</span>.commit_if_ok(|snapshot| {
             <span class="kw">let </span>outer_universe = <span class="self">self</span>.infcx.universe();
 
-            <span class="kw">let </span>result = <span class="kw">if let </span>ty::FnPtr(fn_ty_b) = b.kind()
-                &amp;&amp; <span class="kw">let </span>(hir::Safety::Safe, hir::Safety::Unsafe) =
-                    (fn_ty_a.safety(), fn_ty_b.safety())
+            <span class="kw">let </span>result = <span class="kw">if let </span>ty::FnPtr(<span class="kw">_</span>, hdr_b) = b.kind()
+                &amp;&amp; <span class="kw">let </span>(hir::Safety::Safe, hir::Safety::Unsafe) = (fn_ty_a.safety(), hdr_b.safety)
             {
                 <span class="kw">let </span>unsafe_a = <span class="self">self</span>.tcx.safe_to_unsafe_fn_ty(fn_ty_a);
                 <span class="self">self</span>.unify_and(unsafe_a, b, to_unsafe)
@@ -2809,7 +2921,7 @@
         <span class="macro">debug!</span>(<span class="string">"coerce_from_fn_item(a={:?}, b={:?})"</span>, a, b);
 
         <span class="kw">match </span>b.kind() {
-            ty::FnPtr(b_sig) =&gt; {
+            ty::FnPtr(<span class="kw">_</span>, b_hdr) =&gt; {
                 <span class="kw">let </span>a_sig = a.fn_sig(<span class="self">self</span>.tcx);
                 <span class="kw">if let </span>ty::FnDef(def_id, <span class="kw">_</span>) = <span class="kw-2">*</span>a.kind() {
                     <span class="comment">// Intrinsics are not coercible to function pointers
@@ -2819,7 +2931,7 @@
 
                     <span class="comment">// Safe `#[target_feature]` functions are not assignable to safe fn pointers (RFC 2396).
 
-                    </span><span class="kw">if </span>b_sig.safety() == hir::Safety::Safe
+                    </span><span class="kw">if </span>b_hdr.safety == hir::Safety::Safe
                         &amp;&amp; !<span class="self">self</span>.tcx.codegen_fn_attrs(def_id).target_features.is_empty()
                     {
                         <span class="kw">return </span><span class="prelude-val">Err</span>(TypeError::TargetFeatureCast(def_id));
@@ -2877,7 +2989,7 @@
             //
             // All we care here is if any variable is being captured and not the exact paths,
             // so we check `upvars_mentioned` for root variables being captured.
-            </span>ty::FnPtr(fn_ty)
+            </span>ty::FnPtr(<span class="kw">_</span>, hdr)
                 <span class="kw">if </span><span class="self">self
                     </span>.tcx
                     .upvars_mentioned(closure_def_id_a.expect_local())
@@ -2890,7 +3002,7 @@
                 // or
                 //     `unsafe fn(arg0,arg1,...) -&gt; _`
                 </span><span class="kw">let </span>closure_sig = args_a.as_closure().sig();
-                <span class="kw">let </span>safety = fn_ty.safety();
+                <span class="kw">let </span>safety = hdr.safety;
                 <span class="kw">let </span>pointer_ty =
                     Ty::new_fn_ptr(<span class="self">self</span>.tcx, <span class="self">self</span>.tcx.signature_unclosure(closure_sig, safety));
                 <span class="macro">debug!</span>(<span class="string">"coerce_closure_to_fn(a={:?}, b={:?}, pty={:?})"</span>, a, b, pointer_ty);
@@ -2926,10 +3038,10 @@
         // regionck knows that the region for `a` must be valid here.
         </span><span class="kw">if </span>is_ref {
             <span class="self">self</span>.unify_and(a_unsafe, b, |target| {
-                <span class="macro">vec!</span>[
-                    Adjustment { kind: Adjust::Deref(<span class="prelude-val">None</span>), target: mt_a.ty },
-                    Adjustment { kind: Adjust::Borrow(AutoBorrow::RawPtr(mutbl_b)), target },
-                ]
+                <span class="macro">vec!</span>[Adjustment { kind: Adjust::Deref(<span class="prelude-val">None</span>), target: mt_a.ty }, Adjustment {
+                    kind: Adjust::Borrow(AutoBorrow::RawPtr(mutbl_b)),
+                    target,
+                }]
             })
         } <span class="kw">else if </span>mt_a.mutbl != mutbl_b {
             <span class="self">self</span>.unify_and(a_unsafe, b, simple(Adjust::Pointer(PointerCoercion::MutToConstPointer)))
@@ -2944,7 +3056,7 @@
     /// adjusted type of the expression, if successful.
     /// Adjustments are only recorded if the coercion succeeded.
     /// The expressions *must not* have any preexisting adjustments.
-    </span><span class="kw">pub fn </span>coerce(
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>coerce(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         expr: <span class="kw-2">&amp;</span>hir::Expr&lt;<span class="lifetime">'_</span>&gt;,
         expr_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -2979,7 +3091,7 @@
     ///
     /// Returns false if the coercion creates any obligations that result in
     /// errors.
-    </span><span class="kw">pub fn </span>can_coerce(<span class="kw-2">&amp;</span><span class="self">self</span>, expr_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;, target: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; bool {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>can_coerce(<span class="kw-2">&amp;</span><span class="self">self</span>, expr_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;, target: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; bool {
         <span class="comment">// FIXME(-Znext-solver): We need to structurally resolve both types here.
         </span><span class="kw">let </span>source = <span class="self">self</span>.resolve_vars_with_obligations(expr_ty);
         <span class="macro">debug!</span>(<span class="string">"coercion::can_with_predicates({:?} -&gt; {:?})"</span>, source, target);
@@ -3000,7 +3112,7 @@
     <span class="doccomment">/// Given a type and a target type, this function will calculate and return
     /// how many dereference steps needed to achieve `expr_ty &lt;: target`. If
     /// it's not possible, return `None`.
-    </span><span class="kw">pub fn </span>deref_steps(<span class="kw-2">&amp;</span><span class="self">self</span>, expr_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;, target: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt; {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>deref_steps(<span class="kw-2">&amp;</span><span class="self">self</span>, expr_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;, target: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;usize&gt; {
         <span class="kw">let </span>cause = <span class="self">self</span>.cause(DUMMY_SP, ObligationCauseCode::ExprAssignable);
         <span class="comment">// We don't ever need two-phase here since we throw out the result of the coercion
         </span><span class="kw">let </span>coerce = Coerce::new(<span class="self">self</span>, cause, AllowTwoPhase::No);
@@ -3015,8 +3127,8 @@
     /// This function is for diagnostics only, since it does not register
     /// trait or region sub-obligations. (presumably we could, but it's not
     /// particularly important for diagnostics...)
-    </span><span class="kw">pub fn </span>deref_once_mutably_for_diagnostic(<span class="kw-2">&amp;</span><span class="self">self</span>, expr_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;Ty&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
-        <span class="self">self</span>.autoderef(DUMMY_SP, expr_ty).nth(<span class="number">1</span>).and_then(|(deref_ty, <span class="kw">_</span>)| {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>deref_once_mutably_for_diagnostic(<span class="kw-2">&amp;</span><span class="self">self</span>, expr_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="prelude-ty">Option</span>&lt;Ty&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+        <span class="self">self</span>.autoderef(DUMMY_SP, expr_ty).silence_errors().nth(<span class="number">1</span>).and_then(|(deref_ty, <span class="kw">_</span>)| {
             <span class="self">self</span>.infcx
                 .type_implements_trait(
                     <span class="self">self</span>.tcx.lang_items().deref_mut_trait()<span class="question-mark">?</span>,
@@ -3146,10 +3258,10 @@
                 <span class="kw">_ </span>=&gt; <span class="macro">span_bug!</span>(new.span, <span class="string">"should not try to coerce a {new_ty} to a fn pointer"</span>),
             };
             <span class="kw">for </span>expr <span class="kw">in </span>exprs.iter().map(|e| e.as_coercion_site()) {
-                <span class="self">self</span>.apply_adjustments(
-                    expr,
-                    <span class="macro">vec!</span>[Adjustment { kind: prev_adjustment.clone(), target: fn_ptr }],
-                );
+                <span class="self">self</span>.apply_adjustments(expr, <span class="macro">vec!</span>[Adjustment {
+                    kind: prev_adjustment.clone(),
+                    target: fn_ptr,
+                }]);
             }
             <span class="self">self</span>.apply_adjustments(new, <span class="macro">vec!</span>[Adjustment { kind: next_adjustment, target: fn_ptr }]);
             <span class="kw">return </span><span class="prelude-val">Ok</span>(fn_ptr);
@@ -3309,7 +3421,7 @@
 /// }
 /// let final_ty = coerce.complete(fcx);
 /// ```
-</span><span class="kw">pub struct </span>CoerceMany&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'exprs</span>, E: AsCoercionSite&gt; {
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>CoerceMany&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'exprs</span>, E: AsCoercionSite&gt; {
     expected_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
     final_ty: <span class="prelude-ty">Option</span>&lt;Ty&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
     expressions: Expressions&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'exprs</span>, E&gt;,
@@ -3318,7 +3430,7 @@
 
 <span class="doccomment">/// The type of a `CoerceMany` that is storing up the expressions into
 /// a buffer. We use this in `check/mod.rs` for things like `break`.
-</span><span class="kw">pub type </span>DynamicCoerceMany&lt;<span class="lifetime">'tcx</span>&gt; = CoerceMany&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'tcx</span>, <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>hir::Expr&lt;<span class="lifetime">'tcx</span>&gt;&gt;;
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">type </span>DynamicCoerceMany&lt;<span class="lifetime">'tcx</span>&gt; = CoerceMany&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'tcx</span>, <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>hir::Expr&lt;<span class="lifetime">'tcx</span>&gt;&gt;;
 
 <span class="kw">enum </span>Expressions&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'exprs</span>, E: AsCoercionSite&gt; {
     Dynamic(Vec&lt;<span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>hir::Expr&lt;<span class="lifetime">'tcx</span>&gt;&gt;),
@@ -3329,7 +3441,7 @@
     <span class="doccomment">/// The usual case; collect the set of expressions dynamically.
     /// If the full set of coercion sites is known before hand,
     /// consider `with_coercion_sites()` instead to avoid allocation.
-    </span><span class="kw">pub fn </span>new(expected_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(expected_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
         <span class="self">Self</span>::make(expected_ty, Expressions::Dynamic(<span class="macro">vec!</span>[]))
     }
 
@@ -3338,7 +3450,7 @@
     /// expected to pass each element in the slice to `coerce(...)` in
     /// order. This is used with arrays in particular to avoid
     /// needlessly cloning the slice.
-    </span><span class="kw">pub fn </span>with_coercion_sites(expected_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;, coercion_sites: <span class="kw-2">&amp;</span><span class="lifetime">'exprs </span>[E]) -&gt; <span class="self">Self </span>{
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>with_coercion_sites(expected_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;, coercion_sites: <span class="kw-2">&amp;</span><span class="lifetime">'exprs </span>[E]) -&gt; <span class="self">Self </span>{
         <span class="self">Self</span>::make(expected_ty, Expressions::UpFront(coercion_sites))
     }
 
@@ -3354,7 +3466,7 @@
     /// Typically, this is used as the expected type when
     /// type-checking each of the alternative expressions whose types
     /// we are trying to merge.
-    </span><span class="kw">pub fn </span>expected_ty(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Ty&lt;<span class="lifetime">'tcx</span>&gt; {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>expected_ty(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Ty&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.expected_ty
     }
 
@@ -3362,7 +3474,7 @@
     /// at the LUB of the expressions we've seen so far (if any). This
     /// isn't *final* until you call `self.complete()`, which will return
     /// the merged type.
-    </span><span class="kw">pub fn </span>merged_ty(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Ty&lt;<span class="lifetime">'tcx</span>&gt; {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>merged_ty(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Ty&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.final_ty.unwrap_or(<span class="self">self</span>.expected_ty)
     }
 
@@ -3371,7 +3483,7 @@
     /// could coerce from. This will record `expression`, and later
     /// calls to `coerce` may come back and add adjustments and things
     /// if necessary.
-    </span><span class="kw">pub fn </span>coerce&lt;<span class="lifetime">'a</span>&gt;(
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>coerce&lt;<span class="lifetime">'a</span>&gt;(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         fcx: <span class="kw-2">&amp;</span>FnCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;,
         cause: <span class="kw-2">&amp;</span>ObligationCause&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -3393,7 +3505,7 @@
     /// The `augment_error` gives you a chance to extend the error
     /// message, in case any results (e.g., we use this to suggest
     /// removing a `;`).
-    </span><span class="kw">pub fn </span>coerce_forced_unit&lt;<span class="lifetime">'a</span>&gt;(
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>coerce_forced_unit&lt;<span class="lifetime">'a</span>&gt;(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         fcx: <span class="kw-2">&amp;</span>FnCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;,
         cause: <span class="kw-2">&amp;</span>ObligationCause&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -3827,10 +3939,10 @@
         };
 
         <span class="comment">// If this is due to an explicit `return`, suggest adding a return type.
-        </span><span class="kw">if let </span><span class="prelude-val">Some</span>((fn_id, fn_decl, can_suggest)) = fcx.get_fn_decl(parent_id)
+        </span><span class="kw">if let </span><span class="prelude-val">Some</span>((fn_id, fn_decl)) = fcx.get_fn_decl(block_or_return_id)
             &amp;&amp; !due_to_block
         {
-            fcx.suggest_missing_return_type(<span class="kw-2">&amp;mut </span>err, fn_decl, expected, found, can_suggest, fn_id);
+            fcx.suggest_missing_return_type(<span class="kw-2">&amp;mut </span>err, fn_decl, expected, found, fn_id);
         }
 
         <span class="comment">// If this is due to a block, then maybe we forgot a `return`/`break`.
@@ -3888,7 +4000,7 @@
         </span>}
     }
 
-    <span class="kw">pub fn </span>complete&lt;<span class="lifetime">'a</span>&gt;(<span class="self">self</span>, fcx: <span class="kw-2">&amp;</span>FnCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;) -&gt; Ty&lt;<span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>complete&lt;<span class="lifetime">'a</span>&gt;(<span class="self">self</span>, fcx: <span class="kw-2">&amp;</span>FnCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;) -&gt; Ty&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">if let </span><span class="prelude-val">Some</span>(final_ty) = <span class="self">self</span>.final_ty {
             final_ty
         } <span class="kw">else </span>{
@@ -3902,7 +4014,7 @@
 
 <span class="doccomment">/// Something that can be converted into an expression to which we can
 /// apply a coercion.
-</span><span class="kw">pub trait </span>AsCoercionSite {
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">trait </span>AsCoercionSite {
     <span class="kw">fn </span>as_coercion_site(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>hir::Expr&lt;<span class="lifetime">'_</span>&gt;;
 }
 

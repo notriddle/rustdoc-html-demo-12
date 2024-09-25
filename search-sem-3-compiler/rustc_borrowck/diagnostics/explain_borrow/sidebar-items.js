@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["BorrowExplanation","LaterUseKind"]};
+window.SIDEBAR_ITEMS = {"enum":["BorrowExplanation","LaterUseKind"],"fn":["suggest_rewrite_if_let"]};

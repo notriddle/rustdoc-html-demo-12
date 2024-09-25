@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"trait":["StaticBuilderMethods","StaticMethods"]};
+window.SIDEBAR_ITEMS = {"trait":["StaticBuilderMethods","StaticCodegenMethods"]};

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["Epoll","EpollEvent"],"trait":["EvalContextExt"]};
+window.SIDEBAR_ITEMS = {"fn":["blocking_epoll_callback","check_and_update_one_event_interest","ready_list_next"],"struct":["Epoll","EpollEventInstance","EpollEventInterest","EpollInterestTable","EpollReadyEvents"],"trait":["EvalContextExt"]};

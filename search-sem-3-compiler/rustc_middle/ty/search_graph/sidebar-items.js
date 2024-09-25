@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["CycleKind","UsageKind"],"struct":["GlobalCache","SearchGraph","StackDepth"],"trait":["Cx","Delegate","ProofTreeBuilder"]};
+window.SIDEBAR_ITEMS = {"enum":["PathKind","UsageKind"],"struct":["GlobalCache","SearchGraph","StackDepth"],"trait":["Cx","Delegate"]};

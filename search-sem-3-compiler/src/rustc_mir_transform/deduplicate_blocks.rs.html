@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/deduplicate_blocks.rs`."><title>deduplicate_blocks.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/deduplicate_blocks.rs`."><title>deduplicate_blocks.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>deduplicate_blocks.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -187,7 +188,8 @@
 <a href="#187" id="187">187</a>
 <a href="#188" id="188">188</a>
 <a href="#189" id="189">189</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! This pass finds basic blocks that are completely equal,
+<a href="#190" id="190">190</a>
+<a href="#191" id="191">191</a></pre></div><pre class="rust"><code><span class="doccomment">//! This pass finds basic blocks that are completely equal,
 //! and replaces all uses with just one of them.
 
 </span><span class="kw">use </span>std::collections::hash_map::Entry;
@@ -198,12 +200,13 @@
 <span class="kw">use </span>rustc_middle::mir::visit::MutVisitor;
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::ty::TyCtxt;
+<span class="kw">use </span>tracing::debug;
 
 <span class="kw">use </span><span class="kw">super</span>::simplify::simplify_cfg;
 
-<span class="kw">pub struct </span>DeduplicateBlocks;
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>DeduplicateBlocks;
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>DeduplicateBlocks {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">crate</span>::MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>DeduplicateBlocks {
     <span class="kw">fn </span>is_enabled(<span class="kw-2">&amp;</span><span class="self">self</span>, sess: <span class="kw-2">&amp;</span>rustc_session::Session) -&gt; bool {
         sess.mir_opt_level() &gt;= <span class="number">4
     </span>}
@@ -257,8 +260,8 @@
     // For example, if bb1, bb2 and bb3 are duplicates, we will first insert bb3 in same_hashes.
     // Then we will see that bb2 is a duplicate of bb3,
     // and insert bb2 with the replacement bb3 in the duplicates list.
-    // When we see bb1, we see that it is a duplicate of bb3, and therefore insert it in the duplicates list
-    // with replacement bb3.
+    // When we see bb1, we see that it is a duplicate of bb3, and therefore insert it in the
+    // duplicates list with replacement bb3.
     // When the duplicates are removed, we will end up with only bb3.
     </span><span class="kw">for </span>(bb, bbd) <span class="kw">in </span>body.basic_blocks.iter_enumerated().rev().filter(|(<span class="kw">_</span>, bbd)| !bbd.is_cleanup) {
         <span class="comment">// Basic blocks can get really big, so to avoid checking for duplicates in basic blocks
@@ -286,14 +289,15 @@
     duplicates
 }
 
-<span class="kw">struct </span>BasicBlockHashable&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt; {
+<span class="kw">struct </span>BasicBlockHashable&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     basic_block_data: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>BasicBlockData&lt;<span class="lifetime">'tcx</span>&gt;,
 }
 
 <span class="kw">impl </span>Hash <span class="kw">for </span>BasicBlockHashable&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt; {
     <span class="kw">fn </span>hash&lt;H: Hasher&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, state: <span class="kw-2">&amp;mut </span>H) {
         hash_statements(state, <span class="self">self</span>.basic_block_data.statements.iter());
-        <span class="comment">// Note that since we only hash the kind, we lose span information if we deduplicate the blocks
+        <span class="comment">// Note that since we only hash the kind, we lose span information if we deduplicate the
+        // blocks.
         </span><span class="self">self</span>.basic_block_data.terminator().kind.hash(state);
     }
 }

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["compute_dead_unwinds"],"struct":["ElaborateDrops","ElaborateDropsCtxt","Elaborator","InitializationData"]};
+window.SIDEBAR_ITEMS = {"fn":["compute_dead_unwinds"],"struct":["ElaborateDrops","ElaborateDropsCtxt","InitializationData"]};

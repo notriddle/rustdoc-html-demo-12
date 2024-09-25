@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["InsideMacroGuard","RewriteContext"],"trait":["Rewrite"]};
+window.SIDEBAR_ITEMS = {"enum":["MacroErrorKind","RewriteError"],"struct":["InsideMacroGuard","RewriteContext"],"trait":["Rewrite","RewriteErrorExt"],"type":["RewriteResult"]};

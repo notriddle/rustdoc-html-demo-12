@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["FlockOp"],"struct":["FdTable","FileDescriptionRef","NullOutput"],"trait":["EvalContextExt","FileDescription"]};
+window.SIDEBAR_ITEMS = {"enum":["FlockOp"],"struct":["FdId","FdTable","FileDescWithId","FileDescriptionRef","NullOutput","WeakFileDescriptionRef"],"trait":["EvalContextExt","FileDescription"]};

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["UID"],"mod":["android","env","fd","foreign_items","freebsd","fs","linux","macos","mem","socket","solarish","sync","thread"]};
+window.SIDEBAR_ITEMS = {"constant":["UID"],"mod":["android","env","fd","foreign_items","freebsd","fs","linux","macos","mem","solarish","sync","thread","unnamed_socket"]};

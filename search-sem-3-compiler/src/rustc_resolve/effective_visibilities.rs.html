@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_resolve/src/effective_visibilities.rs`."><title>effective_visibilities.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_resolve" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_resolve/src/effective_visibilities.rs`."><title>effective_visibilities.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_resolve" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_resolve/</div>effective_visibilities.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -280,12 +281,16 @@
 <a href="#280" id="280">280</a>
 <a href="#281" id="281">281</a>
 <a href="#282" id="282">282</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::mem;
+<a href="#283" id="283">283</a>
+<a href="#284" id="284">284</a>
+<a href="#285" id="285">285</a>
+<a href="#286" id="286">286</a>
+<a href="#287" id="287">287</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::mem;
 
 <span class="kw">use </span>rustc_ast::visit::Visitor;
-<span class="kw">use </span>rustc_ast::{ast, visit, Crate, EnumDef};
+<span class="kw">use </span>rustc_ast::{Crate, EnumDef, ast, visit};
 <span class="kw">use </span>rustc_data_structures::fx::FxHashSet;
-<span class="kw">use </span>rustc_hir::def_id::{LocalDefId, CRATE_DEF_ID};
+<span class="kw">use </span>rustc_hir::def_id::{CRATE_DEF_ID, LocalDefId};
 <span class="kw">use </span>rustc_middle::middle::privacy::{EffectiveVisibilities, EffectiveVisibility, Level};
 <span class="kw">use </span>rustc_middle::ty::Visibility;
 <span class="kw">use </span>tracing::info;
@@ -293,9 +298,9 @@
 <span class="kw">use crate</span>::{NameBinding, NameBindingKind, Resolver};
 
 <span class="attr">#[derive(Clone, Copy)]
-</span><span class="kw">enum </span>ParentId&lt;<span class="lifetime">'a</span>&gt; {
+</span><span class="kw">enum </span>ParentId&lt;<span class="lifetime">'ra</span>&gt; {
     Def(LocalDefId),
-    Import(NameBinding&lt;<span class="lifetime">'a</span>&gt;),
+    Import(NameBinding&lt;<span class="lifetime">'ra</span>&gt;),
 }
 
 <span class="kw">impl </span>ParentId&lt;<span class="lifetime">'_</span>&gt; {
@@ -307,13 +312,13 @@
     }
 }
 
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>EffectiveVisibilitiesVisitor&lt;<span class="lifetime">'r</span>, <span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
-    r: <span class="kw-2">&amp;</span><span class="lifetime">'r </span><span class="kw-2">mut </span>Resolver&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;,
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>EffectiveVisibilitiesVisitor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt; {
+    r: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>Resolver&lt;<span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt;,
     def_effective_visibilities: EffectiveVisibilities,
     <span class="doccomment">/// While walking import chains we need to track effective visibilities per-binding, and def id
     /// keys in `Resolver::effective_visibilities` are not enough for that, because multiple
     /// bindings can correspond to a single def id in imports. So we keep a separate table.
-    </span>import_effective_visibilities: EffectiveVisibilities&lt;NameBinding&lt;<span class="lifetime">'a</span>&gt;&gt;,
+    </span>import_effective_visibilities: EffectiveVisibilities&lt;NameBinding&lt;<span class="lifetime">'ra</span>&gt;&gt;,
     <span class="comment">// It's possible to recalculate this at any point, but it's relatively expensive.
     </span>current_private_vis: Visibility,
     changed: bool,
@@ -345,14 +350,14 @@
     }
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'r</span>, <span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; EffectiveVisibilitiesVisitor&lt;<span class="lifetime">'r</span>, <span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt; EffectiveVisibilitiesVisitor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="doccomment">/// Fills the `Resolver::effective_visibilities` table with public &amp; exported items
     /// For now, this doesn't resolve macros (FIXME) and cannot resolve Impl, as we
     /// need access to a TyCtxt for that. Returns the set of ambiguous re-exports.
     </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>compute_effective_visibilities&lt;<span class="lifetime">'c</span>&gt;(
-        r: <span class="kw-2">&amp;</span><span class="lifetime">'r </span><span class="kw-2">mut </span>Resolver&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;,
+        r: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>Resolver&lt;<span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt;,
         krate: <span class="kw-2">&amp;</span><span class="lifetime">'c </span>Crate,
-    ) -&gt; FxHashSet&lt;NameBinding&lt;<span class="lifetime">'a</span>&gt;&gt; {
+    ) -&gt; FxHashSet&lt;NameBinding&lt;<span class="lifetime">'ra</span>&gt;&gt; {
         <span class="kw">let </span><span class="kw-2">mut </span>visitor = EffectiveVisibilitiesVisitor {
             r,
             def_effective_visibilities: Default::default(),
@@ -409,7 +414,7 @@
                 // leading to it into the table. They are used by the `ambiguous_glob_reexports`
                 // lint. For all bindings added to the table this way `is_ambiguity` returns true.
                 </span><span class="kw">let </span>is_ambiguity =
-                    |binding: NameBinding&lt;<span class="lifetime">'a</span>&gt;, warn: bool| binding.ambiguity.is_some() &amp;&amp; !warn;
+                    |binding: NameBinding&lt;<span class="lifetime">'ra</span>&gt;, warn: bool| binding.ambiguity.is_some() &amp;&amp; !warn;
                 <span class="kw">let </span><span class="kw-2">mut </span>parent_id = ParentId::Def(module_id);
                 <span class="kw">let </span><span class="kw-2">mut </span>warn_ambiguity = binding.warn_ambiguity;
                 <span class="kw">while let </span>NameBindingKind::Import { binding: nested_binding, .. } = binding.kind {
@@ -435,7 +440,7 @@
         }
     }
 
-    <span class="kw">fn </span>effective_vis_or_private(<span class="kw-2">&amp;mut </span><span class="self">self</span>, parent_id: ParentId&lt;<span class="lifetime">'a</span>&gt;) -&gt; EffectiveVisibility {
+    <span class="kw">fn </span>effective_vis_or_private(<span class="kw-2">&amp;mut </span><span class="self">self</span>, parent_id: ParentId&lt;<span class="lifetime">'ra</span>&gt;) -&gt; EffectiveVisibility {
         <span class="comment">// Private nodes are only added to the table for caching, they could be added or removed at
         // any moment without consequences, so we don't set `changed` to true when adding them.
         </span><span class="kw-2">*</span><span class="kw">match </span>parent_id {
@@ -472,7 +477,7 @@
         }
     }
 
-    <span class="kw">fn </span>update_import(<span class="kw-2">&amp;mut </span><span class="self">self</span>, binding: NameBinding&lt;<span class="lifetime">'a</span>&gt;, parent_id: ParentId&lt;<span class="lifetime">'a</span>&gt;) {
+    <span class="kw">fn </span>update_import(<span class="kw-2">&amp;mut </span><span class="self">self</span>, binding: NameBinding&lt;<span class="lifetime">'ra</span>&gt;, parent_id: ParentId&lt;<span class="lifetime">'ra</span>&gt;) {
         <span class="kw">let </span>nominal_vis = binding.vis.expect_local();
         <span class="kw">let </span><span class="prelude-val">Some</span>(cheap_private_vis) = <span class="self">self</span>.may_update(nominal_vis, parent_id) <span class="kw">else </span>{ <span class="kw">return </span>};
         <span class="kw">let </span>inherited_eff_vis = <span class="self">self</span>.effective_vis_or_private(parent_id);
@@ -487,7 +492,12 @@
         );
     }
 
-    <span class="kw">fn </span>update_def(<span class="kw-2">&amp;mut </span><span class="self">self</span>, def_id: LocalDefId, nominal_vis: Visibility, parent_id: ParentId&lt;<span class="lifetime">'a</span>&gt;) {
+    <span class="kw">fn </span>update_def(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        def_id: LocalDefId,
+        nominal_vis: Visibility,
+        parent_id: ParentId&lt;<span class="lifetime">'ra</span>&gt;,
+    ) {
         <span class="kw">let </span><span class="prelude-val">Some</span>(cheap_private_vis) = <span class="self">self</span>.may_update(nominal_vis, parent_id) <span class="kw">else </span>{ <span class="kw">return </span>};
         <span class="kw">let </span>inherited_eff_vis = <span class="self">self</span>.effective_vis_or_private(parent_id);
         <span class="kw">let </span>tcx = <span class="self">self</span>.r.tcx;
@@ -506,8 +516,8 @@
     }
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'r</span>, <span class="lifetime">'ast</span>, <span class="lifetime">'tcx</span>&gt; Visitor&lt;<span class="lifetime">'ast</span>&gt; <span class="kw">for </span>EffectiveVisibilitiesVisitor&lt;<span class="lifetime">'ast</span>, <span class="lifetime">'r</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">fn </span>visit_item(<span class="kw-2">&amp;mut </span><span class="self">self</span>, item: <span class="kw-2">&amp;</span><span class="lifetime">'ast </span>ast::Item) {
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt; Visitor&lt;<span class="lifetime">'a</span>&gt; <span class="kw">for </span>EffectiveVisibilitiesVisitor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">fn </span>visit_item(<span class="kw-2">&amp;mut </span><span class="self">self</span>, item: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>ast::Item) {
         <span class="kw">let </span>def_id = <span class="self">self</span>.r.local_def_id(item.id);
         <span class="comment">// Update effective visibilities of nested items.
         // If it's a mod, also make the visitor walk all of its items

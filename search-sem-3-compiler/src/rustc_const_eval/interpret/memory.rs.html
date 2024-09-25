@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/memory.rs`."><title>memory.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/memory.rs`."><title>memory.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_const_eval/interpret/</div>memory.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1476,7 +1477,48 @@
 <a href="#1476" id="1476">1476</a>
 <a href="#1477" id="1477">1477</a>
 <a href="#1478" id="1478">1478</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! The memory subsystem.
+<a href="#1479" id="1479">1479</a>
+<a href="#1480" id="1480">1480</a>
+<a href="#1481" id="1481">1481</a>
+<a href="#1482" id="1482">1482</a>
+<a href="#1483" id="1483">1483</a>
+<a href="#1484" id="1484">1484</a>
+<a href="#1485" id="1485">1485</a>
+<a href="#1486" id="1486">1486</a>
+<a href="#1487" id="1487">1487</a>
+<a href="#1488" id="1488">1488</a>
+<a href="#1489" id="1489">1489</a>
+<a href="#1490" id="1490">1490</a>
+<a href="#1491" id="1491">1491</a>
+<a href="#1492" id="1492">1492</a>
+<a href="#1493" id="1493">1493</a>
+<a href="#1494" id="1494">1494</a>
+<a href="#1495" id="1495">1495</a>
+<a href="#1496" id="1496">1496</a>
+<a href="#1497" id="1497">1497</a>
+<a href="#1498" id="1498">1498</a>
+<a href="#1499" id="1499">1499</a>
+<a href="#1500" id="1500">1500</a>
+<a href="#1501" id="1501">1501</a>
+<a href="#1502" id="1502">1502</a>
+<a href="#1503" id="1503">1503</a>
+<a href="#1504" id="1504">1504</a>
+<a href="#1505" id="1505">1505</a>
+<a href="#1506" id="1506">1506</a>
+<a href="#1507" id="1507">1507</a>
+<a href="#1508" id="1508">1508</a>
+<a href="#1509" id="1509">1509</a>
+<a href="#1510" id="1510">1510</a>
+<a href="#1511" id="1511">1511</a>
+<a href="#1512" id="1512">1512</a>
+<a href="#1513" id="1513">1513</a>
+<a href="#1514" id="1514">1514</a>
+<a href="#1515" id="1515">1515</a>
+<a href="#1516" id="1516">1516</a>
+<a href="#1517" id="1517">1517</a>
+<a href="#1518" id="1518">1518</a>
+<a href="#1519" id="1519">1519</a>
+<a href="#1520" id="1520">1520</a></pre></div><pre class="rust"><code><span class="doccomment">//! The memory subsystem.
 //!
 //! Generally, we use `Pointer` to denote memory addresses. However, some operations
 //! have a "size"-like parameter, and they take `Scalar` for the address because
@@ -1485,10 +1527,9 @@
 //! short-circuiting the empty case!
 
 </span><span class="kw">use </span>std::assert_matches::assert_matches;
-<span class="kw">use </span>std::borrow::Cow;
-<span class="kw">use </span>std::cell::Cell;
+<span class="kw">use </span>std::borrow::{Borrow, Cow};
 <span class="kw">use </span>std::collections::VecDeque;
-<span class="kw">use </span>std::{fmt, ptr};
+<span class="kw">use </span>std::{fmt, mem, ptr};
 
 <span class="kw">use </span>rustc_ast::Mutability;
 <span class="kw">use </span>rustc_data_structures::fx::{FxHashSet, FxIndexMap};
@@ -1500,10 +1541,10 @@
 <span class="kw">use </span>tracing::{debug, instrument, trace};
 
 <span class="kw">use super</span>::{
-    alloc_range, err_ub, err_ub_custom, throw_ub, throw_ub_custom, throw_unsup, throw_unsup_format,
     AllocBytes, AllocId, AllocMap, AllocRange, Allocation, CheckAlignMsg, CheckInAllocMsg,
     CtfeProvenance, GlobalAlloc, InterpCx, InterpResult, Machine, MayLeak, Misalignment, Pointer,
-    PointerArithmetic, Provenance, Scalar,
+    PointerArithmetic, Provenance, Scalar, alloc_range, err_ub, err_ub_custom, throw_ub,
+    throw_ub_custom, throw_unsup, throw_unsup_format,
 };
 <span class="kw">use </span><span class="kw">crate</span>::fluent_generated <span class="kw">as </span>fluent;
 
@@ -1596,7 +1637,7 @@
     <span class="doccomment">/// This stores whether we are currently doing reads purely for the purpose of validation.
     /// Those reads do not trigger the machine's hooks for memory reads.
     /// Needless to say, this must only be set with great care!
-    </span>validation_in_progress: Cell&lt;bool&gt;,
+    </span>validation_in_progress: bool,
 }
 
 <span class="doccomment">/// A reference to some allocation that was already bounds-checked for the given region
@@ -1623,7 +1664,7 @@
             alloc_map: M::MemoryMap::default(),
             extra_fn_ptr_map: FxIndexMap::default(),
             dead_alloc_map: FxIndexMap::default(),
-            validation_in_progress: Cell::new(<span class="bool-val">false</span>),
+            validation_in_progress: <span class="bool-val">false</span>,
         }
     }
 
@@ -1701,7 +1742,7 @@
         } <span class="kw">else </span>{
             Allocation::try_uninit(size, align)<span class="question-mark">?
         </span>};
-        <span class="self">self</span>.allocate_raw_ptr(alloc, kind)
+        <span class="self">self</span>.insert_allocation(alloc, kind)
     }
 
     <span class="kw">pub fn </span>allocate_bytes_ptr(
@@ -1712,14 +1753,15 @@
         mutability: Mutability,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Pointer&lt;M::Provenance&gt;&gt; {
         <span class="kw">let </span>alloc = Allocation::from_bytes(bytes, align, mutability);
-        <span class="self">self</span>.allocate_raw_ptr(alloc, kind)
+        <span class="self">self</span>.insert_allocation(alloc, kind)
     }
 
-    <span class="kw">pub fn </span>allocate_raw_ptr(
+    <span class="kw">pub fn </span>insert_allocation(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         alloc: Allocation&lt;M::Provenance, (), M::Bytes&gt;,
         kind: MemoryKind&lt;M::MemoryKind&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Pointer&lt;M::Provenance&gt;&gt; {
+        <span class="macro">assert!</span>(alloc.size() &lt;= <span class="self">self</span>.max_size_of_val());
         <span class="kw">let </span>id = <span class="self">self</span>.tcx.reserve_alloc_id();
         <span class="macro">debug_assert_ne!</span>(
             <span class="prelude-val">Some</span>(kind),
@@ -1865,13 +1907,14 @@
         size: Size,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;(AllocId, Size, M::ProvenanceExtra)&gt;&gt; {
         <span class="kw">let </span>size = i64::try_from(size.bytes()).unwrap(); <span class="comment">// it would be an error to even ask for more than isize::MAX bytes
-        </span><span class="self">self</span>.check_and_deref_ptr(
+        </span><span class="self">Self</span>::check_and_deref_ptr(
+            <span class="self">self</span>,
             ptr,
             size,
             CheckInAllocMsg::MemoryAccessTest,
-            |alloc_id, offset, prov| {
-                <span class="kw">let </span>(size, align) = <span class="self">self
-                    </span>.get_live_alloc_size_and_align(alloc_id, CheckInAllocMsg::MemoryAccessTest)<span class="question-mark">?</span>;
+            |this, alloc_id, offset, prov| {
+                <span class="kw">let </span>(size, align) = this
+                    .get_live_alloc_size_and_align(alloc_id, CheckInAllocMsg::MemoryAccessTest)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>((size, align, (alloc_id, offset, prov)))
             },
         )
@@ -1887,8 +1930,8 @@
         msg: CheckInAllocMsg,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>size = i64::try_from(size.bytes()).unwrap(); <span class="comment">// it would be an error to even ask for more than isize::MAX bytes
-        </span><span class="self">self</span>.check_and_deref_ptr(ptr, size, msg, |alloc_id, <span class="kw">_</span>, <span class="kw">_</span>| {
-            <span class="kw">let </span>(size, align) = <span class="self">self</span>.get_live_alloc_size_and_align(alloc_id, msg)<span class="question-mark">?</span>;
+        </span><span class="self">Self</span>::check_and_deref_ptr(<span class="self">self</span>, ptr, size, msg, |this, alloc_id, <span class="kw">_</span>, <span class="kw">_</span>| {
+            <span class="kw">let </span>(size, align) = this.get_live_alloc_size_and_align(alloc_id, msg)<span class="question-mark">?</span>;
             <span class="prelude-val">Ok</span>((size, align, ()))
         })<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
@@ -1903,8 +1946,8 @@
         size: i64,
         msg: CheckInAllocMsg,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
-        <span class="self">self</span>.check_and_deref_ptr(ptr, size, msg, |alloc_id, <span class="kw">_</span>, <span class="kw">_</span>| {
-            <span class="kw">let </span>(size, align) = <span class="self">self</span>.get_live_alloc_size_and_align(alloc_id, msg)<span class="question-mark">?</span>;
+        <span class="self">Self</span>::check_and_deref_ptr(<span class="self">self</span>, ptr, size, msg, |this, alloc_id, <span class="kw">_</span>, <span class="kw">_</span>| {
+            <span class="kw">let </span>(size, align) = this.get_live_alloc_size_and_align(alloc_id, msg)<span class="question-mark">?</span>;
             <span class="prelude-val">Ok</span>((size, align, ()))
         })<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(())
@@ -1918,12 +1961,13 @@
     /// `alloc_size` will only get called for non-zero-sized accesses.
     ///
     /// Returns `None` if and only if the size is 0.
-    </span><span class="kw">fn </span>check_and_deref_ptr&lt;T&gt;(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
+    </span><span class="kw">fn </span>check_and_deref_ptr&lt;T, R: Borrow&lt;<span class="self">Self</span>&gt;&gt;(
+        this: R,
         ptr: Pointer&lt;<span class="prelude-ty">Option</span>&lt;M::Provenance&gt;&gt;,
         size: i64,
         msg: CheckInAllocMsg,
         alloc_size: <span class="kw">impl </span>FnOnce(
+            R,
             AllocId,
             Size,
             M::ProvenanceExtra,
@@ -1934,13 +1978,14 @@
             <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
         }
 
-        <span class="prelude-val">Ok</span>(<span class="kw">match </span><span class="self">self</span>.ptr_try_get_alloc_id(ptr, size) {
+        <span class="prelude-val">Ok</span>(<span class="kw">match </span>this.borrow().ptr_try_get_alloc_id(ptr, size) {
             <span class="prelude-val">Err</span>(addr) =&gt; {
                 <span class="comment">// We couldn't get a proper allocation.
                 </span><span class="macro">throw_ub!</span>(DanglingIntPointer { addr, inbounds_size: size, msg });
             }
             <span class="prelude-val">Ok</span>((alloc_id, offset, prov)) =&gt; {
-                <span class="kw">let </span>(alloc_size, _alloc_align, ret_val) = alloc_size(alloc_id, offset, prov)<span class="question-mark">?</span>;
+                <span class="kw">let </span>tcx = this.borrow().tcx;
+                <span class="kw">let </span>(alloc_size, _alloc_align, ret_val) = alloc_size(this, alloc_id, offset, prov)<span class="question-mark">?</span>;
                 <span class="kw">let </span>offset = offset.bytes();
                 <span class="comment">// Compute absolute begin and end of the range.
                 </span><span class="kw">let </span>(begin, end) = <span class="kw">if </span>size &gt;= <span class="number">0 </span>{
@@ -1954,7 +1999,7 @@
                     <span class="macro">throw_ub!</span>(PointerOutOfBounds {
                         alloc_id,
                         alloc_size,
-                        ptr_offset: <span class="self">self</span>.sign_extend_to_target_isize(offset),
+                        ptr_offset: tcx.sign_extend_to_target_isize(offset),
                         inbounds_size: size,
                         msg,
                     })
@@ -2148,19 +2193,20 @@
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;AllocRef&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, M::Provenance, M::AllocExtra, M::Bytes&gt;&gt;&gt;
     {
         <span class="kw">let </span>size_i64 = i64::try_from(size.bytes()).unwrap(); <span class="comment">// it would be an error to even ask for more than isize::MAX bytes
-        </span><span class="kw">let </span>ptr_and_alloc = <span class="self">self</span>.check_and_deref_ptr(
+        </span><span class="kw">let </span>ptr_and_alloc = <span class="self">Self</span>::check_and_deref_ptr(
+            <span class="self">self</span>,
             ptr,
             size_i64,
             CheckInAllocMsg::MemoryAccessTest,
-            |alloc_id, offset, prov| {
-                <span class="kw">let </span>alloc = <span class="self">self</span>.get_alloc_raw(alloc_id)<span class="question-mark">?</span>;
+            |this, alloc_id, offset, prov| {
+                <span class="kw">let </span>alloc = this.get_alloc_raw(alloc_id)<span class="question-mark">?</span>;
                 <span class="prelude-val">Ok</span>((alloc.size(), alloc.align, (alloc_id, offset, prov, alloc)))
             },
         )<span class="question-mark">?</span>;
         <span class="comment">// We want to call the hook on *all* accesses that involve an AllocId, including zero-sized
         // accesses. That means we cannot rely on the closure above or the `Some` branch below. We
         // do this after `check_and_deref_ptr` to ensure some basic sanity has already been checked.
-        </span><span class="kw">if </span>!<span class="self">self</span>.memory.validation_in_progress.get() {
+        </span><span class="kw">if </span>!<span class="self">self</span>.memory.validation_in_progress {
             <span class="kw">if let </span><span class="prelude-val">Ok</span>((alloc_id, ..)) = <span class="self">self</span>.ptr_try_get_alloc_id(ptr, size_i64) {
                 M::before_alloc_read(<span class="self">self</span>, alloc_id)<span class="question-mark">?</span>;
             }
@@ -2168,7 +2214,7 @@
 
         <span class="kw">if let </span><span class="prelude-val">Some</span>((alloc_id, offset, prov, alloc)) = ptr_and_alloc {
             <span class="kw">let </span>range = alloc_range(offset, size);
-            <span class="kw">if </span>!<span class="self">self</span>.memory.validation_in_progress.get() {
+            <span class="kw">if </span>!<span class="self">self</span>.memory.validation_in_progress {
                 M::before_memory_read(
                     <span class="self">self</span>.tcx,
                     <span class="kw-2">&amp;</span><span class="self">self</span>.machine,
@@ -2205,7 +2251,10 @@
         <span class="comment">// We have "NLL problem case #3" here, which cannot be worked around without loss of
         // efficiency even for the common case where the key is in the map.
         // &lt;https://rust-lang.github.io/rfcs/2094-nll.html#problem-case-3-conditional-control-flow-across-functions&gt;
-        // (Cannot use `get_mut_or` since `get_global_alloc` needs `&amp;self`.)
+        // (Cannot use `get_mut_or` since `get_global_alloc` needs `&amp;self`, and that boils down to
+        // Miri's `adjust_alloc_root_pointer` needing to look up the size of the allocation.
+        // It could be avoided with a totally separate codepath in Miri for handling the absolute address
+        // of global allocations, but that's not worth it.)
         </span><span class="kw">if </span><span class="self">self</span>.memory.alloc_map.get_mut(id).is_none() {
             <span class="comment">// Slow path.
             // Allocation not found locally, go look global.
@@ -2241,14 +2290,26 @@
         size: Size,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;AllocRefMut&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, M::Provenance, M::AllocExtra, M::Bytes&gt;&gt;&gt;
     {
-        <span class="kw">let </span>parts = <span class="self">self</span>.get_ptr_access(ptr, size)<span class="question-mark">?</span>;
-        <span class="kw">if let </span><span class="prelude-val">Some</span>((alloc_id, offset, prov)) = parts {
-            <span class="kw">let </span>tcx = <span class="self">self</span>.tcx;
-            <span class="comment">// FIXME: can we somehow avoid looking up the allocation twice here?
-            // We cannot call `get_raw_mut` inside `check_and_deref_ptr` as that would duplicate `&amp;mut self`.
-            </span><span class="kw">let </span>(alloc, machine) = <span class="self">self</span>.get_alloc_raw_mut(alloc_id)<span class="question-mark">?</span>;
+        <span class="kw">let </span>tcx = <span class="self">self</span>.tcx;
+        <span class="kw">let </span>validation_in_progress = <span class="self">self</span>.memory.validation_in_progress;
+
+        <span class="kw">let </span>size_i64 = i64::try_from(size.bytes()).unwrap(); <span class="comment">// it would be an error to even ask for more than isize::MAX bytes
+        </span><span class="kw">let </span>ptr_and_alloc = <span class="self">Self</span>::check_and_deref_ptr(
+            <span class="self">self</span>,
+            ptr,
+            size_i64,
+            CheckInAllocMsg::MemoryAccessTest,
+            |this, alloc_id, offset, prov| {
+                <span class="kw">let </span>(alloc, machine) = this.get_alloc_raw_mut(alloc_id)<span class="question-mark">?</span>;
+                <span class="prelude-val">Ok</span>((alloc.size(), alloc.align, (alloc_id, offset, prov, alloc, machine)))
+            },
+        )<span class="question-mark">?</span>;
+
+        <span class="kw">if let </span><span class="prelude-val">Some</span>((alloc_id, offset, prov, alloc, machine)) = ptr_and_alloc {
             <span class="kw">let </span>range = alloc_range(offset, size);
-            M::before_memory_write(tcx, machine, <span class="kw-2">&amp;mut </span>alloc.extra, (alloc_id, prov), range)<span class="question-mark">?</span>;
+            <span class="kw">if </span>!validation_in_progress {
+                M::before_memory_write(tcx, machine, <span class="kw-2">&amp;mut </span>alloc.extra, (alloc_id, prov), range)<span class="question-mark">?</span>;
+            }
             <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(AllocRefMut { alloc, range, tcx: <span class="kw-2">*</span>tcx, alloc_id }))
         } <span class="kw">else </span>{
             <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
@@ -2305,7 +2366,7 @@
 
                 <span class="kw">let </span>(size, align) = <span class="kw">if </span>nested {
                     <span class="comment">// Nested anonymous statics are untyped, so let's get their
-                    // size and alignment from the allocaiton itself. This always
+                    // size and alignment from the allocation itself. This always
                     // succeeds, as the query is fed at DefId creation time, so no
                     // evaluation actually occurs.
                     </span><span class="kw">let </span>alloc = <span class="self">self</span>.tcx.eval_static_initializer(def_id).unwrap();
@@ -2402,12 +2463,13 @@
         <span class="kw">if </span>offset.bytes() != <span class="number">0 </span>{
             <span class="macro">throw_ub!</span>(InvalidVTablePointer(Pointer::new(alloc_id, offset)))
         }
-        <span class="kw">let </span><span class="prelude-val">Some</span>(GlobalAlloc::VTable(ty, vtable_trait)) = <span class="self">self</span>.tcx.try_get_global_alloc(alloc_id)
+        <span class="kw">let </span><span class="prelude-val">Some</span>(GlobalAlloc::VTable(ty, vtable_dyn_type)) =
+            <span class="self">self</span>.tcx.try_get_global_alloc(alloc_id)
         <span class="kw">else </span>{
             <span class="macro">throw_ub!</span>(InvalidVTablePointer(Pointer::new(alloc_id, offset)))
         };
-        <span class="kw">if let </span><span class="prelude-val">Some</span>(expected_trait) = expected_trait {
-            <span class="self">self</span>.check_vtable_for_type(vtable_trait, expected_trait)<span class="question-mark">?</span>;
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(expected_dyn_type) = expected_trait {
+            <span class="self">self</span>.check_vtable_for_type(vtable_dyn_type, expected_dyn_type)<span class="question-mark">?</span>;
         }
         <span class="prelude-val">Ok</span>(ty)
     }
@@ -2492,19 +2554,23 @@
     ///
     /// We do this so Miri's allocation access tracking does not show the validation
     /// reads as spurious accesses.
-    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>run_for_validation&lt;R&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw">impl </span>FnOnce() -&gt; R) -&gt; R {
+    </span><span class="kw">pub fn </span>run_for_validation&lt;R&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, f: <span class="kw">impl </span>FnOnce(<span class="kw-2">&amp;mut </span><span class="self">Self</span>) -&gt; R) -&gt; R {
         <span class="comment">// This deliberately uses `==` on `bool` to follow the pattern
         // `assert!(val.replace(new) == old)`.
         </span><span class="macro">assert!</span>(
-            <span class="self">self</span>.memory.validation_in_progress.replace(<span class="bool-val">true</span>) == <span class="bool-val">false</span>,
+            mem::replace(<span class="kw-2">&amp;mut </span><span class="self">self</span>.memory.validation_in_progress, <span class="bool-val">true</span>) == <span class="bool-val">false</span>,
             <span class="string">"`validation_in_progress` was already set"
         </span>);
-        <span class="kw">let </span>res = f();
+        <span class="kw">let </span>res = f(<span class="self">self</span>);
         <span class="macro">assert!</span>(
-            <span class="self">self</span>.memory.validation_in_progress.replace(<span class="bool-val">false</span>) == <span class="bool-val">true</span>,
+            mem::replace(<span class="kw-2">&amp;mut </span><span class="self">self</span>.memory.validation_in_progress, <span class="bool-val">false</span>) == <span class="bool-val">true</span>,
             <span class="string">"`validation_in_progress` was unset by someone else"
         </span>);
         res
+    }
+
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>validation_in_progress(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+        <span class="self">self</span>.memory.validation_in_progress
     }
 }
 
@@ -2568,11 +2634,8 @@
                         <span class="prelude-val">Some</span>(GlobalAlloc::Function { instance, .. }) =&gt; {
                             <span class="macro">write!</span>(fmt, <span class="string">" (fn: {instance})"</span>)<span class="question-mark">?</span>;
                         }
-                        <span class="prelude-val">Some</span>(GlobalAlloc::VTable(ty, <span class="prelude-val">Some</span>(trait_ref))) =&gt; {
-                            <span class="macro">write!</span>(fmt, <span class="string">" (vtable: impl {trait_ref} for {ty})"</span>)<span class="question-mark">?</span>;
-                        }
-                        <span class="prelude-val">Some</span>(GlobalAlloc::VTable(ty, <span class="prelude-val">None</span>)) =&gt; {
-                            <span class="macro">write!</span>(fmt, <span class="string">" (vtable: impl &lt;auto trait&gt; for {ty})"</span>)<span class="question-mark">?</span>;
+                        <span class="prelude-val">Some</span>(GlobalAlloc::VTable(ty, dyn_ty)) =&gt; {
+                            <span class="macro">write!</span>(fmt, <span class="string">" (vtable: impl {dyn_ty} for {ty})"</span>)<span class="question-mark">?</span>;
                         }
                         <span class="prelude-val">Some</span>(GlobalAlloc::Static(did)) =&gt; {
                             <span class="macro">write!</span>(fmt, <span class="string">" (static: {})"</span>, <span class="self">self</span>.ecx.tcx.def_path_str(did))<span class="question-mark">?</span>;
@@ -2590,9 +2653,13 @@
 }
 
 <span class="doccomment">/// Reading and writing.
-</span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>, Prov: Provenance, Extra, Bytes: AllocBytes&gt;
+</span><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Prov: Provenance, Extra, Bytes: AllocBytes&gt;
     AllocRefMut&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Prov, Extra, Bytes&gt;
 {
+    <span class="kw">pub fn </span>as_ref&lt;<span class="lifetime">'b</span>&gt;(<span class="kw-2">&amp;</span><span class="lifetime">'b </span><span class="self">self</span>) -&gt; AllocRef&lt;<span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>, Prov, Extra, Bytes&gt; {
+        AllocRef { alloc: <span class="self">self</span>.alloc, range: <span class="self">self</span>.range, tcx: <span class="self">self</span>.tcx, alloc_id: <span class="self">self</span>.alloc_id }
+    }
+
     <span class="doccomment">/// `range` is relative to this allocation reference, not the base of the allocation.
     </span><span class="kw">pub fn </span>write_scalar(<span class="kw-2">&amp;mut </span><span class="self">self</span>, range: AllocRange, val: Scalar&lt;Prov&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>range = <span class="self">self</span>.range.subrange(range);
@@ -2608,16 +2675,33 @@
         <span class="self">self</span>.write_scalar(alloc_range(offset, <span class="self">self</span>.tcx.data_layout().pointer_size), val)
     }
 
+    <span class="doccomment">/// Mark the given sub-range (relative to this allocation reference) as uninitialized.
+    </span><span class="kw">pub fn </span>write_uninit(<span class="kw-2">&amp;mut </span><span class="self">self</span>, range: AllocRange) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="kw">let </span>range = <span class="self">self</span>.range.subrange(range);
+        <span class="prelude-val">Ok</span>(<span class="self">self
+            </span>.alloc
+            .write_uninit(<span class="kw-2">&amp;</span><span class="self">self</span>.tcx, range)
+            .map_err(|e| e.to_interp_error(<span class="self">self</span>.alloc_id))<span class="question-mark">?</span>)
+    }
+
     <span class="doccomment">/// Mark the entire referenced range as uninitialized
-    </span><span class="kw">pub fn </span>write_uninit(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+    </span><span class="kw">pub fn </span>write_uninit_full(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="prelude-val">Ok</span>(<span class="self">self
             </span>.alloc
             .write_uninit(<span class="kw-2">&amp;</span><span class="self">self</span>.tcx, <span class="self">self</span>.range)
             .map_err(|e| e.to_interp_error(<span class="self">self</span>.alloc_id))<span class="question-mark">?</span>)
     }
+
+    <span class="doccomment">/// Remove all provenance in the reference range.
+    </span><span class="kw">pub fn </span>clear_provenance(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="prelude-val">Ok</span>(<span class="self">self
+            </span>.alloc
+            .clear_provenance(<span class="kw-2">&amp;</span><span class="self">self</span>.tcx, <span class="self">self</span>.range)
+            .map_err(|e| e.to_interp_error(<span class="self">self</span>.alloc_id))<span class="question-mark">?</span>)
+    }
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>, Prov: Provenance, Extra, Bytes: AllocBytes&gt; AllocRef&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Prov, Extra, Bytes&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Prov: Provenance, Extra, Bytes: AllocBytes&gt; AllocRef&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Prov, Extra, Bytes&gt; {
     <span class="doccomment">/// `range` is relative to this allocation reference, not the base of the allocation.
     </span><span class="kw">pub fn </span>read_scalar(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
@@ -2756,7 +2840,7 @@
         };
         <span class="kw">let </span>src_alloc = <span class="self">self</span>.get_alloc_raw(src_alloc_id)<span class="question-mark">?</span>;
         <span class="kw">let </span>src_range = alloc_range(src_offset, size);
-        <span class="macro">assert!</span>(!<span class="self">self</span>.memory.validation_in_progress.get(), <span class="string">"we can't be copying during validation"</span>);
+        <span class="macro">assert!</span>(!<span class="self">self</span>.memory.validation_in_progress, <span class="string">"we can't be copying during validation"</span>);
         M::before_memory_read(
             tcx,
             <span class="kw-2">&amp;</span><span class="self">self</span>.machine,

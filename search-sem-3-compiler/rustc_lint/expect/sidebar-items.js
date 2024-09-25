@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["check_expectations","provide"]};
+window.SIDEBAR_ITEMS = {"fn":["check_expectations","lint_expectations","provide"]};

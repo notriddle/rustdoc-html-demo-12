@@ -756,6 +756,15 @@ RGB (0, 0, 0) 0x000000
 
     // 変数はシャドーイングによって上書きできます。
     let mutable = true;
+
+    /* Compound types - Array and Tuple */
+
+    // Array signature consists of Type T and length as [T; length].
+    let my_array: [i32; 5] = [1, 2, 3, 4, 5];
+
+    // Tuple is a collection of values of different types 
+    // and is constructed using parentheses ().
+    let my_tuple = (5u32, 1u8, true, -5.04f32);
 }</code></pre></pre>
 <h3 id="参照-6"><a class="header" href="#参照-6">参照</a></h3>
 <p><a href="https://doc.rust-lang.org/std/"><code>std</code> ライブラリ</a>, <a href="variable_bindings/mut.html"><code>mut</code></a>, <a href="types/inference.html">型推論</a>, <a href="variable_bindings/scope.html">シャドーイング</a></p>
@@ -982,15 +991,15 @@ fn main() {
     println!("{:?}", peter);
 
     // `Point`のインスタンス化
-    let point: Point = Point { x: 10.3, y: 0.4 };
-    let another_point: Point = Point { x: 5.2, y: 0.2 };
+    let point: Point = Point { x: 5.2, y: 0.4 };
+    let another_point: Point = Point { x: 10.3, y: 0.2 };
 
     // pointのフィールドにアクセスします。
     println!("point coordinates: ({}, {})", point.x, point.y);
 
     // 構造体の更新記法を用いて、別の構造体のフィールドの値を基に
     // 新たなpointを生成。
-    let bottom_right = Point { x: 5.2, ..another_point };
+    let bottom_right = Point { x: 10.3, ..another_point };
 
     // `bottom_right.y`の値は`another_point.y`と同一ですが、
     // これは`another_point`のフィールドの値を用いて生成したためです。
@@ -1607,7 +1616,7 @@ fn main() {
     let num: Number = int.into();
     println!("My number is {:?}", num);
 }</code></pre></pre>
-<h2 id="fromとinto-は交換可能"><a class="header" href="#fromとinto-は交換可能"><code>From</code>と<code>Into</code> は交換可能</a></h2>
+<h2 id="from-and-into-are-interchangeable"><a class="header" href="#from-and-into-are-interchangeable"><code>From</code> and <code>Into</code> are interchangeable</a></h2>
 <p><code>From</code> と <code>Into</code> は相補的にデザインされているので両方のトレイトを実装する必要はありません。<code>From</code> トレイトを実装すれば、 <code>Into</code> は必要なときに呼ばれます。ただし、逆は真ではない点に注意してください。 <code>Into</code> が実装されていても、 <code>From</code> が自動的に提供されるわけではありません。</p>
 <pre><pre class="playground"><code class="language-rust editable edition2021">use std::convert::From;
 
@@ -1683,13 +1692,37 @@ fn main() {
 }</code></pre></pre>
 <h2 id="stringの解析"><a class="header" href="#stringの解析">Stringの解析</a></h2>
 <p>文字列からの型変換において、数値への型変換はよく行われるものの一つです。これを行うイディオムは<a href="https://doc.rust-lang.org/std/primitive.str.html#method.parse"><code>parse</code></a>関数を使用することですが、このときに型を推論できるようにするか、もしくはターボフィッシュ構文（<code>::&lt;&gt;</code>）を使用して型を指定するかのいずれかを行います。以下の例では、どちらの方法も紹介しています。</p>
-<p><code>parse</code>関数は、指定された型に<a href="https://doc.rust-lang.org/std/str/trait.FromStr.html"><code>FromStr</code></a>トレイトが実装されていれば、文字列をその型に変換します。このトレイトは標準ライブラリの多くの型に対して実装されています。ユーザー定義の型でこの機能を利用するには、その型に対して<a href="https://doc.rust-lang.org/std/str/trait.FromStr.html"><code>FromStr</code></a>トレイトを実装するだけです。</p>
+<p>This will convert the string into the type specified as long as the <a href="https://doc.rust-lang.org/std/str/trait.FromStr.html"><code>FromStr</code></a> trait is implemented for that type. This is implemented for numerous types within the standard library.</p>
 <pre><pre class="playground"><code class="language-rust editable edition2021">fn main() {
     let parsed: i32 = "5".parse().unwrap();
     let turbo_parsed = "10".parse::&lt;i32&gt;().unwrap();
 
     let sum = parsed + turbo_parsed;
     println!("Sum: {:?}", sum);
+}</code></pre></pre>
+<p>To obtain this functionality on a user defined type simply implement the <a href="https://doc.rust-lang.org/std/str/trait.FromStr.html"><code>FromStr</code></a> trait for that type.</p>
+<pre><pre class="playground"><code class="language-rust editable edition2021">use std::num::ParseIntError;
+use std::str::FromStr;
+
+#[derive(Debug)]
+struct Circle {
+    radius: i32,
+}
+
+impl FromStr for Circle {
+    type Err = ParseIntError;
+    fn from_str(s: &amp;str) -&gt; Result&lt;Self, Self::Err&gt; {
+        match s.trim().parse() {
+            Ok(num) =&gt; Ok(Circle{ radius: num }),
+            Err(e) =&gt; Err(e),
+        }
+    }
+}
+
+fn main() {
+    let radius = "    3 ";
+    let circle: Circle = radius.parse().unwrap();
+    println!("{:?}", circle);
 }</code></pre></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="式"><a class="header" href="#式">式</a></h1>
 <p>Rustのプログラムは（ほとんどの場合）文の連続でできています</p>
@@ -4971,9 +5004,10 @@ fn main() {
 
 #[derive(Debug)]
 struct Ref&lt;'a, T: 'a&gt;(&amp;'a T);
-// `Ref`は`'a`というライフタイムを持つジェネリック型`T`に対する参照を持ち、
-// `T`の値に対する *参照* は必ず`'a`よりも長生きでなくてはなりません。
-// さらに、`Ref`のライフタイムは`'a`を超えてはなりません。
+// `Ref` contains a reference to a generic type `T` that has
+// some lifetime `'a` unknown by `Ref`. `T` is bounded such that any
+// *references* in `T` must outlive `'a`. Additionally, the lifetime
+// of `Ref` may not exceed `'a`.
 
 // `Debug`トレイトを利用して出力を行うジェネリック関数
 fn print&lt;T&gt;(t: T) where

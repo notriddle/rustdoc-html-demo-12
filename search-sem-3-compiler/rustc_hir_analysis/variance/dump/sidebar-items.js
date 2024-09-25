@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["variances"]};
+window.SIDEBAR_ITEMS = {"fn":["format_variances","variances"]};

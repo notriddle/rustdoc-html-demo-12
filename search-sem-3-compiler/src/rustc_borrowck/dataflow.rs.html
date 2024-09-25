@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/dataflow.rs`."><title>dataflow.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/dataflow.rs`."><title>dataflow.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/</div>dataflow.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -619,9 +620,7 @@
 <a href="#619" id="619">619</a>
 <a href="#620" id="620">620</a>
 <a href="#621" id="621">621</a>
-<a href="#622" id="622">622</a>
-<a href="#623" id="623">623</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::fmt;
+<a href="#622" id="622">622</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::fmt;
 
 <span class="kw">use </span>rustc_data_structures::fx::FxIndexMap;
 <span class="kw">use </span>rustc_data_structures::graph;
@@ -632,39 +631,39 @@
 <span class="kw">use </span>rustc_middle::ty::{RegionVid, TyCtxt};
 <span class="kw">use </span>rustc_mir_dataflow::fmt::DebugWithContext;
 <span class="kw">use </span>rustc_mir_dataflow::impls::{EverInitializedPlaces, MaybeUninitializedPlaces};
-<span class="kw">use </span>rustc_mir_dataflow::{Analysis, AnalysisDomain, GenKill, Results, ResultsVisitable};
+<span class="kw">use </span>rustc_mir_dataflow::{Analysis, AnalysisDomain, Forward, GenKill, Results, ResultsVisitable};
+<span class="kw">use </span>tracing::debug;
 
-<span class="kw">use crate</span>::{places_conflict, BorrowSet, PlaceConflictBias, PlaceExt, RegionInferenceContext};
+<span class="kw">use crate</span>::{BorrowSet, PlaceConflictBias, PlaceExt, RegionInferenceContext, places_conflict};
 
 <span class="doccomment">/// The results of the dataflow analyses used by the borrow checker.
-</span><span class="kw">pub struct </span>BorrowckResults&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">pub</span>(<span class="kw">crate</span>) borrows: Results&lt;<span class="lifetime">'tcx</span>, Borrows&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
-    <span class="kw">pub</span>(<span class="kw">crate</span>) uninits: Results&lt;<span class="lifetime">'tcx</span>, MaybeUninitializedPlaces&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
-    <span class="kw">pub</span>(<span class="kw">crate</span>) ever_inits: Results&lt;<span class="lifetime">'tcx</span>, EverInitializedPlaces&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>BorrowckResults&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) borrows: Results&lt;<span class="lifetime">'tcx</span>, Borrows&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) uninits: Results&lt;<span class="lifetime">'tcx</span>, MaybeUninitializedPlaces&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) ever_inits: Results&lt;<span class="lifetime">'tcx</span>, EverInitializedPlaces&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt;,
 }
 
 <span class="doccomment">/// The transient state of the dataflow analyses used by the borrow checker.
 </span><span class="attr">#[derive(Debug)]
-</span><span class="kw">pub struct </span>BorrowckFlowState&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">pub</span>(<span class="kw">crate</span>) borrows: &lt;Borrows&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; <span class="kw">as </span>AnalysisDomain&lt;<span class="lifetime">'tcx</span>&gt;&gt;::Domain,
-    <span class="kw">pub</span>(<span class="kw">crate</span>) uninits: &lt;MaybeUninitializedPlaces&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; <span class="kw">as </span>AnalysisDomain&lt;<span class="lifetime">'tcx</span>&gt;&gt;::Domain,
-    <span class="kw">pub</span>(<span class="kw">crate</span>) ever_inits: &lt;EverInitializedPlaces&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; <span class="kw">as </span>AnalysisDomain&lt;<span class="lifetime">'tcx</span>&gt;&gt;::Domain,
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span>BorrowckDomain&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">pub</span>(<span class="kw">crate</span>) borrows: &lt;Borrows&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; <span class="kw">as </span>AnalysisDomain&lt;<span class="lifetime">'tcx</span>&gt;&gt;::Domain,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) uninits: &lt;MaybeUninitializedPlaces&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; <span class="kw">as </span>AnalysisDomain&lt;<span class="lifetime">'tcx</span>&gt;&gt;::Domain,
+    <span class="kw">pub</span>(<span class="kw">crate</span>) ever_inits: &lt;EverInitializedPlaces&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; <span class="kw">as </span>AnalysisDomain&lt;<span class="lifetime">'tcx</span>&gt;&gt;::Domain,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; ResultsVisitable&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>BorrowckResults&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="comment">// All three analyses are forward, but we have to use just one here.
-    </span><span class="kw">type </span>Direction = &lt;Borrows&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; <span class="kw">as </span>AnalysisDomain&lt;<span class="lifetime">'tcx</span>&gt;&gt;::Direction;
-    <span class="kw">type </span>FlowState = BorrowckFlowState&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt;;
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; ResultsVisitable&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>BorrowckResults&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">type </span>Direction = Forward;
+    <span class="kw">type </span>Domain = BorrowckDomain&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;;
 
-    <span class="kw">fn </span>new_flow_state(<span class="kw-2">&amp;</span><span class="self">self</span>, body: <span class="kw-2">&amp;</span>mir::Body&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self</span>::FlowState {
-        BorrowckFlowState {
+    <span class="kw">fn </span>bottom_value(<span class="kw-2">&amp;</span><span class="self">self</span>, body: <span class="kw-2">&amp;</span>mir::Body&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self</span>::Domain {
+        BorrowckDomain {
             borrows: <span class="self">self</span>.borrows.analysis.bottom_value(body),
             uninits: <span class="self">self</span>.uninits.analysis.bottom_value(body),
             ever_inits: <span class="self">self</span>.ever_inits.analysis.bottom_value(body),
         }
     }
 
-    <span class="kw">fn </span>reset_to_block_entry(<span class="kw-2">&amp;</span><span class="self">self</span>, state: <span class="kw-2">&amp;mut </span><span class="self">Self</span>::FlowState, block: BasicBlock) {
+    <span class="kw">fn </span>reset_to_block_entry(<span class="kw-2">&amp;</span><span class="self">self</span>, state: <span class="kw-2">&amp;mut </span><span class="self">Self</span>::Domain, block: BasicBlock) {
         state.borrows.clone_from(<span class="self">self</span>.borrows.entry_set_for_block(block));
         state.uninits.clone_from(<span class="self">self</span>.uninits.entry_set_for_block(block));
         state.ever_inits.clone_from(<span class="self">self</span>.ever_inits.entry_set_for_block(block));
@@ -672,7 +671,7 @@
 
     <span class="kw">fn </span>reconstruct_before_statement_effect(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        state: <span class="kw-2">&amp;mut </span><span class="self">Self</span>::FlowState,
+        state: <span class="kw-2">&amp;mut </span><span class="self">Self</span>::Domain,
         stmt: <span class="kw-2">&amp;</span>mir::Statement&lt;<span class="lifetime">'tcx</span>&gt;,
         loc: Location,
     ) {
@@ -683,7 +682,7 @@
 
     <span class="kw">fn </span>reconstruct_statement_effect(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        state: <span class="kw-2">&amp;mut </span><span class="self">Self</span>::FlowState,
+        state: <span class="kw-2">&amp;mut </span><span class="self">Self</span>::Domain,
         stmt: <span class="kw-2">&amp;</span>mir::Statement&lt;<span class="lifetime">'tcx</span>&gt;,
         loc: Location,
     ) {
@@ -694,7 +693,7 @@
 
     <span class="kw">fn </span>reconstruct_before_terminator_effect(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        state: <span class="kw-2">&amp;mut </span><span class="self">Self</span>::FlowState,
+        state: <span class="kw-2">&amp;mut </span><span class="self">Self</span>::Domain,
         term: <span class="kw-2">&amp;</span>mir::Terminator&lt;<span class="lifetime">'tcx</span>&gt;,
         loc: Location,
     ) {
@@ -705,7 +704,7 @@
 
     <span class="kw">fn </span>reconstruct_terminator_effect(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        state: <span class="kw-2">&amp;mut </span><span class="self">Self</span>::FlowState,
+        state: <span class="kw-2">&amp;mut </span><span class="self">Self</span>::Domain,
         term: <span class="kw-2">&amp;</span>mir::Terminator&lt;<span class="lifetime">'tcx</span>&gt;,
         loc: Location,
     ) {
@@ -728,24 +727,23 @@
 /// `BorrowIndex`, and maps each such index to a `BorrowData`
 /// describing the borrow. These indexes are used for representing the
 /// borrows in compact bitvectors.
-</span><span class="kw">pub struct </span>Borrows&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; {
+</span><span class="kw">pub struct </span>Borrows&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
-    body: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
-
+    body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
     borrow_set: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>BorrowSet&lt;<span class="lifetime">'tcx</span>&gt;,
     borrows_out_of_scope_at_location: FxIndexMap&lt;Location, Vec&lt;BorrowIndex&gt;&gt;,
 }
 
-<span class="kw">struct </span>OutOfScopePrecomputer&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; {
+<span class="kw">struct </span>OutOfScopePrecomputer&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     visited: BitSet&lt;mir::BasicBlock&gt;,
     visit_stack: Vec&lt;mir::BasicBlock&gt;,
-    body: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
-    regioncx: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>RegionInferenceContext&lt;<span class="lifetime">'tcx</span>&gt;,
+    body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
+    regioncx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>RegionInferenceContext&lt;<span class="lifetime">'tcx</span>&gt;,
     borrows_out_of_scope_at_location: FxIndexMap&lt;Location, Vec&lt;BorrowIndex&gt;&gt;,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; OutOfScopePrecomputer&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">fn </span>new(body: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Body&lt;<span class="lifetime">'tcx</span>&gt;, regioncx: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>RegionInferenceContext&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; OutOfScopePrecomputer&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">fn </span>new(body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Body&lt;<span class="lifetime">'tcx</span>&gt;, regioncx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>RegionInferenceContext&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
         OutOfScopePrecomputer {
             visited: BitSet::new_empty(body.basic_blocks.len()),
             visit_stack: <span class="macro">vec!</span>[],
@@ -848,17 +846,17 @@
     prec.borrows_out_of_scope_at_location
 }
 
-<span class="kw">struct </span>PoloniusOutOfScopePrecomputer&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; {
+<span class="kw">struct </span>PoloniusOutOfScopePrecomputer&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     visited: BitSet&lt;mir::BasicBlock&gt;,
     visit_stack: Vec&lt;mir::BasicBlock&gt;,
-    body: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
-    regioncx: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>RegionInferenceContext&lt;<span class="lifetime">'tcx</span>&gt;,
+    body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
+    regioncx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>RegionInferenceContext&lt;<span class="lifetime">'tcx</span>&gt;,
 
     loans_out_of_scope_at_location: FxIndexMap&lt;Location, Vec&lt;BorrowIndex&gt;&gt;,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; PoloniusOutOfScopePrecomputer&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">fn </span>new(body: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Body&lt;<span class="lifetime">'tcx</span>&gt;, regioncx: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>RegionInferenceContext&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; PoloniusOutOfScopePrecomputer&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+    <span class="kw">fn </span>new(body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Body&lt;<span class="lifetime">'tcx</span>&gt;, regioncx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>RegionInferenceContext&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
         <span class="self">Self </span>{
             visited: BitSet::new_empty(body.basic_blocks.len()),
             visit_stack: <span class="macro">vec!</span>[],
@@ -1011,10 +1009,10 @@
     </span>}
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; Borrows&lt;<span class="lifetime">'a</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; Borrows&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">pub fn </span>new(
         tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
-        body: <span class="kw-2">&amp;</span><span class="lifetime">'mir </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
+        body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
         regioncx: <span class="kw-2">&amp;</span>RegionInferenceContext&lt;<span class="lifetime">'tcx</span>&gt;,
         borrow_set: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>BorrowSet&lt;<span class="lifetime">'tcx</span>&gt;,
     ) -&gt; <span class="self">Self </span>{
@@ -1116,7 +1114,7 @@
     }
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; rustc_mir_dataflow::AnalysisDomain&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>Borrows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; rustc_mir_dataflow::AnalysisDomain&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>Borrows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">type </span>Domain = BitSet&lt;BorrowIndex&gt;;
 
     <span class="kw">const </span>NAME: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str = <span class="string">"borrows"</span>;
@@ -1139,7 +1137,7 @@
 ///   region stops containing the CFG points reachable from the issuing location.
 /// - we also kill loans of conflicting places when overwriting a shared path: e.g. borrows of
 ///   `a.b.c` when `a` is overwritten.
-</span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; rustc_mir_dataflow::GenKillAnalysis&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>Borrows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
+</span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; rustc_mir_dataflow::GenKillAnalysis&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>Borrows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">type </span>Idx = BorrowIndex;
 
     <span class="kw">fn </span>domain_size(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="kw">_</span>: <span class="kw-2">&amp;</span>mir::Body&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; usize {
@@ -1239,8 +1237,8 @@
     }
 }
 
-<span class="kw">impl </span>DebugWithContext&lt;Borrows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;&gt; <span class="kw">for </span>BorrowIndex {
-    <span class="kw">fn </span>fmt_with(<span class="kw-2">&amp;</span><span class="self">self</span>, ctxt: <span class="kw-2">&amp;</span>Borrows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;, f: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
+<span class="kw">impl </span>DebugWithContext&lt;Borrows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;&gt; <span class="kw">for </span>BorrowIndex {
+    <span class="kw">fn </span>fmt_with(<span class="kw-2">&amp;</span><span class="self">self</span>, ctxt: <span class="kw-2">&amp;</span>Borrows&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;, f: <span class="kw-2">&amp;mut </span>fmt::Formatter&lt;<span class="lifetime">'_</span>&gt;) -&gt; fmt::Result {
         <span class="macro">write!</span>(f, <span class="string">"{:?}"</span>, ctxt.location(<span class="kw-2">*</span><span class="self">self</span>))
     }
 }

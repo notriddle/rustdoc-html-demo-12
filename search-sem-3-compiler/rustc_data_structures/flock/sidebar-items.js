@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["linux"],"struct":["Lock"]};
+window.SIDEBAR_ITEMS = {"mod":["unix"],"struct":["Lock"]};

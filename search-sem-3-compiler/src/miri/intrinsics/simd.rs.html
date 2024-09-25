@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/intrinsics/simd.rs`."><title>simd.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/intrinsics/simd.rs`."><title>simd.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/intrinsics/</div>simd.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -838,25 +839,15 @@
 <a href="#838" id="838">838</a>
 <a href="#839" id="839">839</a>
 <a href="#840" id="840">840</a>
-<a href="#841" id="841">841</a>
-<a href="#842" id="842">842</a>
-<a href="#843" id="843">843</a>
-<a href="#844" id="844">844</a>
-<a href="#845" id="845">845</a>
-<a href="#846" id="846">846</a>
-<a href="#847" id="847">847</a>
-<a href="#848" id="848">848</a>
-<a href="#849" id="849">849</a>
-<a href="#850" id="850">850</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>either::Either;
+<a href="#841" id="841">841</a></pre></div><pre class="rust"><code><span class="kw">use </span>either::Either;
 
 <span class="kw">use </span>rustc_apfloat::{Float, Round};
 <span class="kw">use </span>rustc_middle::ty::layout::{HasParamEnv, LayoutOf};
 <span class="kw">use </span>rustc_middle::{mir, ty, ty::FloatTy};
-<span class="kw">use </span>rustc_span::{sym, Symbol};
+<span class="kw">use </span>rustc_span::{Symbol, sym};
 <span class="kw">use </span>rustc_target::abi::{Endian, HasDataLayout};
 
-<span class="kw">use </span><span class="kw">crate</span>::helpers::{bool_to_simd_element, check_arg_count, simd_element_to_bool, ToHost, ToSoft};
+<span class="kw">use </span><span class="kw">crate</span>::helpers::{ToHost, ToSoft, bool_to_simd_element, check_arg_count, simd_element_to_bool};
 <span class="kw">use crate</span>::<span class="kw-2">*</span>;
 
 <span class="attr">#[derive(Copy, Clone)]
@@ -900,8 +891,8 @@
             </span>| <span class="string">"bitreverse"
             </span>=&gt; {
                 <span class="kw">let </span>[op] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(op, op_len) = this.operand_to_simd(op)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(dest, dest_len) = this.mplace_to_simd(dest)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(op, op_len) = this.project_to_simd(op)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(dest, dest_len) = this.project_to_simd(dest)<span class="question-mark">?</span>;
 
                 <span class="macro">assert_eq!</span>(dest_len, op_len);
 
@@ -1050,9 +1041,9 @@
                 <span class="kw">use </span>mir::BinOp;
 
                 <span class="kw">let </span>[left, right] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(left, left_len) = this.operand_to_simd(left)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(right, right_len) = this.operand_to_simd(right)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(dest, dest_len) = this.mplace_to_simd(dest)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(left, left_len) = this.project_to_simd(left)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(right, right_len) = this.project_to_simd(right)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(dest, dest_len) = this.project_to_simd(dest)<span class="question-mark">?</span>;
 
                 <span class="macro">assert_eq!</span>(dest_len, left_len);
                 <span class="macro">assert_eq!</span>(dest_len, right_len);
@@ -1141,10 +1132,10 @@
             }
             <span class="string">"fma" </span>=&gt; {
                 <span class="kw">let </span>[a, b, c] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(a, a_len) = this.operand_to_simd(a)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(b, b_len) = this.operand_to_simd(b)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(c, c_len) = this.operand_to_simd(c)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(dest, dest_len) = this.mplace_to_simd(dest)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(a, a_len) = this.project_to_simd(a)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(b, b_len) = this.project_to_simd(b)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(c, c_len) = this.project_to_simd(c)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(dest, dest_len) = this.project_to_simd(dest)<span class="question-mark">?</span>;
 
                 <span class="macro">assert_eq!</span>(dest_len, a_len);
                 <span class="macro">assert_eq!</span>(dest_len, b_len);
@@ -1195,7 +1186,7 @@
                 <span class="kw">use </span>mir::BinOp;
 
                 <span class="kw">let </span>[op] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(op, op_len) = this.operand_to_simd(op)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(op, op_len) = this.project_to_simd(op)<span class="question-mark">?</span>;
 
                 <span class="kw">let </span>imm_from_bool =
                     |b| ImmTy::from_scalar(Scalar::from_bool(b), this.machine.layouts.bool);
@@ -1258,7 +1249,7 @@
                 <span class="kw">use </span>mir::BinOp;
 
                 <span class="kw">let </span>[op, init] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(op, op_len) = this.operand_to_simd(op)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(op, op_len) = this.project_to_simd(op)<span class="question-mark">?</span>;
                 <span class="kw">let </span>init = this.read_immediate(init)<span class="question-mark">?</span>;
 
                 <span class="kw">let </span>mir_op = <span class="kw">match </span>intrinsic_name {
@@ -1276,10 +1267,10 @@
             }
             <span class="string">"select" </span>=&gt; {
                 <span class="kw">let </span>[mask, yes, no] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(mask, mask_len) = this.operand_to_simd(mask)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(yes, yes_len) = this.operand_to_simd(yes)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(no, no_len) = this.operand_to_simd(no)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(dest, dest_len) = this.mplace_to_simd(dest)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(mask, mask_len) = this.project_to_simd(mask)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(yes, yes_len) = this.project_to_simd(yes)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(no, no_len) = this.project_to_simd(no)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(dest, dest_len) = this.project_to_simd(dest)<span class="question-mark">?</span>;
 
                 <span class="macro">assert_eq!</span>(dest_len, mask_len);
                 <span class="macro">assert_eq!</span>(dest_len, yes_len);
@@ -1298,9 +1289,9 @@
             <span class="comment">// Variant of `select` that takes a bitmask rather than a "vector of bool".
             </span><span class="string">"select_bitmask" </span>=&gt; {
                 <span class="kw">let </span>[mask, yes, no] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(yes, yes_len) = this.operand_to_simd(yes)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(no, no_len) = this.operand_to_simd(no)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(dest, dest_len) = this.mplace_to_simd(dest)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(yes, yes_len) = this.project_to_simd(yes)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(no, no_len) = this.project_to_simd(no)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(dest, dest_len) = this.project_to_simd(dest)<span class="question-mark">?</span>;
                 <span class="kw">let </span>bitmask_len = dest_len.next_multiple_of(<span class="number">8</span>);
                 <span class="kw">if </span>bitmask_len &gt; <span class="number">64 </span>{
                     <span class="macro">throw_unsup_format!</span>(
@@ -1372,7 +1363,7 @@
             <span class="comment">// Converts a "vector of bool" into a bitmask.
             </span><span class="string">"bitmask" </span>=&gt; {
                 <span class="kw">let </span>[op] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(op, op_len) = this.operand_to_simd(op)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(op, op_len) = this.project_to_simd(op)<span class="question-mark">?</span>;
                 <span class="kw">let </span>bitmask_len = op_len.next_multiple_of(<span class="number">8</span>);
                 <span class="kw">if </span>bitmask_len &gt; <span class="number">64 </span>{
                     <span class="macro">throw_unsup_format!</span>(
@@ -1420,8 +1411,8 @@
             }
             <span class="string">"cast" </span>| <span class="string">"as" </span>| <span class="string">"cast_ptr" </span>| <span class="string">"expose_provenance" </span>| <span class="string">"with_exposed_provenance" </span>=&gt; {
                 <span class="kw">let </span>[op] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(op, op_len) = this.operand_to_simd(op)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(dest, dest_len) = this.mplace_to_simd(dest)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(op, op_len) = this.project_to_simd(op)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(dest, dest_len) = this.project_to_simd(dest)<span class="question-mark">?</span>;
 
                 <span class="macro">assert_eq!</span>(dest_len, op_len);
 
@@ -1477,9 +1468,9 @@
             }
             <span class="string">"shuffle_generic" </span>=&gt; {
                 <span class="kw">let </span>[left, right] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(left, left_len) = this.operand_to_simd(left)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(right, right_len) = this.operand_to_simd(right)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(dest, dest_len) = this.mplace_to_simd(dest)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(left, left_len) = this.project_to_simd(left)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(right, right_len) = this.project_to_simd(right)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(dest, dest_len) = this.project_to_simd(dest)<span class="question-mark">?</span>;
 
                 <span class="kw">let </span>index = generic_args[<span class="number">2</span>]
                     .expect_const()
@@ -1512,26 +1503,17 @@
             }
             <span class="string">"shuffle" </span>=&gt; {
                 <span class="kw">let </span>[left, right, index] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(left, left_len) = this.operand_to_simd(left)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(right, right_len) = this.operand_to_simd(right)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(dest, dest_len) = this.mplace_to_simd(dest)<span class="question-mark">?</span>;
-
-                <span class="comment">// `index` is an array, not a SIMD type
-                </span><span class="kw">let </span>ty::Array(<span class="kw">_</span>, index_len) = index.layout.ty.kind() <span class="kw">else </span>{
-                    <span class="macro">span_bug!</span>(
-                        this.cur_span(),
-                        <span class="string">"simd_shuffle index argument has non-array type {}"</span>,
-                        index.layout.ty
-                    )
-                };
-                <span class="kw">let </span>index_len = index_len.eval_target_usize(<span class="kw-2">*</span>this.tcx, this.param_env());
+                <span class="kw">let </span>(left, left_len) = this.project_to_simd(left)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(right, right_len) = this.project_to_simd(right)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(index, index_len) = this.project_to_simd(index)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(dest, dest_len) = this.project_to_simd(dest)<span class="question-mark">?</span>;
 
                 <span class="macro">assert_eq!</span>(left_len, right_len);
                 <span class="macro">assert_eq!</span>(index_len, dest_len);
 
                 <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..dest_len {
                     <span class="kw">let </span>src_index: u64 = this
-                        .read_immediate(<span class="kw-2">&amp;</span>this.project_index(index, i)<span class="question-mark">?</span>)<span class="question-mark">?
+                        .read_immediate(<span class="kw-2">&amp;</span>this.project_index(<span class="kw-2">&amp;</span>index, i)<span class="question-mark">?</span>)<span class="question-mark">?
                         </span>.to_scalar()
                         .to_u32()<span class="question-mark">?
                         </span>.into();
@@ -1552,10 +1534,10 @@
             }
             <span class="string">"gather" </span>=&gt; {
                 <span class="kw">let </span>[passthru, ptrs, mask] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(passthru, passthru_len) = this.operand_to_simd(passthru)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(ptrs, ptrs_len) = this.operand_to_simd(ptrs)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(mask, mask_len) = this.operand_to_simd(mask)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(dest, dest_len) = this.mplace_to_simd(dest)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(passthru, passthru_len) = this.project_to_simd(passthru)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(ptrs, ptrs_len) = this.project_to_simd(ptrs)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(mask, mask_len) = this.project_to_simd(mask)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(dest, dest_len) = this.project_to_simd(dest)<span class="question-mark">?</span>;
 
                 <span class="macro">assert_eq!</span>(dest_len, passthru_len);
                 <span class="macro">assert_eq!</span>(dest_len, ptrs_len);
@@ -1578,9 +1560,9 @@
             }
             <span class="string">"scatter" </span>=&gt; {
                 <span class="kw">let </span>[value, ptrs, mask] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(value, value_len) = this.operand_to_simd(value)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(ptrs, ptrs_len) = this.operand_to_simd(ptrs)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(mask, mask_len) = this.operand_to_simd(mask)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(value, value_len) = this.project_to_simd(value)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(ptrs, ptrs_len) = this.project_to_simd(ptrs)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(mask, mask_len) = this.project_to_simd(mask)<span class="question-mark">?</span>;
 
                 <span class="macro">assert_eq!</span>(ptrs_len, value_len);
                 <span class="macro">assert_eq!</span>(ptrs_len, mask_len);
@@ -1598,10 +1580,10 @@
             }
             <span class="string">"masked_load" </span>=&gt; {
                 <span class="kw">let </span>[mask, ptr, default] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(mask, mask_len) = this.operand_to_simd(mask)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(mask, mask_len) = this.project_to_simd(mask)<span class="question-mark">?</span>;
                 <span class="kw">let </span>ptr = this.read_pointer(ptr)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(default, default_len) = this.operand_to_simd(default)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(dest, dest_len) = this.mplace_to_simd(dest)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(default, default_len) = this.project_to_simd(default)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(dest, dest_len) = this.project_to_simd(dest)<span class="question-mark">?</span>;
 
                 <span class="macro">assert_eq!</span>(dest_len, mask_len);
                 <span class="macro">assert_eq!</span>(dest_len, default_len);
@@ -1625,9 +1607,9 @@
             }
             <span class="string">"masked_store" </span>=&gt; {
                 <span class="kw">let </span>[mask, ptr, vals] = check_arg_count(args)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(mask, mask_len) = this.operand_to_simd(mask)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(mask, mask_len) = this.project_to_simd(mask)<span class="question-mark">?</span>;
                 <span class="kw">let </span>ptr = this.read_pointer(ptr)<span class="question-mark">?</span>;
-                <span class="kw">let </span>(vals, vals_len) = this.operand_to_simd(vals)<span class="question-mark">?</span>;
+                <span class="kw">let </span>(vals, vals_len) = this.project_to_simd(vals)<span class="question-mark">?</span>;
 
                 <span class="macro">assert_eq!</span>(mask_len, vals_len);
 

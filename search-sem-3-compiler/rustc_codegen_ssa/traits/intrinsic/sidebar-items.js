@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"trait":["IntrinsicCallMethods"]};
+window.SIDEBAR_ITEMS = {"trait":["IntrinsicCallBuilderMethods"]};

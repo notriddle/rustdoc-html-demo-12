@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/hir_ty_lowering/bounds.rs`."><title>bounds.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/hir_ty_lowering/bounds.rs`."><title>bounds.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_analysis/hir_ty_lowering/</div>bounds.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -690,22 +691,225 @@
 <a href="#690" id="690">690</a>
 <a href="#691" id="691">691</a>
 <a href="#692" id="692">692</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::ops::ControlFlow;
+<a href="#693" id="693">693</a>
+<a href="#694" id="694">694</a>
+<a href="#695" id="695">695</a>
+<a href="#696" id="696">696</a>
+<a href="#697" id="697">697</a>
+<a href="#698" id="698">698</a>
+<a href="#699" id="699">699</a>
+<a href="#700" id="700">700</a>
+<a href="#701" id="701">701</a>
+<a href="#702" id="702">702</a>
+<a href="#703" id="703">703</a>
+<a href="#704" id="704">704</a>
+<a href="#705" id="705">705</a>
+<a href="#706" id="706">706</a>
+<a href="#707" id="707">707</a>
+<a href="#708" id="708">708</a>
+<a href="#709" id="709">709</a>
+<a href="#710" id="710">710</a>
+<a href="#711" id="711">711</a>
+<a href="#712" id="712">712</a>
+<a href="#713" id="713">713</a>
+<a href="#714" id="714">714</a>
+<a href="#715" id="715">715</a>
+<a href="#716" id="716">716</a>
+<a href="#717" id="717">717</a>
+<a href="#718" id="718">718</a>
+<a href="#719" id="719">719</a>
+<a href="#720" id="720">720</a>
+<a href="#721" id="721">721</a>
+<a href="#722" id="722">722</a>
+<a href="#723" id="723">723</a>
+<a href="#724" id="724">724</a>
+<a href="#725" id="725">725</a>
+<a href="#726" id="726">726</a>
+<a href="#727" id="727">727</a>
+<a href="#728" id="728">728</a>
+<a href="#729" id="729">729</a>
+<a href="#730" id="730">730</a>
+<a href="#731" id="731">731</a>
+<a href="#732" id="732">732</a>
+<a href="#733" id="733">733</a>
+<a href="#734" id="734">734</a>
+<a href="#735" id="735">735</a>
+<a href="#736" id="736">736</a>
+<a href="#737" id="737">737</a>
+<a href="#738" id="738">738</a>
+<a href="#739" id="739">739</a>
+<a href="#740" id="740">740</a>
+<a href="#741" id="741">741</a>
+<a href="#742" id="742">742</a>
+<a href="#743" id="743">743</a>
+<a href="#744" id="744">744</a>
+<a href="#745" id="745">745</a>
+<a href="#746" id="746">746</a>
+<a href="#747" id="747">747</a>
+<a href="#748" id="748">748</a>
+<a href="#749" id="749">749</a>
+<a href="#750" id="750">750</a>
+<a href="#751" id="751">751</a>
+<a href="#752" id="752">752</a>
+<a href="#753" id="753">753</a>
+<a href="#754" id="754">754</a>
+<a href="#755" id="755">755</a>
+<a href="#756" id="756">756</a>
+<a href="#757" id="757">757</a>
+<a href="#758" id="758">758</a>
+<a href="#759" id="759">759</a>
+<a href="#760" id="760">760</a>
+<a href="#761" id="761">761</a>
+<a href="#762" id="762">762</a>
+<a href="#763" id="763">763</a>
+<a href="#764" id="764">764</a>
+<a href="#765" id="765">765</a>
+<a href="#766" id="766">766</a>
+<a href="#767" id="767">767</a>
+<a href="#768" id="768">768</a>
+<a href="#769" id="769">769</a>
+<a href="#770" id="770">770</a>
+<a href="#771" id="771">771</a>
+<a href="#772" id="772">772</a>
+<a href="#773" id="773">773</a>
+<a href="#774" id="774">774</a>
+<a href="#775" id="775">775</a>
+<a href="#776" id="776">776</a>
+<a href="#777" id="777">777</a>
+<a href="#778" id="778">778</a>
+<a href="#779" id="779">779</a>
+<a href="#780" id="780">780</a>
+<a href="#781" id="781">781</a>
+<a href="#782" id="782">782</a>
+<a href="#783" id="783">783</a>
+<a href="#784" id="784">784</a>
+<a href="#785" id="785">785</a>
+<a href="#786" id="786">786</a>
+<a href="#787" id="787">787</a>
+<a href="#788" id="788">788</a>
+<a href="#789" id="789">789</a>
+<a href="#790" id="790">790</a>
+<a href="#791" id="791">791</a>
+<a href="#792" id="792">792</a>
+<a href="#793" id="793">793</a>
+<a href="#794" id="794">794</a>
+<a href="#795" id="795">795</a>
+<a href="#796" id="796">796</a>
+<a href="#797" id="797">797</a>
+<a href="#798" id="798">798</a>
+<a href="#799" id="799">799</a>
+<a href="#800" id="800">800</a>
+<a href="#801" id="801">801</a>
+<a href="#802" id="802">802</a>
+<a href="#803" id="803">803</a>
+<a href="#804" id="804">804</a>
+<a href="#805" id="805">805</a>
+<a href="#806" id="806">806</a>
+<a href="#807" id="807">807</a>
+<a href="#808" id="808">808</a>
+<a href="#809" id="809">809</a>
+<a href="#810" id="810">810</a>
+<a href="#811" id="811">811</a>
+<a href="#812" id="812">812</a>
+<a href="#813" id="813">813</a>
+<a href="#814" id="814">814</a>
+<a href="#815" id="815">815</a>
+<a href="#816" id="816">816</a>
+<a href="#817" id="817">817</a>
+<a href="#818" id="818">818</a>
+<a href="#819" id="819">819</a>
+<a href="#820" id="820">820</a>
+<a href="#821" id="821">821</a>
+<a href="#822" id="822">822</a>
+<a href="#823" id="823">823</a>
+<a href="#824" id="824">824</a>
+<a href="#825" id="825">825</a>
+<a href="#826" id="826">826</a>
+<a href="#827" id="827">827</a>
+<a href="#828" id="828">828</a>
+<a href="#829" id="829">829</a>
+<a href="#830" id="830">830</a>
+<a href="#831" id="831">831</a>
+<a href="#832" id="832">832</a>
+<a href="#833" id="833">833</a>
+<a href="#834" id="834">834</a>
+<a href="#835" id="835">835</a>
+<a href="#836" id="836">836</a>
+<a href="#837" id="837">837</a>
+<a href="#838" id="838">838</a>
+<a href="#839" id="839">839</a>
+<a href="#840" id="840">840</a>
+<a href="#841" id="841">841</a>
+<a href="#842" id="842">842</a>
+<a href="#843" id="843">843</a>
+<a href="#844" id="844">844</a>
+<a href="#845" id="845">845</a>
+<a href="#846" id="846">846</a>
+<a href="#847" id="847">847</a>
+<a href="#848" id="848">848</a>
+<a href="#849" id="849">849</a>
+<a href="#850" id="850">850</a>
+<a href="#851" id="851">851</a>
+<a href="#852" id="852">852</a>
+<a href="#853" id="853">853</a>
+<a href="#854" id="854">854</a>
+<a href="#855" id="855">855</a>
+<a href="#856" id="856">856</a>
+<a href="#857" id="857">857</a>
+<a href="#858" id="858">858</a>
+<a href="#859" id="859">859</a>
+<a href="#860" id="860">860</a>
+<a href="#861" id="861">861</a>
+<a href="#862" id="862">862</a>
+<a href="#863" id="863">863</a>
+<a href="#864" id="864">864</a>
+<a href="#865" id="865">865</a>
+<a href="#866" id="866">866</a>
+<a href="#867" id="867">867</a>
+<a href="#868" id="868">868</a>
+<a href="#869" id="869">869</a>
+<a href="#870" id="870">870</a>
+<a href="#871" id="871">871</a>
+<a href="#872" id="872">872</a>
+<a href="#873" id="873">873</a>
+<a href="#874" id="874">874</a>
+<a href="#875" id="875">875</a>
+<a href="#876" id="876">876</a>
+<a href="#877" id="877">877</a>
+<a href="#878" id="878">878</a>
+<a href="#879" id="879">879</a>
+<a href="#880" id="880">880</a>
+<a href="#881" id="881">881</a>
+<a href="#882" id="882">882</a>
+<a href="#883" id="883">883</a>
+<a href="#884" id="884">884</a>
+<a href="#885" id="885">885</a>
+<a href="#886" id="886">886</a>
+<a href="#887" id="887">887</a>
+<a href="#888" id="888">888</a>
+<a href="#889" id="889">889</a>
+<a href="#890" id="890">890</a>
+<a href="#891" id="891">891</a>
+<a href="#892" id="892">892</a>
+<a href="#893" id="893">893</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::ops::ControlFlow;
 
 <span class="kw">use </span>rustc_data_structures::fx::{FxIndexMap, FxIndexSet};
 <span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_errors::struct_span_code_err;
 <span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
+<span class="kw">use </span>rustc_hir::HirId;
 <span class="kw">use </span>rustc_hir::def::{DefKind, Res};
 <span class="kw">use </span>rustc_hir::def_id::{DefId, LocalDefId};
 <span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self </span><span class="kw">as </span>ty, IsSuggestable, Ty, TyCtxt};
 <span class="kw">use </span>rustc_span::symbol::Ident;
-<span class="kw">use </span>rustc_span::{sym, ErrorGuaranteed, Span, Symbol};
+<span class="kw">use </span>rustc_span::{ErrorGuaranteed, Span, Symbol, sym};
 <span class="kw">use </span>rustc_trait_selection::traits;
 <span class="kw">use </span>rustc_type_ir::visit::{TypeSuperVisitable, TypeVisitable, TypeVisitableExt, TypeVisitor};
 <span class="kw">use </span>smallvec::SmallVec;
+<span class="kw">use </span>tracing::{debug, instrument};
 
+<span class="kw">use </span><span class="kw">super</span>::errors::GenericsArgsErrExtend;
 <span class="kw">use </span><span class="kw">crate</span>::bounds::Bounds;
 <span class="kw">use </span><span class="kw">crate</span>::errors;
 <span class="kw">use </span><span class="kw">crate</span>::hir_ty_lowering::{
@@ -1023,74 +1227,11 @@
             .or_insert(constraint.span);
 
         <span class="kw">let </span>projection_term = <span class="kw">if let </span>ty::AssocKind::Fn = assoc_kind {
-            <span class="kw">let </span><span class="kw-2">mut </span>emitted_bad_param_err = <span class="prelude-val">None</span>;
-            <span class="comment">// If we have an method return type bound, then we need to instantiate
-            // the method's early bound params with suitable late-bound params.
-            </span><span class="kw">let </span><span class="kw-2">mut </span>num_bound_vars = candidate.bound_vars().len();
-            <span class="kw">let </span>args =
-                candidate.skip_binder().args.extend_to(tcx, assoc_item.def_id, |param, <span class="kw">_</span>| {
-                    <span class="kw">let </span>arg = <span class="kw">match </span>param.kind {
-                        ty::GenericParamDefKind::Lifetime =&gt; ty::Region::new_bound(
-                            tcx,
-                            ty::INNERMOST,
-                            ty::BoundRegion {
-                                var: ty::BoundVar::from_usize(num_bound_vars),
-                                kind: ty::BoundRegionKind::BrNamed(param.def_id, param.name),
-                            },
-                        )
-                        .into(),
-                        ty::GenericParamDefKind::Type { .. } =&gt; {
-                            <span class="kw">let </span>guar = <span class="kw-2">*</span>emitted_bad_param_err.get_or_insert_with(|| {
-                                <span class="self">self</span>.dcx().emit_err(
-                                    <span class="kw">crate</span>::errors::ReturnTypeNotationIllegalParam::Type {
-                                        span: path_span,
-                                        param_span: tcx.def_span(param.def_id),
-                                    },
-                                )
-                            });
-                            Ty::new_error(tcx, guar).into()
-                        }
-                        ty::GenericParamDefKind::Const { .. } =&gt; {
-                            <span class="kw">let </span>guar = <span class="kw-2">*</span>emitted_bad_param_err.get_or_insert_with(|| {
-                                <span class="self">self</span>.dcx().emit_err(
-                                    <span class="kw">crate</span>::errors::ReturnTypeNotationIllegalParam::Const {
-                                        span: path_span,
-                                        param_span: tcx.def_span(param.def_id),
-                                    },
-                                )
-                            });
-                            ty::Const::new_error(tcx, guar).into()
-                        }
-                    };
-                    num_bound_vars += <span class="number">1</span>;
-                    arg
-                });
-
-            <span class="comment">// Next, we need to check that the return-type notation is being used on
-            // an RPITIT (return-position impl trait in trait) or AFIT (async fn in trait).
-            </span><span class="kw">let </span>output = tcx.fn_sig(assoc_item.def_id).skip_binder().output();
-            <span class="kw">let </span>output = <span class="kw">if let </span>ty::Alias(ty::Projection, alias_ty) = <span class="kw-2">*</span>output.skip_binder().kind()
-                &amp;&amp; tcx.is_impl_trait_in_trait(alias_ty.def_id)
-            {
-                alias_ty.into()
-            } <span class="kw">else </span>{
-                <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="self">self</span>.dcx().emit_err(<span class="kw">crate</span>::errors::ReturnTypeNotationOnNonRpitit {
-                    span: constraint.span,
-                    ty: tcx.liberate_late_bound_regions(assoc_item.def_id, output),
-                    fn_span: tcx.hir().span_if_local(assoc_item.def_id),
-                    note: (),
-                }));
-            };
-
-            <span class="comment">// Finally, move the fn return type's bound vars over to account for the early bound
-            // params (and trait ref's late bound params). This logic is very similar to
-            // `rustc_middle::ty::predicate::Clause::instantiate_supertrait`
-            // and it's no coincidence why.
-            </span><span class="kw">let </span>shifted_output = tcx.shift_bound_var_indices(num_bound_vars, output);
-            <span class="kw">let </span>instantiation_output = ty::EarlyBinder::bind(shifted_output).instantiate(tcx, args);
-
             <span class="kw">let </span>bound_vars = tcx.late_bound_vars(constraint.hir_id);
-            ty::Binder::bind_with_vars(instantiation_output, bound_vars)
+            ty::Binder::bind_with_vars(
+                <span class="self">self</span>.lower_return_type_notation_ty(candidate, assoc_item.def_id, path_span)<span class="question-mark">?</span>.into(),
+                bound_vars,
+            )
         } <span class="kw">else </span>{
             <span class="comment">// Create the generic arguments for the associated type or constant by joining the
             // parent arguments (the arguments of the trait) and the own arguments (the ones of
@@ -1216,11 +1357,272 @@
         }
         <span class="prelude-val">Ok</span>(())
     }
+
+    <span class="doccomment">/// Lower a type, possibly specially handling the type if it's a return type notation
+    /// which we otherwise deny in other positions.
+    </span><span class="kw">pub fn </span>lower_ty_maybe_return_type_notation(<span class="kw-2">&amp;</span><span class="self">self</span>, hir_ty: <span class="kw-2">&amp;</span>hir::Ty&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; Ty&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="kw">let </span>hir::TyKind::Path(qpath) = hir_ty.kind <span class="kw">else </span>{
+            <span class="kw">return </span><span class="self">self</span>.lower_ty(hir_ty);
+        };
+
+        <span class="kw">let </span>tcx = <span class="self">self</span>.tcx();
+        <span class="kw">match </span>qpath {
+            hir::QPath::Resolved(opt_self_ty, path)
+                <span class="kw">if let </span>[mod_segments @ .., trait_segment, item_segment] = <span class="kw-2">&amp;</span>path.segments[..]
+                    &amp;&amp; item_segment.args.is_some_and(|args| {
+                        <span class="macro">matches!</span>(
+                            args.parenthesized,
+                            hir::GenericArgsParentheses::ReturnTypeNotation
+                        )
+                    }) =&gt;
+            {
+                <span class="comment">// We don't allow generics on the module segments.
+                </span><span class="kw">let _ </span>=
+                    <span class="self">self</span>.prohibit_generic_args(mod_segments.iter(), GenericsArgsErrExtend::None);
+
+                <span class="kw">let </span>item_def_id = <span class="kw">match </span>path.res {
+                    Res::Def(DefKind::AssocFn, item_def_id) =&gt; item_def_id,
+                    Res::Err =&gt; {
+                        <span class="kw">return </span>Ty::new_error_with_message(
+                            tcx,
+                            hir_ty.span,
+                            <span class="string">"failed to resolve RTN"</span>,
+                        );
+                    }
+                    <span class="kw">_ </span>=&gt; <span class="macro">bug!</span>(<span class="string">"only expected method resolution for fully qualified RTN"</span>),
+                };
+                <span class="kw">let </span>trait_def_id = tcx.parent(item_def_id);
+
+                <span class="comment">// Good error for `where Trait::method(..): Send`.
+                </span><span class="kw">let </span><span class="prelude-val">Some</span>(self_ty) = opt_self_ty <span class="kw">else </span>{
+                    <span class="kw">return </span><span class="self">self</span>.error_missing_qpath_self_ty(
+                        trait_def_id,
+                        hir_ty.span,
+                        item_segment,
+                    );
+                };
+                <span class="kw">let </span>self_ty = <span class="self">self</span>.lower_ty(self_ty);
+
+                <span class="kw">let </span>trait_ref = <span class="self">self</span>.lower_mono_trait_ref(
+                    hir_ty.span,
+                    trait_def_id,
+                    self_ty,
+                    trait_segment,
+                    <span class="bool-val">false</span>,
+                    ty::BoundConstness::NotConst,
+                );
+
+                <span class="comment">// SUBTLE: As noted at the end of `try_append_return_type_notation_params`
+                // in `resolve_bound_vars`, we stash the explicit bound vars of the where
+                // clause onto the item segment of the RTN type. This allows us to know
+                // how many bound vars are *not* coming from the signature of the function
+                // from lowering RTN itself.
+                //
+                // For example, in `where for&lt;'a&gt; &lt;T as Trait&lt;'a&gt;&gt;::method(..): Other`,
+                // the `late_bound_vars` of the where clause predicate (i.e. this HIR ty's
+                // parent) will include `'a` AND all the early- and late-bound vars of the
+                // method. But when lowering the RTN type, we just want the list of vars
+                // we used to resolve the trait ref. We explicitly stored those back onto
+                // the item segment, since there's no other good place to put them.
+                </span><span class="kw">let </span>candidate =
+                    ty::Binder::bind_with_vars(trait_ref, tcx.late_bound_vars(item_segment.hir_id));
+
+                <span class="kw">match </span><span class="self">self</span>.lower_return_type_notation_ty(candidate, item_def_id, hir_ty.span) {
+                    <span class="prelude-val">Ok</span>(ty) =&gt; Ty::new_alias(tcx, ty::Projection, ty),
+                    <span class="prelude-val">Err</span>(guar) =&gt; Ty::new_error(tcx, guar),
+                }
+            }
+            hir::QPath::TypeRelative(qself, item_segment)
+                <span class="kw">if </span>item_segment.args.is_some_and(|args| {
+                    <span class="macro">matches!</span>(args.parenthesized, hir::GenericArgsParentheses::ReturnTypeNotation)
+                }) =&gt;
+            {
+                <span class="kw">match </span><span class="self">self
+                    </span>.resolve_type_relative_return_type_notation(
+                        qself,
+                        item_segment,
+                        hir_ty.hir_id,
+                        hir_ty.span,
+                    )
+                    .and_then(|(candidate, item_def_id)| {
+                        <span class="self">self</span>.lower_return_type_notation_ty(candidate, item_def_id, hir_ty.span)
+                    }) {
+                    <span class="prelude-val">Ok</span>(ty) =&gt; Ty::new_alias(tcx, ty::Projection, ty),
+                    <span class="prelude-val">Err</span>(guar) =&gt; Ty::new_error(tcx, guar),
+                }
+            }
+            <span class="kw">_ </span>=&gt; <span class="self">self</span>.lower_ty(hir_ty),
+        }
+    }
+
+    <span class="doccomment">/// Perform type-dependent lookup for a *method* for return type notation.
+    /// This generally mirrors `&lt;dyn HirTyLowerer&gt;::lower_assoc_path`.
+    </span><span class="kw">fn </span>resolve_type_relative_return_type_notation(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        qself: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>hir::Ty&lt;<span class="lifetime">'tcx</span>&gt;,
+        item_segment: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>hir::PathSegment&lt;<span class="lifetime">'tcx</span>&gt;,
+        qpath_hir_id: HirId,
+        span: Span,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(ty::PolyTraitRef&lt;<span class="lifetime">'tcx</span>&gt;, DefId), ErrorGuaranteed&gt; {
+        <span class="kw">let </span>tcx = <span class="self">self</span>.tcx();
+        <span class="kw">let </span>qself_ty = <span class="self">self</span>.lower_ty(qself);
+        <span class="kw">let </span>assoc_ident = item_segment.ident;
+        <span class="kw">let </span>qself_res = <span class="kw">if let </span>hir::TyKind::Path(hir::QPath::Resolved(<span class="kw">_</span>, path)) = <span class="kw-2">&amp;</span>qself.kind {
+            path.res
+        } <span class="kw">else </span>{
+            Res::Err
+        };
+
+        <span class="kw">let </span>bound = <span class="kw">match </span>(qself_ty.kind(), qself_res) {
+            (<span class="kw">_</span>, Res::SelfTyAlias { alias_to: impl_def_id, is_trait_impl: <span class="bool-val">true</span>, .. }) =&gt; {
+                <span class="comment">// `Self` in an impl of a trait -- we have a concrete self type and a
+                // trait reference.
+                </span><span class="kw">let </span><span class="prelude-val">Some</span>(trait_ref) = tcx.impl_trait_ref(impl_def_id) <span class="kw">else </span>{
+                    <span class="comment">// A cycle error occurred, most likely.
+                    </span><span class="self">self</span>.dcx().span_bug(span, <span class="string">"expected cycle error"</span>);
+                };
+
+                <span class="self">self</span>.probe_single_bound_for_assoc_item(
+                    || {
+                        traits::supertraits(
+                            tcx,
+                            ty::Binder::dummy(trait_ref.instantiate_identity()),
+                        )
+                    },
+                    AssocItemQSelf::SelfTyAlias,
+                    ty::AssocKind::Fn,
+                    assoc_ident,
+                    span,
+                    <span class="prelude-val">None</span>,
+                )<span class="question-mark">?
+            </span>}
+            (
+                <span class="kw-2">&amp;</span>ty::Param(<span class="kw">_</span>),
+                Res::SelfTyParam { trait_: param_did } | Res::Def(DefKind::TyParam, param_did),
+            ) =&gt; <span class="self">self</span>.probe_single_ty_param_bound_for_assoc_item(
+                param_did.expect_local(),
+                qself.span,
+                ty::AssocKind::Fn,
+                assoc_ident,
+                span,
+            )<span class="question-mark">?</span>,
+            <span class="kw">_ </span>=&gt; {
+                <span class="kw">if let </span><span class="prelude-val">Err</span>(reported) = qself_ty.error_reported() {
+                    <span class="kw">return </span><span class="prelude-val">Err</span>(reported);
+                } <span class="kw">else </span>{
+                    <span class="comment">// FIXME(return_type_notation): Provide some structured suggestion here.
+                    </span><span class="kw">let </span>err = <span class="macro">struct_span_code_err!</span>(
+                        <span class="self">self</span>.dcx(),
+                        span,
+                        E0223,
+                        <span class="string">"ambiguous associated function"
+                    </span>);
+                    <span class="kw">return </span><span class="prelude-val">Err</span>(err.emit());
+                }
+            }
+        };
+
+        <span class="comment">// Don't let `T::method` resolve to some `for&lt;'a&gt; &lt;T as Tr&lt;'a&gt;&gt;::method`,
+        // which may happen via a higher-ranked where clause or supertrait.
+        // This is the same restrictions as associated types; even though we could
+        // support it, it just makes things a lot more difficult to support in
+        // `resolve_bound_vars`, since we'd need to introduce those as elided
+        // bound vars on the where clause too.
+        </span><span class="kw">if </span>bound.has_bound_vars() {
+            <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="self">self</span>.tcx().dcx().emit_err(
+                errors::AssociatedItemTraitUninferredGenericParams {
+                    span,
+                    inferred_sugg: <span class="prelude-val">Some</span>(span.with_hi(item_segment.ident.span.lo())),
+                    bound: <span class="macro">format!</span>(<span class="string">"{}::"</span>, tcx.anonymize_bound_vars(bound).skip_binder(),),
+                    mpart_sugg: <span class="prelude-val">None</span>,
+                    what: <span class="string">"function"</span>,
+                },
+            ));
+        }
+
+        <span class="kw">let </span>trait_def_id = bound.def_id();
+        <span class="kw">let </span>assoc_ty = <span class="self">self
+            </span>.probe_assoc_item(assoc_ident, ty::AssocKind::Fn, qpath_hir_id, span, trait_def_id)
+            .expect(<span class="string">"failed to find associated type"</span>);
+
+        <span class="prelude-val">Ok</span>((bound, assoc_ty.def_id))
+    }
+
+    <span class="doccomment">/// Do the common parts of lowering an RTN type. This involves extending the
+    /// candidate binder to include all of the early- and late-bound vars that are
+    /// defined on the function itself, and constructing a projection to the RPITIT
+    /// return type of that function.
+    </span><span class="kw">fn </span>lower_return_type_notation_ty(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        candidate: ty::PolyTraitRef&lt;<span class="lifetime">'tcx</span>&gt;,
+        item_def_id: DefId,
+        path_span: Span,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;ty::AliasTy&lt;<span class="lifetime">'tcx</span>&gt;, ErrorGuaranteed&gt; {
+        <span class="kw">let </span>tcx = <span class="self">self</span>.tcx();
+        <span class="kw">let </span><span class="kw-2">mut </span>emitted_bad_param_err = <span class="prelude-val">None</span>;
+        <span class="comment">// If we have an method return type bound, then we need to instantiate
+        // the method's early bound params with suitable late-bound params.
+        </span><span class="kw">let </span><span class="kw-2">mut </span>num_bound_vars = candidate.bound_vars().len();
+        <span class="kw">let </span>args = candidate.skip_binder().args.extend_to(tcx, item_def_id, |param, <span class="kw">_</span>| {
+            <span class="kw">let </span>arg = <span class="kw">match </span>param.kind {
+                ty::GenericParamDefKind::Lifetime =&gt; {
+                    ty::Region::new_bound(tcx, ty::INNERMOST, ty::BoundRegion {
+                        var: ty::BoundVar::from_usize(num_bound_vars),
+                        kind: ty::BoundRegionKind::BrNamed(param.def_id, param.name),
+                    })
+                    .into()
+                }
+                ty::GenericParamDefKind::Type { .. } =&gt; {
+                    <span class="kw">let </span>guar = <span class="kw-2">*</span>emitted_bad_param_err.get_or_insert_with(|| {
+                        <span class="self">self</span>.dcx().emit_err(<span class="kw">crate</span>::errors::ReturnTypeNotationIllegalParam::Type {
+                            span: path_span,
+                            param_span: tcx.def_span(param.def_id),
+                        })
+                    });
+                    Ty::new_error(tcx, guar).into()
+                }
+                ty::GenericParamDefKind::Const { .. } =&gt; {
+                    <span class="kw">let </span>guar = <span class="kw-2">*</span>emitted_bad_param_err.get_or_insert_with(|| {
+                        <span class="self">self</span>.dcx().emit_err(<span class="kw">crate</span>::errors::ReturnTypeNotationIllegalParam::Const {
+                            span: path_span,
+                            param_span: tcx.def_span(param.def_id),
+                        })
+                    });
+                    ty::Const::new_error(tcx, guar).into()
+                }
+            };
+            num_bound_vars += <span class="number">1</span>;
+            arg
+        });
+
+        <span class="comment">// Next, we need to check that the return-type notation is being used on
+        // an RPITIT (return-position impl trait in trait) or AFIT (async fn in trait).
+        </span><span class="kw">let </span>output = tcx.fn_sig(item_def_id).skip_binder().output();
+        <span class="kw">let </span>output = <span class="kw">if let </span>ty::Alias(ty::Projection, alias_ty) = <span class="kw-2">*</span>output.skip_binder().kind()
+            &amp;&amp; tcx.is_impl_trait_in_trait(alias_ty.def_id)
+        {
+            alias_ty
+        } <span class="kw">else </span>{
+            <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="self">self</span>.dcx().emit_err(<span class="kw">crate</span>::errors::ReturnTypeNotationOnNonRpitit {
+                span: path_span,
+                ty: tcx.liberate_late_bound_regions(item_def_id, output),
+                fn_span: tcx.hir().span_if_local(item_def_id),
+                note: (),
+            }));
+        };
+
+        <span class="comment">// Finally, move the fn return type's bound vars over to account for the early bound
+        // params (and trait ref's late bound params). This logic is very similar to
+        // `rustc_middle::ty::predicate::Clause::instantiate_supertrait`
+        // and it's no coincidence why.
+        </span><span class="kw">let </span>shifted_output = tcx.shift_bound_var_indices(num_bound_vars, output);
+        <span class="prelude-val">Ok</span>(ty::EarlyBinder::bind(shifted_output).instantiate(tcx, args))
+    }
 }
 
 <span class="doccomment">/// Detect and reject early-bound &amp; escaping late-bound generic params in the type of assoc const bindings.
 ///
-/// FIXME(const_generics): This is a temporary and semi-artifical restriction until the
+/// FIXME(const_generics): This is a temporary and semi-artificial restriction until the
 /// arrival of *generic const generics*[^1].
 ///
 /// It might actually be possible that we can already support early-bound generic params

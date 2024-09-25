@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/machine.rs`."><title>machine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/machine.rs`."><title>machine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_const_eval/interpret/</div>machine.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -694,7 +695,47 @@
 <a href="#694" id="694">694</a>
 <a href="#695" id="695">695</a>
 <a href="#696" id="696">696</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! This module contains everything needed to instantiate an interpreter.
+<a href="#697" id="697">697</a>
+<a href="#698" id="698">698</a>
+<a href="#699" id="699">699</a>
+<a href="#700" id="700">700</a>
+<a href="#701" id="701">701</a>
+<a href="#702" id="702">702</a>
+<a href="#703" id="703">703</a>
+<a href="#704" id="704">704</a>
+<a href="#705" id="705">705</a>
+<a href="#706" id="706">706</a>
+<a href="#707" id="707">707</a>
+<a href="#708" id="708">708</a>
+<a href="#709" id="709">709</a>
+<a href="#710" id="710">710</a>
+<a href="#711" id="711">711</a>
+<a href="#712" id="712">712</a>
+<a href="#713" id="713">713</a>
+<a href="#714" id="714">714</a>
+<a href="#715" id="715">715</a>
+<a href="#716" id="716">716</a>
+<a href="#717" id="717">717</a>
+<a href="#718" id="718">718</a>
+<a href="#719" id="719">719</a>
+<a href="#720" id="720">720</a>
+<a href="#721" id="721">721</a>
+<a href="#722" id="722">722</a>
+<a href="#723" id="723">723</a>
+<a href="#724" id="724">724</a>
+<a href="#725" id="725">725</a>
+<a href="#726" id="726">726</a>
+<a href="#727" id="727">727</a>
+<a href="#728" id="728">728</a>
+<a href="#729" id="729">729</a>
+<a href="#730" id="730">730</a>
+<a href="#731" id="731">731</a>
+<a href="#732" id="732">732</a>
+<a href="#733" id="733">733</a>
+<a href="#734" id="734">734</a>
+<a href="#735" id="735">735</a>
+<a href="#736" id="736">736</a>
+<a href="#737" id="737">737</a></pre></div><pre class="rust"><code><span class="doccomment">//! This module contains everything needed to instantiate an interpreter.
 //! This separation exists to ensure that no fancy miri features like
 //! interpreting common C functions leak into CTFE.
 
@@ -705,17 +746,18 @@
 <span class="kw">use </span>rustc_apfloat::{Float, FloatConvert};
 <span class="kw">use </span>rustc_ast::{InlineAsmOptions, InlineAsmTemplatePiece};
 <span class="kw">use </span>rustc_middle::query::TyCtxtAt;
+<span class="kw">use </span>rustc_middle::ty::Ty;
 <span class="kw">use </span>rustc_middle::ty::layout::TyAndLayout;
 <span class="kw">use </span>rustc_middle::{mir, ty};
-<span class="kw">use </span>rustc_span::def_id::DefId;
 <span class="kw">use </span>rustc_span::Span;
+<span class="kw">use </span>rustc_span::def_id::DefId;
 <span class="kw">use </span>rustc_target::abi::{Align, Size};
 <span class="kw">use </span>rustc_target::spec::abi::Abi <span class="kw">as </span>CallAbi;
 
 <span class="kw">use super</span>::{
-    throw_unsup, throw_unsup_format, AllocBytes, AllocId, AllocKind, AllocRange, Allocation,
-    ConstAllocation, CtfeProvenance, FnArg, Frame, ImmTy, InterpCx, InterpResult, MPlaceTy,
-    MemoryKind, Misalignment, OpTy, PlaceTy, Pointer, Provenance, CTFE_ALLOC_SALT,
+    AllocBytes, AllocId, AllocKind, AllocRange, Allocation, CTFE_ALLOC_SALT, ConstAllocation,
+    CtfeProvenance, FnArg, Frame, ImmTy, InterpCx, InterpResult, MPlaceTy, MemoryKind,
+    Misalignment, OpTy, PlaceTy, Pointer, Provenance, RangeSet, throw_unsup, throw_unsup_format,
 };
 
 <span class="doccomment">/// Data returned by [`Machine::after_stack_pop`], and consumed by
@@ -869,11 +911,6 @@
         <span class="bool-val">false
     </span>}
 
-    <span class="doccomment">/// Whether function calls should be [ABI](CallAbi)-checked.
-    </span><span class="kw">fn </span>enforce_abi(_ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;) -&gt; bool {
-        <span class="bool-val">true
-    </span>}
-
     <span class="doccomment">/// Whether Assert(OverflowNeg) and Assert(Overflow) MIR terminators should actually
     /// check for overflow.
     </span><span class="kw">fn </span>ignore_optional_overflow_checks(_ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;) -&gt; bool;
@@ -934,6 +971,13 @@
         unwind: mir::UnwindAction,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;ty::Instance&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt;;
 
+    <span class="doccomment">/// Check whether the given function may be executed on the current machine, in terms of the
+    /// target features is requires.
+    </span><span class="kw">fn </span>check_fn_target_features(
+        _ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;,
+        _instance: ty::Instance&lt;<span class="lifetime">'tcx</span>&gt;,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt;;
+
     <span class="doccomment">/// Called to evaluate `Assert` MIR terminators that trigger a panic.
     </span><span class="kw">fn </span>assert_panic(
         ecx: <span class="kw-2">&amp;mut </span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;,
@@ -975,6 +1019,9 @@
     </span><span class="kw">fn </span>before_terminator(_ecx: <span class="kw-2">&amp;mut </span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="prelude-val">Ok</span>(())
     }
+
+    <span class="doccomment">/// Determines the result of a `NullaryOp::UbChecks` invocation.
+    </span><span class="kw">fn </span>ub_checks(_ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, bool&gt;;
 
     <span class="doccomment">/// Called when the interpreter encounters a `StatementKind::ConstEvalCounter` instruction.
     /// You can use this to detect long or endlessly running programs.
@@ -1053,17 +1100,7 @@
         ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;,
         id: AllocId,
         alloc: <span class="kw-2">&amp;</span><span class="lifetime">'b </span>Allocation,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Cow&lt;<span class="lifetime">'b</span>, Allocation&lt;<span class="self">Self</span>::Provenance, <span class="self">Self</span>::AllocExtra, <span class="self">Self</span>::Bytes&gt;&gt;&gt;
-    {
-        <span class="comment">// The default implementation does a copy; CTFE machines have a more efficient implementation
-        // based on their particular choice for `Provenance`, `AllocExtra`, and `Bytes`.
-        </span><span class="kw">let </span>kind = <span class="self">Self</span>::GLOBAL_KIND
-            .expect(<span class="string">"if GLOBAL_KIND is None, adjust_global_allocation must be overwritten"</span>);
-        <span class="kw">let </span>alloc = alloc.adjust_from_tcx(<span class="kw-2">&amp;</span>ecx.tcx, |ptr| ecx.global_root_pointer(ptr))<span class="question-mark">?</span>;
-        <span class="kw">let </span>extra =
-            <span class="self">Self</span>::init_alloc_extra(ecx, id, MemoryKind::Machine(kind), alloc.size(), alloc.align)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(Cow::Owned(alloc.with_extra(extra)))
-    }
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Cow&lt;<span class="lifetime">'b</span>, Allocation&lt;<span class="self">Self</span>::Provenance, <span class="self">Self</span>::AllocExtra, <span class="self">Self</span>::Bytes&gt;&gt;&gt;;
 
     <span class="doccomment">/// Initialize the extra state of an allocation.
     ///
@@ -1240,10 +1277,29 @@
         <span class="prelude-val">Ok</span>(ReturnAction::Normal)
     }
 
+    <span class="doccomment">/// Called immediately after an "immediate" local variable is read
+    /// (i.e., this is called for reads that do not end up accessing addressable memory).
+    </span><span class="attr">#[inline(always)]
+    </span><span class="kw">fn </span>after_local_read(_ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;, _local: mir::Local) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="doccomment">/// Called immediately after an "immediate" local variable is assigned a new value
+    /// (i.e., this is called for writes that do not end up in memory).
+    /// `storage_live` indicates whether this is the initial write upon `StorageLive`.
+    </span><span class="attr">#[inline(always)]
+    </span><span class="kw">fn </span>after_local_write(
+        _ecx: <span class="kw-2">&amp;mut </span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;,
+        _local: mir::Local,
+        _storage_live: bool,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="prelude-val">Ok</span>(())
+    }
+
     <span class="doccomment">/// Called immediately after actual memory was allocated for a local
     /// but before the local's stack frame is updated to point to that memory.
     </span><span class="attr">#[inline(always)]
-    </span><span class="kw">fn </span>after_local_allocated(
+    </span><span class="kw">fn </span>after_local_moved_to_memory(
         _ecx: <span class="kw-2">&amp;mut </span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;,
         _local: mir::Local,
         _mplace: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>::Provenance&gt;,
@@ -1279,6 +1335,15 @@
         ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;,
         instance: <span class="prelude-ty">Option</span>&lt;ty::Instance&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
     ) -&gt; usize;
+
+    <span class="kw">fn </span>cached_union_data_range&lt;<span class="lifetime">'e</span>&gt;(
+        _ecx: <span class="kw-2">&amp;</span><span class="lifetime">'e </span><span class="kw-2">mut </span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;,
+        _ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
+        compute_range: <span class="kw">impl </span>FnOnce() -&gt; RangeSet,
+    ) -&gt; Cow&lt;<span class="lifetime">'e</span>, RangeSet&gt; {
+        <span class="comment">// Default to no caching.
+        </span>Cow::Owned(compute_range())
+    }
 }
 
 <span class="doccomment">/// A lot of the flexibility above is just needed for `Miri`, but all "compile-time" machines
@@ -1311,6 +1376,16 @@
     }
 
     <span class="attr">#[inline(always)]
+    </span><span class="kw">fn </span>check_fn_target_features(
+        _ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="macro-nonterminal">$tcx</span>, <span class="self">Self</span>&gt;,
+        _instance: ty::Instance&lt;<span class="macro-nonterminal">$tcx</span>&gt;,
+    ) -&gt; InterpResult&lt;<span class="macro-nonterminal">$tcx</span>&gt; {
+        <span class="comment">// For now we don't do any checking here. We can't use `tcx.sess` because that can differ
+        // between crates, and we need to ensure that const-eval always behaves the same.
+        </span><span class="prelude-val">Ok</span>(())
+    }
+
+    <span class="attr">#[inline(always)]
     </span><span class="kw">fn </span>call_extra_fn(
         _ecx: <span class="kw-2">&amp;mut </span>InterpCx&lt;<span class="macro-nonterminal">$tcx</span>, <span class="self">Self</span>&gt;,
         fn_val: !,
@@ -1321,6 +1396,13 @@
         _unwind: mir::UnwindAction,
     ) -&gt; InterpResult&lt;<span class="macro-nonterminal">$tcx</span>&gt; {
         <span class="kw">match </span>fn_val {}
+    }
+
+    <span class="attr">#[inline(always)]
+    </span><span class="kw">fn </span>ub_checks(_ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="macro-nonterminal">$tcx</span>, <span class="self">Self</span>&gt;) -&gt; InterpResult&lt;<span class="macro-nonterminal">$tcx</span>, bool&gt; {
+        <span class="comment">// We can't look at `tcx.sess` here as that can differ across crates, which can lead to
+        // unsound differences in evaluating the same constant at different instantiation sites.
+        </span><span class="prelude-val">Ok</span>(<span class="bool-val">true</span>)
     }
 
     <span class="attr">#[inline(always)]

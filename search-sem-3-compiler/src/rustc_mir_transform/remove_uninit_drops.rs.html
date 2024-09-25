@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/remove_uninit_drops.rs`."><title>remove_uninit_drops.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/remove_uninit_drops.rs`."><title>remove_uninit_drops.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>remove_uninit_drops.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -150,17 +151,13 @@
 <a href="#150" id="150">150</a>
 <a href="#151" id="151">151</a>
 <a href="#152" id="152">152</a>
-<a href="#153" id="153">153</a>
-<a href="#154" id="154">154</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_index::bit_set::ChunkedBitSet;
+<a href="#153" id="153">153</a></pre></div><pre class="rust"><code><span class="kw">use </span>rustc_index::bit_set::ChunkedBitSet;
 <span class="kw">use </span>rustc_middle::mir::{Body, TerminatorKind};
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, GenericArgsRef, ParamEnv, Ty, TyCtxt, VariantDef};
 <span class="kw">use </span>rustc_mir_dataflow::impls::MaybeInitializedPlaces;
 <span class="kw">use </span>rustc_mir_dataflow::move_paths::{LookupResult, MoveData, MovePathIndex};
-<span class="kw">use </span>rustc_mir_dataflow::{move_path_children_matching, Analysis, MaybeReachable};
+<span class="kw">use </span>rustc_mir_dataflow::{Analysis, MaybeReachable, move_path_children_matching};
 <span class="kw">use </span>rustc_target::abi::FieldIdx;
-
-<span class="kw">use </span><span class="kw">crate</span>::MirPass;
 
 <span class="doccomment">/// Removes `Drop` terminators whose target is known to be uninitialized at
 /// that point.
@@ -170,9 +167,9 @@
 /// like [#90770].
 ///
 /// [#90770]: https://github.com/rust-lang/rust/issues/90770
-</span><span class="kw">pub struct </span>RemoveUninitDrops;
+</span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>RemoveUninitDrops;
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>RemoveUninitDrops {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">crate</span>::MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>RemoveUninitDrops {
     <span class="kw">fn </span>run_pass(<span class="kw-2">&amp;</span><span class="self">self</span>, tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;mut </span>Body&lt;<span class="lifetime">'tcx</span>&gt;) {
         <span class="kw">let </span>param_env = tcx.param_env(body.source.def_id());
         <span class="kw">let </span>move_data =
@@ -262,8 +259,9 @@
             // If its projection *is* present in `MoveData`, then the field may have been moved
             // from separate from its parent. Recurse.
             </span>adt.variants().iter_enumerated().any(|(vid, variant)| {
-                <span class="comment">// Enums have multiple variants, which are discriminated with a `Downcast` projection.
-                // Structs have a single variant, and don't use a `Downcast` projection.
+                <span class="comment">// Enums have multiple variants, which are discriminated with a `Downcast`
+                // projection. Structs have a single variant, and don't use a `Downcast`
+                // projection.
                 </span><span class="kw">let </span>mpi = <span class="kw">if </span>adt.is_enum() {
                     <span class="kw">let </span>downcast =
                         move_path_children_matching(move_data, mpi, |x| x.is_downcast_to(vid));

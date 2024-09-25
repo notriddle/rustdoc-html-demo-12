@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["provided_to_erased"],"type":["Key","LocalKey","ProvidedValue","Storage","Value"]};

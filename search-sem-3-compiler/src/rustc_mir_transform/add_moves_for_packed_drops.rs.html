@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/add_moves_for_packed_drops.rs`."><title>add_moves_for_packed_drops.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/add_moves_for_packed_drops.rs`."><title>add_moves_for_packed_drops.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>add_moves_for_packed_drops.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -101,13 +102,10 @@
 <a href="#101" id="101">101</a>
 <a href="#102" id="102">102</a>
 <a href="#103" id="103">103</a>
-<a href="#104" id="104">104</a>
-<a href="#105" id="105">105</a>
-<a href="#106" id="106">106</a>
-<a href="#107" id="107">107</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_middle::mir::patch::MirPatch;
+<a href="#104" id="104">104</a></pre></div><pre class="rust"><code><span class="kw">use </span>rustc_middle::mir::patch::MirPatch;
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::ty::TyCtxt;
+<span class="kw">use </span>tracing::debug;
 
 <span class="kw">use </span><span class="kw">crate</span>::util;
 
@@ -141,40 +139,39 @@
 ///
 /// The storage instructions are required to avoid stack space
 /// blowup.
-</span><span class="kw">pub struct </span>AddMovesForPackedDrops;
+</span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>AddMovesForPackedDrops;
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>AddMovesForPackedDrops {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">crate</span>::MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>AddMovesForPackedDrops {
     <span class="kw">fn </span>run_pass(<span class="kw-2">&amp;</span><span class="self">self</span>, tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;mut </span>Body&lt;<span class="lifetime">'tcx</span>&gt;) {
         <span class="macro">debug!</span>(<span class="string">"add_moves_for_packed_drops({:?} @ {:?})"</span>, body.source, body.span);
-        add_moves_for_packed_drops(tcx, body);
-    }
-}
 
-<span class="kw">pub fn </span>add_moves_for_packed_drops&lt;<span class="lifetime">'tcx</span>&gt;(tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;mut </span>Body&lt;<span class="lifetime">'tcx</span>&gt;) {
-    <span class="kw">let </span>patch = add_moves_for_packed_drops_patch(tcx, body);
-    patch.apply(body);
-}
+        <span class="kw">let </span>def_id = body.source.def_id();
+        <span class="kw">let </span><span class="kw-2">mut </span>patch = MirPatch::new(body);
+        <span class="kw">let </span>param_env = tcx.param_env(def_id);
 
-<span class="kw">fn </span>add_moves_for_packed_drops_patch&lt;<span class="lifetime">'tcx</span>&gt;(tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;</span>Body&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; MirPatch&lt;<span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">let </span>def_id = body.source.def_id();
-    <span class="kw">let </span><span class="kw-2">mut </span>patch = MirPatch::new(body);
-    <span class="kw">let </span>param_env = tcx.param_env(def_id);
+        <span class="kw">for </span>(bb, data) <span class="kw">in </span>body.basic_blocks.iter_enumerated() {
+            <span class="kw">let </span>loc = Location { block: bb, statement_index: data.statements.len() };
+            <span class="kw">let </span>terminator = data.terminator();
 
-    <span class="kw">for </span>(bb, data) <span class="kw">in </span>body.basic_blocks.iter_enumerated() {
-        <span class="kw">let </span>loc = Location { block: bb, statement_index: data.statements.len() };
-        <span class="kw">let </span>terminator = data.terminator();
-
-        <span class="kw">match </span>terminator.kind {
-            TerminatorKind::Drop { place, .. }
-                <span class="kw">if </span>util::is_disaligned(tcx, body, param_env, place) =&gt;
-            {
-                add_move_for_packed_drop(tcx, body, <span class="kw-2">&amp;mut </span>patch, terminator, loc, data.is_cleanup);
+            <span class="kw">match </span>terminator.kind {
+                TerminatorKind::Drop { place, .. }
+                    <span class="kw">if </span>util::is_disaligned(tcx, body, param_env, place) =&gt;
+                {
+                    add_move_for_packed_drop(
+                        tcx,
+                        body,
+                        <span class="kw-2">&amp;mut </span>patch,
+                        terminator,
+                        loc,
+                        data.is_cleanup,
+                    );
+                }
+                <span class="kw">_ </span>=&gt; {}
             }
-            <span class="kw">_ </span>=&gt; {}
         }
-    }
 
-    patch
+        patch.apply(body);
+    }
 }
 
 <span class="kw">fn </span>add_move_for_packed_drop&lt;<span class="lifetime">'tcx</span>&gt;(
@@ -192,7 +189,7 @@
 
     <span class="kw">let </span>source_info = terminator.source_info;
     <span class="kw">let </span>ty = place.ty(body, tcx).ty;
-    <span class="kw">let </span>temp = patch.new_temp(ty, terminator.source_info.span);
+    <span class="kw">let </span>temp = patch.new_temp(ty, source_info.span);
 
     <span class="kw">let </span>storage_dead_block = patch.new_block(BasicBlockData {
         statements: <span class="macro">vec!</span>[Statement { source_info, kind: StatementKind::StorageDead(temp) }],
@@ -202,14 +199,11 @@
 
     patch.add_statement(loc, StatementKind::StorageLive(temp));
     patch.add_assign(loc, Place::from(temp), Rvalue::Use(Operand::Move(<span class="kw-2">*</span>place)));
-    patch.patch_terminator(
-        loc.block,
-        TerminatorKind::Drop {
-            place: Place::from(temp),
-            target: storage_dead_block,
-            unwind,
-            replace,
-        },
-    );
+    patch.patch_terminator(loc.block, TerminatorKind::Drop {
+        place: Place::from(temp),
+        target: storage_dead_block,
+        unwind,
+        replace,
+    });
 }
 </code></pre></div></section></main></body></html>

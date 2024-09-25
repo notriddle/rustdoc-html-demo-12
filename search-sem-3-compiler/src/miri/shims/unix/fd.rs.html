@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/unix/fd.rs`."><title>fd.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/unix/fd.rs`."><title>fd.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/shims/unix/</div>fd.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -574,17 +575,143 @@
 <a href="#574" id="574">574</a>
 <a href="#575" id="575">575</a>
 <a href="#576" id="576">576</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! General management of file descriptors, and support for
+<a href="#577" id="577">577</a>
+<a href="#578" id="578">578</a>
+<a href="#579" id="579">579</a>
+<a href="#580" id="580">580</a>
+<a href="#581" id="581">581</a>
+<a href="#582" id="582">582</a>
+<a href="#583" id="583">583</a>
+<a href="#584" id="584">584</a>
+<a href="#585" id="585">585</a>
+<a href="#586" id="586">586</a>
+<a href="#587" id="587">587</a>
+<a href="#588" id="588">588</a>
+<a href="#589" id="589">589</a>
+<a href="#590" id="590">590</a>
+<a href="#591" id="591">591</a>
+<a href="#592" id="592">592</a>
+<a href="#593" id="593">593</a>
+<a href="#594" id="594">594</a>
+<a href="#595" id="595">595</a>
+<a href="#596" id="596">596</a>
+<a href="#597" id="597">597</a>
+<a href="#598" id="598">598</a>
+<a href="#599" id="599">599</a>
+<a href="#600" id="600">600</a>
+<a href="#601" id="601">601</a>
+<a href="#602" id="602">602</a>
+<a href="#603" id="603">603</a>
+<a href="#604" id="604">604</a>
+<a href="#605" id="605">605</a>
+<a href="#606" id="606">606</a>
+<a href="#607" id="607">607</a>
+<a href="#608" id="608">608</a>
+<a href="#609" id="609">609</a>
+<a href="#610" id="610">610</a>
+<a href="#611" id="611">611</a>
+<a href="#612" id="612">612</a>
+<a href="#613" id="613">613</a>
+<a href="#614" id="614">614</a>
+<a href="#615" id="615">615</a>
+<a href="#616" id="616">616</a>
+<a href="#617" id="617">617</a>
+<a href="#618" id="618">618</a>
+<a href="#619" id="619">619</a>
+<a href="#620" id="620">620</a>
+<a href="#621" id="621">621</a>
+<a href="#622" id="622">622</a>
+<a href="#623" id="623">623</a>
+<a href="#624" id="624">624</a>
+<a href="#625" id="625">625</a>
+<a href="#626" id="626">626</a>
+<a href="#627" id="627">627</a>
+<a href="#628" id="628">628</a>
+<a href="#629" id="629">629</a>
+<a href="#630" id="630">630</a>
+<a href="#631" id="631">631</a>
+<a href="#632" id="632">632</a>
+<a href="#633" id="633">633</a>
+<a href="#634" id="634">634</a>
+<a href="#635" id="635">635</a>
+<a href="#636" id="636">636</a>
+<a href="#637" id="637">637</a>
+<a href="#638" id="638">638</a>
+<a href="#639" id="639">639</a>
+<a href="#640" id="640">640</a>
+<a href="#641" id="641">641</a>
+<a href="#642" id="642">642</a>
+<a href="#643" id="643">643</a>
+<a href="#644" id="644">644</a>
+<a href="#645" id="645">645</a>
+<a href="#646" id="646">646</a>
+<a href="#647" id="647">647</a>
+<a href="#648" id="648">648</a>
+<a href="#649" id="649">649</a>
+<a href="#650" id="650">650</a>
+<a href="#651" id="651">651</a>
+<a href="#652" id="652">652</a>
+<a href="#653" id="653">653</a>
+<a href="#654" id="654">654</a>
+<a href="#655" id="655">655</a>
+<a href="#656" id="656">656</a>
+<a href="#657" id="657">657</a>
+<a href="#658" id="658">658</a>
+<a href="#659" id="659">659</a>
+<a href="#660" id="660">660</a>
+<a href="#661" id="661">661</a>
+<a href="#662" id="662">662</a>
+<a href="#663" id="663">663</a>
+<a href="#664" id="664">664</a>
+<a href="#665" id="665">665</a>
+<a href="#666" id="666">666</a>
+<a href="#667" id="667">667</a>
+<a href="#668" id="668">668</a>
+<a href="#669" id="669">669</a>
+<a href="#670" id="670">670</a>
+<a href="#671" id="671">671</a>
+<a href="#672" id="672">672</a>
+<a href="#673" id="673">673</a>
+<a href="#674" id="674">674</a>
+<a href="#675" id="675">675</a>
+<a href="#676" id="676">676</a>
+<a href="#677" id="677">677</a>
+<a href="#678" id="678">678</a>
+<a href="#679" id="679">679</a>
+<a href="#680" id="680">680</a>
+<a href="#681" id="681">681</a>
+<a href="#682" id="682">682</a>
+<a href="#683" id="683">683</a>
+<a href="#684" id="684">684</a>
+<a href="#685" id="685">685</a>
+<a href="#686" id="686">686</a>
+<a href="#687" id="687">687</a>
+<a href="#688" id="688">688</a>
+<a href="#689" id="689">689</a>
+<a href="#690" id="690">690</a>
+<a href="#691" id="691">691</a>
+<a href="#692" id="692">692</a>
+<a href="#693" id="693">693</a>
+<a href="#694" id="694">694</a>
+<a href="#695" id="695">695</a>
+<a href="#696" id="696">696</a>
+<a href="#697" id="697">697</a>
+<a href="#698" id="698">698</a>
+<a href="#699" id="699">699</a>
+<a href="#700" id="700">700</a>
+<a href="#701" id="701">701</a></pre></div><pre class="rust"><code><span class="doccomment">//! General management of file descriptors, and support for
 //! standard file descriptors (stdin/stdout/stderr).
 
 </span><span class="kw">use </span>std::any::Any;
-<span class="kw">use </span>std::cell::{Ref, RefCell, RefMut};
 <span class="kw">use </span>std::collections::BTreeMap;
 <span class="kw">use </span>std::io::{<span class="self">self</span>, ErrorKind, IsTerminal, Read, SeekFrom, Write};
+<span class="kw">use </span>std::ops::Deref;
 <span class="kw">use </span>std::rc::Rc;
+<span class="kw">use </span>std::rc::Weak;
 
 <span class="kw">use </span>rustc_target::abi::Size;
 
+<span class="kw">use </span><span class="kw">crate</span>::shims::unix::linux::epoll::EpollReadyEvents;
 <span class="kw">use </span><span class="kw">crate</span>::shims::unix::<span class="kw-2">*</span>;
 <span class="kw">use crate</span>::<span class="kw-2">*</span>;
 
@@ -595,58 +722,75 @@
     Unlock,
 }
 
-<span class="doccomment">/// Represents an open file descriptor.
+<span class="doccomment">/// Represents an open file description.
 </span><span class="kw">pub trait </span>FileDescription: std::fmt::Debug + Any {
     <span class="kw">fn </span>name(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str;
 
-    <span class="doccomment">/// Reads as much as possible into the given buffer, and returns the number of bytes read.
+    <span class="doccomment">/// Reads as much as possible into the given buffer `ptr`.
+    /// `len` indicates how many bytes we should try to read.
+    /// `dest` is where the return value should be stored: number of bytes read, or `-1` in case of error.
     </span><span class="kw">fn </span>read&lt;<span class="lifetime">'tcx</span>&gt;(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        _self_ref: <span class="kw-2">&amp;</span>FileDescriptionRef,
         _communicate_allowed: bool,
-        _bytes: <span class="kw-2">&amp;mut </span>[u8],
+        _ptr: Pointer,
+        _len: usize,
+        _dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
         _ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, io::Result&lt;usize&gt;&gt; {
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="macro">throw_unsup_format!</span>(<span class="string">"cannot read from {}"</span>, <span class="self">self</span>.name());
     }
 
-    <span class="doccomment">/// Writes as much as possible from the given buffer, and returns the number of bytes written.
+    <span class="doccomment">/// Writes as much as possible from the given buffer `ptr`.
+    /// `len` indicates how many bytes we should try to write.
+    /// `dest` is where the return value should be stored: number of bytes written, or `-1` in case of error.
     </span><span class="kw">fn </span>write&lt;<span class="lifetime">'tcx</span>&gt;(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        _self_ref: <span class="kw-2">&amp;</span>FileDescriptionRef,
         _communicate_allowed: bool,
-        _bytes: <span class="kw-2">&amp;</span>[u8],
+        _ptr: Pointer,
+        _len: usize,
+        _dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
         _ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, io::Result&lt;usize&gt;&gt; {
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="macro">throw_unsup_format!</span>(<span class="string">"cannot write to {}"</span>, <span class="self">self</span>.name());
     }
 
-    <span class="doccomment">/// Reads as much as possible into the given buffer from a given offset,
-    /// and returns the number of bytes read.
+    <span class="doccomment">/// Reads as much as possible into the given buffer `ptr` from a given offset.
+    /// `len` indicates how many bytes we should try to read.
+    /// `dest` is where the return value should be stored: number of bytes read, or `-1` in case of error.
     </span><span class="kw">fn </span>pread&lt;<span class="lifetime">'tcx</span>&gt;(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
         _communicate_allowed: bool,
-        _bytes: <span class="kw-2">&amp;mut </span>[u8],
         _offset: u64,
+        _ptr: Pointer,
+        _len: usize,
+        _dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
         _ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, io::Result&lt;usize&gt;&gt; {
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="macro">throw_unsup_format!</span>(<span class="string">"cannot pread from {}"</span>, <span class="self">self</span>.name());
     }
 
-    <span class="doccomment">/// Writes as much as possible from the given buffer starting at a given offset,
-    /// and returns the number of bytes written.
+    <span class="doccomment">/// Writes as much as possible from the given buffer `ptr` starting at a given offset.
+    /// `ptr` is the pointer to the user supplied read buffer.
+    /// `len` indicates how many bytes we should try to write.
+    /// `dest` is where the return value should be stored: number of bytes written, or `-1` in case of error.
     </span><span class="kw">fn </span>pwrite&lt;<span class="lifetime">'tcx</span>&gt;(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
         _communicate_allowed: bool,
-        _bytes: <span class="kw-2">&amp;</span>[u8],
+        _ptr: Pointer,
+        _len: usize,
         _offset: u64,
+        _dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
         _ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, io::Result&lt;usize&gt;&gt; {
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="macro">throw_unsup_format!</span>(<span class="string">"cannot pwrite to {}"</span>, <span class="self">self</span>.name());
     }
 
     <span class="doccomment">/// Seeks to the given offset (which can be relative to the beginning, end, or current position).
     /// Returns the new position from the start of the stream.
     </span><span class="kw">fn </span>seek&lt;<span class="lifetime">'tcx</span>&gt;(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
         _communicate_allowed: bool,
         _offset: SeekFrom,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, io::Result&lt;u64&gt;&gt; {
@@ -656,6 +800,7 @@
     <span class="kw">fn </span>close&lt;<span class="lifetime">'tcx</span>&gt;(
         <span class="self">self</span>: Box&lt;<span class="self">Self</span>&gt;,
         _communicate_allowed: bool,
+        _ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, io::Result&lt;()&gt;&gt; {
         <span class="macro">throw_unsup_format!</span>(<span class="string">"cannot close {}"</span>, <span class="self">self</span>.name());
     }
@@ -673,17 +818,17 @@
         // so we use a default impl here.
         </span><span class="bool-val">false
     </span>}
+
+    <span class="doccomment">/// Check the readiness of file description.
+    </span><span class="kw">fn </span>get_epoll_ready_events&lt;<span class="lifetime">'tcx</span>&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, EpollReadyEvents&gt; {
+        <span class="macro">throw_unsup_format!</span>(<span class="string">"{}: epoll does not support this file description"</span>, <span class="self">self</span>.name());
+    }
 }
 
 <span class="kw">impl dyn </span>FileDescription {
     <span class="attr">#[inline(always)]
-    </span><span class="kw">pub fn </span>downcast_ref&lt;T: Any&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>T&gt; {
+    </span><span class="kw">pub fn </span>downcast&lt;T: Any&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>T&gt; {
         (<span class="self">self </span><span class="kw">as </span><span class="kw-2">&amp;</span><span class="kw">dyn </span>Any).downcast_ref()
-    }
-
-    <span class="attr">#[inline(always)]
-    </span><span class="kw">pub fn </span>downcast_mut&lt;T: Any&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;mut </span>T&gt; {
-        (<span class="self">self </span><span class="kw">as </span><span class="kw-2">&amp;mut </span><span class="kw">dyn </span>Any).downcast_mut()
     }
 }
 
@@ -693,16 +838,21 @@
     </span>}
 
     <span class="kw">fn </span>read&lt;<span class="lifetime">'tcx</span>&gt;(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        _self_ref: <span class="kw-2">&amp;</span>FileDescriptionRef,
         communicate_allowed: bool,
-        bytes: <span class="kw-2">&amp;mut </span>[u8],
-        _ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, io::Result&lt;usize&gt;&gt; {
+        ptr: Pointer,
+        len: usize,
+        dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+        ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="kw">let </span><span class="kw-2">mut </span>bytes = <span class="macro">vec!</span>[<span class="number">0</span>; len];
         <span class="kw">if </span>!communicate_allowed {
             <span class="comment">// We want isolation mode to be deterministic, so we have to disallow all reads, even stdin.
             </span>helpers::isolation_abort_error(<span class="string">"`read` from stdin"</span>)<span class="question-mark">?</span>;
         }
-        <span class="prelude-val">Ok</span>(Read::read(<span class="self">self</span>, bytes))
+        <span class="kw">let </span>result = Read::read(<span class="kw-2">&amp;mut </span>{ <span class="self">self </span>}, <span class="kw-2">&amp;mut </span>bytes);
+        ecx.return_read_bytes_and_count(ptr, <span class="kw-2">&amp;</span>bytes, result, dest)
     }
 
     <span class="kw">fn </span>is_tty(<span class="kw-2">&amp;</span><span class="self">self</span>, communicate_allowed: bool) -&gt; bool {
@@ -716,21 +866,24 @@
     </span>}
 
     <span class="kw">fn </span>write&lt;<span class="lifetime">'tcx</span>&gt;(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        _self_ref: <span class="kw-2">&amp;</span>FileDescriptionRef,
         _communicate_allowed: bool,
-        bytes: <span class="kw-2">&amp;</span>[u8],
-        _ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, io::Result&lt;usize&gt;&gt; {
+        ptr: Pointer,
+        len: usize,
+        dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+        ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="kw">let </span>bytes = ecx.read_bytes_ptr_strip_provenance(ptr, Size::from_bytes(len))<span class="question-mark">?</span>;
         <span class="comment">// We allow writing to stderr even with isolation enabled.
-        </span><span class="kw">let </span>result = Write::write(<span class="self">self</span>, bytes);
+        </span><span class="kw">let </span>result = Write::write(<span class="kw-2">&amp;mut </span>{ <span class="self">self </span>}, bytes);
         <span class="comment">// Stdout is buffered, flush to make sure it appears on the
         // screen.  This is the write() syscall of the interpreted
         // program, we want it to correspond to a write() syscall on
         // the host -- there is no good in adding extra buffering
         // here.
         </span>io::stdout().flush().unwrap();
-
-        <span class="prelude-val">Ok</span>(result)
+        ecx.return_written_byte_count_or_error(result, dest)
     }
 
     <span class="kw">fn </span>is_tty(<span class="kw-2">&amp;</span><span class="self">self</span>, communicate_allowed: bool) -&gt; bool {
@@ -744,14 +897,19 @@
     </span>}
 
     <span class="kw">fn </span>write&lt;<span class="lifetime">'tcx</span>&gt;(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        _self_ref: <span class="kw-2">&amp;</span>FileDescriptionRef,
         _communicate_allowed: bool,
-        bytes: <span class="kw-2">&amp;</span>[u8],
-        _ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, io::Result&lt;usize&gt;&gt; {
+        ptr: Pointer,
+        len: usize,
+        dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+        ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="kw">let </span>bytes = ecx.read_bytes_ptr_strip_provenance(ptr, Size::from_bytes(len))<span class="question-mark">?</span>;
         <span class="comment">// We allow writing to stderr even with isolation enabled.
         // No need to flush, stderr is not buffered.
-        </span><span class="prelude-val">Ok</span>(Write::write(<span class="kw-2">&amp;mut </span>{ <span class="self">self </span>}, bytes))
+        </span><span class="kw">let </span>result = Write::write(<span class="kw-2">&amp;mut </span>{ <span class="self">self </span>}, bytes);
+        ecx.return_written_byte_count_or_error(result, dest)
     }
 
     <span class="kw">fn </span>is_tty(<span class="kw-2">&amp;</span><span class="self">self</span>, communicate_allowed: bool) -&gt; bool {
@@ -769,57 +927,118 @@
     </span>}
 
     <span class="kw">fn </span>write&lt;<span class="lifetime">'tcx</span>&gt;(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        _self_ref: <span class="kw-2">&amp;</span>FileDescriptionRef,
         _communicate_allowed: bool,
-        bytes: <span class="kw-2">&amp;</span>[u8],
-        _ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, io::Result&lt;usize&gt;&gt; {
+        _ptr: Pointer,
+        len: usize,
+        dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+        ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="comment">// We just don't write anything, but report to the user that we did.
-        </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Ok</span>(bytes.len()))
+        </span><span class="kw">let </span>result = <span class="prelude-val">Ok</span>(len);
+        ecx.return_written_byte_count_or_error(result, dest)
     }
+}
+
+<span class="doccomment">/// Structure contains both the file description and its unique identifier.
+</span><span class="attr">#[derive(Clone, Debug)]
+</span><span class="kw">pub struct </span>FileDescWithId&lt;T: FileDescription + <span class="question-mark">?</span>Sized&gt; {
+    id: FdId,
+    file_description: Box&lt;T&gt;,
 }
 
 <span class="attr">#[derive(Clone, Debug)]
-</span><span class="kw">pub struct </span>FileDescriptionRef(Rc&lt;RefCell&lt;Box&lt;<span class="kw">dyn </span>FileDescription&gt;&gt;&gt;);
+</span><span class="kw">pub struct </span>FileDescriptionRef(Rc&lt;FileDescWithId&lt;<span class="kw">dyn </span>FileDescription&gt;&gt;);
+
+<span class="kw">impl </span>Deref <span class="kw">for </span>FileDescriptionRef {
+    <span class="kw">type </span>Target = <span class="kw">dyn </span>FileDescription;
+
+    <span class="kw">fn </span>deref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="self">Self</span>::Target {
+        <span class="kw-2">&amp;*</span><span class="self">self</span>.<span class="number">0</span>.file_description
+    }
+}
 
 <span class="kw">impl </span>FileDescriptionRef {
-    <span class="kw">fn </span>new(fd: <span class="kw">impl </span>FileDescription) -&gt; <span class="self">Self </span>{
-        FileDescriptionRef(Rc::new(RefCell::new(Box::new(fd))))
+    <span class="kw">fn </span>new(fd: <span class="kw">impl </span>FileDescription, id: FdId) -&gt; <span class="self">Self </span>{
+        FileDescriptionRef(Rc::new(FileDescWithId { id, file_description: Box::new(fd) }))
     }
 
-    <span class="kw">pub fn </span>borrow(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Ref&lt;<span class="lifetime">'_</span>, <span class="kw">dyn </span>FileDescription&gt; {
-        Ref::map(<span class="self">self</span>.<span class="number">0</span>.borrow(), |fd| fd.as_ref())
-    }
-
-    <span class="kw">pub fn </span>borrow_mut(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; RefMut&lt;<span class="lifetime">'_</span>, <span class="kw">dyn </span>FileDescription&gt; {
-        RefMut::map(<span class="self">self</span>.<span class="number">0</span>.borrow_mut(), |fd| fd.as_mut())
-    }
-
-    <span class="kw">pub fn </span>close&lt;<span class="lifetime">'ctx</span>&gt;(<span class="self">self</span>, communicate_allowed: bool) -&gt; InterpResult&lt;<span class="lifetime">'ctx</span>, io::Result&lt;()&gt;&gt; {
+    <span class="kw">pub fn </span>close&lt;<span class="lifetime">'tcx</span>&gt;(
+        <span class="self">self</span>,
+        communicate_allowed: bool,
+        ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, io::Result&lt;()&gt;&gt; {
         <span class="comment">// Destroy this `Rc` using `into_inner` so we can call `close` instead of
         // implicitly running the destructor of the file description.
-        </span><span class="kw">match </span>Rc::into_inner(<span class="self">self</span>.<span class="number">0</span>) {
-            <span class="prelude-val">Some</span>(fd) =&gt; RefCell::into_inner(fd).close(communicate_allowed),
+        </span><span class="kw">let </span>id = <span class="self">self</span>.get_id();
+        <span class="kw">match </span>Rc::into_inner(<span class="self">self</span>.<span class="number">0</span>) {
+            <span class="prelude-val">Some</span>(fd) =&gt; {
+                <span class="comment">// Remove entry from the global epoll_event_interest table.
+                </span>ecx.machine.epoll_interests.remove(id);
+
+                fd.file_description.close(communicate_allowed, ecx)
+            }
             <span class="prelude-val">None </span>=&gt; <span class="prelude-val">Ok</span>(<span class="prelude-val">Ok</span>(())),
         }
     }
+
+    <span class="kw">pub fn </span>downgrade(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; WeakFileDescriptionRef {
+        WeakFileDescriptionRef { weak_ref: Rc::downgrade(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="number">0</span>) }
+    }
+
+    <span class="kw">pub fn </span>get_id(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; FdId {
+        <span class="self">self</span>.<span class="number">0</span>.id
+    }
 }
+
+<span class="doccomment">/// Holds a weak reference to the actual file description.
+</span><span class="attr">#[derive(Clone, Debug, Default)]
+</span><span class="kw">pub struct </span>WeakFileDescriptionRef {
+    weak_ref: Weak&lt;FileDescWithId&lt;<span class="kw">dyn </span>FileDescription&gt;&gt;,
+}
+
+<span class="kw">impl </span>WeakFileDescriptionRef {
+    <span class="kw">pub fn </span>upgrade(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;FileDescriptionRef&gt; {
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(file_desc_with_id) = <span class="self">self</span>.weak_ref.upgrade() {
+            <span class="kw">return </span><span class="prelude-val">Some</span>(FileDescriptionRef(file_desc_with_id));
+        }
+        <span class="prelude-val">None
+    </span>}
+}
+
+<span class="kw">impl </span>VisitProvenance <span class="kw">for </span>WeakFileDescriptionRef {
+    <span class="kw">fn </span>visit_provenance(<span class="kw-2">&amp;</span><span class="self">self</span>, _visit: <span class="kw-2">&amp;mut </span>VisitWith&lt;<span class="lifetime">'_</span>&gt;) {
+        <span class="comment">// A weak reference can never be the only reference to some pointer or place.
+        // Since the actual file description is tracked by strong ref somewhere,
+        // it is ok to make this a NOP operation.
+    </span>}
+}
+
+<span class="doccomment">/// A unique id for file descriptions. While we could use the address, considering that
+/// is definitely unique, the address would expose interpreter internal state when used
+/// for sorting things. So instead we generate a unique id per file description that stays
+/// the same even if a file descriptor is duplicated and gets a new integer file descriptor.
+</span><span class="attr">#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd)]
+</span><span class="kw">pub struct </span>FdId(usize);
 
 <span class="doccomment">/// The file descriptor table
 </span><span class="attr">#[derive(Debug)]
 </span><span class="kw">pub struct </span>FdTable {
-    fds: BTreeMap&lt;i32, FileDescriptionRef&gt;,
+    <span class="kw">pub </span>fds: BTreeMap&lt;i32, FileDescriptionRef&gt;,
+    <span class="doccomment">/// Unique identifier for file description, used to differentiate between various file description.
+    </span>next_file_description_id: FdId,
 }
 
 <span class="kw">impl </span>VisitProvenance <span class="kw">for </span>FdTable {
     <span class="kw">fn </span>visit_provenance(<span class="kw-2">&amp;</span><span class="self">self</span>, _visit: <span class="kw-2">&amp;mut </span>VisitWith&lt;<span class="lifetime">'_</span>&gt;) {
-        <span class="comment">// All our FileDescriptor do not have any tags.
+        <span class="comment">// All our FileDescription instances do not have any tags.
     </span>}
 }
 
 <span class="kw">impl </span>FdTable {
     <span class="kw">fn </span>new() -&gt; <span class="self">Self </span>{
-        FdTable { fds: BTreeMap::new() }
+        FdTable { fds: BTreeMap::new(), next_file_description_id: FdId(<span class="number">0</span>) }
     }
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>init(mute_stdout_stderr: bool) -&gt; FdTable {
         <span class="kw">let </span><span class="kw-2">mut </span>fds = FdTable::new();
@@ -834,21 +1053,31 @@
         fds
     }
 
-    <span class="doccomment">/// Insert a new file description to the FdTable.
-    </span><span class="kw">pub fn </span>insert_new(<span class="kw-2">&amp;mut </span><span class="self">self</span>, fd: <span class="kw">impl </span>FileDescription) -&gt; i32 {
-        <span class="kw">let </span>file_handle = FileDescriptionRef::new(fd);
-        <span class="self">self</span>.insert_ref_with_min_fd(file_handle, <span class="number">0</span>)
+    <span class="kw">pub fn </span>new_ref(<span class="kw-2">&amp;mut </span><span class="self">self</span>, fd: <span class="kw">impl </span>FileDescription) -&gt; FileDescriptionRef {
+        <span class="kw">let </span>file_handle = FileDescriptionRef::new(fd, <span class="self">self</span>.next_file_description_id);
+        <span class="self">self</span>.next_file_description_id = FdId(<span class="self">self</span>.next_file_description_id.<span class="number">0</span>.strict_add(<span class="number">1</span>));
+        file_handle
     }
 
-    <span class="doccomment">/// Insert a file description, giving it a file descriptor that is at least `min_fd`.
-    </span><span class="kw">fn </span>insert_ref_with_min_fd(<span class="kw-2">&amp;mut </span><span class="self">self</span>, file_handle: FileDescriptionRef, min_fd: i32) -&gt; i32 {
+    <span class="doccomment">/// Insert a new file description to the FdTable.
+    </span><span class="kw">pub fn </span>insert_new(<span class="kw-2">&amp;mut </span><span class="self">self</span>, fd: <span class="kw">impl </span>FileDescription) -&gt; i32 {
+        <span class="kw">let </span>fd_ref = <span class="self">self</span>.new_ref(fd);
+        <span class="self">self</span>.insert(fd_ref)
+    }
+
+    <span class="kw">pub fn </span>insert(<span class="kw-2">&amp;mut </span><span class="self">self</span>, fd_ref: FileDescriptionRef) -&gt; i32 {
+        <span class="self">self</span>.insert_with_min_num(fd_ref, <span class="number">0</span>)
+    }
+
+    <span class="doccomment">/// Insert a file description, giving it a file descriptor that is at least `min_fd_num`.
+    </span><span class="kw">fn </span>insert_with_min_num(<span class="kw-2">&amp;mut </span><span class="self">self</span>, file_handle: FileDescriptionRef, min_fd_num: i32) -&gt; i32 {
         <span class="comment">// Find the lowest unused FD, starting from min_fd. If the first such unused FD is in
         // between used FDs, the find_map combinator will return it. If the first such unused FD
         // is after all other used FDs, the find_map combinator will return None, and we will use
         // the FD following the greatest FD thus far.
         </span><span class="kw">let </span>candidate_new_fd =
-            <span class="self">self</span>.fds.range(min_fd..).zip(min_fd..).find_map(|((fd, _fh), counter)| {
-                <span class="kw">if </span><span class="kw-2">*</span>fd != counter {
+            <span class="self">self</span>.fds.range(min_fd_num..).zip(min_fd_num..).find_map(|((fd_num, _fd), counter)| {
+                <span class="kw">if </span><span class="kw-2">*</span>fd_num != counter {
                     <span class="comment">// There was a gap in the fds stored, return the first unused one
                     // (note that this relies on BTreeMap iterating in key order)
                     </span><span class="prelude-val">Some</span>(counter)
@@ -857,71 +1086,61 @@
                     </span><span class="prelude-val">None
                 </span>}
             });
-        <span class="kw">let </span>new_fd = candidate_new_fd.unwrap_or_else(|| {
+        <span class="kw">let </span>new_fd_num = candidate_new_fd.unwrap_or_else(|| {
             <span class="comment">// find_map ran out of BTreeMap entries before finding a free fd, use one plus the
             // maximum fd in the map
-            </span><span class="self">self</span>.fds.last_key_value().map(|(fd, <span class="kw">_</span>)| fd.strict_add(<span class="number">1</span>)).unwrap_or(min_fd)
+            </span><span class="self">self</span>.fds.last_key_value().map(|(fd_num, <span class="kw">_</span>)| fd_num.strict_add(<span class="number">1</span>)).unwrap_or(min_fd_num)
         });
 
-        <span class="self">self</span>.fds.try_insert(new_fd, file_handle).unwrap();
-        new_fd
+        <span class="self">self</span>.fds.try_insert(new_fd_num, file_handle).unwrap();
+        new_fd_num
     }
 
-    <span class="kw">pub fn </span>get(<span class="kw-2">&amp;</span><span class="self">self</span>, fd: i32) -&gt; <span class="prelude-ty">Option</span>&lt;Ref&lt;<span class="lifetime">'_</span>, <span class="kw">dyn </span>FileDescription&gt;&gt; {
-        <span class="kw">let </span>fd = <span class="self">self</span>.fds.get(<span class="kw-2">&amp;</span>fd)<span class="question-mark">?</span>;
-        <span class="prelude-val">Some</span>(fd.borrow())
-    }
-
-    <span class="kw">pub fn </span>get_mut(<span class="kw-2">&amp;</span><span class="self">self</span>, fd: i32) -&gt; <span class="prelude-ty">Option</span>&lt;RefMut&lt;<span class="lifetime">'_</span>, <span class="kw">dyn </span>FileDescription&gt;&gt; {
-        <span class="kw">let </span>fd = <span class="self">self</span>.fds.get(<span class="kw-2">&amp;</span>fd)<span class="question-mark">?</span>;
-        <span class="prelude-val">Some</span>(fd.borrow_mut())
-    }
-
-    <span class="kw">pub fn </span>get_ref(<span class="kw-2">&amp;</span><span class="self">self</span>, fd: i32) -&gt; <span class="prelude-ty">Option</span>&lt;FileDescriptionRef&gt; {
-        <span class="kw">let </span>fd = <span class="self">self</span>.fds.get(<span class="kw-2">&amp;</span>fd)<span class="question-mark">?</span>;
+    <span class="kw">pub fn </span>get(<span class="kw-2">&amp;</span><span class="self">self</span>, fd_num: i32) -&gt; <span class="prelude-ty">Option</span>&lt;FileDescriptionRef&gt; {
+        <span class="kw">let </span>fd = <span class="self">self</span>.fds.get(<span class="kw-2">&amp;</span>fd_num)<span class="question-mark">?</span>;
         <span class="prelude-val">Some</span>(fd.clone())
     }
 
-    <span class="kw">pub fn </span>remove(<span class="kw-2">&amp;mut </span><span class="self">self</span>, fd: i32) -&gt; <span class="prelude-ty">Option</span>&lt;FileDescriptionRef&gt; {
-        <span class="self">self</span>.fds.remove(<span class="kw-2">&amp;</span>fd)
+    <span class="kw">pub fn </span>remove(<span class="kw-2">&amp;mut </span><span class="self">self</span>, fd_num: i32) -&gt; <span class="prelude-ty">Option</span>&lt;FileDescriptionRef&gt; {
+        <span class="self">self</span>.fds.remove(<span class="kw-2">&amp;</span>fd_num)
     }
 
-    <span class="kw">pub fn </span>is_fd(<span class="kw-2">&amp;</span><span class="self">self</span>, fd: i32) -&gt; bool {
-        <span class="self">self</span>.fds.contains_key(<span class="kw-2">&amp;</span>fd)
+    <span class="kw">pub fn </span>is_fd_num(<span class="kw-2">&amp;</span><span class="self">self</span>, fd_num: i32) -&gt; bool {
+        <span class="self">self</span>.fds.contains_key(<span class="kw-2">&amp;</span>fd_num)
     }
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; EvalContextExt&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><span class="kw">crate</span>::MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt; {}
 <span class="kw">pub trait </span>EvalContextExt&lt;<span class="lifetime">'tcx</span>&gt;: <span class="kw">crate</span>::MiriInterpCxExt&lt;<span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">fn </span>dup(<span class="kw-2">&amp;mut </span><span class="self">self</span>, old_fd: i32) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
+    <span class="kw">fn </span>dup(<span class="kw-2">&amp;mut </span><span class="self">self</span>, old_fd_num: i32) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span><span class="prelude-val">Some</span>(dup_fd) = this.machine.fds.get_ref(old_fd) <span class="kw">else </span>{
+        <span class="kw">let </span><span class="prelude-val">Some</span>(fd) = this.machine.fds.get(old_fd_num) <span class="kw">else </span>{
             <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(this.fd_not_found()<span class="question-mark">?</span>));
         };
-        <span class="prelude-val">Ok</span>(Scalar::from_i32(this.machine.fds.insert_ref_with_min_fd(dup_fd, <span class="number">0</span>)))
+        <span class="prelude-val">Ok</span>(Scalar::from_i32(this.machine.fds.insert(fd)))
     }
 
-    <span class="kw">fn </span>dup2(<span class="kw-2">&amp;mut </span><span class="self">self</span>, old_fd: i32, new_fd: i32) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
+    <span class="kw">fn </span>dup2(<span class="kw-2">&amp;mut </span><span class="self">self</span>, old_fd_num: i32, new_fd_num: i32) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span><span class="prelude-val">Some</span>(dup_fd) = this.machine.fds.get_ref(old_fd) <span class="kw">else </span>{
+        <span class="kw">let </span><span class="prelude-val">Some</span>(fd) = this.machine.fds.get(old_fd_num) <span class="kw">else </span>{
             <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(this.fd_not_found()<span class="question-mark">?</span>));
         };
-        <span class="kw">if </span>new_fd != old_fd {
+        <span class="kw">if </span>new_fd_num != old_fd_num {
             <span class="comment">// Close new_fd if it is previously opened.
             // If old_fd and new_fd point to the same description, then `dup_fd` ensures we keep the underlying file description alive.
-            </span><span class="kw">if let </span><span class="prelude-val">Some</span>(file_description) = this.machine.fds.fds.insert(new_fd, dup_fd) {
+            </span><span class="kw">if let </span><span class="prelude-val">Some</span>(old_new_fd) = this.machine.fds.fds.insert(new_fd_num, fd) {
                 <span class="comment">// Ignore close error (not interpreter's) according to dup2() doc.
-                </span>file_description.close(this.machine.communicate())<span class="question-mark">?</span>.ok();
+                </span>old_new_fd.close(this.machine.communicate(), this)<span class="question-mark">?</span>.ok();
             }
         }
-        <span class="prelude-val">Ok</span>(Scalar::from_i32(new_fd))
+        <span class="prelude-val">Ok</span>(Scalar::from_i32(new_fd_num))
     }
 
-    <span class="kw">fn </span>flock(<span class="kw-2">&amp;mut </span><span class="self">self</span>, fd: i32, op: i32) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
+    <span class="kw">fn </span>flock(<span class="kw-2">&amp;mut </span><span class="self">self</span>, fd_num: i32, op: i32) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
-        <span class="kw">let </span><span class="prelude-val">Some</span>(file_descriptor) = this.machine.fds.get(fd) <span class="kw">else </span>{
+        <span class="kw">let </span><span class="prelude-val">Some</span>(fd) = this.machine.fds.get(fd_num) <span class="kw">else </span>{
             <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(this.fd_not_found()<span class="question-mark">?</span>));
         };
 
@@ -946,8 +1165,8 @@
             <span class="macro">throw_unsup_format!</span>(<span class="string">"unsupported flags {:#x}"</span>, op);
         };
 
-        <span class="kw">let </span>result = file_descriptor.flock(this.machine.communicate(), parsed_op)<span class="question-mark">?</span>;
-        drop(file_descriptor);
+        <span class="kw">let </span>result = fd.flock(this.machine.communicate(), parsed_op)<span class="question-mark">?</span>;
+        drop(fd);
         <span class="comment">// return `0` if flock is successful
         </span><span class="kw">let </span>result = result.map(|()| <span class="number">0i32</span>);
         <span class="prelude-val">Ok</span>(Scalar::from_i32(this.try_unwrap_io_result(result)<span class="question-mark">?</span>))
@@ -962,7 +1181,7 @@
                 args.len()
             );
         }
-        <span class="kw">let </span>fd = this.read_scalar(<span class="kw-2">&amp;</span>args[<span class="number">0</span>])<span class="question-mark">?</span>.to_i32()<span class="question-mark">?</span>;
+        <span class="kw">let </span>fd_num = this.read_scalar(<span class="kw-2">&amp;</span>args[<span class="number">0</span>])<span class="question-mark">?</span>.to_i32()<span class="question-mark">?</span>;
         <span class="kw">let </span>cmd = this.read_scalar(<span class="kw-2">&amp;</span>args[<span class="number">1</span>])<span class="question-mark">?</span>.to_i32()<span class="question-mark">?</span>;
 
         <span class="comment">// We only support getting the flags for a descriptor.
@@ -971,7 +1190,7 @@
             // `FD_CLOEXEC` value without checking if the flag is set for the file because `std`
             // always sets this flag when opening a file. However we still need to check that the
             // file itself is open.
-            </span><span class="prelude-val">Ok</span>(Scalar::from_i32(<span class="kw">if </span>this.machine.fds.is_fd(fd) {
+            </span><span class="prelude-val">Ok</span>(Scalar::from_i32(<span class="kw">if </span>this.machine.fds.is_fd_num(fd_num) {
                 this.eval_libc_i32(<span class="string">"FD_CLOEXEC"</span>)
             } <span class="kw">else </span>{
                 this.fd_not_found()<span class="question-mark">?
@@ -991,9 +1210,8 @@
             }
             <span class="kw">let </span>start = this.read_scalar(<span class="kw-2">&amp;</span>args[<span class="number">2</span>])<span class="question-mark">?</span>.to_i32()<span class="question-mark">?</span>;
 
-            <span class="kw">match </span>this.machine.fds.get_ref(fd) {
-                <span class="prelude-val">Some</span>(dup_fd) =&gt;
-                    <span class="prelude-val">Ok</span>(Scalar::from_i32(this.machine.fds.insert_ref_with_min_fd(dup_fd, start))),
+            <span class="kw">match </span>this.machine.fds.get(fd_num) {
+                <span class="prelude-val">Some</span>(fd) =&gt; <span class="prelude-val">Ok</span>(Scalar::from_i32(this.machine.fds.insert_with_min_num(fd, start))),
                 <span class="prelude-val">None </span>=&gt; <span class="prelude-val">Ok</span>(Scalar::from_i32(this.fd_not_found()<span class="question-mark">?</span>)),
             }
         } <span class="kw">else if </span>this.tcx.sess.target.os == <span class="string">"macos" </span>&amp;&amp; cmd == this.eval_libc_i32(<span class="string">"F_FULLFSYNC"</span>) {
@@ -1004,7 +1222,7 @@
                 <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(-<span class="number">1</span>));
             }
 
-            this.ffullsync_fd(fd)
+            this.ffullsync_fd(fd_num)
         } <span class="kw">else </span>{
             <span class="macro">throw_unsup_format!</span>(<span class="string">"the {:#x} command is not supported for `fcntl`)"</span>, cmd);
         }
@@ -1013,12 +1231,12 @@
     <span class="kw">fn </span>close(<span class="kw-2">&amp;mut </span><span class="self">self</span>, fd_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span>fd = this.read_scalar(fd_op)<span class="question-mark">?</span>.to_i32()<span class="question-mark">?</span>;
+        <span class="kw">let </span>fd_num = this.read_scalar(fd_op)<span class="question-mark">?</span>.to_i32()<span class="question-mark">?</span>;
 
-        <span class="kw">let </span><span class="prelude-val">Some</span>(file_description) = this.machine.fds.remove(fd) <span class="kw">else </span>{
+        <span class="kw">let </span><span class="prelude-val">Some</span>(fd) = this.machine.fds.remove(fd_num) <span class="kw">else </span>{
             <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(this.fd_not_found()<span class="question-mark">?</span>));
         };
-        <span class="kw">let </span>result = file_description.close(this.machine.communicate())<span class="question-mark">?</span>;
+        <span class="kw">let </span>result = fd.close(this.machine.communicate(), this)<span class="question-mark">?</span>;
         <span class="comment">// return `0` if close is successful
         </span><span class="kw">let </span>result = result.map(|()| <span class="number">0i32</span>);
         <span class="prelude-val">Ok</span>(Scalar::from_i32(this.try_unwrap_io_result(result)<span class="question-mark">?</span>))
@@ -1042,16 +1260,17 @@
     /// and keeps the cursor unchanged.
     </span><span class="kw">fn </span>read(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        fd: i32,
+        fd_num: i32,
         buf: Pointer,
         count: u64,
         offset: <span class="prelude-ty">Option</span>&lt;i128&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
+        dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="comment">// Isolation check is done via `FileDescriptor` trait.
+        <span class="comment">// Isolation check is done via `FileDescription` trait.
 
-        </span><span class="macro">trace!</span>(<span class="string">"Reading from FD {}, size {}"</span>, fd, count);
+        </span><span class="macro">trace!</span>(<span class="string">"Reading from FD {}, size {}"</span>, fd_num, count);
 
         <span class="comment">// Check that the *entire* buffer is actually valid memory.
         </span>this.check_ptr_access(buf, Size::from_bytes(count), CheckInAllocMsg::MemoryAccessTest)<span class="question-mark">?</span>;
@@ -1061,61 +1280,48 @@
         </span><span class="kw">let </span>count = count
             .min(u64::try_from(this.target_isize_max()).unwrap())
             .min(u64::try_from(isize::MAX).unwrap());
-        <span class="kw">let </span>communicate = this.machine.communicate();
+        <span class="kw">let </span>count = usize::try_from(count).unwrap(); <span class="comment">// now it fits in a `usize`
+        </span><span class="kw">let </span>communicate = this.machine.communicate();
 
         <span class="comment">// We temporarily dup the FD to be able to retain mutable access to `this`.
-        </span><span class="kw">let </span><span class="prelude-val">Some</span>(fd) = this.machine.fds.get_ref(fd) <span class="kw">else </span>{
+        </span><span class="kw">let </span><span class="prelude-val">Some</span>(fd) = this.machine.fds.get(fd_num) <span class="kw">else </span>{
             <span class="macro">trace!</span>(<span class="string">"read: FD not found"</span>);
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_target_isize(this.fd_not_found()<span class="question-mark">?</span>, this));
+            <span class="kw">let </span>res: i32 = this.fd_not_found()<span class="question-mark">?</span>;
+            this.write_int(res, dest)<span class="question-mark">?</span>;
+            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
         };
 
         <span class="macro">trace!</span>(<span class="string">"read: FD mapped to {fd:?}"</span>);
         <span class="comment">// We want to read at most `count` bytes. We are sure that `count` is not negative
         // because it was a target's `usize`. Also we are sure that its smaller than
         // `usize::MAX` because it is bounded by the host's `isize`.
-        </span><span class="kw">let </span><span class="kw-2">mut </span>bytes = <span class="macro">vec!</span>[<span class="number">0</span>; usize::try_from(count).unwrap()];
-        <span class="kw">let </span>result = <span class="kw">match </span>offset {
-            <span class="prelude-val">None </span>=&gt; fd.borrow_mut().read(communicate, <span class="kw-2">&amp;mut </span>bytes, this),
+
+        </span><span class="kw">match </span>offset {
+            <span class="prelude-val">None </span>=&gt; fd.read(<span class="kw-2">&amp;</span>fd, communicate, buf, count, dest, this)<span class="question-mark">?</span>,
             <span class="prelude-val">Some</span>(offset) =&gt; {
                 <span class="kw">let </span><span class="prelude-val">Ok</span>(offset) = u64::try_from(offset) <span class="kw">else </span>{
                     <span class="kw">let </span>einval = this.eval_libc(<span class="string">"EINVAL"</span>);
                     this.set_last_error(einval)<span class="question-mark">?</span>;
-                    <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_target_isize(-<span class="number">1</span>, this));
+                    this.write_int(-<span class="number">1</span>, dest)<span class="question-mark">?</span>;
+                    <span class="kw">return </span><span class="prelude-val">Ok</span>(());
                 };
-                fd.borrow_mut().pread(communicate, <span class="kw-2">&amp;mut </span>bytes, offset, this)
-            }
+                fd.pread(communicate, offset, buf, count, dest, this)<span class="question-mark">?
+            </span>}
         };
-        drop(fd);
-
-        <span class="comment">// `File::read` never returns a value larger than `count`, so this cannot fail.
-        </span><span class="kw">match </span>result<span class="question-mark">?</span>.map(|c| i64::try_from(c).unwrap()) {
-            <span class="prelude-val">Ok</span>(read_bytes) =&gt; {
-                <span class="comment">// If reading to `bytes` did not fail, we write those bytes to the buffer.
-                // Crucially, if fewer than `bytes.len()` bytes were read, only write
-                // that much into the output buffer!
-                </span>this.write_bytes_ptr(
-                    buf,
-                    bytes[..usize::try_from(read_bytes).unwrap()].iter().copied(),
-                )<span class="question-mark">?</span>;
-                <span class="prelude-val">Ok</span>(Scalar::from_target_isize(read_bytes, this))
-            }
-            <span class="prelude-val">Err</span>(e) =&gt; {
-                this.set_last_error_from_io_error(e)<span class="question-mark">?</span>;
-                <span class="prelude-val">Ok</span>(Scalar::from_target_isize(-<span class="number">1</span>, this))
-            }
-        }
+        <span class="prelude-val">Ok</span>(())
     }
 
     <span class="kw">fn </span>write(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        fd: i32,
+        fd_num: i32,
         buf: Pointer,
         count: u64,
         offset: <span class="prelude-ty">Option</span>&lt;i128&gt;,
-    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
+        dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="comment">// Isolation check is done via `FileDescriptor` trait.
+        <span class="comment">// Isolation check is done via `FileDescription` trait.
 
         // Check that the *entire* buffer is actually valid memory.
         </span>this.check_ptr_access(buf, Size::from_bytes(count), CheckInAllocMsg::MemoryAccessTest)<span class="question-mark">?</span>;
@@ -1125,29 +1331,73 @@
         </span><span class="kw">let </span>count = count
             .min(u64::try_from(this.target_isize_max()).unwrap())
             .min(u64::try_from(isize::MAX).unwrap());
-        <span class="kw">let </span>communicate = this.machine.communicate();
+        <span class="kw">let </span>count = usize::try_from(count).unwrap(); <span class="comment">// now it fits in a `usize`
+        </span><span class="kw">let </span>communicate = this.machine.communicate();
 
-        <span class="kw">let </span>bytes = this.read_bytes_ptr_strip_provenance(buf, Size::from_bytes(count))<span class="question-mark">?</span>.to_owned();
         <span class="comment">// We temporarily dup the FD to be able to retain mutable access to `this`.
-        </span><span class="kw">let </span><span class="prelude-val">Some</span>(fd) = this.machine.fds.get_ref(fd) <span class="kw">else </span>{
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_target_isize(this.fd_not_found()<span class="question-mark">?</span>, this));
+        </span><span class="kw">let </span><span class="prelude-val">Some</span>(fd) = this.machine.fds.get(fd_num) <span class="kw">else </span>{
+            <span class="kw">let </span>res: i32 = this.fd_not_found()<span class="question-mark">?</span>;
+            this.write_int(res, dest)<span class="question-mark">?</span>;
+            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
         };
 
-        <span class="kw">let </span>result = <span class="kw">match </span>offset {
-            <span class="prelude-val">None </span>=&gt; fd.borrow_mut().write(communicate, <span class="kw-2">&amp;</span>bytes, this),
+        <span class="kw">match </span>offset {
+            <span class="prelude-val">None </span>=&gt; fd.write(<span class="kw-2">&amp;</span>fd, communicate, buf, count, dest, this)<span class="question-mark">?</span>,
             <span class="prelude-val">Some</span>(offset) =&gt; {
                 <span class="kw">let </span><span class="prelude-val">Ok</span>(offset) = u64::try_from(offset) <span class="kw">else </span>{
                     <span class="kw">let </span>einval = this.eval_libc(<span class="string">"EINVAL"</span>);
                     this.set_last_error(einval)<span class="question-mark">?</span>;
-                    <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_target_isize(-<span class="number">1</span>, this));
+                    this.write_int(-<span class="number">1</span>, dest)<span class="question-mark">?</span>;
+                    <span class="kw">return </span><span class="prelude-val">Ok</span>(());
                 };
-                fd.borrow_mut().pwrite(communicate, <span class="kw-2">&amp;</span>bytes, offset, this)
-            }
+                fd.pwrite(communicate, buf, count, offset, dest, this)<span class="question-mark">?
+            </span>}
         };
-        drop(fd);
+        <span class="prelude-val">Ok</span>(())
+    }
 
-        <span class="kw">let </span>result = result<span class="question-mark">?</span>.map(|c| i64::try_from(c).unwrap());
-        <span class="prelude-val">Ok</span>(Scalar::from_target_isize(this.try_unwrap_io_result(result)<span class="question-mark">?</span>, this))
+    <span class="doccomment">/// Helper to implement `FileDescription::read`:
+    /// `result` should be the return value of some underlying `read` call that used `bytes` as its output buffer.
+    /// The length of `bytes` must not exceed either the host's or the target's `isize`.
+    /// If `Result` indicates success, `bytes` is written to `buf` and the size is written to `dest`.
+    /// Otherwise, `-1` is written to `dest` and the last libc error is set appropriately.
+    </span><span class="kw">fn </span>return_read_bytes_and_count(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        buf: Pointer,
+        bytes: <span class="kw-2">&amp;</span>[u8],
+        result: io::Result&lt;usize&gt;,
+        dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
+        <span class="kw">match </span>result {
+            <span class="prelude-val">Ok</span>(read_bytes) =&gt; {
+                <span class="comment">// If reading to `bytes` did not fail, we write those bytes to the buffer.
+                // Crucially, if fewer than `bytes.len()` bytes were read, only write
+                // that much into the output buffer!
+                </span>this.write_bytes_ptr(buf, bytes[..read_bytes].iter().copied())<span class="question-mark">?</span>;
+                <span class="comment">// The actual read size is always less than what got originally requested so this cannot fail.
+                </span>this.write_int(u64::try_from(read_bytes).unwrap(), dest)<span class="question-mark">?</span>;
+                <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+            }
+            <span class="prelude-val">Err</span>(e) =&gt; {
+                this.set_last_error_from_io_error(e)<span class="question-mark">?</span>;
+                this.write_int(-<span class="number">1</span>, dest)<span class="question-mark">?</span>;
+                <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+            }
+        }
+    }
+
+    <span class="doccomment">/// This function writes the number of written bytes (given in `result`) to `dest`, or sets the
+    /// last libc error and writes -1 to dest.
+    </span><span class="kw">fn </span>return_written_byte_count_or_error(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        result: io::Result&lt;usize&gt;,
+        dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+        <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
+        <span class="kw">let </span>result = this.try_unwrap_io_result(result.map(|c| i64::try_from(c).unwrap()))<span class="question-mark">?</span>;
+        this.write_int(result, dest)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(())
     }
 }
 </code></pre></div></section></main></body></html>

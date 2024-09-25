@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/check/check.rs`."><title>check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/check/check.rs`."><title>check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_analysis/check/</div>check.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1753,14 +1754,15 @@
 <a href="#1753" id="1753">1753</a>
 <a href="#1754" id="1754">1754</a>
 <a href="#1755" id="1755">1755</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::cell::LazyCell;
+<a href="#1756" id="1756">1756</a>
+<a href="#1757" id="1757">1757</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::cell::LazyCell;
 <span class="kw">use </span>std::ops::ControlFlow;
 
 <span class="kw">use </span>rustc_data_structures::unord::{UnordMap, UnordSet};
-<span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_errors::MultiSpan;
-<span class="kw">use </span>rustc_hir::def::{CtorKind, DefKind};
+<span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_hir::Node;
+<span class="kw">use </span>rustc_hir::def::{CtorKind, DefKind};
 <span class="kw">use </span>rustc_infer::infer::{RegionVariableOrigin, TyCtxtInferExt};
 <span class="kw">use </span>rustc_infer::traits::Obligation;
 <span class="kw">use </span>rustc_lint_defs::builtin::REPR_TRANSPARENT_EXTERNAL_PRIVATE_FIELDS;
@@ -1777,11 +1779,12 @@
 };
 <span class="kw">use </span>rustc_session::lint::builtin::{UNINHABITED_STATIC, UNSUPPORTED_CALLING_CONVENTIONS};
 <span class="kw">use </span>rustc_target::abi::FieldIdx;
-<span class="kw">use </span>rustc_trait_selection::error_reporting::traits::on_unimplemented::OnUnimplementedDirective;
 <span class="kw">use </span>rustc_trait_selection::error_reporting::InferCtxtErrorExt;
+<span class="kw">use </span>rustc_trait_selection::error_reporting::traits::on_unimplemented::OnUnimplementedDirective;
 <span class="kw">use </span>rustc_trait_selection::traits;
 <span class="kw">use </span>rustc_trait_selection::traits::outlives_bounds::InferCtxtExt <span class="kw">as _</span>;
 <span class="kw">use </span>rustc_type_ir::fold::TypeFoldable;
+<span class="kw">use </span>tracing::{debug, instrument};
 <span class="kw">use </span>{rustc_attr <span class="kw">as </span>attr, rustc_hir <span class="kw">as </span>hir};
 
 <span class="kw">use </span><span class="kw">super</span>::compare_impl_item::{check_type_bounds, compare_impl_method, compare_impl_ty};
@@ -2284,7 +2287,7 @@
 
         <span class="kw">match </span>tcx.named_bound_var(hir_id) {
             <span class="prelude-val">Some</span>(ResolvedArg::EarlyBound(def_id)) =&gt; {
-                expected_captures.insert(def_id);
+                expected_captures.insert(def_id.to_def_id());
 
                 <span class="comment">// Make sure we allow capturing these lifetimes through `Self` and
                 // `T::Assoc` projection syntax, too. These will occur when we only
@@ -2293,7 +2296,7 @@
                 // feature -- see &lt;https://github.com/rust-lang/rust/pull/115659&gt;.
                 </span><span class="kw">if let </span>DefKind::LifetimeParam = tcx.def_kind(def_id)
                     &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(def_id) = tcx
-                        .map_opaque_lifetime_to_parent_lifetime(def_id.expect_local())
+                        .map_opaque_lifetime_to_parent_lifetime(def_id)
                         .opt_param_def_id(tcx, tcx.parent(opaque_def_id.to_def_id()))
                 {
                     shadowed_captures.insert(def_id);
@@ -2559,8 +2562,8 @@
 
                         <span class="kw">let </span>item = tcx.hir().foreign_item(item.id);
                         <span class="kw">match </span><span class="kw-2">&amp;</span>item.kind {
-                            hir::ForeignItemKind::Fn(fn_decl, <span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>) =&gt; {
-                                require_c_abi_if_c_variadic(tcx, fn_decl, abi, item.span);
+                            hir::ForeignItemKind::Fn(sig, <span class="kw">_</span>, <span class="kw">_</span>) =&gt; {
+                                require_c_abi_if_c_variadic(tcx, sig.decl, abi, item.span);
                             }
                             hir::ForeignItemKind::Static(..) =&gt; {
                                 check_static_inhabited(tcx, def_id);
@@ -2808,7 +2811,7 @@
     }
 }
 
-<span class="kw">pub fn </span>check_simd(tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;, sp: Span, def_id: LocalDefId) {
+<span class="kw">fn </span>check_simd(tcx: TyCtxt&lt;<span class="lifetime">'_</span>&gt;, sp: Span, def_id: LocalDefId) {
     <span class="kw">let </span>t = tcx.type_of(def_id).instantiate_identity();
     <span class="kw">if let </span>ty::Adt(def, args) = t.kind()
         &amp;&amp; def.is_struct()
@@ -2818,20 +2821,29 @@
             <span class="macro">struct_span_code_err!</span>(tcx.dcx(), sp, E0075, <span class="string">"SIMD vector cannot be empty"</span>).emit();
             <span class="kw">return</span>;
         }
-        <span class="kw">let </span>e = fields[FieldIdx::ZERO].ty(tcx, args);
-        <span class="kw">if </span>!fields.iter().all(|f| f.ty(tcx, args) == e) {
-            <span class="macro">struct_span_code_err!</span>(tcx.dcx(), sp, E0076, <span class="string">"SIMD vector should be homogeneous"</span>)
-                .with_span_label(sp, <span class="string">"SIMD elements must have the same type"</span>)
+
+        <span class="kw">let </span>array_field = <span class="kw-2">&amp;</span>fields[FieldIdx::ZERO];
+        <span class="kw">let </span>array_ty = array_field.ty(tcx, args);
+        <span class="kw">let </span>ty::Array(element_ty, len_const) = array_ty.kind() <span class="kw">else </span>{
+            <span class="macro">struct_span_code_err!</span>(
+                tcx.dcx(),
+                sp,
+                E0076,
+                <span class="string">"SIMD vector's only field must be an array"
+            </span>)
+            .with_span_label(tcx.def_span(array_field.did), <span class="string">"not an array"</span>)
+            .emit();
+            <span class="kw">return</span>;
+        };
+
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(second_field) = fields.get(FieldIdx::from_u32(<span class="number">1</span>)) {
+            <span class="macro">struct_span_code_err!</span>(tcx.dcx(), sp, E0075, <span class="string">"SIMD vector cannot have multiple fields"</span>)
+                .with_span_label(tcx.def_span(second_field.did), <span class="string">"excess field"</span>)
                 .emit();
             <span class="kw">return</span>;
         }
 
-        <span class="kw">let </span>len = <span class="kw">if let </span>ty::Array(_ty, c) = e.kind() {
-            c.try_eval_target_usize(tcx, tcx.param_env(def.did()))
-        } <span class="kw">else </span>{
-            <span class="prelude-val">Some</span>(fields.len() <span class="kw">as </span>u64)
-        };
-        <span class="kw">if let </span><span class="prelude-val">Some</span>(len) = len {
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(len) = len_const.try_eval_target_usize(tcx, tcx.param_env(def.did())) {
             <span class="kw">if </span>len == <span class="number">0 </span>{
                 <span class="macro">struct_span_code_err!</span>(tcx.dcx(), sp, E0075, <span class="string">"SIMD vector cannot be empty"</span>).emit();
                 <span class="kw">return</span>;
@@ -2851,17 +2863,10 @@
         // These are scalar types which directly match a "machine" type
         // Yes: Integers, floats, "thin" pointers
         // No: char, "fat" pointers, compound types
-        </span><span class="kw">match </span>e.kind() {
-            ty::Param(<span class="kw">_</span>) =&gt; (), <span class="comment">// pass struct&lt;T&gt;(T, T, T, T) through, let monomorphization catch errors
-            </span>ty::Int(<span class="kw">_</span>) | ty::Uint(<span class="kw">_</span>) | ty::Float(<span class="kw">_</span>) | ty::RawPtr(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; (), <span class="comment">// struct(u8, u8, u8, u8) is ok
-            </span>ty::Array(t, <span class="kw">_</span>) <span class="kw">if </span><span class="macro">matches!</span>(t.kind(), ty::Param(<span class="kw">_</span>)) =&gt; (), <span class="comment">// pass struct&lt;T&gt;([T; N]) through, let monomorphization catch errors
-            </span>ty::Array(t, _clen)
-                <span class="kw">if </span><span class="macro">matches!</span>(
-                    t.kind(),
-                    ty::Int(<span class="kw">_</span>) | ty::Uint(<span class="kw">_</span>) | ty::Float(<span class="kw">_</span>) | ty::RawPtr(<span class="kw">_</span>, <span class="kw">_</span>)
-                ) =&gt;
-            { <span class="comment">/* struct([f32; 4]) is ok */ </span>}
-            <span class="kw">_ </span>=&gt; {
+        </span><span class="kw">match </span>element_ty.kind() {
+            ty::Param(<span class="kw">_</span>) =&gt; (), <span class="comment">// pass struct&lt;T&gt;([T; 4]) through, let monomorphization catch errors
+            </span>ty::Int(<span class="kw">_</span>) | ty::Uint(<span class="kw">_</span>) | ty::Float(<span class="kw">_</span>) | ty::RawPtr(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; (), <span class="comment">// struct([u8; 4]) is ok
+            </span><span class="kw">_ </span>=&gt; {
                 <span class="macro">struct_span_code_err!</span>(
                     tcx.dcx(),
                     sp,
@@ -2903,42 +2908,40 @@
                 <span class="string">"type has conflicting packed and align representation hints"
             </span>)
             .emit();
-        } <span class="kw">else </span>{
-            <span class="kw">if let </span><span class="prelude-val">Some</span>(def_spans) = check_packed_inner(tcx, def.did(), <span class="kw-2">&amp;mut </span><span class="macro">vec!</span>[]) {
-                <span class="kw">let </span><span class="kw-2">mut </span>err = <span class="macro">struct_span_code_err!</span>(
-                    tcx.dcx(),
-                    sp,
-                    E0588,
-                    <span class="string">"packed type cannot transitively contain a `#[repr(align)]` type"
-                </span>);
+        } <span class="kw">else if let </span><span class="prelude-val">Some</span>(def_spans) = check_packed_inner(tcx, def.did(), <span class="kw-2">&amp;mut </span><span class="macro">vec!</span>[]) {
+            <span class="kw">let </span><span class="kw-2">mut </span>err = <span class="macro">struct_span_code_err!</span>(
+                tcx.dcx(),
+                sp,
+                E0588,
+                <span class="string">"packed type cannot transitively contain a `#[repr(align)]` type"
+            </span>);
 
-                err.span_note(
-                    tcx.def_span(def_spans[<span class="number">0</span>].<span class="number">0</span>),
-                    <span class="macro">format!</span>(<span class="string">"`{}` has a `#[repr(align)]` attribute"</span>, tcx.item_name(def_spans[<span class="number">0</span>].<span class="number">0</span>)),
-                );
+            err.span_note(
+                tcx.def_span(def_spans[<span class="number">0</span>].<span class="number">0</span>),
+                <span class="macro">format!</span>(<span class="string">"`{}` has a `#[repr(align)]` attribute"</span>, tcx.item_name(def_spans[<span class="number">0</span>].<span class="number">0</span>)),
+            );
 
-                <span class="kw">if </span>def_spans.len() &gt; <span class="number">2 </span>{
-                    <span class="kw">let </span><span class="kw-2">mut </span>first = <span class="bool-val">true</span>;
-                    <span class="kw">for </span>(adt_def, span) <span class="kw">in </span>def_spans.iter().skip(<span class="number">1</span>).rev() {
-                        <span class="kw">let </span>ident = tcx.item_name(<span class="kw-2">*</span>adt_def);
-                        err.span_note(
-                            <span class="kw-2">*</span>span,
-                            <span class="kw">if </span>first {
-                                <span class="macro">format!</span>(
-                                    <span class="string">"`{}` contains a field of type `{}`"</span>,
-                                    tcx.type_of(def.did()).instantiate_identity(),
-                                    ident
-                                )
-                            } <span class="kw">else </span>{
-                                <span class="macro">format!</span>(<span class="string">"...which contains a field of type `{ident}`"</span>)
-                            },
-                        );
-                        first = <span class="bool-val">false</span>;
-                    }
+            <span class="kw">if </span>def_spans.len() &gt; <span class="number">2 </span>{
+                <span class="kw">let </span><span class="kw-2">mut </span>first = <span class="bool-val">true</span>;
+                <span class="kw">for </span>(adt_def, span) <span class="kw">in </span>def_spans.iter().skip(<span class="number">1</span>).rev() {
+                    <span class="kw">let </span>ident = tcx.item_name(<span class="kw-2">*</span>adt_def);
+                    err.span_note(
+                        <span class="kw-2">*</span>span,
+                        <span class="kw">if </span>first {
+                            <span class="macro">format!</span>(
+                                <span class="string">"`{}` contains a field of type `{}`"</span>,
+                                tcx.type_of(def.did()).instantiate_identity(),
+                                ident
+                            )
+                        } <span class="kw">else </span>{
+                            <span class="macro">format!</span>(<span class="string">"...which contains a field of type `{ident}`"</span>)
+                        },
+                    );
+                    first = <span class="bool-val">false</span>;
                 }
-
-                err.emit();
             }
+
+            err.emit();
         }
     }
 }
@@ -3014,7 +3017,8 @@
                 ty::Tuple(list) =&gt; list.iter().try_for_each(|t| check_non_exhaustive(tcx, t)),
                 ty::Array(ty, <span class="kw">_</span>) =&gt; check_non_exhaustive(tcx, <span class="kw-2">*</span>ty),
                 ty::Adt(def, args) =&gt; {
-                    <span class="kw">if </span>!def.did().is_local() {
+                    <span class="kw">if </span>!def.did().is_local() &amp;&amp; !tcx.has_attr(def.did(), sym::rustc_pub_transparent)
+                    {
                         <span class="kw">let </span>non_exhaustive = def.is_variant_list_non_exhaustive()
                             || def
                                 .variants()
@@ -3319,7 +3323,7 @@
             // * compare the param span to the pred span to detect lone user-written `Sized` bounds
             </span><span class="kw">let </span>has_explicit_bounds = bounded_params.is_empty()
                 || (<span class="kw-2">*</span>bounded_params).get(<span class="kw-2">&amp;</span>param.index).is_some_and(|&amp;&amp;pred_sp| pred_sp != span);
-            <span class="kw">let </span>const_param_help = (!has_explicit_bounds).then_some(());
+            <span class="kw">let </span>const_param_help = !has_explicit_bounds;
 
             <span class="kw">let </span><span class="kw-2">mut </span>diag = tcx.dcx().create_err(errors::UnusedGenericParameter {
                 span,

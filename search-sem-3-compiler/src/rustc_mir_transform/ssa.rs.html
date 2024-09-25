@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/ssa.rs`."><title>ssa.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/ssa.rs`."><title>ssa.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>ssa.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -415,13 +416,16 @@
 <a href="#415" id="415">415</a>
 <a href="#416" id="416">416</a>
 <a href="#417" id="417">417</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! We denote as "SSA" the set of locals that verify the following properties:
+<a href="#418" id="418">418</a>
+<a href="#419" id="419">419</a>
+<a href="#420" id="420">420</a>
+<a href="#421" id="421">421</a></pre></div><pre class="rust"><code><span class="doccomment">//! We denote as "SSA" the set of locals that verify the following properties:
 //! 1/ They are only assigned-to once, either as a function parameter, or in an assign statement;
 //! 2/ This single assignment dominates all uses;
 //!
-//! As we do not track indirect assignments, a local that has its address taken (either by
-//! AddressOf or by borrowing) is considered non-SSA. However, it is UB to modify through an
-//! immutable borrow of a `Freeze` local. Those can still be considered to be SSA.
+//! As we do not track indirect assignments, a local that has its address taken (via a borrow or raw
+//! borrow operator) is considered non-SSA. However, it is UB to modify through an immutable borrow
+//! of a `Freeze` local. Those can still be considered to be SSA.
 
 </span><span class="kw">use </span>rustc_data_structures::graph::dominators::Dominators;
 <span class="kw">use </span>rustc_index::bit_set::BitSet;
@@ -431,8 +435,9 @@
 <span class="kw">use </span>rustc_middle::mir::visit::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::ty::{ParamEnv, TyCtxt};
+<span class="kw">use </span>tracing::{debug, instrument, trace};
 
-<span class="kw">pub struct </span>SsaLocals {
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>SsaLocals {
     <span class="doccomment">/// Assignments to each local. This defines whether the local is SSA.
     </span>assignments: IndexVec&lt;Local, Set1&lt;DefLocation&gt;&gt;,
     <span class="doccomment">/// We visit the body in reverse postorder, to ensure each local is assigned before it is used.
@@ -448,14 +453,18 @@
     </span>borrowed_locals: BitSet&lt;Local&gt;,
 }
 
-<span class="kw">pub enum </span>AssignedValue&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">enum </span>AssignedValue&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     Arg,
     Rvalue(<span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>Rvalue&lt;<span class="lifetime">'tcx</span>&gt;),
     Terminator,
 }
 
 <span class="kw">impl </span>SsaLocals {
-    <span class="kw">pub fn </span>new&lt;<span class="lifetime">'tcx</span>&gt;(tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;</span>Body&lt;<span class="lifetime">'tcx</span>&gt;, param_env: ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; SsaLocals {
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>new&lt;<span class="lifetime">'tcx</span>&gt;(
+        tcx: TyCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
+        body: <span class="kw-2">&amp;</span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
+        param_env: ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
+    ) -&gt; SsaLocals {
         <span class="kw">let </span>assignment_order = Vec::with_capacity(body.local_decls.len());
 
         <span class="kw">let </span>assignments = IndexVec::from_elem(Set1::Empty, <span class="kw-2">&amp;</span>body.local_decls);
@@ -517,25 +526,25 @@
         ssa
     }
 
-    <span class="kw">pub fn </span>num_locals(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>num_locals(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize {
         <span class="self">self</span>.assignments.len()
     }
 
-    <span class="kw">pub fn </span>locals(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = Local&gt; {
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>locals(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Iterator&lt;Item = Local&gt; {
         <span class="self">self</span>.assignments.indices()
     }
 
-    <span class="kw">pub fn </span>is_ssa(<span class="kw-2">&amp;</span><span class="self">self</span>, local: Local) -&gt; bool {
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>is_ssa(<span class="kw-2">&amp;</span><span class="self">self</span>, local: Local) -&gt; bool {
         <span class="macro">matches!</span>(<span class="self">self</span>.assignments[local], Set1::One(<span class="kw">_</span>))
     }
 
     <span class="doccomment">/// Return the number of uses if a local that are not "Deref".
-    </span><span class="kw">pub fn </span>num_direct_uses(<span class="kw-2">&amp;</span><span class="self">self</span>, local: Local) -&gt; u32 {
+    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>num_direct_uses(<span class="kw-2">&amp;</span><span class="self">self</span>, local: Local) -&gt; u32 {
         <span class="self">self</span>.direct_uses[local]
     }
 
     <span class="attr">#[inline]
-    </span><span class="kw">pub fn </span>assignment_dominates(
+    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>assignment_dominates(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         dominators: <span class="kw-2">&amp;</span>Dominators&lt;BasicBlock&gt;,
         local: Local,
@@ -547,7 +556,7 @@
         }
     }
 
-    <span class="kw">pub fn </span>assignments&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;(
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>assignments&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;(
         <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="self">self</span>,
         body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
     ) -&gt; <span class="kw">impl </span>Iterator&lt;Item = (Local, <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Rvalue&lt;<span class="lifetime">'tcx</span>&gt;, Location)&gt; + <span class="lifetime">'a </span>{
@@ -564,18 +573,17 @@
         })
     }
 
-    <span class="kw">pub fn </span>for_each_assignment_mut&lt;<span class="lifetime">'tcx</span>&gt;(
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>for_each_assignment_mut&lt;<span class="lifetime">'tcx</span>&gt;(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         basic_blocks: <span class="kw-2">&amp;mut </span>IndexSlice&lt;BasicBlock, BasicBlockData&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
         <span class="kw-2">mut </span>f: <span class="kw">impl </span>FnMut(Local, AssignedValue&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;, Location),
     ) {
         <span class="kw">for </span><span class="kw-2">&amp;</span>local <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.assignment_order {
             <span class="kw">match </span><span class="self">self</span>.assignments[local] {
-                Set1::One(DefLocation::Argument) =&gt; f(
-                    local,
-                    AssignedValue::Arg,
-                    Location { block: START_BLOCK, statement_index: <span class="number">0 </span>},
-                ),
+                Set1::One(DefLocation::Argument) =&gt; f(local, AssignedValue::Arg, Location {
+                    block: START_BLOCK,
+                    statement_index: <span class="number">0</span>,
+                }),
                 Set1::One(DefLocation::Assignment(loc)) =&gt; {
                     <span class="kw">let </span>bb = <span class="kw-2">&amp;mut </span>basic_blocks[loc.block];
                     <span class="comment">// `loc` must point to a direct assignment to `local`.
@@ -610,17 +618,17 @@
     ///   _d =&gt; _a // transitively through _c
     ///
     /// Exception: we do not see through the return place, as it cannot be instantiated.
-    </span><span class="kw">pub fn </span>copy_classes(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>IndexSlice&lt;Local, Local&gt; {
+    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>copy_classes(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>IndexSlice&lt;Local, Local&gt; {
         <span class="kw-2">&amp;</span><span class="self">self</span>.copy_classes
     }
 
     <span class="doccomment">/// Set of SSA locals that are immutably borrowed.
-    </span><span class="kw">pub fn </span>borrowed_locals(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>BitSet&lt;Local&gt; {
+    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>borrowed_locals(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>BitSet&lt;Local&gt; {
         <span class="kw-2">&amp;</span><span class="self">self</span>.borrowed_locals
     }
 
     <span class="doccomment">/// Make a property uniform on a copy equivalence class by removing elements.
-    </span><span class="kw">pub fn </span>meet_copy_equivalence(<span class="kw-2">&amp;</span><span class="self">self</span>, property: <span class="kw-2">&amp;mut </span>BitSet&lt;Local&gt;) {
+    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>meet_copy_equivalence(<span class="kw-2">&amp;</span><span class="self">self</span>, property: <span class="kw-2">&amp;mut </span>BitSet&lt;Local&gt;) {
         <span class="comment">// Consolidate to have a local iff all its copies are.
         //
         // `copy_classes` defines equivalence classes between locals. The `local`s that recursively
@@ -647,7 +655,7 @@
     }
 }
 
-<span class="kw">struct </span>SsaVisitor&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt; {
+<span class="kw">struct </span>SsaVisitor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
     body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Body&lt;<span class="lifetime">'tcx</span>&gt;,
     dominators: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Dominators&lt;BasicBlock&gt;,
     assignments: IndexVec&lt;Local, Set1&lt;DefLocation&gt;&gt;,
@@ -673,13 +681,13 @@
     }
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; Visitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>SsaVisitor&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'_</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; Visitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>SsaVisitor&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">fn </span>visit_local(<span class="kw-2">&amp;mut </span><span class="self">self</span>, local: Local, ctxt: PlaceContext, loc: Location) {
         <span class="kw">match </span>ctxt {
             PlaceContext::MutatingUse(MutatingUseContext::Projection)
             | PlaceContext::NonMutatingUse(NonMutatingUseContext::Projection) =&gt; <span class="macro">bug!</span>(),
             <span class="comment">// Anything can happen with raw pointers, so remove them.
-            </span>PlaceContext::NonMutatingUse(NonMutatingUseContext::AddressOf)
+            </span>PlaceContext::NonMutatingUse(NonMutatingUseContext::RawBorrow)
             | PlaceContext::MutatingUse(<span class="kw">_</span>) =&gt; {
                 <span class="self">self</span>.assignments[local] = Set1::Many;
             }

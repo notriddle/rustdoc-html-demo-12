@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/hir_ty_lowering/object_safety.rs`."><title>object_safety.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/hir_ty_lowering/object_safety.rs`."><title>object_safety.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_analysis/hir_ty_lowering/</div>object_safety.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -364,7 +365,16 @@
 <a href="#364" id="364">364</a>
 <a href="#365" id="365">365</a>
 <a href="#366" id="366">366</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>rustc_data_structures::fx::{FxHashSet, FxIndexMap, FxIndexSet};
+<a href="#367" id="367">367</a>
+<a href="#368" id="368">368</a>
+<a href="#369" id="369">369</a>
+<a href="#370" id="370">370</a>
+<a href="#371" id="371">371</a>
+<a href="#372" id="372">372</a>
+<a href="#373" id="373">373</a>
+<a href="#374" id="374">374</a>
+<a href="#375" id="375">375</a>
+<a href="#376" id="376">376</a></pre></div><pre class="rust"><code><span class="kw">use </span>rustc_data_structures::fx::{FxHashSet, FxIndexMap, FxIndexSet};
 <span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_errors::struct_span_code_err;
 <span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
@@ -379,7 +389,8 @@
 <span class="kw">use </span>rustc_span::{ErrorGuaranteed, Span};
 <span class="kw">use </span>rustc_trait_selection::error_reporting::traits::report_object_safety_error;
 <span class="kw">use </span>rustc_trait_selection::traits::{<span class="self">self</span>, hir_ty_lowering_object_safety_violations};
-<span class="kw">use </span>smallvec::{smallvec, SmallVec};
+<span class="kw">use </span>smallvec::{SmallVec, smallvec};
+<span class="kw">use </span>tracing::{debug, instrument};
 
 <span class="kw">use </span><span class="kw">super</span>::HirTyLowerer;
 <span class="kw">use </span><span class="kw">crate</span>::bounds::Bounds;
@@ -396,7 +407,6 @@
         hir_id: hir::HirId,
         hir_trait_bounds: <span class="kw-2">&amp;</span>[(hir::PolyTraitRef&lt;<span class="lifetime">'tcx</span>&gt;, hir::TraitBoundModifier)],
         lifetime: <span class="kw-2">&amp;</span>hir::Lifetime,
-        borrowed: bool,
         representation: DynKind,
     ) -&gt; Ty&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>tcx = <span class="self">self</span>.tcx();
@@ -691,22 +701,32 @@
         v.dedup();
         <span class="kw">let </span>existential_predicates = tcx.mk_poly_existential_predicates(<span class="kw-2">&amp;</span>v);
 
-        <span class="comment">// Use explicitly-specified region bound.
+        <span class="comment">// Use explicitly-specified region bound, unless the bound is missing.
         </span><span class="kw">let </span>region_bound = <span class="kw">if </span>!lifetime.is_elided() {
-            <span class="self">self</span>.lower_lifetime(lifetime, RegionInferReason::ObjectLifetimeDefault)
+            <span class="self">self</span>.lower_lifetime(lifetime, RegionInferReason::ExplicitObjectLifetime)
         } <span class="kw">else </span>{
             <span class="self">self</span>.compute_object_lifetime_bound(span, existential_predicates).unwrap_or_else(|| {
-                <span class="kw">if </span>tcx.named_bound_var(lifetime.hir_id).is_some() {
-                    <span class="self">self</span>.lower_lifetime(lifetime, RegionInferReason::ObjectLifetimeDefault)
+                <span class="comment">// Curiously, we prefer object lifetime default for `+ '_`...
+                </span><span class="kw">if </span>tcx.named_bound_var(lifetime.hir_id).is_some() {
+                    <span class="self">self</span>.lower_lifetime(lifetime, RegionInferReason::ExplicitObjectLifetime)
                 } <span class="kw">else </span>{
-                    <span class="self">self</span>.re_infer(
-                        span,
-                        <span class="kw">if </span>borrowed {
-                            RegionInferReason::ObjectLifetimeDefault
+                    <span class="kw">let </span>reason =
+                        <span class="kw">if let </span>hir::LifetimeName::ImplicitObjectLifetimeDefault = lifetime.res {
+                            <span class="kw">if let </span>hir::Node::Ty(hir::Ty {
+                                kind: hir::TyKind::Ref(parent_lifetime, <span class="kw">_</span>),
+                                ..
+                            }) = tcx.parent_hir_node(hir_id)
+                                &amp;&amp; tcx.named_bound_var(parent_lifetime.hir_id).is_none()
+                            {
+                                <span class="comment">// Parent lifetime must have failed to resolve. Don't emit a redundant error.
+                                </span>RegionInferReason::ExplicitObjectLifetime
+                            } <span class="kw">else </span>{
+                                RegionInferReason::ObjectLifetimeDefault
+                            }
                         } <span class="kw">else </span>{
-                            RegionInferReason::BorrowedObjectLifetimeDefault
-                        },
-                    )
+                            RegionInferReason::ExplicitObjectLifetime
+                        };
+                    <span class="self">self</span>.re_infer(span, reason)
                 }
             })
         };

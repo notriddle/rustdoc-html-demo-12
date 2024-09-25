@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"trait":["ConstMethods"]};
+window.SIDEBAR_ITEMS = {"trait":["ConstCodegenMethods"]};

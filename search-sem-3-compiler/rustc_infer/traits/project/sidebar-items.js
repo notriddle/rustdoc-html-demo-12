@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["EvaluationResult","ProjectionCacheEntry","Reveal"],"struct":["MismatchedProjectionTypes","Normalized","ProjectionCache","ProjectionCacheKey","ProjectionCacheStorage"],"type":["NormalizedTerm","UndoLog"]};
+window.SIDEBAR_ITEMS = {"enum":["ProjectionCacheEntry"],"struct":["MismatchedProjectionTypes","Normalized","ProjectionCache","ProjectionCacheKey","ProjectionCacheStorage"],"type":["NormalizedTerm","UndoLog"]};

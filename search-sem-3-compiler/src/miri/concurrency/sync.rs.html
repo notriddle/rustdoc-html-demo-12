@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/concurrency/sync.rs`."><title>sync.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/concurrency/sync.rs`."><title>sync.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/concurrency/</div>sync.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -781,13 +782,77 @@
 <a href="#781" id="781">781</a>
 <a href="#782" id="782">782</a>
 <a href="#783" id="783">783</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::collections::{hash_map::Entry, VecDeque};
+<a href="#784" id="784">784</a>
+<a href="#785" id="785">785</a>
+<a href="#786" id="786">786</a>
+<a href="#787" id="787">787</a>
+<a href="#788" id="788">788</a>
+<a href="#789" id="789">789</a>
+<a href="#790" id="790">790</a>
+<a href="#791" id="791">791</a>
+<a href="#792" id="792">792</a>
+<a href="#793" id="793">793</a>
+<a href="#794" id="794">794</a>
+<a href="#795" id="795">795</a>
+<a href="#796" id="796">796</a>
+<a href="#797" id="797">797</a>
+<a href="#798" id="798">798</a>
+<a href="#799" id="799">799</a>
+<a href="#800" id="800">800</a>
+<a href="#801" id="801">801</a>
+<a href="#802" id="802">802</a>
+<a href="#803" id="803">803</a>
+<a href="#804" id="804">804</a>
+<a href="#805" id="805">805</a>
+<a href="#806" id="806">806</a>
+<a href="#807" id="807">807</a>
+<a href="#808" id="808">808</a>
+<a href="#809" id="809">809</a>
+<a href="#810" id="810">810</a>
+<a href="#811" id="811">811</a>
+<a href="#812" id="812">812</a>
+<a href="#813" id="813">813</a>
+<a href="#814" id="814">814</a>
+<a href="#815" id="815">815</a>
+<a href="#816" id="816">816</a>
+<a href="#817" id="817">817</a>
+<a href="#818" id="818">818</a>
+<a href="#819" id="819">819</a>
+<a href="#820" id="820">820</a>
+<a href="#821" id="821">821</a>
+<a href="#822" id="822">822</a>
+<a href="#823" id="823">823</a>
+<a href="#824" id="824">824</a>
+<a href="#825" id="825">825</a>
+<a href="#826" id="826">826</a>
+<a href="#827" id="827">827</a>
+<a href="#828" id="828">828</a>
+<a href="#829" id="829">829</a>
+<a href="#830" id="830">830</a>
+<a href="#831" id="831">831</a>
+<a href="#832" id="832">832</a>
+<a href="#833" id="833">833</a>
+<a href="#834" id="834">834</a>
+<a href="#835" id="835">835</a>
+<a href="#836" id="836">836</a>
+<a href="#837" id="837">837</a>
+<a href="#838" id="838">838</a>
+<a href="#839" id="839">839</a>
+<a href="#840" id="840">840</a>
+<a href="#841" id="841">841</a>
+<a href="#842" id="842">842</a>
+<a href="#843" id="843">843</a>
+<a href="#844" id="844">844</a>
+<a href="#845" id="845">845</a>
+<a href="#846" id="846">846</a>
+<a href="#847" id="847">847</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::any::Any;
+<span class="kw">use </span>std::collections::{VecDeque, hash_map::Entry};
 <span class="kw">use </span>std::ops::Not;
 <span class="kw">use </span>std::time::Duration;
 
 <span class="kw">use </span>rustc_data_structures::fx::FxHashMap;
 <span class="kw">use </span>rustc_index::{Idx, IndexVec};
-<span class="kw">use </span>rustc_middle::ty::layout::TyAndLayout;
+<span class="kw">use </span>rustc_target::abi::Size;
 
 <span class="kw">use </span><span class="kw">super</span>::init_once::InitOnce;
 <span class="kw">use </span><span class="kw">super</span>::vector_clock::VClock;
@@ -860,6 +925,9 @@
     </span>queue: VecDeque&lt;ThreadId&gt;,
     <span class="doccomment">/// Mutex clock. This tracks the moment of the last unlock.
     </span>clock: VClock,
+
+    <span class="doccomment">/// Additional data that can be set by shim implementations.
+    </span>data: <span class="prelude-ty">Option</span>&lt;Box&lt;<span class="kw">dyn </span>Any&gt;&gt;,
 }
 
 <span class="macro">declare_id!</span>(RwLockId);
@@ -896,6 +964,9 @@
     /// locks.
     /// This is only relevant when there is an active reader.
     </span>clock_current_readers: VClock,
+
+    <span class="doccomment">/// Additional data that can be set by shim implementations.
+    </span>data: <span class="prelude-ty">Option</span>&lt;Box&lt;<span class="kw">dyn </span>Any&gt;&gt;,
 }
 
 <span class="macro">declare_id!</span>(CondvarId);
@@ -910,6 +981,9 @@
     /// Contains the clock of the last thread to
     /// perform a condvar-signal.
     </span>clock: VClock,
+
+    <span class="doccomment">/// Additional data that can be set by shim implementations.
+    </span>data: <span class="prelude-ty">Option</span>&lt;Box&lt;<span class="kw">dyn </span>Any&gt;&gt;,
 }
 
 <span class="doccomment">/// The futex state.
@@ -947,25 +1021,31 @@
 </span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; EvalContextExtPriv&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><span class="kw">crate</span>::MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt; {}
 <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">trait </span>EvalContextExtPriv&lt;<span class="lifetime">'tcx</span>&gt;: <span class="kw">crate</span>::MiriInterpCxExt&lt;<span class="lifetime">'tcx</span>&gt; {
     <span class="doccomment">/// Lazily initialize the ID of this Miri sync structure.
-    /// ('0' indicates uninit.)
+    /// If memory stores '0', that indicates uninit and we generate a new instance.
+    /// Returns `None` if memory stores a non-zero invalid ID.
+    ///
+    /// `get_objs` must return the `IndexVec` that stores all the objects of this type.
+    /// `create_obj` must create the new object if initialization is needed.
     </span><span class="attr">#[inline]
-    </span><span class="kw">fn </span>get_or_create_id&lt;Id: SyncId&gt;(
+    </span><span class="kw">fn </span>get_or_create_id&lt;Id: SyncId + Idx, T&gt;(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        next_id: Id,
-        lock_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
-        lock_layout: TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;,
+        lock: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
         offset: u64,
+        get_objs: <span class="kw">impl for</span>&lt;<span class="lifetime">'a</span>&gt; Fn(<span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>IndexVec&lt;Id, T&gt;,
+        create_obj: <span class="kw">impl for</span>&lt;<span class="lifetime">'a</span>&gt; FnOnce(<span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, T&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;Id&gt;&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
-        <span class="kw">let </span>value_place =
-            this.deref_pointer_and_offset(lock_op, offset, lock_layout, this.machine.layouts.u32)<span class="question-mark">?</span>;
+        <span class="kw">let </span>offset = Size::from_bytes(offset);
+        <span class="macro">assert!</span>(lock.layout.size &gt;= offset + this.machine.layouts.u32.size);
+        <span class="kw">let </span>id_place = lock.offset(offset, this.machine.layouts.u32, this)<span class="question-mark">?</span>;
+        <span class="kw">let </span>next_index = get_objs(this).next_index();
 
         <span class="comment">// Since we are lazy, this update has to be atomic.
         </span><span class="kw">let </span>(old, success) = this
             .atomic_compare_exchange_scalar(
-                <span class="kw-2">&amp;</span>value_place,
+                <span class="kw-2">&amp;</span>id_place,
                 <span class="kw-2">&amp;</span>ImmTy::from_uint(<span class="number">0u32</span>, this.machine.layouts.u32),
-                Scalar::from_u32(next_id.to_u32()),
+                Scalar::from_u32(next_index.to_u32()),
                 AtomicRwOrd::Relaxed, <span class="comment">// deliberately *no* synchronization
                 </span>AtomicReadOrd::Relaxed,
                 <span class="bool-val">false</span>,
@@ -973,74 +1053,47 @@
             </span>.to_scalar_pair();
 
         <span class="prelude-val">Ok</span>(<span class="kw">if </span>success.to_bool().expect(<span class="string">"compare_exchange's second return value is a bool"</span>) {
-            <span class="comment">// Caller of the closure needs to allocate next_id
-            </span><span class="prelude-val">None
-        </span>} <span class="kw">else </span>{
-            <span class="prelude-val">Some</span>(Id::from_u32(old.to_u32().expect(<span class="string">"layout is u32"</span>)))
+            <span class="comment">// We set the in-memory ID to `next_index`, now also create this object in the machine
+            // state.
+            </span><span class="kw">let </span>obj = create_obj(this)<span class="question-mark">?</span>;
+            <span class="kw">let </span>new_index = get_objs(this).push(obj);
+            <span class="macro">assert_eq!</span>(next_index, new_index);
+            <span class="prelude-val">Some</span>(new_index)
+        } <span class="kw">else </span>{
+            <span class="kw">let </span>id = Id::from_u32(old.to_u32().expect(<span class="string">"layout is u32"</span>));
+            <span class="kw">if </span>get_objs(this).get(id).is_none() {
+                <span class="comment">// The in-memory ID is invalid.
+                </span><span class="prelude-val">None
+            </span>} <span class="kw">else </span>{
+                <span class="prelude-val">Some</span>(id)
+            }
         })
     }
 
-    <span class="doccomment">/// Provides the closure with the next MutexId. Creates that mutex if the closure returns None,
-    /// otherwise returns the value from the closure.
-    </span><span class="attr">#[inline]
-    </span><span class="kw">fn </span>mutex_get_or_create&lt;F&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, existing: F) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, MutexId&gt;
-    <span class="kw">where
-        </span>F: FnOnce(<span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;, MutexId) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;MutexId&gt;&gt;,
-    {
+    <span class="doccomment">/// Eagerly creates a Miri sync structure.
+    ///
+    /// `create_id` will store the index of the sync_structure in the memory pointed to by
+    /// `lock_op`, so that future calls to `get_or_create_id` will see it as initialized.
+    /// - `lock_op` must hold a pointer to the sync structure.
+    /// - `lock_layout` must be the memory layout of the sync structure.
+    /// - `offset` must be the offset inside the sync structure where its miri id will be stored.
+    /// - `get_objs` is described in `get_or_create_id`.
+    /// - `obj` must be the new sync object.
+    </span><span class="kw">fn </span>create_id&lt;Id: SyncId + Idx, T&gt;(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        lock: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+        offset: u64,
+        get_objs: <span class="kw">impl for</span>&lt;<span class="lifetime">'a</span>&gt; Fn(<span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>IndexVec&lt;Id, T&gt;,
+        obj: T,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Id&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
-        <span class="kw">let </span>next_index = this.machine.sync.mutexes.next_index();
-        <span class="kw">if let </span><span class="prelude-val">Some</span>(old) = existing(this, next_index)<span class="question-mark">? </span>{
-            <span class="kw">if </span>this.machine.sync.mutexes.get(old).is_none() {
-                <span class="macro">throw_ub_format!</span>(<span class="string">"mutex has invalid ID"</span>);
-            }
-            <span class="prelude-val">Ok</span>(old)
-        } <span class="kw">else </span>{
-            <span class="kw">let </span>new_index = this.machine.sync.mutexes.push(Default::default());
-            <span class="macro">assert_eq!</span>(next_index, new_index);
-            <span class="prelude-val">Ok</span>(new_index)
-        }
-    }
+        <span class="kw">let </span>offset = Size::from_bytes(offset);
+        <span class="macro">assert!</span>(lock.layout.size &gt;= offset + this.machine.layouts.u32.size);
+        <span class="kw">let </span>id_place = lock.offset(offset, this.machine.layouts.u32, this)<span class="question-mark">?</span>;
 
-    <span class="doccomment">/// Provides the closure with the next RwLockId. Creates that RwLock if the closure returns None,
-    /// otherwise returns the value from the closure.
-    </span><span class="attr">#[inline]
-    </span><span class="kw">fn </span>rwlock_get_or_create&lt;F&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, existing: F) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, RwLockId&gt;
-    <span class="kw">where
-        </span>F: FnOnce(<span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;, RwLockId) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;RwLockId&gt;&gt;,
-    {
-        <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
-        <span class="kw">let </span>next_index = this.machine.sync.rwlocks.next_index();
-        <span class="kw">if let </span><span class="prelude-val">Some</span>(old) = existing(this, next_index)<span class="question-mark">? </span>{
-            <span class="kw">if </span>this.machine.sync.rwlocks.get(old).is_none() {
-                <span class="macro">throw_ub_format!</span>(<span class="string">"rwlock has invalid ID"</span>);
-            }
-            <span class="prelude-val">Ok</span>(old)
-        } <span class="kw">else </span>{
-            <span class="kw">let </span>new_index = this.machine.sync.rwlocks.push(Default::default());
-            <span class="macro">assert_eq!</span>(next_index, new_index);
-            <span class="prelude-val">Ok</span>(new_index)
-        }
-    }
-
-    <span class="doccomment">/// Provides the closure with the next CondvarId. Creates that Condvar if the closure returns None,
-    /// otherwise returns the value from the closure.
-    </span><span class="attr">#[inline]
-    </span><span class="kw">fn </span>condvar_get_or_create&lt;F&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, existing: F) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, CondvarId&gt;
-    <span class="kw">where
-        </span>F: FnOnce(<span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;, CondvarId) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;CondvarId&gt;&gt;,
-    {
-        <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
-        <span class="kw">let </span>next_index = this.machine.sync.condvars.next_index();
-        <span class="kw">if let </span><span class="prelude-val">Some</span>(old) = existing(this, next_index)<span class="question-mark">? </span>{
-            <span class="kw">if </span>this.machine.sync.condvars.get(old).is_none() {
-                <span class="macro">throw_ub_format!</span>(<span class="string">"condvar has invalid ID"</span>);
-            }
-            <span class="prelude-val">Ok</span>(old)
-        } <span class="kw">else </span>{
-            <span class="kw">let </span>new_index = this.machine.sync.condvars.push(Default::default());
-            <span class="macro">assert_eq!</span>(next_index, new_index);
-            <span class="prelude-val">Ok</span>(new_index)
-        }
+        <span class="kw">let </span>new_index = get_objs(this).push(obj);
+        this.write_scalar(Scalar::from_u32(new_index.to_u32()), <span class="kw-2">&amp;</span>id_place)<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>(new_index)
     }
 
     <span class="kw">fn </span>condvar_reacquire_mutex(
@@ -1069,40 +1122,115 @@
 // situations.
 </span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; EvalContextExt&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><span class="kw">crate</span>::MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt; {}
 <span class="kw">pub trait </span>EvalContextExt&lt;<span class="lifetime">'tcx</span>&gt;: <span class="kw">crate</span>::MiriInterpCxExt&lt;<span class="lifetime">'tcx</span>&gt; {
-    <span class="kw">fn </span>mutex_get_or_create_id(
+    <span class="doccomment">/// Eagerly create and initialize a new mutex.
+    </span><span class="kw">fn </span>mutex_create(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        lock_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
-        lock_layout: TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;,
+        lock: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
         offset: u64,
+        data: <span class="prelude-ty">Option</span>&lt;Box&lt;<span class="kw">dyn </span>Any&gt;&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, MutexId&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
-        this.mutex_get_or_create(|ecx, next_id| {
-            ecx.get_or_create_id(next_id, lock_op, lock_layout, offset)
+        this.create_id(lock, offset, |ecx| <span class="kw-2">&amp;mut </span>ecx.machine.sync.mutexes, Mutex {
+            data,
+            ..Default::default()
         })
+    }
+
+    <span class="doccomment">/// Lazily create a new mutex.
+    /// `initialize_data` must return any additional data that a user wants to associate with the mutex.
+    </span><span class="kw">fn </span>mutex_get_or_create_id(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        lock: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+        offset: u64,
+        initialize_data: <span class="kw">impl for</span>&lt;<span class="lifetime">'a</span>&gt; FnOnce(
+            <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
+        ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;Box&lt;<span class="kw">dyn </span>Any&gt;&gt;&gt;,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, MutexId&gt; {
+        <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
+        this.get_or_create_id(
+            lock,
+            offset,
+            |ecx| <span class="kw-2">&amp;mut </span>ecx.machine.sync.mutexes,
+            |ecx| initialize_data(ecx).map(|data| Mutex { data, ..Default::default() }),
+        )<span class="question-mark">?
+        </span>.ok_or_else(|| <span class="macro">err_ub_format!</span>(<span class="string">"mutex has invalid ID"</span>).into())
+    }
+
+    <span class="doccomment">/// Retrieve the additional data stored for a mutex.
+    </span><span class="kw">fn </span>mutex_get_data&lt;<span class="lifetime">'a</span>, T: <span class="lifetime">'static</span>&gt;(<span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><span class="self">self</span>, id: MutexId) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'a </span>T&gt;
+    <span class="kw">where
+        </span><span class="lifetime">'tcx</span>: <span class="lifetime">'a</span>,
+    {
+        <span class="kw">let </span>this = <span class="self">self</span>.eval_context_ref();
+        this.machine.sync.mutexes[id].data.as_deref().and_then(|p| p.downcast_ref::&lt;T&gt;())
     }
 
     <span class="kw">fn </span>rwlock_get_or_create_id(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        lock_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
-        lock_layout: TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;,
+        lock: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
         offset: u64,
+        initialize_data: <span class="kw">impl for</span>&lt;<span class="lifetime">'a</span>&gt; FnOnce(
+            <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
+        ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;Box&lt;<span class="kw">dyn </span>Any&gt;&gt;&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, RwLockId&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
-        this.rwlock_get_or_create(|ecx, next_id| {
-            ecx.get_or_create_id(next_id, lock_op, lock_layout, offset)
+        this.get_or_create_id(
+            lock,
+            offset,
+            |ecx| <span class="kw-2">&amp;mut </span>ecx.machine.sync.rwlocks,
+            |ecx| initialize_data(ecx).map(|data| RwLock { data, ..Default::default() }),
+        )<span class="question-mark">?
+        </span>.ok_or_else(|| <span class="macro">err_ub_format!</span>(<span class="string">"rwlock has invalid ID"</span>).into())
+    }
+
+    <span class="doccomment">/// Retrieve the additional data stored for a rwlock.
+    </span><span class="kw">fn </span>rwlock_get_data&lt;<span class="lifetime">'a</span>, T: <span class="lifetime">'static</span>&gt;(<span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><span class="self">self</span>, id: RwLockId) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'a </span>T&gt;
+    <span class="kw">where
+        </span><span class="lifetime">'tcx</span>: <span class="lifetime">'a</span>,
+    {
+        <span class="kw">let </span>this = <span class="self">self</span>.eval_context_ref();
+        this.machine.sync.rwlocks[id].data.as_deref().and_then(|p| p.downcast_ref::&lt;T&gt;())
+    }
+
+    <span class="doccomment">/// Eagerly create and initialize a new condvar.
+    </span><span class="kw">fn </span>condvar_create(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        condvar: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+        offset: u64,
+        data: <span class="prelude-ty">Option</span>&lt;Box&lt;<span class="kw">dyn </span>Any&gt;&gt;,
+    ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, CondvarId&gt; {
+        <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
+        this.create_id(condvar, offset, |ecx| <span class="kw-2">&amp;mut </span>ecx.machine.sync.condvars, Condvar {
+            data,
+            ..Default::default()
         })
     }
 
     <span class="kw">fn </span>condvar_get_or_create_id(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        lock_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
-        lock_layout: TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;,
+        lock: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
         offset: u64,
+        initialize_data: <span class="kw">impl for</span>&lt;<span class="lifetime">'a</span>&gt; FnOnce(
+            <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
+        ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;Box&lt;<span class="kw">dyn </span>Any&gt;&gt;&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, CondvarId&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
-        this.condvar_get_or_create(|ecx, next_id| {
-            ecx.get_or_create_id(next_id, lock_op, lock_layout, offset)
-        })
+        this.get_or_create_id(
+            lock,
+            offset,
+            |ecx| <span class="kw-2">&amp;mut </span>ecx.machine.sync.condvars,
+            |ecx| initialize_data(ecx).map(|data| Condvar { data, ..Default::default() }),
+        )<span class="question-mark">?
+        </span>.ok_or_else(|| <span class="macro">err_ub_format!</span>(<span class="string">"condvar has invalid ID"</span>).into())
+    }
+
+    <span class="doccomment">/// Retrieve the additional data stored for a condvar.
+    </span><span class="kw">fn </span>condvar_get_data&lt;<span class="lifetime">'a</span>, T: <span class="lifetime">'static</span>&gt;(<span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><span class="self">self</span>, id: CondvarId) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'a </span>T&gt;
+    <span class="kw">where
+        </span><span class="lifetime">'tcx</span>: <span class="lifetime">'a</span>,
+    {
+        <span class="kw">let </span>this = <span class="self">self</span>.eval_context_ref();
+        this.machine.sync.condvars[id].data.as_deref().and_then(|p| p.downcast_ref::&lt;T&gt;())
     }
 
     <span class="attr">#[inline]

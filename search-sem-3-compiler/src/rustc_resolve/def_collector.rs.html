@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_resolve/src/def_collector.rs`."><title>def_collector.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_resolve" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_resolve/src/def_collector.rs`."><title>def_collector.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_resolve" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_resolve/</div>def_collector.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -438,41 +439,175 @@
 <a href="#438" id="438">438</a>
 <a href="#439" id="439">439</a>
 <a href="#440" id="440">440</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::mem;
+<a href="#441" id="441">441</a>
+<a href="#442" id="442">442</a>
+<a href="#443" id="443">443</a>
+<a href="#444" id="444">444</a>
+<a href="#445" id="445">445</a>
+<a href="#446" id="446">446</a>
+<a href="#447" id="447">447</a>
+<a href="#448" id="448">448</a>
+<a href="#449" id="449">449</a>
+<a href="#450" id="450">450</a>
+<a href="#451" id="451">451</a>
+<a href="#452" id="452">452</a>
+<a href="#453" id="453">453</a>
+<a href="#454" id="454">454</a>
+<a href="#455" id="455">455</a>
+<a href="#456" id="456">456</a>
+<a href="#457" id="457">457</a>
+<a href="#458" id="458">458</a>
+<a href="#459" id="459">459</a>
+<a href="#460" id="460">460</a>
+<a href="#461" id="461">461</a>
+<a href="#462" id="462">462</a>
+<a href="#463" id="463">463</a>
+<a href="#464" id="464">464</a>
+<a href="#465" id="465">465</a>
+<a href="#466" id="466">466</a>
+<a href="#467" id="467">467</a>
+<a href="#468" id="468">468</a>
+<a href="#469" id="469">469</a>
+<a href="#470" id="470">470</a>
+<a href="#471" id="471">471</a>
+<a href="#472" id="472">472</a>
+<a href="#473" id="473">473</a>
+<a href="#474" id="474">474</a>
+<a href="#475" id="475">475</a>
+<a href="#476" id="476">476</a>
+<a href="#477" id="477">477</a>
+<a href="#478" id="478">478</a>
+<a href="#479" id="479">479</a>
+<a href="#480" id="480">480</a>
+<a href="#481" id="481">481</a>
+<a href="#482" id="482">482</a>
+<a href="#483" id="483">483</a>
+<a href="#484" id="484">484</a>
+<a href="#485" id="485">485</a>
+<a href="#486" id="486">486</a>
+<a href="#487" id="487">487</a>
+<a href="#488" id="488">488</a>
+<a href="#489" id="489">489</a>
+<a href="#490" id="490">490</a>
+<a href="#491" id="491">491</a>
+<a href="#492" id="492">492</a>
+<a href="#493" id="493">493</a>
+<a href="#494" id="494">494</a>
+<a href="#495" id="495">495</a>
+<a href="#496" id="496">496</a>
+<a href="#497" id="497">497</a>
+<a href="#498" id="498">498</a>
+<a href="#499" id="499">499</a>
+<a href="#500" id="500">500</a>
+<a href="#501" id="501">501</a>
+<a href="#502" id="502">502</a>
+<a href="#503" id="503">503</a>
+<a href="#504" id="504">504</a>
+<a href="#505" id="505">505</a>
+<a href="#506" id="506">506</a>
+<a href="#507" id="507">507</a>
+<a href="#508" id="508">508</a>
+<a href="#509" id="509">509</a>
+<a href="#510" id="510">510</a>
+<a href="#511" id="511">511</a>
+<a href="#512" id="512">512</a>
+<a href="#513" id="513">513</a>
+<a href="#514" id="514">514</a>
+<a href="#515" id="515">515</a>
+<a href="#516" id="516">516</a>
+<a href="#517" id="517">517</a>
+<a href="#518" id="518">518</a>
+<a href="#519" id="519">519</a>
+<a href="#520" id="520">520</a>
+<a href="#521" id="521">521</a>
+<a href="#522" id="522">522</a>
+<a href="#523" id="523">523</a>
+<a href="#524" id="524">524</a>
+<a href="#525" id="525">525</a>
+<a href="#526" id="526">526</a>
+<a href="#527" id="527">527</a>
+<a href="#528" id="528">528</a>
+<a href="#529" id="529">529</a>
+<a href="#530" id="530">530</a>
+<a href="#531" id="531">531</a>
+<a href="#532" id="532">532</a>
+<a href="#533" id="533">533</a>
+<a href="#534" id="534">534</a>
+<a href="#535" id="535">535</a>
+<a href="#536" id="536">536</a>
+<a href="#537" id="537">537</a>
+<a href="#538" id="538">538</a>
+<a href="#539" id="539">539</a>
+<a href="#540" id="540">540</a>
+<a href="#541" id="541">541</a>
+<a href="#542" id="542">542</a>
+<a href="#543" id="543">543</a>
+<a href="#544" id="544">544</a>
+<a href="#545" id="545">545</a>
+<a href="#546" id="546">546</a>
+<a href="#547" id="547">547</a>
+<a href="#548" id="548">548</a>
+<a href="#549" id="549">549</a>
+<a href="#550" id="550">550</a>
+<a href="#551" id="551">551</a>
+<a href="#552" id="552">552</a>
+<a href="#553" id="553">553</a>
+<a href="#554" id="554">554</a>
+<a href="#555" id="555">555</a>
+<a href="#556" id="556">556</a>
+<a href="#557" id="557">557</a>
+<a href="#558" id="558">558</a>
+<a href="#559" id="559">559</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::mem;
 
 <span class="kw">use </span>rustc_ast::visit::FnKind;
 <span class="kw">use </span>rustc_ast::<span class="kw-2">*</span>;
+<span class="kw">use </span>rustc_ast_pretty::pprust;
 <span class="kw">use </span>rustc_expand::expand::AstFragment;
 <span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
 <span class="kw">use </span>rustc_hir::def::{CtorKind, CtorOf, DefKind};
 <span class="kw">use </span>rustc_hir::def_id::LocalDefId;
-<span class="kw">use </span>rustc_span::hygiene::LocalExpnId;
-<span class="kw">use </span>rustc_span::symbol::{kw, sym, Symbol};
 <span class="kw">use </span>rustc_span::Span;
+<span class="kw">use </span>rustc_span::hygiene::LocalExpnId;
+<span class="kw">use </span>rustc_span::symbol::{Symbol, kw, sym};
 <span class="kw">use </span>tracing::debug;
 
-<span class="kw">use crate</span>::{ImplTraitContext, Resolver};
+<span class="kw">use crate</span>::{ImplTraitContext, InvocationParent, PendingAnonConstInfo, Resolver};
 
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>collect_definitions(
     resolver: <span class="kw-2">&amp;mut </span>Resolver&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;,
     fragment: <span class="kw-2">&amp;</span>AstFragment,
     expansion: LocalExpnId,
 ) {
-    <span class="kw">let </span>(parent_def, impl_trait_context, in_attr) = resolver.invocation_parents[<span class="kw-2">&amp;</span>expansion];
-    <span class="kw">let </span><span class="kw-2">mut </span>visitor = DefCollector { resolver, parent_def, expansion, impl_trait_context, in_attr };
+    <span class="kw">let </span>InvocationParent { parent_def, pending_anon_const_info, impl_trait_context, in_attr } =
+        resolver.invocation_parents[<span class="kw-2">&amp;</span>expansion];
+    <span class="kw">let </span><span class="kw-2">mut </span>visitor = DefCollector {
+        resolver,
+        parent_def,
+        pending_anon_const_info,
+        expansion,
+        impl_trait_context,
+        in_attr,
+    };
     fragment.visit_with(<span class="kw-2">&amp;mut </span>visitor);
 }
 
 <span class="doccomment">/// Creates `DefId`s for nodes in the AST.
-</span><span class="kw">struct </span>DefCollector&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>&gt; {
-    resolver: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>Resolver&lt;<span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>&gt;,
+</span><span class="kw">struct </span>DefCollector&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt; {
+    resolver: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>Resolver&lt;<span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt;,
     parent_def: LocalDefId,
+    <span class="doccomment">/// If we have an anon const that consists of a macro invocation, e.g. `Foo&lt;{ m!() }&gt;`,
+    /// we need to wait until we know what the macro expands to before we create the def for
+    /// the anon const. That's because we lower some anon consts into `hir::ConstArgKind::Path`,
+    /// which don't have defs.
+    ///
+    /// See `Self::visit_anon_const()`.
+    </span>pending_anon_const_info: <span class="prelude-ty">Option</span>&lt;PendingAnonConstInfo&gt;,
     impl_trait_context: ImplTraitContext,
     in_attr: bool,
     expansion: LocalExpnId,
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>&gt; DefCollector&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt; DefCollector&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">fn </span>create_def(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         node_id: NodeId,
@@ -550,18 +685,74 @@
 
     <span class="kw">fn </span>visit_macro_invoc(<span class="kw-2">&amp;mut </span><span class="self">self</span>, id: NodeId) {
         <span class="kw">let </span>id = id.placeholder_to_expn_id();
-        <span class="kw">let </span>old_parent = <span class="self">self
-            </span>.resolver
-            .invocation_parents
-            .insert(id, (<span class="self">self</span>.parent_def, <span class="self">self</span>.impl_trait_context, <span class="self">self</span>.in_attr));
+        <span class="kw">let </span>pending_anon_const_info = <span class="self">self</span>.pending_anon_const_info.take();
+        <span class="kw">let </span>old_parent = <span class="self">self</span>.resolver.invocation_parents.insert(id, InvocationParent {
+            parent_def: <span class="self">self</span>.parent_def,
+            pending_anon_const_info,
+            impl_trait_context: <span class="self">self</span>.impl_trait_context,
+            in_attr: <span class="self">self</span>.in_attr,
+        });
         <span class="macro">assert!</span>(old_parent.is_none(), <span class="string">"parent `LocalDefId` is reset for an invocation"</span>);
+    }
+
+    <span class="doccomment">/// Determines whether the const argument `AnonConst` is a simple macro call, optionally
+    /// surrounded with braces.
+    ///
+    /// If this const argument *is* a trivial macro call then the id for the macro call is
+    /// returned along with the information required to build the anon const's def if
+    /// the macro call expands to a non-trivial expression.
+    </span><span class="kw">fn </span>is_const_arg_trivial_macro_expansion(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        anon_const: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>AnonConst,
+    ) -&gt; <span class="prelude-ty">Option</span>&lt;(PendingAnonConstInfo, NodeId)&gt; {
+        <span class="kw">let </span>(block_was_stripped, expr) = anon_const.value.maybe_unwrap_block();
+        <span class="kw">match </span>expr {
+            Expr { kind: ExprKind::MacCall(..), id, .. } =&gt; <span class="prelude-val">Some</span>((
+                PendingAnonConstInfo {
+                    id: anon_const.id,
+                    span: anon_const.value.span,
+                    block_was_stripped,
+                },
+                <span class="kw-2">*</span>id,
+            )),
+            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+        }
+    }
+
+    <span class="doccomment">/// Determines whether the expression `const_arg_sub_expr` is a simple macro call, sometimes
+    /// surrounded with braces if a set of braces has not already been entered. This is required
+    /// as `{ N }` is treated as equivalent to a bare parameter `N` whereas `{{ N }}` is treated as
+    /// a real block expression and is lowered to an anonymous constant which is not allowed to use
+    /// generic parameters.
+    ///
+    /// If this expression is a trivial macro call then the id for the macro call is
+    /// returned along with the information required to build the anon const's def if
+    /// the macro call expands to a non-trivial expression.
+    </span><span class="kw">fn </span>is_const_arg_sub_expr_trivial_macro_expansion(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        const_arg_sub_expr: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Expr,
+    ) -&gt; <span class="prelude-ty">Option</span>&lt;(PendingAnonConstInfo, NodeId)&gt; {
+        <span class="kw">let </span>pending_anon = <span class="self">self</span>.pending_anon_const_info.unwrap_or_else(||
+            <span class="macro">panic!</span>(<span class="string">"Checking expr is trivial macro call without having entered anon const: `{const_arg_sub_expr:?}`"</span>),
+        );
+
+        <span class="kw">let </span>(block_was_stripped, expr) = <span class="kw">if </span>pending_anon.block_was_stripped {
+            (<span class="bool-val">true</span>, const_arg_sub_expr)
+        } <span class="kw">else </span>{
+            const_arg_sub_expr.maybe_unwrap_block()
+        };
+
+        <span class="kw">match </span>expr {
+            Expr { kind: ExprKind::MacCall(..), id, .. } =&gt; {
+                <span class="prelude-val">Some</span>((PendingAnonConstInfo { block_was_stripped, ..pending_anon }, <span class="kw-2">*</span>id))
+            }
+            <span class="kw">_ </span>=&gt; <span class="prelude-val">None</span>,
+        }
     }
 }
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>&gt; visit::Visitor&lt;<span class="lifetime">'a</span>&gt; <span class="kw">for </span>DefCollector&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>&gt; {
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt; visit::Visitor&lt;<span class="lifetime">'a</span>&gt; <span class="kw">for </span>DefCollector&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt; {
     <span class="kw">fn </span>visit_item(<span class="kw-2">&amp;mut </span><span class="self">self</span>, i: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Item) {
-        <span class="macro">debug!</span>(<span class="string">"visit_item: {:?}"</span>, i);
-
         <span class="comment">// Pick the def data. This need not be unique, but the more
         // information we encapsulate into, the better
         </span><span class="kw">let </span><span class="kw-2">mut </span>opt_macro_data = <span class="prelude-val">None</span>;
@@ -623,38 +814,51 @@
     }
 
     <span class="kw">fn </span>visit_fn(<span class="kw-2">&amp;mut </span><span class="self">self</span>, fn_kind: FnKind&lt;<span class="lifetime">'a</span>&gt;, span: Span, <span class="kw">_</span>: NodeId) {
-        <span class="kw">if let </span>FnKind::Fn(<span class="kw">_</span>, <span class="kw">_</span>, sig, <span class="kw">_</span>, generics, body) = fn_kind {
-            <span class="kw">match </span>sig.header.coroutine_kind {
-                <span class="prelude-val">Some</span>(coroutine_kind) =&gt; {
-                    <span class="self">self</span>.visit_generics(generics);
+        <span class="kw">match </span>fn_kind {
+            FnKind::Fn(_ctxt, _ident, FnSig { header, decl, span: <span class="kw">_ </span>}, _vis, generics, body)
+                <span class="kw">if let </span><span class="prelude-val">Some</span>(coroutine_kind) = header.coroutine_kind =&gt;
+            {
+                <span class="self">self</span>.visit_fn_header(header);
+                <span class="self">self</span>.visit_generics(generics);
 
-                    <span class="comment">// For async functions, we need to create their inner defs inside of a
-                    // closure to match their desugared representation. Besides that,
-                    // we must mirror everything that `visit::walk_fn` below does.
-                    </span><span class="self">self</span>.visit_fn_header(<span class="kw-2">&amp;</span>sig.header);
-                    <span class="kw">for </span>param <span class="kw">in </span><span class="kw-2">&amp;</span>sig.decl.inputs {
-                        <span class="self">self</span>.visit_param(param);
-                    }
-                    <span class="self">self</span>.visit_fn_ret_ty(<span class="kw-2">&amp;</span>sig.decl.output);
-                    <span class="comment">// If this async fn has no body (i.e. it's an async fn signature in a trait)
-                    // then the closure_def will never be used, and we should avoid generating a
-                    // def-id for it.
-                    </span><span class="kw">if let </span><span class="prelude-val">Some</span>(body) = body {
-                        <span class="kw">let </span>closure_def = <span class="self">self</span>.create_def(
-                            coroutine_kind.closure_id(),
-                            kw::Empty,
-                            DefKind::Closure,
-                            span,
-                        );
-                        <span class="self">self</span>.with_parent(closure_def, |this| this.visit_block(body));
-                    }
-                    <span class="kw">return</span>;
+                <span class="comment">// For async functions, we need to create their inner defs inside of a
+                // closure to match their desugared representation. Besides that,
+                // we must mirror everything that `visit::walk_fn` below does.
+                </span><span class="kw">let </span>FnDecl { inputs, output } = <span class="kw-2">&amp;**</span>decl;
+                <span class="kw">for </span>param <span class="kw">in </span>inputs {
+                    <span class="self">self</span>.visit_param(param);
                 }
-                <span class="prelude-val">None </span>=&gt; {}
-            }
-        }
 
-        visit::walk_fn(<span class="self">self</span>, fn_kind);
+                <span class="kw">let </span>(return_id, return_span) = coroutine_kind.return_id();
+                <span class="kw">let </span>return_def =
+                    <span class="self">self</span>.create_def(return_id, kw::Empty, DefKind::OpaqueTy, return_span);
+                <span class="self">self</span>.with_parent(return_def, |this| this.visit_fn_ret_ty(output));
+
+                <span class="comment">// If this async fn has no body (i.e. it's an async fn signature in a trait)
+                // then the closure_def will never be used, and we should avoid generating a
+                // def-id for it.
+                </span><span class="kw">if let </span><span class="prelude-val">Some</span>(body) = body {
+                    <span class="kw">let </span>closure_def = <span class="self">self</span>.create_def(
+                        coroutine_kind.closure_id(),
+                        kw::Empty,
+                        DefKind::Closure,
+                        span,
+                    );
+                    <span class="self">self</span>.with_parent(closure_def, |this| this.visit_block(body));
+                }
+            }
+            FnKind::Closure(binder, <span class="prelude-val">Some</span>(coroutine_kind), decl, body) =&gt; {
+                <span class="self">self</span>.visit_closure_binder(binder);
+                visit::walk_fn_decl(<span class="self">self</span>, decl);
+
+                <span class="comment">// Async closures desugar to closures inside of closures, so
+                // we must create two defs.
+                </span><span class="kw">let </span>coroutine_def =
+                    <span class="self">self</span>.create_def(coroutine_kind.closure_id(), kw::Empty, DefKind::Closure, span);
+                <span class="self">self</span>.with_parent(coroutine_def, |this| this.visit_expr(body));
+            }
+            <span class="kw">_ </span>=&gt; visit::walk_fn(<span class="self">self</span>, fn_kind),
+        }
     }
 
     <span class="kw">fn </span>visit_use_tree(<span class="kw-2">&amp;mut </span><span class="self">self</span>, use_tree: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>UseTree, id: NodeId, _nested: bool) {
@@ -760,58 +964,72 @@
         // def. we'll then create a def later in ast lowering in this case. the parent of nested
         // items will be messed up, but that's ok because there can't be any if we're just looking
         // for bare idents.
-        </span><span class="kw">if </span>constant.value.is_potential_trivial_const_arg() {
-            visit::walk_anon_const(<span class="self">self</span>, constant)
-        } <span class="kw">else </span>{
-            <span class="kw">let </span>def =
-                <span class="self">self</span>.create_def(constant.id, kw::Empty, DefKind::AnonConst, constant.value.span);
-            <span class="self">self</span>.with_parent(def, |this| visit::walk_anon_const(this, constant));
+
+        </span><span class="kw">if let </span><span class="prelude-val">Some</span>((pending_anon, macro_invoc)) =
+            <span class="self">self</span>.is_const_arg_trivial_macro_expansion(constant)
+        {
+            <span class="self">self</span>.pending_anon_const_info = <span class="prelude-val">Some</span>(pending_anon);
+            <span class="kw">return </span><span class="self">self</span>.visit_macro_invoc(macro_invoc);
+        } <span class="kw">else if </span>constant.value.is_potential_trivial_const_arg(<span class="bool-val">true</span>) {
+            <span class="kw">return </span>visit::walk_anon_const(<span class="self">self</span>, constant);
         }
+
+        <span class="kw">let </span>def = <span class="self">self</span>.create_def(constant.id, kw::Empty, DefKind::AnonConst, constant.value.span);
+        <span class="self">self</span>.with_parent(def, |this| visit::walk_anon_const(this, constant));
     }
 
     <span class="kw">fn </span>visit_expr(<span class="kw-2">&amp;mut </span><span class="self">self</span>, expr: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Expr) {
-        <span class="kw">let </span>parent_def = <span class="kw">match </span>expr.kind {
-            ExprKind::MacCall(..) =&gt; <span class="kw">return </span><span class="self">self</span>.visit_macro_invoc(expr.id),
-            ExprKind::Closure(<span class="kw-2">ref </span>closure) =&gt; {
-                <span class="comment">// Async closures desugar to closures inside of closures, so
-                // we must create two defs.
-                </span><span class="kw">let </span>closure_def = <span class="self">self</span>.create_def(expr.id, kw::Empty, DefKind::Closure, expr.span);
-                <span class="kw">match </span>closure.coroutine_kind {
-                    <span class="prelude-val">Some</span>(coroutine_kind) =&gt; {
-                        <span class="self">self</span>.with_parent(closure_def, |this| {
-                            <span class="kw">let </span>coroutine_def = this.create_def(
-                                coroutine_kind.closure_id(),
-                                kw::Empty,
-                                DefKind::Closure,
-                                expr.span,
-                            );
-                            this.with_parent(coroutine_def, |this| visit::walk_expr(this, expr));
-                        });
-                        <span class="kw">return</span>;
-                    }
-                    <span class="prelude-val">None </span>=&gt; closure_def,
-                }
-            }
-            ExprKind::Gen(<span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>) =&gt; {
-                <span class="self">self</span>.create_def(expr.id, kw::Empty, DefKind::Closure, expr.span)
-            }
-            ExprKind::ConstBlock(<span class="kw-2">ref </span>constant) =&gt; {
-                <span class="kw">for </span>attr <span class="kw">in </span><span class="kw-2">&amp;</span>expr.attrs {
-                    visit::walk_attribute(<span class="self">self</span>, attr);
-                }
-                <span class="kw">let </span>def = <span class="self">self</span>.create_def(
-                    constant.id,
-                    kw::Empty,
-                    DefKind::InlineConst,
-                    constant.value.span,
-                );
-                <span class="self">self</span>.with_parent(def, |this| visit::walk_anon_const(this, constant));
-                <span class="kw">return</span>;
-            }
-            <span class="kw">_ </span>=&gt; <span class="self">self</span>.parent_def,
-        };
+        <span class="comment">// If we're visiting the expression of a const argument that was a macro call then
+        // check if it is *still* unknown whether it is a trivial const arg or not. If so
+        // recurse into the macro call and delay creating the anon const def until expansion.
+        </span><span class="kw">if </span><span class="self">self</span>.pending_anon_const_info.is_some()
+            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>((pending_anon, macro_invoc)) =
+                <span class="self">self</span>.is_const_arg_sub_expr_trivial_macro_expansion(expr)
+        {
+            <span class="self">self</span>.pending_anon_const_info = <span class="prelude-val">Some</span>(pending_anon);
+            <span class="kw">return </span><span class="self">self</span>.visit_macro_invoc(macro_invoc);
+        }
 
-        <span class="self">self</span>.with_parent(parent_def, |this| visit::walk_expr(this, expr));
+        <span class="comment">// See self.pending_anon_const_info for explanation
+        </span><span class="kw">let </span>parent_def = <span class="self">self
+            </span>.pending_anon_const_info
+            .take()
+            <span class="comment">// If we already stripped away a set of braces then do not do it again when determining
+            // if the macro expanded to a trivial const arg. This arises in cases such as:
+            // `Foo&lt;{ bar!() }&gt;` where `bar!()` expands to `{ N }`. This should not be considered a
+            // trivial const argument even though `{ N }` by itself *is*.
+            </span>.filter(|pending_anon| {
+                !expr.is_potential_trivial_const_arg(!pending_anon.block_was_stripped)
+            })
+            .map(|pending_anon| {
+                <span class="self">self</span>.create_def(pending_anon.id, kw::Empty, DefKind::AnonConst, pending_anon.span)
+            })
+            .unwrap_or(<span class="self">self</span>.parent_def);
+
+        <span class="self">self</span>.with_parent(parent_def, |this| {
+            <span class="kw">let </span>parent_def = <span class="kw">match </span>expr.kind {
+                ExprKind::MacCall(..) =&gt; <span class="kw">return </span>this.visit_macro_invoc(expr.id),
+                ExprKind::Closure(..) | ExprKind::Gen(..) =&gt; {
+                    this.create_def(expr.id, kw::Empty, DefKind::Closure, expr.span)
+                }
+                ExprKind::ConstBlock(<span class="kw-2">ref </span>constant) =&gt; {
+                    <span class="kw">for </span>attr <span class="kw">in </span><span class="kw-2">&amp;</span>expr.attrs {
+                        visit::walk_attribute(this, attr);
+                    }
+                    <span class="kw">let </span>def = this.create_def(
+                        constant.id,
+                        kw::Empty,
+                        DefKind::InlineConst,
+                        constant.value.span,
+                    );
+                    this.with_parent(def, |this| visit::walk_anon_const(this, constant));
+                    <span class="kw">return</span>;
+                }
+                <span class="kw">_ </span>=&gt; this.parent_def,
+            };
+
+            this.with_parent(parent_def, |this| visit::walk_expr(this, expr))
+        })
     }
 
     <span class="kw">fn </span>visit_ty(<span class="kw-2">&amp;mut </span><span class="self">self</span>, ty: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Ty) {
@@ -819,6 +1037,26 @@
             TyKind::MacCall(..) =&gt; <span class="self">self</span>.visit_macro_invoc(ty.id),
             <span class="comment">// Anonymous structs or unions are visited later after defined.
             </span>TyKind::AnonStruct(..) | TyKind::AnonUnion(..) =&gt; {}
+            TyKind::ImplTrait(id, <span class="kw">_</span>) =&gt; {
+                <span class="comment">// HACK: pprust breaks strings with newlines when the type
+                // gets too long. We don't want these to show up in compiler
+                // output or built artifacts, so replace them here...
+                // Perhaps we should instead format APITs more robustly.
+                </span><span class="kw">let </span>name = Symbol::intern(<span class="kw-2">&amp;</span>pprust::ty_to_string(ty).replace(<span class="string">'\n'</span>, <span class="string">" "</span>));
+                <span class="kw">let </span>kind = <span class="kw">match </span><span class="self">self</span>.impl_trait_context {
+                    ImplTraitContext::Universal =&gt; DefKind::TyParam,
+                    ImplTraitContext::Existential =&gt; DefKind::OpaqueTy,
+                };
+                <span class="kw">let </span>id = <span class="self">self</span>.create_def(<span class="kw-2">*</span>id, name, kind, ty.span);
+                <span class="kw">match </span><span class="self">self</span>.impl_trait_context {
+                    <span class="comment">// Do not nest APIT, as we desugar them as `impl_trait: bounds`,
+                    // so the `impl_trait` node is not a parent to `bounds`.
+                    </span>ImplTraitContext::Universal =&gt; visit::walk_ty(<span class="self">self</span>, ty),
+                    ImplTraitContext::Existential =&gt; {
+                        <span class="self">self</span>.with_parent(id, |this| visit::walk_ty(this, ty))
+                    }
+                };
+            }
             <span class="kw">_ </span>=&gt; visit::walk_ty(<span class="self">self</span>, ty),
         }
     }

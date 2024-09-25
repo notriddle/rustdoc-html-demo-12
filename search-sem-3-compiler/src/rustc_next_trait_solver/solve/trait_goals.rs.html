@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_next_trait_solver/src/solve/trait_goals.rs`."><title>trait_goals.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_next_trait_solver" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_next_trait_solver/src/solve/trait_goals.rs`."><title>trait_goals.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_next_trait_solver" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_next_trait_solver/solve/</div>trait_goals.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -1210,17 +1211,15 @@
 <a href="#1210" id="1210">1210</a>
 <a href="#1211" id="1211">1211</a>
 <a href="#1212" id="1212">1212</a>
-<a href="#1213" id="1213">1213</a>
-<a href="#1214" id="1214">1214</a>
-</pre></div><pre class="rust"><code><span class="doccomment">//! Dealing with trait goals, i.e. `T: Trait&lt;'a, U&gt;`.
+<a href="#1213" id="1213">1213</a></pre></div><pre class="rust"><code><span class="doccomment">//! Dealing with trait goals, i.e. `T: Trait&lt;'a, U&gt;`.
 
 </span><span class="kw">use </span>rustc_ast_ir::Movability;
 <span class="kw">use </span>rustc_type_ir::data_structures::IndexSet;
-<span class="kw">use </span>rustc_type_ir::fast_reject::{DeepRejectCtxt, TreatParams};
+<span class="kw">use </span>rustc_type_ir::fast_reject::DeepRejectCtxt;
 <span class="kw">use </span>rustc_type_ir::inherent::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_type_ir::lang_items::TraitSolverLangItem;
 <span class="kw">use </span>rustc_type_ir::visit::TypeVisitableExt <span class="kw">as _</span>;
-<span class="kw">use </span>rustc_type_ir::{<span class="self">self </span><span class="kw">as </span>ty, elaborate, Interner, TraitPredicate, Upcast <span class="kw">as _</span>};
+<span class="kw">use </span>rustc_type_ir::{<span class="self">self </span><span class="kw">as </span>ty, Interner, TraitPredicate, Upcast <span class="kw">as _</span>, elaborate};
 <span class="kw">use </span>tracing::{instrument, trace};
 
 <span class="kw">use </span><span class="kw">crate</span>::delegate::SolverDelegate;
@@ -1261,7 +1260,7 @@
         <span class="kw">let </span>cx = ecx.cx();
 
         <span class="kw">let </span>impl_trait_ref = cx.impl_trait_ref(impl_def_id);
-        <span class="kw">if </span>!DeepRejectCtxt::new(ecx.cx(), TreatParams::ForLookup)
+        <span class="kw">if </span>!DeepRejectCtxt::relate_rigid_infer(ecx.cx())
             .args_may_unify(goal.predicate.trait_ref.args, impl_trait_ref.skip_binder().args)
         {
             <span class="kw">return </span><span class="prelude-val">Err</span>(NoSolution);
@@ -1338,6 +1337,13 @@
             <span class="kw">if </span>trait_clause.def_id() == goal.predicate.def_id()
                 &amp;&amp; trait_clause.polarity() == goal.predicate.polarity
             {
+                <span class="kw">if </span>!DeepRejectCtxt::relate_rigid_rigid(ecx.cx()).args_may_unify(
+                    goal.predicate.trait_ref.args,
+                    trait_clause.skip_binder().trait_ref.args,
+                ) {
+                    <span class="kw">return </span><span class="prelude-val">Err</span>(NoSolution);
+                }
+
                 ecx.probe_trait_candidate(source).enter(|ecx| {
                     <span class="kw">let </span>assumption_trait_pred = ecx.instantiate_binder_with_infer(trait_clause);
                     ecx.eq(
@@ -1566,21 +1572,18 @@
             )<span class="question-mark">?</span>;
         <span class="kw">let </span>output_is_sized_pred = tupled_inputs_and_output_and_coroutine.map_bound(
             |AsyncCallableRelevantTypes { output_coroutine_ty, .. }| {
-                ty::TraitRef::new(
-                    cx,
-                    cx.require_lang_item(TraitSolverLangItem::Sized),
-                    [output_coroutine_ty],
-                )
+                ty::TraitRef::new(cx, cx.require_lang_item(TraitSolverLangItem::Sized), [
+                    output_coroutine_ty,
+                ])
             },
         );
 
         <span class="kw">let </span>pred = tupled_inputs_and_output_and_coroutine
             .map_bound(|AsyncCallableRelevantTypes { tupled_inputs_ty, .. }| {
-                ty::TraitRef::new(
-                    cx,
-                    goal.predicate.def_id(),
-                    [goal.predicate.self_ty(), tupled_inputs_ty],
-                )
+                ty::TraitRef::new(cx, goal.predicate.def_id(), [
+                    goal.predicate.self_ty(),
+                    tupled_inputs_ty,
+                ])
             })
             .upcast(cx);
         <span class="comment">// A built-in `AsyncFn` impl only holds if the output is sized.
@@ -1842,7 +1845,7 @@
         }
 
         <span class="comment">// FIXME: This actually should destructure the `Result` we get from transmutability and
-        // register candiates. We probably need to register &gt;1 since we may have an OR of ANDs.
+        // register candidates. We probably need to register &gt;1 since we may have an OR of ANDs.
         </span>ecx.probe_builtin_trait_candidate(BuiltinImplSource::Misc).enter(|ecx| {
             <span class="kw">let </span>certainty = ecx.is_transmutable(
                 goal.param_env,
@@ -2090,7 +2093,6 @@
             .into_iter()
             .chain(a_data.principal_def_id().into_iter().flat_map(|principal_def_id| {
                 elaborate::supertrait_def_ids(<span class="self">self</span>.cx(), principal_def_id)
-                    .into_iter()
                     .filter(|def_id| <span class="self">self</span>.cx().trait_is_auto(<span class="kw-2">*</span>def_id))
             }))
             .collect();
@@ -2235,11 +2237,9 @@
             GoalSource::ImplWhereBound,
             goal.with(
                 cx,
-                ty::TraitRef::new(
-                    cx,
-                    cx.require_lang_item(TraitSolverLangItem::Unsize),
-                    [a_tail_ty, b_tail_ty],
-                ),
+                ty::TraitRef::new(cx, cx.require_lang_item(TraitSolverLangItem::Unsize), [
+                    a_tail_ty, b_tail_ty,
+                ]),
             ),
         );
         <span class="self">self</span>.probe_builtin_trait_candidate(BuiltinImplSource::Misc)
@@ -2277,11 +2277,9 @@
             GoalSource::ImplWhereBound,
             goal.with(
                 cx,
-                ty::TraitRef::new(
-                    cx,
-                    cx.require_lang_item(TraitSolverLangItem::Unsize),
-                    [a_last_ty, b_last_ty],
-                ),
+                ty::TraitRef::new(cx, cx.require_lang_item(TraitSolverLangItem::Unsize), [
+                    a_last_ty, b_last_ty,
+                ]),
             ),
         );
         <span class="self">self</span>.probe_builtin_trait_candidate(BuiltinImplSource::TupleUnsizing)
@@ -2359,7 +2357,7 @@
             | ty::RawPtr(<span class="kw">_</span>, <span class="kw">_</span>)
             | ty::Ref(<span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>)
             | ty::FnDef(<span class="kw">_</span>, <span class="kw">_</span>)
-            | ty::FnPtr(<span class="kw">_</span>)
+            | ty::FnPtr(..)
             | ty::Closure(..)
             | ty::CoroutineClosure(..)
             | ty::Coroutine(<span class="kw">_</span>, <span class="kw">_</span>)

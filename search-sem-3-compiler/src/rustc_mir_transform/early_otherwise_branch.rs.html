@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/early_otherwise_branch.rs`."><title>early_otherwise_branch.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-315b6ef5d9c5102a.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.82.0-dev" data-channel="nightly" data-search-js="search-c3d282121a07da8d.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-66622e6c9347fbca.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-3b12f09e550e0385.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/early_otherwise_branch.rs`."><title>early_otherwise_branch.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>early_otherwise_branch.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -348,11 +349,88 @@
 <a href="#348" id="348">348</a>
 <a href="#349" id="349">349</a>
 <a href="#350" id="350">350</a>
-</pre></div><pre class="rust"><code><span class="kw">use </span>std::fmt::Debug;
+<a href="#351" id="351">351</a>
+<a href="#352" id="352">352</a>
+<a href="#353" id="353">353</a>
+<a href="#354" id="354">354</a>
+<a href="#355" id="355">355</a>
+<a href="#356" id="356">356</a>
+<a href="#357" id="357">357</a>
+<a href="#358" id="358">358</a>
+<a href="#359" id="359">359</a>
+<a href="#360" id="360">360</a>
+<a href="#361" id="361">361</a>
+<a href="#362" id="362">362</a>
+<a href="#363" id="363">363</a>
+<a href="#364" id="364">364</a>
+<a href="#365" id="365">365</a>
+<a href="#366" id="366">366</a>
+<a href="#367" id="367">367</a>
+<a href="#368" id="368">368</a>
+<a href="#369" id="369">369</a>
+<a href="#370" id="370">370</a>
+<a href="#371" id="371">371</a>
+<a href="#372" id="372">372</a>
+<a href="#373" id="373">373</a>
+<a href="#374" id="374">374</a>
+<a href="#375" id="375">375</a>
+<a href="#376" id="376">376</a>
+<a href="#377" id="377">377</a>
+<a href="#378" id="378">378</a>
+<a href="#379" id="379">379</a>
+<a href="#380" id="380">380</a>
+<a href="#381" id="381">381</a>
+<a href="#382" id="382">382</a>
+<a href="#383" id="383">383</a>
+<a href="#384" id="384">384</a>
+<a href="#385" id="385">385</a>
+<a href="#386" id="386">386</a>
+<a href="#387" id="387">387</a>
+<a href="#388" id="388">388</a>
+<a href="#389" id="389">389</a>
+<a href="#390" id="390">390</a>
+<a href="#391" id="391">391</a>
+<a href="#392" id="392">392</a>
+<a href="#393" id="393">393</a>
+<a href="#394" id="394">394</a>
+<a href="#395" id="395">395</a>
+<a href="#396" id="396">396</a>
+<a href="#397" id="397">397</a>
+<a href="#398" id="398">398</a>
+<a href="#399" id="399">399</a>
+<a href="#400" id="400">400</a>
+<a href="#401" id="401">401</a>
+<a href="#402" id="402">402</a>
+<a href="#403" id="403">403</a>
+<a href="#404" id="404">404</a>
+<a href="#405" id="405">405</a>
+<a href="#406" id="406">406</a>
+<a href="#407" id="407">407</a>
+<a href="#408" id="408">408</a>
+<a href="#409" id="409">409</a>
+<a href="#410" id="410">410</a>
+<a href="#411" id="411">411</a>
+<a href="#412" id="412">412</a>
+<a href="#413" id="413">413</a>
+<a href="#414" id="414">414</a>
+<a href="#415" id="415">415</a>
+<a href="#416" id="416">416</a>
+<a href="#417" id="417">417</a>
+<a href="#418" id="418">418</a>
+<a href="#419" id="419">419</a>
+<a href="#420" id="420">420</a>
+<a href="#421" id="421">421</a>
+<a href="#422" id="422">422</a>
+<a href="#423" id="423">423</a>
+<a href="#424" id="424">424</a>
+<a href="#425" id="425">425</a>
+<a href="#426" id="426">426</a>
+<a href="#427" id="427">427</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::fmt::Debug;
 
 <span class="kw">use </span>rustc_middle::mir::patch::MirPatch;
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::ty::{Ty, TyCtxt};
+<span class="kw">use </span>tracing::trace;
 
 <span class="kw">use </span><span class="kw">super</span>::simplify::simplify_cfg;
 
@@ -439,9 +517,9 @@
 ///     |      ...      |
 ///     =================
 /// ```
-</span><span class="kw">pub struct </span>EarlyOtherwiseBranch;
+</span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span>EarlyOtherwiseBranch;
 
-<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>EarlyOtherwiseBranch {
+<span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">crate</span>::MirPass&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>EarlyOtherwiseBranch {
     <span class="kw">fn </span>is_enabled(<span class="kw-2">&amp;</span><span class="self">self</span>, sess: <span class="kw-2">&amp;</span>rustc_session::Session) -&gt; bool {
         sess.mir_opt_level() &gt;= <span class="number">2
     </span>}
@@ -482,18 +560,29 @@
 
             <span class="kw">let </span><span class="kw-2">mut </span>patch = MirPatch::new(body);
 
-            <span class="comment">// create temp to store second discriminant in, `_s` in example above
-            </span><span class="kw">let </span>second_discriminant_temp =
-                patch.new_temp(opt_data.child_ty, opt_data.child_source.span);
+            <span class="kw">let </span>(second_discriminant_temp, second_operand) = <span class="kw">if </span>opt_data.need_hoist_discriminant {
+                <span class="comment">// create temp to store second discriminant in, `_s` in example above
+                </span><span class="kw">let </span>second_discriminant_temp =
+                    patch.new_temp(opt_data.child_ty, opt_data.child_source.span);
 
-            patch.add_statement(parent_end, StatementKind::StorageLive(second_discriminant_temp));
+                patch.add_statement(
+                    parent_end,
+                    StatementKind::StorageLive(second_discriminant_temp),
+                );
 
-            <span class="comment">// create assignment of discriminant
-            </span>patch.add_assign(
-                parent_end,
-                Place::from(second_discriminant_temp),
-                Rvalue::Discriminant(opt_data.child_place),
-            );
+                <span class="comment">// create assignment of discriminant
+                </span>patch.add_assign(
+                    parent_end,
+                    Place::from(second_discriminant_temp),
+                    Rvalue::Discriminant(opt_data.child_place),
+                );
+                (
+                    <span class="prelude-val">Some</span>(second_discriminant_temp),
+                    Operand::Move(Place::from(second_discriminant_temp)),
+                )
+            } <span class="kw">else </span>{
+                (<span class="prelude-val">None</span>, Operand::Copy(opt_data.child_place))
+            };
 
             <span class="comment">// create temp to store inequality comparison between the two discriminants, `_t` in
             // example above
@@ -502,11 +591,9 @@
             <span class="kw">let </span>comp_temp = patch.new_temp(comp_res_type, opt_data.child_source.span);
             patch.add_statement(parent_end, StatementKind::StorageLive(comp_temp));
 
-            <span class="comment">// create inequality comparison between the two discriminants
-            </span><span class="kw">let </span>comp_rvalue = Rvalue::BinaryOp(
-                nequal,
-                Box::new((parent_op.clone(), Operand::Move(Place::from(second_discriminant_temp)))),
-            );
+            <span class="comment">// create inequality comparison
+            </span><span class="kw">let </span>comp_rvalue =
+                Rvalue::BinaryOp(nequal, Box::new((parent_op.clone(), second_operand)));
             patch.add_statement(
                 parent_end,
                 StatementKind::Assign(Box::new((Place::from(comp_temp), comp_rvalue))),
@@ -542,8 +629,13 @@
                 TerminatorKind::if_(Operand::Move(Place::from(comp_temp)), true_case, false_case),
             );
 
-            <span class="comment">// generate StorageDead for the second_discriminant_temp not in use anymore
-            </span>patch.add_statement(parent_end, StatementKind::StorageDead(second_discriminant_temp));
+            <span class="kw">if let </span><span class="prelude-val">Some</span>(second_discriminant_temp) = second_discriminant_temp {
+                <span class="comment">// generate StorageDead for the second_discriminant_temp not in use anymore
+                </span>patch.add_statement(
+                    parent_end,
+                    StatementKind::StorageDead(second_discriminant_temp),
+                );
+            }
 
             <span class="comment">// Generate a StorageDead for comp_temp in each of the targets, since we moved it into
             // the switch
@@ -571,6 +663,7 @@
     child_place: Place&lt;<span class="lifetime">'tcx</span>&gt;,
     child_ty: Ty&lt;<span class="lifetime">'tcx</span>&gt;,
     child_source: SourceInfo,
+    need_hoist_discriminant: bool,
 }
 
 <span class="kw">fn </span>evaluate_candidate&lt;<span class="lifetime">'tcx</span>&gt;(
@@ -584,44 +677,12 @@
         <span class="kw">return </span><span class="prelude-val">None</span>;
     };
     <span class="kw">let </span>parent_ty = parent_discr.ty(body.local_decls(), tcx);
-    <span class="kw">if </span>!bbs[targets.otherwise()].is_empty_unreachable() {
-        <span class="comment">// Someone could write code like this:
-        // ```rust
-        // let Q = val;
-        // if discriminant(P) == otherwise {
-        //     let ptr = &amp;mut Q as *mut _ as *mut u8;
-        //     // It may be difficult for us to effectively determine whether values are valid.
-        //     // Invalid values can come from all sorts of corners.
-        //     unsafe { *ptr = 10; }
-        // }
-        //
-        // match P {
-        //    A =&gt; match Q {
-        //        A =&gt; {
-        //            // code
-        //        }
-        //        _ =&gt; {
-        //            // don't use Q
-        //        }
-        //    }
-        //    _ =&gt; {
-        //        // don't use Q
-        //    }
-        // };
-        // ```
-        //
-        // Hoisting the `discriminant(Q)` out of the `A` arm causes us to compute the discriminant of an
-        // invalid value, which is UB.
-        // In order to fix this, **we would either need to show that the discriminant computation of
-        // `place` is computed in all branches**.
-        // FIXME(#95162) For the moment, we adopt a conservative approach and
-        // consider only the `otherwise` branch has no statements and an unreachable terminator.
-        </span><span class="kw">return </span><span class="prelude-val">None</span>;
-    }
     <span class="kw">let </span>(<span class="kw">_</span>, child) = targets.iter().next()<span class="question-mark">?</span>;
-    <span class="kw">let </span>child_terminator = <span class="kw-2">&amp;</span>bbs[child].terminator();
-    <span class="kw">let </span>TerminatorKind::SwitchInt { targets: child_targets, discr: child_discr } =
-        <span class="kw-2">&amp;</span>child_terminator.kind
+
+    <span class="kw">let </span>Terminator {
+        kind: TerminatorKind::SwitchInt { targets: child_targets, discr: child_discr },
+        source_info,
+    } = bbs[child].terminator()
     <span class="kw">else </span>{
         <span class="kw">return </span><span class="prelude-val">None</span>;
     };
@@ -629,25 +690,115 @@
     <span class="kw">if </span>child_ty != parent_ty {
         <span class="kw">return </span><span class="prelude-val">None</span>;
     }
-    <span class="kw">let </span><span class="prelude-val">Some</span>(StatementKind::Assign(boxed)) = <span class="kw-2">&amp;</span>bbs[child].statements.first().map(|x| <span class="kw-2">&amp;</span>x.kind) <span class="kw">else </span>{
+
+    <span class="comment">// We only handle:
+    // ```
+    // bb4: {
+    //     _8 = discriminant((_3.1: Enum1));
+    //    switchInt(move _8) -&gt; [2: bb7, otherwise: bb1];
+    // }
+    // ```
+    // and
+    // ```
+    // bb2: {
+    //     switchInt((_3.1: u64)) -&gt; [1: bb5, otherwise: bb1];
+    // }
+    // ```
+    </span><span class="kw">if </span>bbs[child].statements.len() &gt; <span class="number">1 </span>{
         <span class="kw">return </span><span class="prelude-val">None</span>;
+    }
+
+    <span class="comment">// When thie BB has exactly one statement, this statement should be discriminant.
+    </span><span class="kw">let </span>need_hoist_discriminant = bbs[child].statements.len() == <span class="number">1</span>;
+    <span class="kw">let </span>child_place = <span class="kw">if </span>need_hoist_discriminant {
+        <span class="kw">if </span>!bbs[targets.otherwise()].is_empty_unreachable() {
+            <span class="comment">// Someone could write code like this:
+            // ```rust
+            // let Q = val;
+            // if discriminant(P) == otherwise {
+            //     let ptr = &amp;mut Q as *mut _ as *mut u8;
+            //     // It may be difficult for us to effectively determine whether values are valid.
+            //     // Invalid values can come from all sorts of corners.
+            //     unsafe { *ptr = 10; }
+            // }
+            //
+            // match P {
+            //    A =&gt; match Q {
+            //        A =&gt; {
+            //            // code
+            //        }
+            //        _ =&gt; {
+            //            // don't use Q
+            //        }
+            //    }
+            //    _ =&gt; {
+            //        // don't use Q
+            //    }
+            // };
+            // ```
+            //
+            // Hoisting the `discriminant(Q)` out of the `A` arm causes us to compute the discriminant of an
+            // invalid value, which is UB.
+            // In order to fix this, **we would either need to show that the discriminant computation of
+            // `place` is computed in all branches**.
+            // FIXME(#95162) For the moment, we adopt a conservative approach and
+            // consider only the `otherwise` branch has no statements and an unreachable terminator.
+            </span><span class="kw">return </span><span class="prelude-val">None</span>;
+        }
+        <span class="comment">// Handle:
+        // ```
+        // bb4: {
+        //     _8 = discriminant((_3.1: Enum1));
+        //    switchInt(move _8) -&gt; [2: bb7, otherwise: bb1];
+        // }
+        // ```
+        </span><span class="kw">let </span>[
+            Statement {
+                kind: StatementKind::Assign(<span class="kw">box </span>(<span class="kw">_</span>, Rvalue::Discriminant(child_place))),
+                ..
+            },
+        ] = bbs[child].statements.as_slice()
+        <span class="kw">else </span>{
+            <span class="kw">return </span><span class="prelude-val">None</span>;
+        };
+        <span class="kw-2">*</span>child_place
+    } <span class="kw">else </span>{
+        <span class="comment">// Handle:
+        // ```
+        // bb2: {
+        //     switchInt((_3.1: u64)) -&gt; [1: bb5, otherwise: bb1];
+        // }
+        // ```
+        </span><span class="kw">let </span>Operand::Copy(child_place) = child_discr <span class="kw">else </span>{
+            <span class="kw">return </span><span class="prelude-val">None</span>;
+        };
+        <span class="kw-2">*</span>child_place
     };
-    <span class="kw">let </span>(<span class="kw">_</span>, Rvalue::Discriminant(child_place)) = <span class="kw-2">&amp;**</span>boxed <span class="kw">else </span>{
-        <span class="kw">return </span><span class="prelude-val">None</span>;
+    <span class="kw">let </span>destination = <span class="kw">if </span>need_hoist_discriminant || bbs[targets.otherwise()].is_empty_unreachable()
+    {
+        child_targets.otherwise()
+    } <span class="kw">else </span>{
+        targets.otherwise()
     };
-    <span class="kw">let </span>destination = child_targets.otherwise();
 
     <span class="comment">// Verify that the optimization is legal for each branch
     </span><span class="kw">for </span>(value, child) <span class="kw">in </span>targets.iter() {
-        <span class="kw">if </span>!verify_candidate_branch(<span class="kw-2">&amp;</span>bbs[child], value, <span class="kw-2">*</span>child_place, destination) {
+        <span class="kw">if </span>!verify_candidate_branch(
+            <span class="kw-2">&amp;</span>bbs[child],
+            value,
+            child_place,
+            destination,
+            need_hoist_discriminant,
+        ) {
             <span class="kw">return </span><span class="prelude-val">None</span>;
         }
     }
     <span class="prelude-val">Some</span>(OptimizationData {
         destination,
-        child_place: <span class="kw-2">*</span>child_place,
+        child_place,
         child_ty,
-        child_source: child_terminator.source_info,
+        child_source: <span class="kw-2">*</span>source_info,
+        need_hoist_discriminant,
     })
 }
 
@@ -656,46 +807,49 @@
     value: u128,
     place: Place&lt;<span class="lifetime">'tcx</span>&gt;,
     destination: BasicBlock,
+    need_hoist_discriminant: bool,
 ) -&gt; bool {
-    <span class="comment">// In order for the optimization to be correct, the branch must...
-    // ...have exactly one statement
-    </span><span class="kw">let </span>[statement] = branch.statements.as_slice() <span class="kw">else </span>{
+    <span class="comment">// In order for the optimization to be correct, the terminator must be a `SwitchInt`.
+    </span><span class="kw">let </span>TerminatorKind::SwitchInt { discr: switch_op, targets } = <span class="kw-2">&amp;</span>branch.terminator().kind <span class="kw">else </span>{
         <span class="kw">return </span><span class="bool-val">false</span>;
     };
-    <span class="comment">// ...assign the discriminant of `place` in that statement
-    </span><span class="kw">let </span>StatementKind::Assign(boxed) = <span class="kw-2">&amp;</span>statement.kind <span class="kw">else </span>{ <span class="kw">return </span><span class="bool-val">false </span>};
-    <span class="kw">let </span>(discr_place, Rvalue::Discriminant(from_place)) = <span class="kw-2">&amp;**</span>boxed <span class="kw">else </span>{ <span class="kw">return </span><span class="bool-val">false </span>};
-    <span class="kw">if </span><span class="kw-2">*</span>from_place != place {
-        <span class="kw">return </span><span class="bool-val">false</span>;
+    <span class="kw">if </span>need_hoist_discriminant {
+        <span class="comment">// If we need hoist discriminant, the branch must have exactly one statement.
+        </span><span class="kw">let </span>[statement] = branch.statements.as_slice() <span class="kw">else </span>{
+            <span class="kw">return </span><span class="bool-val">false</span>;
+        };
+        <span class="comment">// The statement must assign the discriminant of `place`.
+        </span><span class="kw">let </span>StatementKind::Assign(<span class="kw">box </span>(discr_place, Rvalue::Discriminant(from_place))) =
+            statement.kind
+        <span class="kw">else </span>{
+            <span class="kw">return </span><span class="bool-val">false</span>;
+        };
+        <span class="kw">if </span>from_place != place {
+            <span class="kw">return </span><span class="bool-val">false</span>;
+        }
+        <span class="comment">// The assignment must invalidate a local that terminate on a `SwitchInt`.
+        </span><span class="kw">if </span>!discr_place.projection.is_empty() || <span class="kw-2">*</span>switch_op != Operand::Move(discr_place) {
+            <span class="kw">return </span><span class="bool-val">false</span>;
+        }
+    } <span class="kw">else </span>{
+        <span class="comment">// If we don't need hoist discriminant, the branch must not have any statements.
+        </span><span class="kw">if </span>!branch.statements.is_empty() {
+            <span class="kw">return </span><span class="bool-val">false</span>;
+        }
+        <span class="comment">// The place on `SwitchInt` must be the same.
+        </span><span class="kw">if </span><span class="kw-2">*</span>switch_op != Operand::Copy(place) {
+            <span class="kw">return </span><span class="bool-val">false</span>;
+        }
     }
-    <span class="comment">// ...make that assignment to a local
-    </span><span class="kw">if </span>discr_place.projection.len() != <span class="number">0 </span>{
-        <span class="kw">return </span><span class="bool-val">false</span>;
-    }
-    <span class="comment">// ...terminate on a `SwitchInt` that invalidates that local
-    </span><span class="kw">let </span>TerminatorKind::SwitchInt { discr: switch_op, targets, .. } = <span class="kw-2">&amp;</span>branch.terminator().kind
-    <span class="kw">else </span>{
-        <span class="kw">return </span><span class="bool-val">false</span>;
-    };
-    <span class="kw">if </span><span class="kw-2">*</span>switch_op != Operand::Move(<span class="kw-2">*</span>discr_place) {
-        <span class="kw">return </span><span class="bool-val">false</span>;
-    }
-    <span class="comment">// ...fall through to `destination` if the switch misses
+    <span class="comment">// It must fall through to `destination` if the switch misses.
     </span><span class="kw">if </span>destination != targets.otherwise() {
         <span class="kw">return </span><span class="bool-val">false</span>;
     }
-    <span class="comment">// ...have a branch for value `value`
+    <span class="comment">// It must have exactly one branch for value `value` and have no more branches.
     </span><span class="kw">let </span><span class="kw-2">mut </span>iter = targets.iter();
-    <span class="kw">let </span><span class="prelude-val">Some</span>((target_value, <span class="kw">_</span>)) = iter.next() <span class="kw">else </span>{
+    <span class="kw">let </span>(<span class="prelude-val">Some</span>((target_value, <span class="kw">_</span>)), <span class="prelude-val">None</span>) = (iter.next(), iter.next()) <span class="kw">else </span>{
         <span class="kw">return </span><span class="bool-val">false</span>;
     };
-    <span class="kw">if </span>target_value != value {
-        <span class="kw">return </span><span class="bool-val">false</span>;
-    }
-    <span class="comment">// ...and have no more branches
-    </span><span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw">_</span>) = iter.next() {
-        <span class="kw">return </span><span class="bool-val">false</span>;
-    }
-    <span class="bool-val">true
-</span>}
+    target_value == value
+}
 </code></pre></div></section></main></body></html>
