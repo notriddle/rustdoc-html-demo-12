@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["fd","linux","macos","raw","unix","wasi","wasip2","windows"]};
+window.SIDEBAR_ITEMS = {"mod":["fd","linux","raw","unix","wasi","wasip2","windows"]};
