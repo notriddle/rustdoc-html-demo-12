@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/solve/fulfill.rs`."><title>fulfill.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_trait_selection/solve/</div>fulfill.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/solve/fulfill.rs`."><title>fulfill.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_trait_selection/solve/</div>fulfill.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -596,22 +596,30 @@
 <a href="#595" id="595">595</a>
 <a href="#596" id="596">596</a>
 <a href="#597" id="597">597</a>
-<a href="#598" id="598">598</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::marker::PhantomData;
+<a href="#598" id="598">598</a>
+<a href="#599" id="599">599</a>
+<a href="#600" id="600">600</a>
+<a href="#601" id="601">601</a>
+<a href="#602" id="602">602</a>
+<a href="#603" id="603">603</a>
+<a href="#604" id="604">604</a>
+<a href="#605" id="605">605</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::marker::PhantomData;
 <span class="kw">use </span>std::mem;
 <span class="kw">use </span>std::ops::ControlFlow;
 
+<span class="kw">use </span>rustc_data_structures::thinvec::ExtractIf;
 <span class="kw">use </span>rustc_infer::infer::InferCtxt;
 <span class="kw">use </span>rustc_infer::traits::query::NoSolution;
 <span class="kw">use </span>rustc_infer::traits::solve::{CandidateSource, GoalSource, MaybeCause};
 <span class="kw">use </span>rustc_infer::traits::{
     <span class="self">self</span>, FromSolverError, MismatchedProjectionTypes, Obligation, ObligationCause,
-    ObligationCauseCode, PredicateObligation, SelectionError, TraitEngine,
+    ObligationCauseCode, PredicateObligation, PredicateObligations, SelectionError, TraitEngine,
 };
 <span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::ty::error::{ExpectedFound, TypeError};
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, TyCtxt};
-<span class="kw">use </span>rustc_next_trait_solver::solve::{GenerateProofTree, SolverDelegateEvalExt <span class="kw">as _</span>};
-<span class="kw">use </span>tracing::instrument;
+<span class="kw">use </span>rustc_next_trait_solver::solve::{GenerateProofTree, HasChanged, SolverDelegateEvalExt <span class="kw">as _</span>};
+<span class="kw">use </span>tracing::{instrument, trace};
 
 <span class="kw">use </span><span class="kw">super</span>::Certainty;
 <span class="kw">use </span><span class="kw">super</span>::delegate::SolverDelegate;
@@ -647,8 +655,8 @@
     /// We cannot eagerly return these as error so we instead store them here
     /// to avoid recomputing them each time `select_where_possible` is called.
     /// This also allows us to return the correct `FulfillmentError` for them.
-    </span>overflowed: Vec&lt;PredicateObligation&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
-    pending: Vec&lt;PredicateObligation&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+    </span>overflowed: PredicateObligations&lt;<span class="lifetime">'tcx</span>&gt;,
+    pending: PredicateObligations&lt;<span class="lifetime">'tcx</span>&gt;,
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; ObligationStorage&lt;<span class="lifetime">'tcx</span>&gt; {
@@ -656,13 +664,13 @@
         <span class="self">self</span>.pending.push(obligation);
     }
 
-    <span class="kw">fn </span>clone_pending(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Vec&lt;PredicateObligation&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+    <span class="kw">fn </span>clone_pending(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PredicateObligations&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span><span class="kw-2">mut </span>obligations = <span class="self">self</span>.pending.clone();
         obligations.extend(<span class="self">self</span>.overflowed.iter().cloned());
         obligations
     }
 
-    <span class="kw">fn </span>take_pending(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; Vec&lt;PredicateObligation&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+    <span class="kw">fn </span>take_pending(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; PredicateObligations&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span><span class="kw-2">mut </span>obligations = mem::take(<span class="kw-2">&amp;mut </span><span class="self">self</span>.pending);
         obligations.append(<span class="kw-2">&amp;mut </span><span class="self">self</span>.overflowed);
         obligations
@@ -679,15 +687,13 @@
             // we get all obligations involved in the overflow. We pretty much check: if
             // we were to do another step of `select_where_possible`, which goals would
             // change.
-            </span><span class="self">self</span>.overflowed.extend(<span class="self">self</span>.pending.extract_if(|o| {
+            // FIXME: &lt;https://github.com/Gankra/thin-vec/pull/66&gt; is merged, this can be removed.
+            </span><span class="self">self</span>.overflowed.extend(ExtractIf::new(<span class="kw-2">&amp;mut </span><span class="self">self</span>.pending, |o| {
                 <span class="kw">let </span>goal = o.clone().into();
                 <span class="kw">let </span>result = &lt;<span class="kw-2">&amp;</span>SolverDelegate&lt;<span class="lifetime">'tcx</span>&gt;&gt;::from(infcx)
                     .evaluate_root_goal(goal, GenerateProofTree::No)
                     .<span class="number">0</span>;
-                <span class="kw">match </span>result {
-                    <span class="prelude-val">Ok</span>((has_changed, <span class="kw">_</span>)) =&gt; has_changed,
-                    <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
-                }
+                <span class="macro">matches!</span>(result, <span class="prelude-val">Ok</span>((HasChanged::Yes, <span class="kw">_</span>)))
             }));
         })
     }
@@ -711,7 +717,7 @@
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         infcx: <span class="kw-2">&amp;</span>InferCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
         obligation: <span class="kw-2">&amp;</span>PredicateObligation&lt;<span class="lifetime">'tcx</span>&gt;,
-        result: <span class="kw-2">&amp;</span><span class="prelude-ty">Result</span>&lt;(bool, Certainty), NoSolution&gt;,
+        result: <span class="kw-2">&amp;</span><span class="prelude-ty">Result</span>&lt;(HasChanged, Certainty), NoSolution&gt;,
     ) {
         <span class="kw">if let </span><span class="prelude-val">Some</span>(inspector) = infcx.obligation_inspector.get() {
             <span class="kw">let </span>result = <span class="kw">match </span>result {
@@ -779,7 +785,11 @@
                         <span class="kw">continue</span>;
                     }
                 };
-                has_changed |= changed;
+
+                <span class="kw">if </span>changed == HasChanged::Yes {
+                    has_changed = <span class="bool-val">true</span>;
+                }
+
                 <span class="kw">match </span>certainty {
                     Certainty::Yes =&gt; {}
                     Certainty::Maybe(<span class="kw">_</span>) =&gt; <span class="self">self</span>.obligations.register(obligation),
@@ -794,14 +804,11 @@
         errors
     }
 
-    <span class="kw">fn </span>pending_obligations(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Vec&lt;PredicateObligation&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+    <span class="kw">fn </span>pending_obligations(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; PredicateObligations&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.obligations.clone_pending()
     }
 
-    <span class="kw">fn </span>drain_unstalled_obligations(
-        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-        <span class="kw">_</span>: <span class="kw-2">&amp;</span>InferCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
-    ) -&gt; Vec&lt;PredicateObligation&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+    <span class="kw">fn </span>drain_unstalled_obligations(<span class="kw-2">&amp;mut </span><span class="self">self</span>, <span class="kw">_</span>: <span class="kw-2">&amp;</span>InferCtxt&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; PredicateObligations&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="self">self</span>.obligations.take_pending()
     }
 }
@@ -873,7 +880,7 @@
             FulfillmentErrorCode::Subtype(expected_found, TypeError::Sorts(expected_found))
         }
         ty::PredicateKind::Clause(<span class="kw">_</span>)
-        | ty::PredicateKind::ObjectSafe(<span class="kw">_</span>)
+        | ty::PredicateKind::DynCompatible(<span class="kw">_</span>)
         | ty::PredicateKind::Ambiguous =&gt; {
             FulfillmentErrorCode::Select(SelectionError::Unimplemented)
         }
@@ -999,6 +1006,7 @@
                                         nested_goal.source(),
                                         GoalSource::ImplWhereBound
                                             | GoalSource::InstantiateHigherRanked
+                                            | GoalSource::AliasWellFormed
                                     ) &amp;&amp; <span class="kw">match </span><span class="self">self</span>.consider_ambiguities {
                                         <span class="bool-val">true </span>=&gt; {
                                             <span class="macro">matches!</span>(
@@ -1011,6 +1019,13 @@
                                 },
                             )
                         })
+                    });
+                }
+
+                <span class="comment">// Prefer a non-rigid candidate if there is one.
+                </span><span class="kw">if </span>candidates.len() &gt; <span class="number">1 </span>{
+                    candidates.retain(|candidate| {
+                        !<span class="macro">matches!</span>(candidate.kind(), inspect::ProbeKind::RigidAlias { .. })
                     });
                 }
             }
@@ -1027,8 +1042,11 @@
         <span class="self">self</span>.obligation.cause.span
     }
 
-    <span class="kw">fn </span>visit_goal(<span class="kw-2">&amp;mut </span><span class="self">self</span>, goal: <span class="kw-2">&amp;</span>inspect::InspectGoal&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self</span>::Result {
+    <span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>, goal), fields(goal = <span class="question-mark">?</span>goal.goal()))]
+    </span><span class="kw">fn </span>visit_goal(<span class="kw-2">&amp;mut </span><span class="self">self</span>, goal: <span class="kw-2">&amp;</span>inspect::InspectGoal&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self</span>::Result {
         <span class="kw">let </span>candidates = <span class="self">self</span>.non_trivial_candidates(goal);
+        <span class="macro">trace!</span>(candidates = <span class="question-mark">?</span>candidates.iter().map(|c| c.kind()).collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;());
+
         <span class="kw">let </span>[candidate] = candidates.as_slice() <span class="kw">else </span>{
             <span class="kw">return </span>ControlFlow::Break(<span class="self">self</span>.obligation.clone());
         };
@@ -1062,17 +1080,13 @@
                     polarity: ty::PredicatePolarity::Positive,
                 }))
             }
-            ty::PredicateKind::Clause(
-                ty::ClauseKind::WellFormed(<span class="kw">_</span>) | ty::ClauseKind::Projection(..),
-            )
-            | ty::PredicateKind::AliasRelate(..) =&gt; ChildMode::PassThrough,
-            <span class="kw">_ </span>=&gt; {
-                <span class="kw">return </span>ControlFlow::Break(<span class="self">self</span>.obligation.clone());
-            }
+            <span class="kw">_ </span>=&gt; ChildMode::PassThrough,
         };
 
         <span class="kw">let </span><span class="kw-2">mut </span>impl_where_bound_count = <span class="number">0</span>;
         <span class="kw">for </span>nested_goal <span class="kw">in </span>candidate.instantiate_nested_goals(<span class="self">self</span>.span()) {
+            <span class="macro">trace!</span>(nested_goal = <span class="question-mark">?</span>(nested_goal.goal(), nested_goal.source(), nested_goal.result()));
+
             <span class="kw">let </span>make_obligation = |cause| Obligation {
                 cause,
                 param_env: nested_goal.goal().param_env,
@@ -1099,7 +1113,7 @@
                 </span>(<span class="kw">_</span>, GoalSource::InstantiateHigherRanked) =&gt; {
                     obligation = <span class="self">self</span>.obligation.clone();
                 }
-                (ChildMode::PassThrough, <span class="kw">_</span>) =&gt; {
+                (ChildMode::PassThrough, <span class="kw">_</span>) | (<span class="kw">_</span>, GoalSource::AliasWellFormed) =&gt; {
                     obligation = make_obligation(<span class="self">self</span>.obligation.cause.clone());
                 }
             }

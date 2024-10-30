@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["OutlivesEnvironment","OutlivesEnvironmentBuilder"],"type":["RegionBoundPairs"]};
+window.SIDEBAR_ITEMS = {"struct":["OutlivesEnvironment"],"type":["RegionBoundPairs"]};

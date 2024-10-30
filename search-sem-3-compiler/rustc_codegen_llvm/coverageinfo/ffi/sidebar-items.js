@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["CounterKind","ExprKind","RegionKind"],"mod":["mcdc"],"struct":["Counter","CounterExpression","CounterMappingRegion"]};
+window.SIDEBAR_ITEMS = {"enum":["CounterKind","ExprKind"],"mod":["mcdc"],"struct":["BranchRegion","CodeRegion","Counter","CounterExpression","CoverageSpan","MCDCBranchRegion","MCDCDecisionRegion"]};

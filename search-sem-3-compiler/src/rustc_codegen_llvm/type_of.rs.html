@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/type_of.rs`."><title>type_of.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_codegen_llvm/</div>type_of.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/type_of.rs`."><title>type_of.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../static.files/storage-59e33391.js"></script><script defer src="../../static.files/src-script-56102188.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_codegen_llvm/</div>type_of.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -304,14 +304,16 @@
 <a href="#303" id="303">303</a>
 <a href="#304" id="304">304</a>
 <a href="#305" id="305">305</a>
-<a href="#306" id="306">306</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::fmt::Write;
+<a href="#306" id="306">306</a>
+<a href="#307" id="307">307</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::fmt::Write;
 
+<span class="kw">use </span>rustc_abi::Primitive::{Float, Int, Pointer};
+<span class="kw">use </span>rustc_abi::{Abi, Align, FieldsShape, Scalar, Size, Variants};
 <span class="kw">use </span>rustc_codegen_ssa::traits::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::bug;
 <span class="kw">use </span>rustc_middle::ty::layout::{LayoutOf, TyAndLayout};
 <span class="kw">use </span>rustc_middle::ty::print::{with_no_trimmed_paths, with_no_visible_paths};
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, CoroutineArgsExt, Ty, TypeVisitableExt};
-<span class="kw">use </span>rustc_target::abi::{Abi, Align, FieldsShape, Float, Int, Pointer, Scalar, Size, Variants};
 <span class="kw">use </span>tracing::debug;
 
 <span class="kw">use </span><span class="kw">crate</span>::common::<span class="kw-2">*</span>;
@@ -496,7 +498,7 @@
     /// `[T]` becomes `T`, while `str` and `Trait` turn into `i8` - this
     /// is useful for indexing slices, as `&amp;[T]`'s data pointer is `T*`.
     /// If the type is an unsized struct, the regular layout is generated,
-    /// with the inner-most trailing unsized field using the "minimal unit"
+    /// with the innermost trailing unsized field using the "minimal unit"
     /// of that field's type - this is useful for taking the address of
     /// that field and ensuring the struct has the right alignment.
     </span><span class="kw">fn </span>llvm_type&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, cx: <span class="kw-2">&amp;</span>CodegenCx&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'a </span>Type {
@@ -505,7 +507,7 @@
         // layout.
         </span><span class="kw">if let </span>Abi::Scalar(scalar) = <span class="self">self</span>.abi {
             <span class="comment">// Use a different cache for scalars because pointers to DSTs
-            // can be either fat or thin (data pointers of fat pointers).
+            // can be either wide or thin (data pointers of wide pointers).
             </span><span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>llty) = cx.scalar_lltypes.borrow().get(<span class="kw-2">&amp;</span><span class="self">self</span>.ty) {
                 <span class="kw">return </span>llty;
             }

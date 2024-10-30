@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["lint_cstring_as_ptr"],"static":["TEMPORARY_CSTRING_AS_PTR"],"struct":["TemporaryCStringAsPtr"]};

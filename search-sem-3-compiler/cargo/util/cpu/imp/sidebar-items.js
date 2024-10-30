@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["CPU_STATE_IDLE","CPU_STATE_MAX","CPU_STATE_NICE","CPU_STATE_SYSTEM","CPU_STATE_USER","PROESSOR_CPU_LOAD_INFO"],"fn":["current","host_processor_info","mach_host_self","pct_idle","vm_deallocate"],"static":["mach_task_self_"],"struct":["State","processor_cpu_load_info_data_t"],"type":["host_t","kern_return_t","mach_msg_type_number_t","mach_port_t","natural_t","processor_flavor_t","processor_info_array_t","vm_address_t","vm_map_t","vm_offset_t","vm_size_t"]};
+window.SIDEBAR_ITEMS = {"fn":["current","pct_idle"],"struct":["State"]};

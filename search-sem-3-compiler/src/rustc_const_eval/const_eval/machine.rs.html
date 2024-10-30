@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/const_eval/machine.rs`."><title>machine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_const_eval/const_eval/</div>machine.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/const_eval/machine.rs`."><title>machine.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_const_eval/const_eval/</div>machine.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -834,8 +834,8 @@
 <span class="kw">use </span><span class="kw">crate</span>::interpret::{
     <span class="self">self</span>, AllocId, AllocRange, ConstAllocation, CtfeProvenance, FnArg, Frame, GlobalAlloc, ImmTy,
     InterpCx, InterpResult, MPlaceTy, OpTy, Pointer, PointerArithmetic, RangeSet, Scalar,
-    StackPopCleanup, compile_time_machine, err_ub, throw_exhaust, throw_inval, throw_ub_custom,
-    throw_unsup, throw_unsup_format,
+    StackPopCleanup, compile_time_machine, interp_ok, throw_exhaust, throw_inval, throw_ub,
+    throw_ub_custom, throw_unsup, throw_unsup_format,
 };
 
 <span class="doccomment">/// When hitting this many interpreted terminators we emit a deny by default lint
@@ -950,7 +950,7 @@
 
     <span class="attr">#[inline(always)]
     </span><span class="kw">fn </span>filter_map_collect&lt;T&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="kw-2">mut </span>f: <span class="kw">impl </span>FnMut(<span class="kw-2">&amp;</span>K, <span class="kw-2">&amp;</span>V) -&gt; <span class="prelude-ty">Option</span>&lt;T&gt;) -&gt; Vec&lt;T&gt; {
-        <span class="self">self</span>.iter().filter_map(<span class="kw">move </span>|(k, v)| f(k, <span class="kw-2">&amp;*</span>v)).collect()
+        <span class="self">self</span>.iter().filter_map(<span class="kw">move </span>|(k, v)| f(k, v)).collect()
     }
 
     <span class="attr">#[inline(always)]
@@ -1029,7 +1029,7 @@
     }
 
     <span class="doccomment">/// "Intercept" a function call, because we have something special to do for it.
-    /// All `#[rustc_do_not_const_check]` functions should be hooked here.
+    /// All `#[rustc_do_not_const_check]` functions MUST be hooked here.
     /// If this returns `Some` function, which may be `instance` or a different function with
     /// compatible arguments, then evaluation should continue with that function.
     /// If this returns `None`, the function call has been handled and the function has returned.
@@ -1057,7 +1057,7 @@
             <span class="kw">let </span>msg = Symbol::intern(<span class="self">self</span>.read_str(<span class="kw-2">&amp;</span>msg_place)<span class="question-mark">?</span>);
             <span class="kw">let </span>span = <span class="self">self</span>.find_closest_untracked_caller_location();
             <span class="kw">let </span>(file, line, col) = <span class="self">self</span>.location_triple_for_span(span);
-            <span class="kw">return </span><span class="prelude-val">Err</span>(ConstEvalErrKind::Panic { msg, file, line, col }.into());
+            <span class="kw">return </span><span class="prelude-val">Err</span>(ConstEvalErrKind::Panic { msg, file, line, col }).into();
         } <span class="kw">else if </span><span class="self">self</span>.tcx.is_lang_item(def_id, LangItem::PanicFmt) {
             <span class="comment">// For panic_fmt, call const_panic_fmt instead.
             </span><span class="kw">let </span>const_def_id = <span class="self">self</span>.tcx.require_lang_item(LangItem::ConstPanicFmt, <span class="prelude-val">None</span>);
@@ -1069,16 +1069,16 @@
                 <span class="self">self</span>.cur_span(),
             );
 
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(new_instance));
+            <span class="kw">return </span>interp_ok(<span class="prelude-val">Some</span>(new_instance));
         } <span class="kw">else if </span><span class="self">self</span>.tcx.is_lang_item(def_id, LangItem::AlignOffset) {
             <span class="kw">let </span>args = <span class="self">self</span>.copy_fn_args(args);
             <span class="comment">// For align_offset, we replace the function call if the pointer has no address.
             </span><span class="kw">match </span><span class="self">self</span>.align_offset(instance, <span class="kw-2">&amp;</span>args, dest, ret)<span class="question-mark">? </span>{
-                ControlFlow::Continue(()) =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(instance)),
-                ControlFlow::Break(()) =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>),
+                ControlFlow::Continue(()) =&gt; <span class="kw">return </span>interp_ok(<span class="prelude-val">Some</span>(instance)),
+                ControlFlow::Break(()) =&gt; <span class="kw">return </span>interp_ok(<span class="prelude-val">None</span>),
             }
         }
-        <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(instance))
+        interp_ok(<span class="prelude-val">Some</span>(instance))
     }
 
     <span class="doccomment">/// `align_offset(ptr, target_align)` needs special handling in const eval, because the pointer
@@ -1133,25 +1133,25 @@
                         dest,
                         StackPopCleanup::Goto { ret, unwind: mir::UnwindAction::Unreachable },
                     )<span class="question-mark">?</span>;
-                    <span class="prelude-val">Ok</span>(ControlFlow::Break(()))
+                    interp_ok(ControlFlow::Break(()))
                 } <span class="kw">else </span>{
                     <span class="comment">// Not alignable in const, return `usize::MAX`.
                     </span><span class="kw">let </span>usize_max = Scalar::from_target_usize(<span class="self">self</span>.target_usize_max(), <span class="self">self</span>);
                     <span class="self">self</span>.write_scalar(usize_max, dest)<span class="question-mark">?</span>;
                     <span class="self">self</span>.return_to_block(ret)<span class="question-mark">?</span>;
-                    <span class="prelude-val">Ok</span>(ControlFlow::Break(()))
+                    interp_ok(ControlFlow::Break(()))
                 }
             }
             <span class="prelude-val">Err</span>(_addr) =&gt; {
                 <span class="comment">// The pointer has an address, continue with function call.
-                </span><span class="prelude-val">Ok</span>(ControlFlow::Continue(()))
+                </span>interp_ok(ControlFlow::Continue(()))
             }
         }
     }
 
     <span class="doccomment">/// See documentation on the `ptr_guaranteed_cmp` intrinsic.
     </span><span class="kw">fn </span>guaranteed_cmp(<span class="kw-2">&amp;mut </span><span class="self">self</span>, a: Scalar, b: Scalar) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, u8&gt; {
-        <span class="prelude-val">Ok</span>(<span class="kw">match </span>(a, b) {
+        interp_ok(<span class="kw">match </span>(a, b) {
             <span class="comment">// Comparisons between integers are always known.
             </span>(Scalar::Int { .. }, Scalar::Int { .. }) =&gt; {
                 <span class="kw">if </span>a == b {
@@ -1205,7 +1205,7 @@
 
     <span class="attr">#[inline(always)]
     </span><span class="kw">fn </span>enforce_validity(ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;, layout: TyAndLayout&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; bool {
-        ecx.tcx.sess.opts.unstable_opts.extra_const_ub_checks || layout.abi.is_uninhabited()
+        ecx.tcx.sess.opts.unstable_opts.extra_const_ub_checks || layout.is_uninhabited()
     }
 
     <span class="kw">fn </span>load_mir(
@@ -1213,8 +1213,8 @@
         instance: ty::InstanceKind&lt;<span class="lifetime">'tcx</span>&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>mir::Body&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
         <span class="kw">match </span>instance {
-            ty::InstanceKind::Item(def) =&gt; <span class="prelude-val">Ok</span>(ecx.tcx.mir_for_ctfe(def)),
-            <span class="kw">_ </span>=&gt; <span class="prelude-val">Ok</span>(ecx.tcx.instance_mir(instance)),
+            ty::InstanceKind::Item(def) =&gt; interp_ok(ecx.tcx.mir_for_ctfe(def)),
+            <span class="kw">_ </span>=&gt; interp_ok(ecx.tcx.instance_mir(instance)),
         }
     }
 
@@ -1232,7 +1232,7 @@
         <span class="comment">// Replace some functions.
         </span><span class="kw">let </span><span class="prelude-val">Some</span>(instance) = ecx.hook_special_const_fn(orig_instance, args, dest, ret)<span class="question-mark">? </span><span class="kw">else </span>{
             <span class="comment">// Call has already been handled.
-            </span><span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+            </span><span class="kw">return </span>interp_ok(<span class="prelude-val">None</span>);
         };
 
         <span class="comment">// Only check non-glue functions
@@ -1241,8 +1241,8 @@
             // sensitive check here. But we can at least rule out functions that are not const at
             // all. That said, we have to allow calling functions inside a trait marked with
             // #[const_trait]. These *are* const-checked!
-            // FIXME: why does `is_const_fn_raw` not classify them as const?
-            </span><span class="kw">if </span>(!ecx.tcx.is_const_fn_raw(def) &amp;&amp; !ecx.tcx.is_const_default_method(def))
+            // FIXME(effects): why does `is_const_fn` not classify them as const?
+            </span><span class="kw">if </span>(!ecx.tcx.is_const_fn(def) &amp;&amp; !ecx.tcx.is_const_default_method(def))
                 || ecx.tcx.has_attr(def, sym::rustc_do_not_const_check)
             {
                 <span class="comment">// We certainly do *not* want to actually call the fn
@@ -1254,14 +1254,14 @@
         <span class="comment">// This is a const fn. Call it.
         // In case of replacement, we return the *original* instance to make backtraces work out
         // (and we hope this does not confuse the FnAbi checks too much).
-        </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>((ecx.load_mir(instance.def, <span class="prelude-val">None</span>)<span class="question-mark">?</span>, orig_instance)))
+        </span>interp_ok(<span class="prelude-val">Some</span>((ecx.load_mir(instance.def, <span class="prelude-val">None</span>)<span class="question-mark">?</span>, orig_instance)))
     }
 
     <span class="kw">fn </span>panic_nounwind(ecx: <span class="kw-2">&amp;mut </span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;, msg: <span class="kw-2">&amp;</span>str) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>msg = Symbol::intern(msg);
         <span class="kw">let </span>span = ecx.find_closest_untracked_caller_location();
         <span class="kw">let </span>(file, line, col) = ecx.location_triple_for_span(span);
-        <span class="prelude-val">Err</span>(ConstEvalErrKind::Panic { msg, file, line, col }.into())
+        <span class="prelude-val">Err</span>(ConstEvalErrKind::Panic { msg, file, line, col }).into()
     }
 
     <span class="kw">fn </span>call_intrinsic(
@@ -1274,7 +1274,7 @@
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, <span class="prelude-ty">Option</span>&lt;ty::Instance&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt; {
         <span class="comment">// Shared intrinsics.
         </span><span class="kw">if </span>ecx.eval_intrinsic(instance, args, dest, target)<span class="question-mark">? </span>{
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+            <span class="kw">return </span>interp_ok(<span class="prelude-val">None</span>);
         }
         <span class="kw">let </span>intrinsic_name = ecx.tcx.item_name(instance.def_id());
 
@@ -1351,7 +1351,7 @@
                         <span class="string">"intrinsic `{intrinsic_name}` is not supported at compile-time"
                     </span>);
                 }
-                <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(ty::Instance {
+                <span class="kw">return </span>interp_ok(<span class="prelude-val">Some</span>(ty::Instance {
                     def: ty::InstanceKind::Item(instance.def_id()),
                     args: instance.args,
                 }));
@@ -1360,7 +1360,7 @@
 
         <span class="comment">// Intrinsic is done, jump to next block.
         </span>ecx.return_to_block(target)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
+        interp_ok(<span class="prelude-val">None</span>)
     }
 
     <span class="kw">fn </span>assert_panic(
@@ -1391,7 +1391,7 @@
                 }
             }
         };
-        <span class="prelude-val">Err</span>(ConstEvalErrKind::AssertFailure(err).into())
+        <span class="prelude-val">Err</span>(ConstEvalErrKind::AssertFailure(err)).into()
     }
 
     <span class="kw">fn </span>binary_ptr_op(
@@ -1462,7 +1462,7 @@
             }
         }
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="attr">#[inline(always)]
@@ -1480,7 +1480,7 @@
         </span><span class="kw">if </span>!ecx.recursion_limit.value_within_limit(ecx.stack().len() + <span class="number">1</span>) {
             <span class="macro">throw_exhaust!</span>(StackFrameLimitReached)
         } <span class="kw">else </span>{
-            <span class="prelude-val">Ok</span>(frame)
+            interp_ok(frame)
         }
     }
 
@@ -1510,22 +1510,22 @@
         <span class="kw">if </span>is_write {
             <span class="comment">// Write access. These are never allowed, but we give a targeted error message.
             </span><span class="kw">match </span>alloc.mutability {
-                Mutability::Not =&gt; <span class="prelude-val">Err</span>(<span class="macro">err_ub!</span>(WriteToReadOnly(alloc_id)).into()),
-                Mutability::Mut =&gt; <span class="prelude-val">Err</span>(ConstEvalErrKind::ModifiedGlobal.into()),
+                Mutability::Not =&gt; <span class="macro">throw_ub!</span>(WriteToReadOnly(alloc_id)),
+                Mutability::Mut =&gt; <span class="prelude-val">Err</span>(ConstEvalErrKind::ModifiedGlobal).into(),
             }
         } <span class="kw">else </span>{
             <span class="comment">// Read access. These are usually allowed, with some exceptions.
             </span><span class="kw">if </span>machine.can_access_mut_global == CanAccessMutGlobal::Yes {
                 <span class="comment">// Machine configuration allows us read from anything (e.g., `static` initializer).
-                </span><span class="prelude-val">Ok</span>(())
+                </span>interp_ok(())
             } <span class="kw">else if </span>alloc.mutability == Mutability::Mut {
                 <span class="comment">// Machine configuration does not allow us to read statics (e.g., `const`
                 // initializer).
-                </span><span class="prelude-val">Err</span>(ConstEvalErrKind::ConstAccessesMutGlobal.into())
+                </span><span class="prelude-val">Err</span>(ConstEvalErrKind::ConstAccessesMutGlobal).into()
             } <span class="kw">else </span>{
                 <span class="comment">// Immutable global, this read is fine.
                 </span><span class="macro">assert_eq!</span>(alloc.mutability, Mutability::Not);
-                <span class="prelude-val">Ok</span>(())
+                interp_ok(())
             }
         }
     }
@@ -1558,9 +1558,9 @@
                 // even when there is interior mutability.)
                 </span>place.map_provenance(CtfeProvenance::as_shared_ref)
             };
-            <span class="prelude-val">Ok</span>(ImmTy::from_immediate(new_place.to_ref(ecx), val.layout))
+            interp_ok(ImmTy::from_immediate(new_place.to_ref(ecx), val.layout))
         } <span class="kw">else </span>{
-            <span class="prelude-val">Ok</span>(val.clone())
+            interp_ok(val.clone())
         }
     }
 
@@ -1573,20 +1573,20 @@
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">if </span>range.size == Size::ZERO {
             <span class="comment">// Nothing to check.
-            </span><span class="kw">return </span><span class="prelude-val">Ok</span>(());
+            </span><span class="kw">return </span>interp_ok(());
         }
         <span class="comment">// Reject writes through immutable pointers.
         </span><span class="kw">if </span>immutable {
-            <span class="kw">return </span><span class="prelude-val">Err</span>(ConstEvalErrKind::WriteThroughImmutablePointer.into());
+            <span class="kw">return </span><span class="prelude-val">Err</span>(ConstEvalErrKind::WriteThroughImmutablePointer).into();
         }
         <span class="comment">// Everything else is fine.
-        </span><span class="prelude-val">Ok</span>(())
+        </span>interp_ok(())
     }
 
     <span class="kw">fn </span>before_alloc_read(ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;, alloc_id: AllocId) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="comment">// Check if this is the currently evaluated static.
         </span><span class="kw">if </span><span class="prelude-val">Some</span>(alloc_id) == ecx.machine.static_root_ids.map(|(id, <span class="kw">_</span>)| id) {
-            <span class="kw">return </span><span class="prelude-val">Err</span>(ConstEvalErrKind::RecursiveStatic.into());
+            <span class="kw">return </span><span class="prelude-val">Err</span>(ConstEvalErrKind::RecursiveStatic).into();
         }
         <span class="comment">// If this is another static, make sure we fire off the query to detect cycles.
         // But only do that when checks for static recursion are enabled.
@@ -1598,7 +1598,7 @@
                 ecx.ctfe_query(|tcx| tcx.eval_static_initializer(def_id))<span class="question-mark">?</span>;
             }
         }
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>cached_union_data_range&lt;<span class="lifetime">'e</span>&gt;(

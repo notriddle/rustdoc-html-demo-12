@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["super_lattice_tys"],"trait":["LatticeDir"]};
+window.SIDEBAR_ITEMS = {"enum":["LatticeOpKind"],"struct":["LatticeOp"]};

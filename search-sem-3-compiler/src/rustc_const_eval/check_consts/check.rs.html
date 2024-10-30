@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/check_consts/check.rs`."><title>check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_const_eval/check_consts/</div>check.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/check_consts/check.rs`."><title>check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_const_eval/check_consts/</div>check.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -823,13 +823,94 @@
 <a href="#822" id="822">822</a>
 <a href="#823" id="823">823</a>
 <a href="#824" id="824">824</a>
-<a href="#825" id="825">825</a></pre></div><pre class="rust"><code><span class="doccomment">//! The `Visitor` responsible for actually checking a `mir::Body` for invalid operations.
+<a href="#825" id="825">825</a>
+<a href="#826" id="826">826</a>
+<a href="#827" id="827">827</a>
+<a href="#828" id="828">828</a>
+<a href="#829" id="829">829</a>
+<a href="#830" id="830">830</a>
+<a href="#831" id="831">831</a>
+<a href="#832" id="832">832</a>
+<a href="#833" id="833">833</a>
+<a href="#834" id="834">834</a>
+<a href="#835" id="835">835</a>
+<a href="#836" id="836">836</a>
+<a href="#837" id="837">837</a>
+<a href="#838" id="838">838</a>
+<a href="#839" id="839">839</a>
+<a href="#840" id="840">840</a>
+<a href="#841" id="841">841</a>
+<a href="#842" id="842">842</a>
+<a href="#843" id="843">843</a>
+<a href="#844" id="844">844</a>
+<a href="#845" id="845">845</a>
+<a href="#846" id="846">846</a>
+<a href="#847" id="847">847</a>
+<a href="#848" id="848">848</a>
+<a href="#849" id="849">849</a>
+<a href="#850" id="850">850</a>
+<a href="#851" id="851">851</a>
+<a href="#852" id="852">852</a>
+<a href="#853" id="853">853</a>
+<a href="#854" id="854">854</a>
+<a href="#855" id="855">855</a>
+<a href="#856" id="856">856</a>
+<a href="#857" id="857">857</a>
+<a href="#858" id="858">858</a>
+<a href="#859" id="859">859</a>
+<a href="#860" id="860">860</a>
+<a href="#861" id="861">861</a>
+<a href="#862" id="862">862</a>
+<a href="#863" id="863">863</a>
+<a href="#864" id="864">864</a>
+<a href="#865" id="865">865</a>
+<a href="#866" id="866">866</a>
+<a href="#867" id="867">867</a>
+<a href="#868" id="868">868</a>
+<a href="#869" id="869">869</a>
+<a href="#870" id="870">870</a>
+<a href="#871" id="871">871</a>
+<a href="#872" id="872">872</a>
+<a href="#873" id="873">873</a>
+<a href="#874" id="874">874</a>
+<a href="#875" id="875">875</a>
+<a href="#876" id="876">876</a>
+<a href="#877" id="877">877</a>
+<a href="#878" id="878">878</a>
+<a href="#879" id="879">879</a>
+<a href="#880" id="880">880</a>
+<a href="#881" id="881">881</a>
+<a href="#882" id="882">882</a>
+<a href="#883" id="883">883</a>
+<a href="#884" id="884">884</a>
+<a href="#885" id="885">885</a>
+<a href="#886" id="886">886</a>
+<a href="#887" id="887">887</a>
+<a href="#888" id="888">888</a>
+<a href="#889" id="889">889</a>
+<a href="#890" id="890">890</a>
+<a href="#891" id="891">891</a>
+<a href="#892" id="892">892</a>
+<a href="#893" id="893">893</a>
+<a href="#894" id="894">894</a>
+<a href="#895" id="895">895</a>
+<a href="#896" id="896">896</a>
+<a href="#897" id="897">897</a>
+<a href="#898" id="898">898</a>
+<a href="#899" id="899">899</a>
+<a href="#900" id="900">900</a>
+<a href="#901" id="901">901</a>
+<a href="#902" id="902">902</a>
+<a href="#903" id="903">903</a>
+<a href="#904" id="904">904</a>
+<a href="#905" id="905">905</a></pre></div><pre class="rust"><code><span class="doccomment">//! The `Visitor` responsible for actually checking a `mir::Body` for invalid operations.
 
 </span><span class="kw">use </span>std::assert_matches::assert_matches;
 <span class="kw">use </span>std::borrow::Cow;
 <span class="kw">use </span>std::mem;
 <span class="kw">use </span>std::ops::Deref;
 
+<span class="kw">use </span>rustc_attr::{ConstStability, StabilityLevel};
 <span class="kw">use </span>rustc_errors::{Diag, ErrorGuaranteed};
 <span class="kw">use </span>rustc_hir::def_id::DefId;
 <span class="kw">use </span>rustc_hir::{<span class="self">self </span><span class="kw">as </span>hir, LangItem};
@@ -840,7 +921,7 @@
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::span_bug;
 <span class="kw">use </span>rustc_middle::ty::adjustment::PointerCoercion;
-<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Instance, InstanceKind, Ty, TypeVisitableExt};
+<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Instance, InstanceKind, Ty, TypeVisitableExt, TypingMode};
 <span class="kw">use </span>rustc_mir_dataflow::Analysis;
 <span class="kw">use </span>rustc_mir_dataflow::impls::MaybeStorageLive;
 <span class="kw">use </span>rustc_mir_dataflow::storage::always_storage_live_locals;
@@ -853,8 +934,8 @@
 <span class="kw">use </span><span class="kw">super</span>::qualifs::{<span class="self">self</span>, HasMutInterior, NeedsDrop, NeedsNonConstDrop};
 <span class="kw">use </span><span class="kw">super</span>::resolver::FlowSensitiveAnalysis;
 <span class="kw">use super</span>::{ConstCx, Qualif};
-<span class="kw">use </span><span class="kw">crate</span>::const_eval::is_unstable_const_fn;
-<span class="kw">use </span><span class="kw">crate</span>::errors::UnstableInStable;
+<span class="kw">use </span><span class="kw">crate</span>::check_consts::is_safe_to_expose_on_stable_const_fn;
+<span class="kw">use </span><span class="kw">crate</span>::errors;
 
 <span class="kw">type </span>QualifResults&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>, Q&gt; =
     rustc_mir_dataflow::ResultsCursor&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>, FlowSensitiveAnalysis&lt;<span class="lifetime">'mir</span>, <span class="lifetime">'mir</span>, <span class="lifetime">'tcx</span>, Q&gt;&gt;;
@@ -888,8 +969,7 @@
             <span class="kw">let </span>ConstCx { tcx, body, .. } = <span class="kw-2">*</span>ccx;
 
             FlowSensitiveAnalysis::new(NeedsDrop, ccx)
-                .into_engine(tcx, body)
-                .iterate_to_fixpoint()
+                .iterate_to_fixpoint(tcx, body, <span class="prelude-val">None</span>)
                 .into_results_cursor(body)
         });
 
@@ -918,8 +998,7 @@
             <span class="kw">let </span>ConstCx { tcx, body, .. } = <span class="kw-2">*</span>ccx;
 
             FlowSensitiveAnalysis::new(NeedsNonConstDrop, ccx)
-                .into_engine(tcx, body)
-                .iterate_to_fixpoint()
+                .iterate_to_fixpoint(tcx, body, <span class="prelude-val">None</span>)
                 .into_results_cursor(body)
         });
 
@@ -948,8 +1027,7 @@
             <span class="kw">let </span>ConstCx { tcx, body, .. } = <span class="kw-2">*</span>ccx;
 
             FlowSensitiveAnalysis::new(HasMutInterior, ccx)
-                .into_engine(tcx, body)
-                .iterate_to_fixpoint()
+                .iterate_to_fixpoint(tcx, body, <span class="prelude-val">None</span>)
                 .into_results_cursor(body)
         });
 
@@ -1064,8 +1142,7 @@
                 </span><span class="kw">let </span>always_live_locals = <span class="kw-2">&amp;</span>always_storage_live_locals(<span class="kw-2">&amp;</span>ccx.body);
                 <span class="kw">let </span><span class="kw-2">mut </span>maybe_storage_live =
                     MaybeStorageLive::new(Cow::Borrowed(always_live_locals))
-                        .into_engine(ccx.tcx, <span class="kw-2">&amp;</span>ccx.body)
-                        .iterate_to_fixpoint()
+                        .iterate_to_fixpoint(ccx.tcx, <span class="kw-2">&amp;</span>ccx.body, <span class="prelude-val">None</span>)
                         .into_results_cursor(<span class="kw-2">&amp;</span>ccx.body);
 
                 <span class="comment">// And then check all `Return` in the MIR, and if a local is "maybe live" at a
@@ -1099,19 +1176,22 @@
     /// context.
     </span><span class="kw">pub fn </span>check_op_spanned&lt;O: NonConstOp&lt;<span class="lifetime">'tcx</span>&gt;&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, op: O, span: Span) {
         <span class="kw">let </span>gate = <span class="kw">match </span>op.status_in_item(<span class="self">self</span>.ccx) {
-            Status::Allowed =&gt; <span class="kw">return</span>,
-
-            Status::Unstable(gate) <span class="kw">if </span><span class="self">self</span>.tcx.features().active(gate) =&gt; {
-                <span class="kw">let </span>unstable_in_stable = <span class="self">self</span>.ccx.is_const_stable_const_fn()
-                    &amp;&amp; !<span class="kw">super</span>::rustc_allow_const_fn_unstable(<span class="self">self</span>.tcx, <span class="self">self</span>.def_id(), gate);
-                <span class="kw">if </span>unstable_in_stable {
-                    emit_unstable_in_stable_error(<span class="self">self</span>.ccx, span, gate);
+            Status::Unstable { gate, safe_to_expose_on_stable, is_function_call }
+                <span class="kw">if </span><span class="self">self</span>.tcx.features().enabled(gate) =&gt;
+            {
+                <span class="comment">// Generally this is allowed since the feature gate is enabled -- except
+                // if this function wants to be safe-to-expose-on-stable.
+                </span><span class="kw">if </span>!safe_to_expose_on_stable
+                    &amp;&amp; <span class="self">self</span>.enforce_recursive_const_stability()
+                    &amp;&amp; !<span class="kw">super</span>::rustc_allow_const_fn_unstable(<span class="self">self</span>.tcx, <span class="self">self</span>.def_id(), gate)
+                {
+                    emit_unstable_in_stable_exposed_error(<span class="self">self</span>.ccx, span, gate, is_function_call);
                 }
 
                 <span class="kw">return</span>;
             }
 
-            Status::Unstable(gate) =&gt; <span class="prelude-val">Some</span>(gate),
+            Status::Unstable { gate, .. } =&gt; <span class="prelude-val">Some</span>(gate),
             Status::Forbidden =&gt; <span class="prelude-val">None</span>,
         };
 
@@ -1129,7 +1209,13 @@
                 <span class="self">self</span>.error_emitted = <span class="prelude-val">Some</span>(reported);
             }
 
-            ops::DiagImportance::Secondary =&gt; <span class="self">self</span>.secondary_errors.push(err),
+            ops::DiagImportance::Secondary =&gt; {
+                <span class="self">self</span>.secondary_errors.push(err);
+                <span class="self">self</span>.tcx.dcx().span_delayed_bug(
+                    span,
+                    <span class="string">"compilation must fail when there is a secondary const checker error"</span>,
+                );
+            }
         }
     }
 
@@ -1142,7 +1228,6 @@
         {
             <span class="self">self</span>.error_emitted = <span class="prelude-val">Some</span>(guar);
         }
-        <span class="self">self</span>.check_op_spanned(ops::StaticAccess, span)
     }
 
     <span class="doccomment">/// Returns whether this place can possibly escape the evaluation of the current const/static
@@ -1265,6 +1350,7 @@
                     | PointerCoercion::UnsafeFnPointer
                     | PointerCoercion::ClosureFnPointer(<span class="kw">_</span>)
                     | PointerCoercion::ReifyFnPointer,
+                    <span class="kw">_</span>,
                 ),
                 <span class="kw">_</span>,
                 <span class="kw">_</span>,
@@ -1272,8 +1358,12 @@
                 <span class="comment">// These are all okay; they only change the type, not the data.
             </span>}
 
-            Rvalue::Cast(CastKind::PointerCoercion(PointerCoercion::Unsize), <span class="kw">_</span>, <span class="kw">_</span>) =&gt; {
-                <span class="comment">// Unsizing is implemented for CTFE.
+            Rvalue::Cast(
+                CastKind::PointerCoercion(PointerCoercion::Unsize | PointerCoercion::DynStar, <span class="kw">_</span>),
+                <span class="kw">_</span>,
+                <span class="kw">_</span>,
+            ) =&gt; {
+                <span class="comment">// Unsizing and `dyn*` coercions are implemented for CTFE.
             </span>}
 
             Rvalue::Cast(CastKind::PointerExposeProvenance, <span class="kw">_</span>, <span class="kw">_</span>) =&gt; {
@@ -1281,10 +1371,6 @@
             }
             Rvalue::Cast(CastKind::PointerWithExposedProvenance, <span class="kw">_</span>, <span class="kw">_</span>) =&gt; {
                 <span class="comment">// Since no pointer can ever get exposed (rejected above), this is easy to support.
-            </span>}
-
-            Rvalue::Cast(CastKind::DynStar, <span class="kw">_</span>, <span class="kw">_</span>) =&gt; {
-                <span class="comment">// `dyn*` coercion is implemented for CTFE.
             </span>}
 
             Rvalue::Cast(<span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>) =&gt; {}
@@ -1394,7 +1480,9 @@
 
                     ty::FnPtr(..) =&gt; {
                         <span class="self">self</span>.check_op(ops::FnCallIndirect);
-                        <span class="kw">return</span>;
+                        <span class="comment">// We can get here without an error in miri-unleashed mode... might as well
+                        // skip the rest of the checks as well then.
+                        </span><span class="kw">return</span>;
                     }
                     <span class="kw">_ </span>=&gt; {
                         <span class="macro">span_bug!</span>(terminator.source_info.span, <span class="string">"invalid callee of type {:?}"</span>, fn_ty)
@@ -1406,7 +1494,7 @@
                 // Typeck only does a "non-const" check since it operates on HIR and cannot distinguish
                 // which path expressions are getting called on and which path expressions are only used
                 // as function pointers. This is required for correctness.
-                </span><span class="kw">let </span>infcx = tcx.infer_ctxt().build();
+                </span><span class="kw">let </span>infcx = tcx.infer_ctxt().build(TypingMode::from_param_env(param_env));
                 <span class="kw">let </span>ocx = ObligationCtxt::new_with_diagnostics(<span class="kw-2">&amp;</span>infcx);
 
                 <span class="kw">let </span>predicates = tcx.predicates_of(callee).instantiate(tcx, fn_args);
@@ -1429,15 +1517,18 @@
 
                 <span class="kw">let </span><span class="kw-2">mut </span>is_trait = <span class="bool-val">false</span>;
                 <span class="comment">// Attempting to call a trait method?
-                </span><span class="kw">if </span>tcx.trait_of_item(callee).is_some() {
+                </span><span class="kw">if let </span><span class="prelude-val">Some</span>(trait_did) = tcx.trait_of_item(callee) {
                     <span class="macro">trace!</span>(<span class="string">"attempting to call a trait method"</span>);
+
+                    <span class="kw">let </span>trait_is_const = tcx.is_const_trait(trait_did);
                     <span class="comment">// trait method calls are only permitted when `effects` is enabled.
-                    // we don't error, since that is handled by typeck. We try to resolve
-                    // the trait into the concrete method, and uses that for const stability
-                    // checks.
+                    // typeck ensures the conditions for calling a const trait method are met,
+                    // so we only error if the trait isn't const. We try to resolve the trait
+                    // into the concrete method, and uses that for const stability checks.
                     // FIXME(effects) we might consider moving const stability checks to typeck as well.
-                    </span><span class="kw">if </span>tcx.features().effects {
-                        is_trait = <span class="bool-val">true</span>;
+                    </span><span class="kw">if </span>tcx.features().effects() &amp;&amp; trait_is_const {
+                        <span class="comment">// This skips the check below that ensures we only call `const fn`.
+                        </span>is_trait = <span class="bool-val">true</span>;
 
                         <span class="kw">if let </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(instance)) =
                             Instance::try_resolve(tcx, param_env, callee, fn_args)
@@ -1450,19 +1541,28 @@
                             callee = def;
                         }
                     } <span class="kw">else </span>{
+                        <span class="comment">// if the trait is const but the user has not enabled the feature(s),
+                        // suggest them.
+                        </span><span class="kw">let </span>feature = <span class="kw">if </span>trait_is_const {
+                            <span class="prelude-val">Some</span>(<span class="kw">if </span>tcx.features().const_trait_impl() {
+                                sym::effects
+                            } <span class="kw">else </span>{
+                                sym::const_trait_impl
+                            })
+                        } <span class="kw">else </span>{
+                            <span class="prelude-val">None
+                        </span>};
                         <span class="self">self</span>.check_op(ops::FnCallNonConst {
                             caller,
                             callee,
                             args: fn_args,
                             span: <span class="kw-2">*</span>fn_span,
                             call_source,
-                            feature: <span class="prelude-val">Some</span>(<span class="kw">if </span>tcx.features().const_trait_impl {
-                                sym::effects
-                            } <span class="kw">else </span>{
-                                sym::const_trait_impl
-                            }),
+                            feature,
                         });
-                        <span class="kw">return</span>;
+                        <span class="comment">// If we allowed this, we're in miri-unleashed mode, so we might
+                        // as well skip the remaining checks.
+                        </span><span class="kw">return</span>;
                     }
                 }
 
@@ -1475,28 +1575,73 @@
                 // const-eval of the `begin_panic` fn assumes the argument is `&amp;str`
                 </span><span class="kw">if </span>tcx.is_lang_item(callee, LangItem::BeginPanic) {
                     <span class="kw">match </span>args[<span class="number">0</span>].node.ty(<span class="kw-2">&amp;</span><span class="self">self</span>.ccx.body.local_decls, tcx).kind() {
-                        ty::Ref(<span class="kw">_</span>, ty, <span class="kw">_</span>) <span class="kw">if </span>ty.is_str() =&gt; <span class="kw">return</span>,
+                        ty::Ref(<span class="kw">_</span>, ty, <span class="kw">_</span>) <span class="kw">if </span>ty.is_str() =&gt; {}
                         <span class="kw">_ </span>=&gt; <span class="self">self</span>.check_op(ops::PanicNonStr),
                     }
+                    <span class="comment">// Allow this call, skip all the checks below.
+                    </span><span class="kw">return</span>;
                 }
 
                 <span class="comment">// const-eval of `#[rustc_const_panic_str]` functions assumes the argument is `&amp;&amp;str`
                 </span><span class="kw">if </span>tcx.has_attr(callee, sym::rustc_const_panic_str) {
                     <span class="kw">match </span>args[<span class="number">0</span>].node.ty(<span class="kw-2">&amp;</span><span class="self">self</span>.ccx.body.local_decls, tcx).kind() {
                         ty::Ref(<span class="kw">_</span>, ty, <span class="kw">_</span>) <span class="kw">if </span><span class="macro">matches!</span>(ty.kind(), ty::Ref(<span class="kw">_</span>, ty, <span class="kw">_</span>) <span class="kw">if </span>ty.is_str()) =&gt;
-                        {
-                            <span class="kw">return</span>;
+                            {}
+                        <span class="kw">_ </span>=&gt; {
+                            <span class="self">self</span>.check_op(ops::PanicNonStr);
                         }
-                        <span class="kw">_ </span>=&gt; <span class="self">self</span>.check_op(ops::PanicNonStr),
                     }
+                    <span class="comment">// Allow this call, skip all the checks below.
+                    </span><span class="kw">return</span>;
                 }
 
-                <span class="kw">if </span>tcx.is_lang_item(callee, LangItem::ExchangeMalloc) {
+                <span class="comment">// This can be called on stable via the `vec!` macro.
+                </span><span class="kw">if </span>tcx.is_lang_item(callee, LangItem::ExchangeMalloc) {
                     <span class="self">self</span>.check_op(ops::HeapAllocation);
-                    <span class="kw">return</span>;
+                    <span class="comment">// Allow this call, skip all the checks below.
+                    </span><span class="kw">return</span>;
                 }
 
-                <span class="kw">if </span>!tcx.is_const_fn_raw(callee) &amp;&amp; !is_trait {
+                <span class="comment">// Intrinsics are language primitives, not regular calls, so treat them separately.
+                </span><span class="kw">if let </span><span class="prelude-val">Some</span>(intrinsic) = tcx.intrinsic(callee) {
+                    <span class="kw">match </span>tcx.lookup_const_stability(callee) {
+                        <span class="prelude-val">None </span>=&gt; {
+                            <span class="comment">// Non-const intrinsic.
+                            </span><span class="self">self</span>.check_op(ops::IntrinsicNonConst { name: intrinsic.name });
+                        }
+                        <span class="prelude-val">Some</span>(ConstStability { feature: <span class="prelude-val">None</span>, const_stable_indirect, .. }) =&gt; {
+                            <span class="comment">// Intrinsic does not need a separate feature gate (we rely on the
+                            // regular stability checker). However, we have to worry about recursive
+                            // const stability.
+                            </span><span class="kw">if </span>!const_stable_indirect &amp;&amp; <span class="self">self</span>.enforce_recursive_const_stability() {
+                                <span class="self">self</span>.dcx().emit_err(errors::UnmarkedIntrinsicExposed {
+                                    span: <span class="self">self</span>.span,
+                                    def_path: <span class="self">self</span>.tcx.def_path_str(callee),
+                                });
+                            }
+                        }
+                        <span class="prelude-val">Some</span>(ConstStability {
+                            feature: <span class="prelude-val">Some</span>(feature),
+                            level: StabilityLevel::Unstable { .. },
+                            const_stable_indirect,
+                            ..
+                        }) =&gt; {
+                            <span class="self">self</span>.check_op(ops::IntrinsicUnstable {
+                                name: intrinsic.name,
+                                feature,
+                                const_stable_indirect,
+                            });
+                        }
+                        <span class="prelude-val">Some</span>(ConstStability { level: StabilityLevel::Stable { .. }, .. }) =&gt; {
+                            <span class="comment">// All good.
+                        </span>}
+                    }
+                    <span class="comment">// This completes the checks for intrinsics.
+                    </span><span class="kw">return</span>;
+                }
+
+                <span class="comment">// Trait functions are not `const fn` so we have to skip them here.
+                </span><span class="kw">if </span>!tcx.is_const_fn(callee) &amp;&amp; !is_trait {
                     <span class="self">self</span>.check_op(ops::FnCallNonConst {
                         caller,
                         callee,
@@ -1505,66 +1650,68 @@
                         call_source,
                         feature: <span class="prelude-val">None</span>,
                     });
-                    <span class="kw">return</span>;
+                    <span class="comment">// If we allowed this, we're in miri-unleashed mode, so we might
+                    // as well skip the remaining checks.
+                    </span><span class="kw">return</span>;
                 }
 
-                <span class="comment">// If the `const fn` we are trying to call is not const-stable, ensure that we have
-                // the proper feature gate enabled.
-                </span><span class="kw">if let </span><span class="prelude-val">Some</span>((gate, implied_by)) = is_unstable_const_fn(tcx, callee) {
-                    <span class="macro">trace!</span>(<span class="question-mark">?</span>gate, <span class="string">"calling unstable const fn"</span>);
-                    <span class="kw">if </span><span class="self">self</span>.span.allows_unstable(gate) {
-                        <span class="kw">return</span>;
+                <span class="comment">// Finally, stability for regular function calls -- this is the big one.
+                </span><span class="kw">match </span>tcx.lookup_const_stability(callee) {
+                    <span class="prelude-val">Some</span>(ConstStability { level: StabilityLevel::Stable { .. }, .. }) =&gt; {
+                        <span class="comment">// All good.
+                    </span>}
+                    <span class="prelude-val">None </span>| <span class="prelude-val">Some</span>(ConstStability { feature: <span class="prelude-val">None</span>, .. }) =&gt; {
+                        <span class="comment">// This doesn't need a separate const-stability check -- const-stability equals
+                        // regular stability, and regular stability is checked separately.
+                        // However, we *do* have to worry about *recursive* const stability.
+                        </span><span class="kw">if </span><span class="self">self</span>.enforce_recursive_const_stability()
+                            &amp;&amp; !is_safe_to_expose_on_stable_const_fn(tcx, callee)
+                        {
+                            <span class="self">self</span>.dcx().emit_err(errors::UnmarkedConstFnExposed {
+                                span: <span class="self">self</span>.span,
+                                def_path: <span class="self">self</span>.tcx.def_path_str(callee),
+                            });
+                        }
                     }
-                    <span class="kw">if let </span><span class="prelude-val">Some</span>(implied_by_gate) = implied_by
-                        &amp;&amp; <span class="self">self</span>.span.allows_unstable(implied_by_gate)
-                    {
-                        <span class="kw">return</span>;
-                    }
+                    <span class="prelude-val">Some</span>(ConstStability {
+                        feature: <span class="prelude-val">Some</span>(feature),
+                        level: StabilityLevel::Unstable { implied_by: implied_feature, .. },
+                        ..
+                    }) =&gt; {
+                        <span class="comment">// An unstable const fn with a feature gate.
+                        </span><span class="kw">let </span>callee_safe_to_expose_on_stable =
+                            is_safe_to_expose_on_stable_const_fn(tcx, callee);
 
-                    <span class="comment">// Calling an unstable function *always* requires that the corresponding gate
-                    // (or implied gate) be enabled, even if the function has
-                    // `#[rustc_allow_const_fn_unstable(the_gate)]`.
-                    </span><span class="kw">let </span>gate_declared = |gate| tcx.features().declared(gate);
-                    <span class="kw">let </span>feature_gate_declared = gate_declared(gate);
-                    <span class="kw">let </span>implied_gate_declared = implied_by.is_some_and(gate_declared);
-                    <span class="kw">if </span>!feature_gate_declared &amp;&amp; !implied_gate_declared {
-                        <span class="self">self</span>.check_op(ops::FnCallUnstable(callee, <span class="prelude-val">Some</span>(gate)));
-                        <span class="kw">return</span>;
-                    }
+                        <span class="comment">// We only honor `span.allows_unstable` aka `#[allow_internal_unstable]` if
+                        // the callee is safe to expose, to avoid bypassing recursive stability.
+                        </span><span class="kw">if </span>(<span class="self">self</span>.span.allows_unstable(feature)
+                            || implied_feature.is_some_and(|f| <span class="self">self</span>.span.allows_unstable(f)))
+                            &amp;&amp; callee_safe_to_expose_on_stable
+                        {
+                            <span class="kw">return</span>;
+                        }
 
-                    <span class="comment">// If this crate is not using stability attributes, or the caller is not claiming to be a
-                    // stable `const fn`, that is all that is required.
-                    </span><span class="kw">if </span>!<span class="self">self</span>.ccx.is_const_stable_const_fn() {
-                        <span class="macro">trace!</span>(<span class="string">"crate not using stability attributes or caller not stably const"</span>);
-                        <span class="kw">return</span>;
+                        <span class="comment">// We can't use `check_op` to check whether the feature is enabled because
+                        // the logic is a bit different than elsewhere: local functions don't need
+                        // the feature gate, and there might be an "implied" gate that also suffices
+                        // to allow this.
+                        </span><span class="kw">let </span>feature_enabled = callee.is_local()
+                            || tcx.features().enabled(feature)
+                            || implied_feature.is_some_and(|f| tcx.features().enabled(f));
+                        <span class="comment">// We do *not* honor this if we are in the "danger zone": we have to enforce
+                        // recursive const-stability and the callee is not safe-to-expose. In that
+                        // case we need `check_op` to do the check.
+                        </span><span class="kw">let </span>danger_zone = !callee_safe_to_expose_on_stable
+                            &amp;&amp; <span class="self">self</span>.enforce_recursive_const_stability();
+                        <span class="kw">if </span>danger_zone || !feature_enabled {
+                            <span class="self">self</span>.check_op(ops::FnCallUnstable {
+                                def_id: callee,
+                                feature,
+                                safe_to_expose_on_stable: callee_safe_to_expose_on_stable,
+                            });
+                        }
                     }
-
-                    <span class="comment">// Otherwise, we are something const-stable calling a const-unstable fn.
-                    </span><span class="kw">if </span><span class="kw">super</span>::rustc_allow_const_fn_unstable(tcx, caller, gate) {
-                        <span class="macro">trace!</span>(<span class="string">"rustc_allow_const_fn_unstable gate active"</span>);
-                        <span class="kw">return</span>;
-                    }
-
-                    <span class="self">self</span>.check_op(ops::FnCallUnstable(callee, <span class="prelude-val">Some</span>(gate)));
-                    <span class="kw">return</span>;
                 }
-
-                <span class="comment">// FIXME(ecstaticmorse); For compatibility, we consider `unstable` callees that
-                // have no `rustc_const_stable` attributes to be const-unstable as well. This
-                // should be fixed later.
-                </span><span class="kw">let </span>callee_is_unstable_unmarked = tcx.lookup_const_stability(callee).is_none()
-                    &amp;&amp; tcx.lookup_stability(callee).is_some_and(|s| s.is_unstable());
-                <span class="kw">if </span>callee_is_unstable_unmarked {
-                    <span class="macro">trace!</span>(<span class="string">"callee_is_unstable_unmarked"</span>);
-                    <span class="comment">// We do not use `const` modifiers for intrinsic "functions", as intrinsics are
-                    // `extern` functions, and these have no way to get marked `const`. So instead we
-                    // use `rustc_const_(un)stable` attributes to mean that the intrinsic is `const`
-                    </span><span class="kw">if </span><span class="self">self</span>.ccx.is_const_stable_const_fn() || tcx.intrinsic(callee).is_some() {
-                        <span class="self">self</span>.check_op(ops::FnCallUnstable(callee, <span class="prelude-val">None</span>));
-                        <span class="kw">return</span>;
-                    }
-                }
-                <span class="macro">trace!</span>(<span class="string">"permitting call"</span>);
             }
 
             <span class="comment">// Forbid all `Drop` terminators unless the place being dropped is a local with no
@@ -1609,11 +1756,13 @@
 
             TerminatorKind::InlineAsm { .. } =&gt; <span class="self">self</span>.check_op(ops::InlineAsm),
 
-            TerminatorKind::Yield { .. } =&gt; <span class="self">self</span>.check_op(ops::Coroutine(
-                <span class="self">self</span>.tcx
-                    .coroutine_kind(<span class="self">self</span>.body.source.def_id())
-                    .expect(<span class="string">"Only expected to have a yield in a coroutine"</span>),
-            )),
+            TerminatorKind::Yield { .. } =&gt; {
+                <span class="self">self</span>.check_op(ops::Coroutine(
+                    <span class="self">self</span>.tcx
+                        .coroutine_kind(<span class="self">self</span>.body.source.def_id())
+                        .expect(<span class="string">"Only expected to have a yield in a coroutine"</span>),
+                ));
+            }
 
             TerminatorKind::CoroutineDrop =&gt; {
                 <span class="macro">span_bug!</span>(
@@ -1643,9 +1792,20 @@
     ty.is_bool() || ty.is_integral() || ty.is_char() || ty.is_floating_point()
 }
 
-<span class="kw">fn </span>emit_unstable_in_stable_error(ccx: <span class="kw-2">&amp;</span>ConstCx&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;, span: Span, gate: Symbol) {
+<span class="kw">fn </span>emit_unstable_in_stable_exposed_error(
+    ccx: <span class="kw-2">&amp;</span>ConstCx&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;,
+    span: Span,
+    gate: Symbol,
+    is_function_call: bool,
+) -&gt; ErrorGuaranteed {
     <span class="kw">let </span>attr_span = ccx.tcx.def_span(ccx.def_id()).shrink_to_lo();
 
-    ccx.dcx().emit_err(UnstableInStable { gate: gate.to_string(), span, attr_span });
+    ccx.dcx().emit_err(errors::UnstableInStableExposed {
+        gate: gate.to_string(),
+        span,
+        attr_span,
+        is_function_call,
+        is_function_call2: is_function_call,
+    })
 }
 </code></pre></div></section></main></body></html>

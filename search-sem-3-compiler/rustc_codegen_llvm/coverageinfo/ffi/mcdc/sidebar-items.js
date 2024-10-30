@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["ParameterTag"],"struct":["BranchParameters","DecisionParameters","Parameters"],"type":["LLVMConditionId"]};
+window.SIDEBAR_ITEMS = {"struct":["BranchParameters","DecisionParameters"],"type":["LLVMConditionId"]};

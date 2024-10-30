@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["PATH_REMAP"],"enum":["Alias","Kind","PathSet","ReallyDefault"],"fn":["crate_description","remap_paths"],"struct":["Builder","Cargo","HostFlags","RunConfig","Rustflags","ShouldRun","StepDescription","TaskPath"],"trait":["Step"]};
+window.SIDEBAR_ITEMS = {"constant":["PATH_REMAP"],"enum":["Alias","Kind","PathSet","ReallyDefault"],"fn":["crate_description","remap_paths"],"mod":["cargo"],"struct":["Builder","RunConfig","ShouldRun","StepDescription","TaskPath"],"trait":["Step"]};

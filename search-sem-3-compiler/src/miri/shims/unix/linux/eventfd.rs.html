@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/unix/linux/eventfd.rs`."><title>eventfd.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../../src-files.js"></script><script defer src="../../../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/shims/unix/linux/</div>eventfd.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/unix/linux/eventfd.rs`."><title>eventfd.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../../src-files.js"></script><script defer src="../../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/shims/unix/linux/</div>eventfd.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -222,21 +222,16 @@
 <a href="#221" id="221">221</a>
 <a href="#222" id="222">222</a>
 <a href="#223" id="223">223</a>
-<a href="#224" id="224">224</a>
-<a href="#225" id="225">225</a>
-<a href="#226" id="226">226</a>
-<a href="#227" id="227">227</a>
-<a href="#228" id="228">228</a>
-<a href="#229" id="229">229</a>
-<a href="#230" id="230">230</a></pre></div><pre class="rust"><code><span class="doccomment">//! Linux `eventfd` implementation.
+<a href="#224" id="224">224</a></pre></div><pre class="rust"><code><span class="doccomment">//! Linux `eventfd` implementation.
 </span><span class="kw">use </span>std::cell::{Cell, RefCell};
 <span class="kw">use </span>std::io;
-<span class="kw">use </span>std::io::{Error, ErrorKind};
+<span class="kw">use </span>std::io::ErrorKind;
 
+<span class="kw">use </span><span class="kw">crate</span>::concurrency::VClock;
 <span class="kw">use </span><span class="kw">crate</span>::shims::unix::fd::FileDescriptionRef;
 <span class="kw">use </span><span class="kw">crate</span>::shims::unix::linux::epoll::{EpollReadyEvents, EvalContextExt <span class="kw">as _</span>};
 <span class="kw">use </span><span class="kw">crate</span>::shims::unix::<span class="kw-2">*</span>;
-<span class="kw">use crate</span>::{concurrency::VClock, <span class="kw-2">*</span>};
+<span class="kw">use crate</span>::<span class="kw-2">*</span>;
 
 <span class="doccomment">/// Maximum value that the eventfd counter can hold.
 </span><span class="kw">const </span>MAX_COUNTER: u64 = u64::MAX - <span class="number">1</span>;
@@ -266,7 +261,7 @@
         <span class="comment">// We only check the status of EPOLLIN and EPOLLOUT flags for eventfd. If other event flags
         // need to be supported in the future, the check should be added here.
 
-        </span><span class="prelude-val">Ok</span>(EpollReadyEvents {
+        </span>interp_ok(EpollReadyEvents {
             epollin: <span class="self">self</span>.counter.get() != <span class="number">0</span>,
             epollout: <span class="self">self</span>.counter.get() != MAX_COUNTER,
             ..EpollReadyEvents::new()
@@ -278,7 +273,7 @@
         _communicate_allowed: bool,
         _ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, io::Result&lt;()&gt;&gt; {
-        <span class="prelude-val">Ok</span>(<span class="prelude-val">Ok</span>(()))
+        interp_ok(<span class="prelude-val">Ok</span>(()))
     }
 
     <span class="doccomment">/// Read the counter in the buffer and return the counter if succeeded.
@@ -295,9 +290,7 @@
         </span><span class="kw">let </span>ty = ecx.machine.layouts.u64;
         <span class="comment">// Check the size of slice, and return error only if the size of the slice &lt; 8.
         </span><span class="kw">if </span>len &lt; ty.size.bytes_usize() {
-            ecx.set_last_error_from_io_error(Error::from(ErrorKind::InvalidInput))<span class="question-mark">?</span>;
-            ecx.write_int(-<span class="number">1</span>, dest)<span class="question-mark">?</span>;
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+            <span class="kw">return </span>ecx.set_last_error_and_return(ErrorKind::InvalidInput, dest);
         }
 
         <span class="comment">// eventfd read at the size of u64.
@@ -307,9 +300,7 @@
         </span><span class="kw">let </span>counter = <span class="self">self</span>.counter.get();
         <span class="kw">if </span>counter == <span class="number">0 </span>{
             <span class="kw">if </span><span class="self">self</span>.is_nonblock {
-                ecx.set_last_error_from_io_error(Error::from(ErrorKind::WouldBlock))<span class="question-mark">?</span>;
-                ecx.write_int(-<span class="number">1</span>, dest)<span class="question-mark">?</span>;
-                <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+                <span class="kw">return </span>ecx.set_last_error_and_return(ErrorKind::WouldBlock, dest);
             }
 
             <span class="macro">throw_unsup_format!</span>(<span class="string">"eventfd: blocking is unsupported"</span>);
@@ -329,7 +320,7 @@
             </span>ecx.write_int(buf_place.layout.size.bytes(), dest)<span class="question-mark">?</span>;
         }
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="doccomment">/// A write call adds the 8-byte integer value supplied in
@@ -340,7 +331,7 @@
     /// write either blocks until a read is performed on the
     /// file descriptor, or fails with the error EAGAIN if the
     /// file descriptor has been made nonblocking.
-
+    ///
     /// A write fails with the error EINVAL if the size of the
     /// supplied buffer is less than 8 bytes, or if an attempt is
     /// made to write the value 0xffffffffffffffff.
@@ -357,8 +348,7 @@
         </span><span class="kw">let </span>ty = ecx.machine.layouts.u64;
         <span class="comment">// Check the size of slice, and return error only if the size of the slice &lt; 8.
         </span><span class="kw">if </span>len &lt; ty.layout.size.bytes_usize() {
-            <span class="kw">let </span>result = <span class="prelude-val">Err</span>(Error::from(ErrorKind::InvalidInput));
-            <span class="kw">return </span>ecx.return_written_byte_count_or_error(result, dest);
+            <span class="kw">return </span>ecx.set_last_error_and_return(ErrorKind::InvalidInput, dest);
         }
 
         <span class="comment">// Read the user supplied value from the pointer.
@@ -367,23 +357,21 @@
 
         <span class="comment">// u64::MAX as input is invalid because the maximum value of counter is u64::MAX - 1.
         </span><span class="kw">if </span>num == u64::MAX {
-            <span class="kw">let </span>result = <span class="prelude-val">Err</span>(Error::from(ErrorKind::InvalidInput));
-            <span class="kw">return </span>ecx.return_written_byte_count_or_error(result, dest);
+            <span class="kw">return </span>ecx.set_last_error_and_return(ErrorKind::InvalidInput, dest);
         }
         <span class="comment">// If the addition does not let the counter to exceed the maximum value, update the counter.
         // Else, block.
         </span><span class="kw">match </span><span class="self">self</span>.counter.get().checked_add(num) {
             <span class="prelude-val">Some</span>(new_count @ <span class="number">0</span>..=MAX_COUNTER) =&gt; {
                 <span class="comment">// Future `read` calls will synchronize with this write, so update the FD clock.
-                </span><span class="kw">if let </span><span class="prelude-val">Some</span>(clock) = <span class="kw-2">&amp;</span>ecx.release_clock() {
+                </span>ecx.release_clock(|clock| {
                     <span class="self">self</span>.clock.borrow_mut().join(clock);
-                }
+                });
                 <span class="self">self</span>.counter.set(new_count);
             }
             <span class="prelude-val">None </span>| <span class="prelude-val">Some</span>(u64::MAX) =&gt;
                 <span class="kw">if </span><span class="self">self</span>.is_nonblock {
-                    <span class="kw">let </span>result = <span class="prelude-val">Err</span>(Error::from(ErrorKind::WouldBlock));
-                    <span class="kw">return </span>ecx.return_written_byte_count_or_error(result, dest);
+                    <span class="kw">return </span>ecx.set_last_error_and_return(ErrorKind::WouldBlock, dest);
                 } <span class="kw">else </span>{
                     <span class="macro">throw_unsup_format!</span>(<span class="string">"eventfd: blocking is unsupported"</span>);
                 },
@@ -455,7 +443,7 @@
             clock: RefCell::new(VClock::default()),
         });
 
-        <span class="prelude-val">Ok</span>(Scalar::from_i32(fd_value))
+        interp_ok(Scalar::from_i32(fd_value))
     }
 }
 </code></pre></div></section></main></body></html>

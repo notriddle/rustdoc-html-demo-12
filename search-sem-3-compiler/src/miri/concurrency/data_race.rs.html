@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/concurrency/data_race.rs`."><title>data_race.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/concurrency/</div>data_race.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/concurrency/data_race.rs`."><title>data_race.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/concurrency/</div>data_race.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -1860,8 +1860,7 @@
 <a href="#1859" id="1859">1859</a>
 <a href="#1860" id="1860">1860</a>
 <a href="#1861" id="1861">1861</a>
-<a href="#1862" id="1862">1862</a>
-<a href="#1863" id="1863">1863</a></pre></div><pre class="rust"><code><span class="doccomment">//! Implementation of a data-race detector using Lamport Timestamps / Vector-clocks
+<a href="#1862" id="1862">1862</a></pre></div><pre class="rust"><code><span class="doccomment">//! Implementation of a data-race detector using Lamport Timestamps / Vector-clocks
 //! based on the Dynamic Race Detection for C++:
 //! &lt;https://www.doc.ic.ac.uk/~afd/homepages/papers/pdfs/2017/POPL.pdf&gt;
 //! which does not report false-positives when fences are used, and gives better
@@ -1903,27 +1902,22 @@
 //! code some atomic operations may increment the timestamp when not necessary but this has no effect
 //! on the data-race detection code.
 
-</span><span class="kw">use </span>std::{
-    cell::{Cell, Ref, RefCell, RefMut},
-    fmt::Debug,
-    mem,
-};
+</span><span class="kw">use </span>std::cell::{Cell, Ref, RefCell, RefMut};
+<span class="kw">use </span>std::fmt::Debug;
+<span class="kw">use </span>std::mem;
 
 <span class="kw">use </span>rustc_ast::Mutability;
-<span class="kw">use </span>rustc_data_structures::fx::FxHashMap;
-<span class="kw">use </span>rustc_data_structures::fx::FxHashSet;
+<span class="kw">use </span>rustc_data_structures::fx::{FxHashMap, FxHashSet};
 <span class="kw">use </span>rustc_index::{Idx, IndexVec};
-<span class="kw">use </span>rustc_middle::{mir, ty::Ty};
+<span class="kw">use </span>rustc_middle::mir;
+<span class="kw">use </span>rustc_middle::ty::Ty;
 <span class="kw">use </span>rustc_span::Span;
 <span class="kw">use </span>rustc_target::abi::{Align, HasDataLayout, Size};
 
+<span class="kw">use </span><span class="kw">super</span>::vector_clock::{VClock, VTimestamp, VectorIdx};
+<span class="kw">use </span><span class="kw">super</span>::weak_memory::EvalContextExt <span class="kw">as _</span>;
 <span class="kw">use </span><span class="kw">crate</span>::diagnostics::RacingOp;
 <span class="kw">use crate</span>::<span class="kw-2">*</span>;
-
-<span class="kw">use super</span>::{
-    vector_clock::{VClock, VTimestamp, VectorIdx},
-    weak_memory::EvalContextExt <span class="kw">as _</span>,
-};
 
 <span class="kw">pub type </span>AllocState = VClockAlloc;
 
@@ -2054,7 +2048,8 @@
     <span class="doccomment">/// The size of accesses to this atomic location.
     /// We use this to detect non-synchronized mixed-size accesses. Since all accesses must be
     /// aligned to their size, this is sufficient to detect imperfectly overlapping accesses.
-    </span>size: Size,
+    /// `None` indicates that we saw multiple different sizes, which is okay as long as all accesses are reads.
+    </span>size: <span class="prelude-ty">Option</span>&lt;Size&gt;,
 }
 
 <span class="attr">#[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -2128,6 +2123,14 @@
         <span class="kw">let </span><span class="kw-2">mut </span>msg = String::new();
 
         <span class="kw">if let </span><span class="prelude-val">Some</span>(size) = size {
+            <span class="kw">if </span>size == Size::ZERO {
+                <span class="comment">// In this case there were multiple read accesss with different sizes and then a write.
+                // We will be reporting *one* of the other reads, but we don't have enough information
+                // to determine which one had which size.
+                </span><span class="macro">assert!</span>(<span class="self">self </span>== AccessType::AtomicLoad);
+                <span class="macro">assert!</span>(ty.is_none());
+                <span class="kw">return </span><span class="macro">format!</span>(<span class="string">"multiple differently-sized atomic loads, including one load"</span>);
+            }
             msg.push_str(<span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">"{}-byte {}"</span>, size.bytes(), msg))
         }
 
@@ -2168,8 +2171,7 @@
     }
 }
 
-<span class="doccomment">/// Memory Cell vector clock metadata
-/// for data-race detection.
+<span class="doccomment">/// Per-byte vector clock metadata for data-race detection.
 </span><span class="attr">#[derive(Clone, PartialEq, Eq, Debug)]
 </span><span class="kw">struct </span>MemoryCellClocks {
     <span class="doccomment">/// The vector-clock timestamp and the thread that did the last non-atomic write. We don't need
@@ -2188,8 +2190,8 @@
     </span>read: VClock,
 
     <span class="doccomment">/// Atomic access, acquire, release sequence tracking clocks.
-    /// For non-atomic memory in the common case this
-    /// value is set to None.
+    /// For non-atomic memory this value is set to None.
+    /// For atomic memory, each byte carries this information.
     </span>atomic_ops: <span class="prelude-ty">Option</span>&lt;Box&lt;AtomicMemoryCellClocks&gt;&gt;,
 }
 
@@ -2199,7 +2201,7 @@
             read_vector: Default::default(),
             write_vector: Default::default(),
             sync_vector: Default::default(),
-            size,
+            size: <span class="prelude-val">Some</span>(size),
         }
     }
 }
@@ -2246,17 +2248,23 @@
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         thread_clocks: <span class="kw-2">&amp;</span>ThreadClockSet,
         size: Size,
+        write: bool,
     ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="kw-2">&amp;mut </span>AtomicMemoryCellClocks, DataRace&gt; {
         <span class="kw">match </span><span class="self">self</span>.atomic_ops {
             <span class="prelude-val">Some</span>(<span class="kw-2">ref mut </span>atomic) =&gt; {
                 <span class="comment">// We are good if the size is the same or all atomic accesses are before our current time.
-                </span><span class="kw">if </span>atomic.size == size {
+                </span><span class="kw">if </span>atomic.size == <span class="prelude-val">Some</span>(size) {
                     <span class="prelude-val">Ok</span>(atomic)
                 } <span class="kw">else if </span>atomic.read_vector &lt;= thread_clocks.clock
                     &amp;&amp; atomic.write_vector &lt;= thread_clocks.clock
                 {
-                    <span class="comment">// This is now the new size that must be used for accesses here.
-                    </span>atomic.size = size;
+                    <span class="comment">// We are fully ordered after all previous accesses, so we can change the size.
+                    </span>atomic.size = <span class="prelude-val">Some</span>(size);
+                    <span class="prelude-val">Ok</span>(atomic)
+                } <span class="kw">else if </span>!write &amp;&amp; atomic.write_vector &lt;= thread_clocks.clock {
+                    <span class="comment">// This is a read, and it is ordered after the last write. It's okay for the
+                    // sizes to mismatch, as long as no writes with a different size occur later.
+                    </span>atomic.size = <span class="prelude-val">None</span>;
                     <span class="prelude-val">Ok</span>(atomic)
                 } <span class="kw">else </span>{
                     <span class="prelude-val">Err</span>(DataRace)
@@ -2362,7 +2370,7 @@
         <span class="prelude-val">Ok</span>(())
     }
 
-    <span class="doccomment">/// Detect data-races with an atomic read, caused by a non-atomic access that does
+    <span class="doccomment">/// Detect data-races with an atomic read, caused by a non-atomic write that does
     /// not happen-before the atomic-read.
     </span><span class="kw">fn </span>atomic_read_detect(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
@@ -2371,14 +2379,10 @@
         access_size: Size,
     ) -&gt; <span class="prelude-ty">Result</span>&lt;(), DataRace&gt; {
         <span class="macro">trace!</span>(<span class="string">"Atomic read with vectors: {:#?} :: {:#?}"</span>, <span class="self">self</span>, thread_clocks);
-        <span class="kw">let </span>atomic = <span class="self">self</span>.atomic_access(thread_clocks, access_size)<span class="question-mark">?</span>;
+        <span class="kw">let </span>atomic = <span class="self">self</span>.atomic_access(thread_clocks, access_size, <span class="comment">/*write*/ </span><span class="bool-val">false</span>)<span class="question-mark">?</span>;
         atomic.read_vector.set_at_index(<span class="kw-2">&amp;</span>thread_clocks.clock, index);
-        <span class="comment">// Make sure the last non-atomic write and all non-atomic reads were before this access.
-        </span><span class="kw">if </span><span class="self">self</span>.write_was_before(<span class="kw-2">&amp;</span>thread_clocks.clock) &amp;&amp; <span class="self">self</span>.read &lt;= thread_clocks.clock {
-            <span class="prelude-val">Ok</span>(())
-        } <span class="kw">else </span>{
-            <span class="prelude-val">Err</span>(DataRace)
-        }
+        <span class="comment">// Make sure the last non-atomic write was before this access.
+        </span><span class="kw">if </span><span class="self">self</span>.write_was_before(<span class="kw-2">&amp;</span>thread_clocks.clock) { <span class="prelude-val">Ok</span>(()) } <span class="kw">else </span>{ <span class="prelude-val">Err</span>(DataRace) }
     }
 
     <span class="doccomment">/// Detect data-races with an atomic write, either with a non-atomic read or with
@@ -2390,7 +2394,7 @@
         access_size: Size,
     ) -&gt; <span class="prelude-ty">Result</span>&lt;(), DataRace&gt; {
         <span class="macro">trace!</span>(<span class="string">"Atomic write with vectors: {:#?} :: {:#?}"</span>, <span class="self">self</span>, thread_clocks);
-        <span class="kw">let </span>atomic = <span class="self">self</span>.atomic_access(thread_clocks, access_size)<span class="question-mark">?</span>;
+        <span class="kw">let </span>atomic = <span class="self">self</span>.atomic_access(thread_clocks, access_size, <span class="comment">/*write*/ </span><span class="bool-val">true</span>)<span class="question-mark">?</span>;
         atomic.write_vector.set_at_index(<span class="kw-2">&amp;</span>thread_clocks.clock, index);
         <span class="comment">// Make sure the last non-atomic write and all non-atomic reads were before this access.
         </span><span class="kw">if </span><span class="self">self</span>.write_was_before(<span class="kw-2">&amp;</span>thread_clocks.clock) &amp;&amp; <span class="self">self</span>.read &lt;= thread_clocks.clock {
@@ -2415,11 +2419,9 @@
         }
         thread_clocks.clock.index_mut(index).set_read_type(read_type);
         <span class="kw">if </span><span class="self">self</span>.write_was_before(<span class="kw-2">&amp;</span>thread_clocks.clock) {
-            <span class="kw">let </span>race_free = <span class="kw">if let </span><span class="prelude-val">Some</span>(atomic) = <span class="self">self</span>.atomic() {
-                <span class="comment">// We must be ordered-after all atomic accesses, reads and writes.
-                // This ensures we don't mix atomic and non-atomic accesses.
-                </span>atomic.write_vector &lt;= thread_clocks.clock
-                    &amp;&amp; atomic.read_vector &lt;= thread_clocks.clock
+            <span class="comment">// We must be ordered-after all atomic writes.
+            </span><span class="kw">let </span>race_free = <span class="kw">if let </span><span class="prelude-val">Some</span>(atomic) = <span class="self">self</span>.atomic() {
+                atomic.write_vector &lt;= thread_clocks.clock
             } <span class="kw">else </span>{
                 <span class="bool-val">true
             </span>};
@@ -2484,7 +2486,7 @@
         <span class="kw">let </span>buffered_scalar = this.buffered_atomic_read(place, atomic, scalar, || {
             this.validate_atomic_load(place, atomic)
         })<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(buffered_scalar.ok_or_else(|| <span class="macro">err_ub!</span>(InvalidUninitBytes(<span class="prelude-val">None</span>)))<span class="question-mark">?</span>)
+        interp_ok(buffered_scalar.ok_or_else(|| <span class="macro">err_ub!</span>(InvalidUninitBytes(<span class="prelude-val">None</span>)))<span class="question-mark">?</span>)
     }
 
     <span class="doccomment">/// Perform an atomic write operation at the memory location.
@@ -2501,7 +2503,7 @@
         // The program didn't actually do a read, so suppress the memory access hooks.
         // This is also a very special exception where we just ignore an error -- if this read
         // was UB e.g. because the memory is uninitialized, we don't want to know!
-        </span><span class="kw">let </span>old_val = this.run_for_validation(|this| this.read_scalar(dest)).ok();
+        </span><span class="kw">let </span>old_val = this.run_for_validation(|this| this.read_scalar(dest)).discard_err();
         this.allow_data_races_mut(<span class="kw">move </span>|this| this.write_scalar(val, dest))<span class="question-mark">?</span>;
         this.validate_atomic_store(dest, atomic)<span class="question-mark">?</span>;
         this.buffered_atomic_write(val, dest, atomic, old_val)
@@ -2528,7 +2530,7 @@
         this.validate_atomic_rmw(place, atomic)<span class="question-mark">?</span>;
 
         this.buffered_atomic_rmw(val.to_scalar(), place, atomic, old.to_scalar())<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(old)
+        interp_ok(old)
     }
 
     <span class="doccomment">/// Perform an atomic exchange with a memory place and a new
@@ -2548,7 +2550,7 @@
         this.validate_atomic_rmw(place, atomic)<span class="question-mark">?</span>;
 
         this.buffered_atomic_rmw(new, place, atomic, old)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(old)
+        interp_ok(old)
     }
 
     <span class="doccomment">/// Perform an conditional atomic exchange with a memory place and a new
@@ -2580,7 +2582,7 @@
         this.buffered_atomic_rmw(new_val.to_scalar(), place, atomic, old.to_scalar())<span class="question-mark">?</span>;
 
         <span class="comment">// Return the old value.
-        </span><span class="prelude-val">Ok</span>(old)
+        </span>interp_ok(old)
     }
 
     <span class="doccomment">/// Perform an atomic compare and exchange at a given memory location.
@@ -2637,7 +2639,7 @@
         }
 
         <span class="comment">// Return the old value.
-        </span><span class="prelude-val">Ok</span>(res)
+        </span>interp_ok(res)
     }
 
     <span class="doccomment">/// Update the data-race detector for an atomic fence on the current thread.
@@ -2669,11 +2671,11 @@
                     }
 
                     <span class="comment">// Increment timestamp in case of release semantics.
-                    </span><span class="prelude-val">Ok</span>(atomic != AtomicFenceOrd::Acquire)
+                    </span>interp_ok(atomic != AtomicFenceOrd::Acquire)
                 },
             )
         } <span class="kw">else </span>{
-            <span class="prelude-val">Ok</span>(())
+            interp_ok(())
         }
     }
 
@@ -2688,15 +2690,14 @@
         }
     }
 
-    <span class="doccomment">/// Returns the `release` clock of the current thread.
+    <span class="doccomment">/// Calls the callback with the "release" clock of the current thread.
     /// Other threads can acquire this clock in the future to establish synchronization
     /// with this program point.
-    </span><span class="kw">fn </span>release_clock&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;Ref&lt;<span class="lifetime">'a</span>, VClock&gt;&gt;
-    <span class="kw">where
-        </span><span class="lifetime">'tcx</span>: <span class="lifetime">'a</span>,
-    {
+    ///
+    /// The closure will only be invoked if data race handling is on.
+    </span><span class="kw">fn </span>release_clock&lt;R&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, callback: <span class="kw">impl </span>FnOnce(<span class="kw-2">&amp;</span>VClock) -&gt; R) -&gt; <span class="prelude-ty">Option</span>&lt;R&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_ref();
-        <span class="prelude-val">Some</span>(this.machine.data_race.as_ref()<span class="question-mark">?</span>.release_clock(<span class="kw-2">&amp;</span>this.machine.threads))
+        <span class="prelude-val">Some</span>(this.machine.data_race.as_ref()<span class="question-mark">?</span>.release_clock(<span class="kw-2">&amp;</span>this.machine.threads, callback))
     }
 
     <span class="doccomment">/// Acquire the given clock into the current thread, establishing synchronization with
@@ -2820,9 +2821,7 @@
         <span class="kw">let </span><span class="kw-2">mut </span>other_size = <span class="prelude-val">None</span>; <span class="comment">// if `Some`, this was a size-mismatch race
         </span><span class="kw">let </span>write_clock;
         <span class="kw">let </span>(other_access, other_thread, other_clock) =
-            <span class="comment">// First check the atomic-nonatomic cases. If it looks like multiple
-            // cases apply, this one should take precedence, else it might look like
-            // we are reporting races between two non-atomic reads.
+            <span class="comment">// First check the atomic-nonatomic cases.
             </span><span class="kw">if </span>!access.is_atomic() &amp;&amp;
                 <span class="kw">let </span><span class="prelude-val">Some</span>(atomic) = mem_clocks.atomic() &amp;&amp;
                 <span class="kw">let </span><span class="prelude-val">Some</span>(idx) = <span class="self">Self</span>::find_gt_index(<span class="kw-2">&amp;</span>atomic.write_vector, <span class="kw-2">&amp;</span>active_clocks.clock)
@@ -2840,10 +2839,10 @@
             } <span class="kw">else if let </span><span class="prelude-val">Some</span>(idx) = <span class="self">Self</span>::find_gt_index(<span class="kw-2">&amp;</span>mem_clocks.read, <span class="kw-2">&amp;</span>active_clocks.clock) {
                 (AccessType::NaRead(mem_clocks.read[idx].read_type()), idx, <span class="kw-2">&amp;</span>mem_clocks.read)
             <span class="comment">// Finally, mixed-size races.
-            </span>} <span class="kw">else if </span>access.is_atomic() &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(atomic) = mem_clocks.atomic() &amp;&amp; atomic.size != access_size {
+            </span>} <span class="kw">else if </span>access.is_atomic() &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(atomic) = mem_clocks.atomic() &amp;&amp; atomic.size != <span class="prelude-val">Some</span>(access_size) {
                 <span class="comment">// This is only a race if we are not synchronized with all atomic accesses, so find
                 // the one we are not synchronized with.
-                </span>other_size = <span class="prelude-val">Some</span>(atomic.size);
+                </span>other_size = <span class="prelude-val">Some</span>(atomic.size.unwrap_or(Size::ZERO));
                 <span class="kw">if let </span><span class="prelude-val">Some</span>(idx) = <span class="self">Self</span>::find_gt_index(<span class="kw-2">&amp;</span>atomic.write_vector, <span class="kw-2">&amp;</span>active_clocks.clock)
                     {
                         (AccessType::AtomicStore, idx, <span class="kw-2">&amp;</span>atomic.write_vector)
@@ -2870,10 +2869,7 @@
             <span class="macro">assert!</span>(!involves_non_atomic);
             <span class="prelude-val">Some</span>(<span class="string">"overlapping unsynchronized atomic accesses must use the same access size"</span>)
         } <span class="kw">else if </span>access.is_read() &amp;&amp; other_access.is_read() {
-            <span class="macro">assert!</span>(involves_non_atomic);
-            <span class="prelude-val">Some</span>(
-                <span class="string">"overlapping atomic and non-atomic accesses must be synchronized, even if both are read-only"</span>,
-            )
+            <span class="macro">panic!</span>(<span class="string">"there should be no same-size read-read races"</span>)
         } <span class="kw">else </span>{
             <span class="prelude-val">None
         </span>};
@@ -2912,7 +2908,7 @@
         <span class="kw">let </span>current_span = machine.current_span();
         <span class="kw">let </span>global = machine.data_race.as_ref().unwrap();
         <span class="kw">if </span>!global.race_detecting() {
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+            <span class="kw">return </span>interp_ok(());
         }
         <span class="kw">let </span>(index, <span class="kw-2">mut </span>thread_clocks) = global.active_thread_state_mut(<span class="kw-2">&amp;</span>machine.threads);
         <span class="kw">let </span><span class="kw-2">mut </span>alloc_ranges = <span class="self">self</span>.alloc_ranges.borrow_mut();
@@ -2935,7 +2931,7 @@
                 );
             }
         }
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="doccomment">/// Detect data-races for an unsynchronized write operation. It will not perform
@@ -2954,7 +2950,7 @@
         <span class="kw">let </span>current_span = machine.current_span();
         <span class="kw">let </span>global = machine.data_race.as_mut().unwrap();
         <span class="kw">if </span>!global.race_detecting() {
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+            <span class="kw">return </span>interp_ok(());
         }
         <span class="kw">let </span>(index, <span class="kw-2">mut </span>thread_clocks) = global.active_thread_state_mut(<span class="kw-2">&amp;</span>machine.threads);
         <span class="kw">for </span>(mem_clocks_range, mem_clocks) <span class="kw">in
@@ -2976,7 +2972,7 @@
                 );
             }
         }
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 }
 
@@ -3172,7 +3168,7 @@
                 </span>}
             }
         }
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="doccomment">/// Update the data-race detector for an atomic read occurring at the
@@ -3264,9 +3260,9 @@
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_ref();
         <span class="macro">assert!</span>(access.is_atomic());
-        <span class="kw">let </span><span class="prelude-val">Some</span>(data_race) = <span class="kw-2">&amp;</span>this.machine.data_race <span class="kw">else </span>{ <span class="kw">return </span><span class="prelude-val">Ok</span>(()) };
+        <span class="kw">let </span><span class="prelude-val">Some</span>(data_race) = <span class="kw-2">&amp;</span>this.machine.data_race <span class="kw">else </span>{ <span class="kw">return </span>interp_ok(()) };
         <span class="kw">if </span>!data_race.race_detecting() {
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+            <span class="kw">return </span>interp_ok(());
         }
         <span class="kw">let </span>size = place.layout.size;
         <span class="kw">let </span>(alloc_id, base_offset, _prov) = this.ptr_get_alloc_id(place.ptr(), <span class="number">0</span>)<span class="question-mark">?</span>;
@@ -3309,7 +3305,7 @@
                 }
 
                 <span class="comment">// This conservatively assumes all operations have release semantics
-                </span><span class="prelude-val">Ok</span>(<span class="bool-val">true</span>)
+                </span>interp_ok(<span class="bool-val">true</span>)
             },
         )<span class="question-mark">?</span>;
 
@@ -3325,7 +3321,7 @@
             }
         }
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 }
 
@@ -3593,7 +3589,7 @@
         <span class="kw">let </span>current_index = <span class="self">self</span>.active_thread_index(thread_mgr);
 
         <span class="comment">// Store the terminaion clock.
-        </span><span class="kw">let </span>terminaion_clock = <span class="self">self</span>.release_clock(thread_mgr).clone();
+        </span><span class="kw">let </span>terminaion_clock = <span class="self">self</span>.release_clock(thread_mgr, |clock| clock.clone());
         <span class="self">self</span>.thread_info.get_mut()[current_thread].termination_vector_clock =
             <span class="prelude-val">Some</span>(terminaion_clock);
 
@@ -3622,7 +3618,7 @@
                 clocks.increment_clock(index, current_span);
             }
         }
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="doccomment">/// Internal utility to identify a thread stored internally
@@ -3643,21 +3639,23 @@
         clocks.clock.join(clock);
     }
 
-    <span class="doccomment">/// Returns the `release` clock of the current thread.
+    <span class="doccomment">/// Calls the given closure with the "release" clock of the current thread.
     /// Other threads can acquire this clock in the future to establish synchronization
     /// with this program point.
-    </span><span class="kw">pub fn </span>release_clock&lt;<span class="lifetime">'tcx</span>&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, threads: <span class="kw-2">&amp;</span>ThreadManager&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; Ref&lt;<span class="lifetime">'_</span>, VClock&gt; {
+    </span><span class="kw">pub fn </span>release_clock&lt;<span class="lifetime">'tcx</span>, R&gt;(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        threads: <span class="kw-2">&amp;</span>ThreadManager&lt;<span class="lifetime">'tcx</span>&gt;,
+        callback: <span class="kw">impl </span>FnOnce(<span class="kw-2">&amp;</span>VClock) -&gt; R,
+    ) -&gt; R {
         <span class="kw">let </span>thread = threads.active_thread();
         <span class="kw">let </span>span = threads.active_thread_ref().current_span();
-        <span class="comment">// We increment the clock each time this happens, to ensure no two releases
-        // can be confused with each other.
-        </span><span class="kw">let </span>(index, <span class="kw-2">mut </span>clocks) = <span class="self">self</span>.thread_state_mut(thread);
-        clocks.increment_clock(index, span);
-        drop(clocks);
-        <span class="comment">// To return a read-only view, we need to release the RefCell
-        // and borrow it again.
-        </span><span class="kw">let </span>(_index, clocks) = <span class="self">self</span>.thread_state(thread);
-        Ref::map(clocks, |c| <span class="kw-2">&amp;</span>c.clock)
+        <span class="kw">let </span>(index, <span class="kw-2">mut </span>clocks) = <span class="self">self</span>.thread_state_mut(thread);
+        <span class="kw">let </span>r = callback(<span class="kw-2">&amp;</span>clocks.clock);
+        <span class="comment">// Increment the clock, so that all following events cannot be confused with anything that
+        // occurred before the release. Crucially, the callback is invoked on the *old* clock!
+        </span>clocks.increment_clock(index, span);
+
+        r
     }
 
     <span class="kw">fn </span>thread_index(<span class="kw-2">&amp;</span><span class="self">self</span>, thread: ThreadId) -&gt; VectorIdx {

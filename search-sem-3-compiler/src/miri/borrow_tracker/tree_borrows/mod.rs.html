@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/tree_borrows/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/borrow_tracker/tree_borrows/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/tree_borrows/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/borrow_tracker/tree_borrows/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -607,21 +607,15 @@
 <a href="#606" id="606">606</a>
 <a href="#607" id="607">607</a>
 <a href="#608" id="608">608</a>
-<a href="#609" id="609">609</a>
-<a href="#610" id="610">610</a>
-<a href="#611" id="611">611</a>
-<a href="#612" id="612">612</a></pre></div><pre class="rust"><code><span class="kw">use </span>rustc_middle::{
-    mir::{Mutability, RetagKind},
-    ty::{<span class="self">self</span>, Ty, layout::HasParamEnv},
-};
+<a href="#609" id="609">609</a></pre></div><pre class="rust"><code><span class="kw">use </span>rustc_middle::mir::{Mutability, RetagKind};
+<span class="kw">use </span>rustc_middle::ty::layout::HasParamEnv;
+<span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Ty};
 <span class="kw">use </span>rustc_span::def_id::DefId;
 <span class="kw">use </span>rustc_target::abi::{Abi, Size};
 
+<span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::{GlobalState, GlobalStateInner, ProtectorKind};
+<span class="kw">use </span><span class="kw">crate</span>::concurrency::data_race::NaReadType;
 <span class="kw">use crate</span>::<span class="kw-2">*</span>;
-<span class="kw">use crate</span>::{
-    borrow_tracker::{GlobalState, GlobalStateInner, ProtectorKind},
-    concurrency::data_race::NaReadType,
-};
 
 <span class="kw">pub mod </span>diagnostics;
 <span class="kw">mod </span>perms;
@@ -671,7 +665,7 @@
         // handle them as much as we can.
         </span><span class="kw">let </span>tag = <span class="kw">match </span>prov {
             ProvenanceExtra::Concrete(tag) =&gt; tag,
-            ProvenanceExtra::Wildcard =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(()),
+            ProvenanceExtra::Wildcard =&gt; <span class="kw">return </span>interp_ok(()),
         };
         <span class="kw">let </span>global = machine.borrow_tracker.as_ref().unwrap();
         <span class="kw">let </span>span = machine.current_span();
@@ -696,7 +690,7 @@
         // handle them as much as we can.
         </span><span class="kw">let </span>tag = <span class="kw">match </span>prov {
             ProvenanceExtra::Concrete(tag) =&gt; tag,
-            ProvenanceExtra::Wildcard =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(()),
+            ProvenanceExtra::Wildcard =&gt; <span class="kw">return </span>interp_ok(()),
         };
         <span class="kw">let </span>global = machine.borrow_tracker.as_ref().unwrap();
         <span class="kw">let </span>span = machine.current_span();
@@ -828,7 +822,7 @@
                 ));
             }
             drop(global); <span class="comment">// don't hold that reference any longer than we have to
-            </span><span class="prelude-val">Ok</span>(())
+            </span>interp_ok(())
         };
 
         <span class="macro">trace!</span>(<span class="string">"Reborrow of size {:?}"</span>, ptr_size);
@@ -850,13 +844,13 @@
                 );
                 log_creation(this, <span class="prelude-val">None</span>)<span class="question-mark">?</span>;
                 <span class="comment">// Keep original provenance.
-                </span><span class="kw">return </span><span class="prelude-val">Ok</span>(place.ptr().provenance);
+                </span><span class="kw">return </span>interp_ok(place.ptr().provenance);
             }
         };
         log_creation(this, <span class="prelude-val">Some</span>((alloc_id, base_offset, parent_prov)))<span class="question-mark">?</span>;
 
         <span class="kw">let </span>orig_tag = <span class="kw">match </span>parent_prov {
-            ProvenanceExtra::Wildcard =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(place.ptr().provenance), <span class="comment">// TODO: handle wildcard pointers
+            ProvenanceExtra::Wildcard =&gt; <span class="kw">return </span>interp_ok(place.ptr().provenance), <span class="comment">// TODO: handle wildcard pointers
             </span>ProvenanceExtra::Concrete(tag) =&gt; tag,
         };
 
@@ -894,7 +888,7 @@
             <span class="macro">assert_eq!</span>(ptr_size, Size::ZERO); <span class="comment">// we did the deref check above, size has to be 0 here
             // There's not actually any bytes here where accesses could even be tracked.
             // Just produce the new provenance, nothing else to do.
-            </span><span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(Provenance::Concrete { alloc_id, tag: new_tag }));
+            </span><span class="kw">return </span>interp_ok(<span class="prelude-val">Some</span>(Provenance::Concrete { alloc_id, tag: new_tag }));
         }
 
         <span class="kw">let </span>span = this.machine.current_span();
@@ -927,7 +921,7 @@
             }
         }
 
-        <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(Provenance::Concrete { alloc_id, tag: new_tag }))
+        interp_ok(<span class="prelude-val">Some</span>(Provenance::Concrete { alloc_id, tag: new_tag }))
     }
 
     <span class="kw">fn </span>tb_retag_place(
@@ -965,7 +959,7 @@
         <span class="comment">// Adjust place.
         // (If the closure gets called, that means the old provenance was `Some`, and hence the new
         // one must also be `Some`.)
-        </span><span class="prelude-val">Ok</span>(place.clone().map_provenance(|<span class="kw">_</span>| new_prov.unwrap()))
+        </span>interp_ok(place.clone().map_provenance(|<span class="kw">_</span>| new_prov.unwrap()))
     }
 
     <span class="doccomment">/// Retags an individual pointer, returning the retagged version.
@@ -977,7 +971,7 @@
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
         <span class="kw">let </span>place = this.ref_to_mplace(val)<span class="question-mark">?</span>;
         <span class="kw">let </span>new_place = this.tb_retag_place(<span class="kw-2">&amp;</span>place, new_perm)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(ImmTy::from_immediate(new_place.to_ref(this), val.layout))
+        interp_ok(ImmTy::from_immediate(new_place.to_ref(this), val.layout))
     }
 }
 
@@ -999,7 +993,7 @@
         <span class="kw">if let </span><span class="prelude-val">Some</span>(new_perm) = new_perm {
             this.tb_retag_reference(val, new_perm)
         } <span class="kw">else </span>{
-            <span class="prelude-val">Ok</span>(val.clone())
+            interp_ok(val.clone())
         }
     }
 
@@ -1036,7 +1030,7 @@
                     <span class="kw">let </span>val = <span class="self">self</span>.ecx.tb_retag_reference(<span class="kw-2">&amp;</span>val, new_perm)<span class="question-mark">?</span>;
                     <span class="self">self</span>.ecx.write_immediate(<span class="kw-2">*</span>val, place)<span class="question-mark">?</span>;
                 }
-                <span class="prelude-val">Ok</span>(())
+                interp_ok(())
             }
         }
         <span class="kw">impl</span>&lt;<span class="lifetime">'ecx</span>, <span class="lifetime">'tcx</span>&gt; ValueVisitor&lt;<span class="lifetime">'tcx</span>, MiriMachine&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span>RetagVisitor&lt;<span class="lifetime">'ecx</span>, <span class="lifetime">'tcx</span>&gt; {
@@ -1061,7 +1055,7 @@
                     );
                     <span class="self">self</span>.retag_ptr_inplace(place, new_perm)<span class="question-mark">?</span>;
                 }
-                <span class="prelude-val">Ok</span>(())
+                interp_ok(())
             }
 
             <span class="kw">fn </span>visit_value(<span class="kw-2">&amp;mut </span><span class="self">self</span>, place: <span class="kw-2">&amp;</span>PlaceTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
@@ -1070,7 +1064,7 @@
                 // This optimization is crucial for ZSTs, because they can contain way more fields
                 // than we can ever visit.
                 </span><span class="kw">if </span>place.layout.is_sized() &amp;&amp; place.layout.size &lt; <span class="self">self</span>.ecx.pointer_size() {
-                    <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+                    <span class="kw">return </span>interp_ok(());
                 }
 
                 <span class="comment">// Check the type of this value to see what to do with it (retag, or recurse).
@@ -1118,7 +1112,7 @@
                         }
                     }
                 }
-                <span class="prelude-val">Ok</span>(())
+                interp_ok(())
             }
         }
     }
@@ -1164,7 +1158,7 @@
                 <span class="comment">// No tree borrows on these allocations.
             </span>}
         }
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="doccomment">/// Display the tree.
@@ -1190,7 +1184,7 @@
             <span class="prelude-val">Some</span>(Provenance::Concrete { tag, alloc_id }) =&gt; (tag, alloc_id),
             <span class="kw">_ </span>=&gt; {
                 <span class="macro">eprintln!</span>(<span class="string">"Can't give the name {name} to Wildcard pointer"</span>);
-                <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+                <span class="kw">return </span>interp_ok(());
             }
         };
         <span class="kw">let </span>alloc_extra = this.get_alloc_extra(alloc_id)<span class="question-mark">?</span>;
@@ -1220,6 +1214,6 @@
     </span><span class="macro">assert_eq!</span>(nonnull.layout.fields.count(), <span class="number">1</span>, <span class="string">"NonNull must have exactly 1 field"</span>);
     <span class="kw">let </span>ptr = ecx.project_field(<span class="kw-2">&amp;</span>nonnull, <span class="number">0</span>)<span class="question-mark">?</span>;
     <span class="comment">// Finally a plain `*mut`
-    </span><span class="prelude-val">Ok</span>(ptr)
+    </span>interp_ok(ptr)
 }
 </code></pre></div></section></main></body></html>

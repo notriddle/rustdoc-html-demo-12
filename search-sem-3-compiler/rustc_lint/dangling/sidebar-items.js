@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_interesting","is_temporary_rvalue","lint_expr"],"static":["DANGLING_POINTERS_FROM_TEMPORARIES"],"struct":["DanglingPointerSearcher","DanglingPointers"]};

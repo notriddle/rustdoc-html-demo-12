@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"trait":["InferCtxtLike"]};
+window.SIDEBAR_ITEMS = {"enum":["TypingMode"],"trait":["InferCtxtLike"]};

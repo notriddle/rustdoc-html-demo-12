@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/jump_threading.rs`."><title>jump_threading.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>jump_threading.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/jump_threading.rs`."><title>jump_threading.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../static.files/storage-59e33391.js"></script><script defer src="../../static.files/src-script-56102188.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>jump_threading.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -846,7 +846,22 @@
 <a href="#845" id="845">845</a>
 <a href="#846" id="846">846</a>
 <a href="#847" id="847">847</a>
-<a href="#848" id="848">848</a></pre></div><pre class="rust"><code><span class="doccomment">//! A jump threading optimization.
+<a href="#848" id="848">848</a>
+<a href="#849" id="849">849</a>
+<a href="#850" id="850">850</a>
+<a href="#851" id="851">851</a>
+<a href="#852" id="852">852</a>
+<a href="#853" id="853">853</a>
+<a href="#854" id="854">854</a>
+<a href="#855" id="855">855</a>
+<a href="#856" id="856">856</a>
+<a href="#857" id="857">857</a>
+<a href="#858" id="858">858</a>
+<a href="#859" id="859">859</a>
+<a href="#860" id="860">860</a>
+<a href="#861" id="861">861</a>
+<a href="#862" id="862">862</a>
+<a href="#863" id="863">863</a></pre></div><pre class="rust"><code><span class="doccomment">//! A jump threading optimization.
 //!
 //! This optimization seeks to replace join-then-switch control flow patterns by straight jumps
 //!    X = 0                                      X = 0
@@ -1048,7 +1063,9 @@
         <span class="macro">debug!</span>(<span class="question-mark">?</span>discr, <span class="question-mark">?</span>bb);
 
         <span class="kw">let </span>discr_ty = discr.ty(<span class="self">self</span>.body, <span class="self">self</span>.tcx).ty;
-        <span class="kw">let </span><span class="prelude-val">Ok</span>(discr_layout) = <span class="self">self</span>.ecx.layout_of(discr_ty) <span class="kw">else </span>{ <span class="kw">return </span>};
+        <span class="kw">let </span><span class="prelude-val">Ok</span>(discr_layout) = <span class="self">self</span>.ecx.layout_of(discr_ty) <span class="kw">else </span>{
+            <span class="kw">return</span>;
+        };
 
         <span class="kw">let </span><span class="prelude-val">Some</span>(discr) = <span class="self">self</span>.map.find(discr.as_ref()) <span class="kw">else </span>{ <span class="kw">return </span>};
         <span class="macro">debug!</span>(<span class="question-mark">?</span>discr);
@@ -1236,24 +1253,24 @@
             lhs,
             constant,
             <span class="kw-2">&amp;mut </span>|elem, op| <span class="kw">match </span>elem {
-                TrackElem::Field(idx) =&gt; <span class="self">self</span>.ecx.project_field(op, idx.as_usize()).ok(),
-                TrackElem::Variant(idx) =&gt; <span class="self">self</span>.ecx.project_downcast(op, idx).ok(),
+                TrackElem::Field(idx) =&gt; <span class="self">self</span>.ecx.project_field(op, idx.as_usize()).discard_err(),
+                TrackElem::Variant(idx) =&gt; <span class="self">self</span>.ecx.project_downcast(op, idx).discard_err(),
                 TrackElem::Discriminant =&gt; {
-                    <span class="kw">let </span>variant = <span class="self">self</span>.ecx.read_discriminant(op).ok()<span class="question-mark">?</span>;
+                    <span class="kw">let </span>variant = <span class="self">self</span>.ecx.read_discriminant(op).discard_err()<span class="question-mark">?</span>;
                     <span class="kw">let </span>discr_value =
-                        <span class="self">self</span>.ecx.discriminant_for_variant(op.layout.ty, variant).ok()<span class="question-mark">?</span>;
+                        <span class="self">self</span>.ecx.discriminant_for_variant(op.layout.ty, variant).discard_err()<span class="question-mark">?</span>;
                     <span class="prelude-val">Some</span>(discr_value.into())
                 }
                 TrackElem::DerefLen =&gt; {
-                    <span class="kw">let </span>op: OpTy&lt;<span class="lifetime">'_</span>&gt; = <span class="self">self</span>.ecx.deref_pointer(op).ok()<span class="question-mark">?</span>.into();
-                    <span class="kw">let </span>len_usize = op.len(<span class="kw-2">&amp;</span><span class="self">self</span>.ecx).ok()<span class="question-mark">?</span>;
+                    <span class="kw">let </span>op: OpTy&lt;<span class="lifetime">'_</span>&gt; = <span class="self">self</span>.ecx.deref_pointer(op).discard_err()<span class="question-mark">?</span>.into();
+                    <span class="kw">let </span>len_usize = op.len(<span class="kw-2">&amp;</span><span class="self">self</span>.ecx).discard_err()<span class="question-mark">?</span>;
                     <span class="kw">let </span>layout = <span class="self">self</span>.ecx.layout_of(<span class="self">self</span>.tcx.types.usize).unwrap();
                     <span class="prelude-val">Some</span>(ImmTy::from_uint(len_usize, layout).into())
                 }
             },
             <span class="kw-2">&amp;mut </span>|place, op| {
                 <span class="kw">if let </span><span class="prelude-val">Some</span>(conditions) = state.try_get_idx(place, <span class="kw-2">&amp;</span><span class="self">self</span>.map)
-                    &amp;&amp; <span class="kw">let </span><span class="prelude-val">Ok</span>(imm) = <span class="self">self</span>.ecx.read_immediate_raw(op)
+                    &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(imm) = <span class="self">self</span>.ecx.read_immediate_raw(op).discard_err()
                     &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(imm) = imm.right()
                     &amp;&amp; <span class="kw">let </span>Immediate::Scalar(Scalar::Int(int)) = <span class="kw-2">*</span>imm
                 {
@@ -1277,8 +1294,8 @@
         <span class="kw">match </span>rhs {
             <span class="comment">// If we expect `lhs ?= A`, we have an opportunity if we assume `constant == A`.
             </span>Operand::Constant(constant) =&gt; {
-                <span class="kw">let </span><span class="prelude-val">Ok</span>(constant) =
-                    <span class="self">self</span>.ecx.eval_mir_constant(<span class="kw-2">&amp;</span>constant.const_, constant.span, <span class="prelude-val">None</span>)
+                <span class="kw">let </span><span class="prelude-val">Some</span>(constant) =
+                    <span class="self">self</span>.ecx.eval_mir_constant(<span class="kw-2">&amp;</span>constant.const_, constant.span, <span class="prelude-val">None</span>).discard_err()
                 <span class="kw">else </span>{
                     <span class="kw">return</span>;
                 };
@@ -1317,8 +1334,10 @@
                     </span>AggregateKind::Adt(.., <span class="prelude-val">Some</span>(<span class="kw">_</span>)) =&gt; <span class="kw">return</span>,
                     AggregateKind::Adt(<span class="kw">_</span>, variant_index, ..) <span class="kw">if </span>agg_ty.is_enum() =&gt; {
                         <span class="kw">if let </span><span class="prelude-val">Some</span>(discr_target) = <span class="self">self</span>.map.apply(lhs, TrackElem::Discriminant)
-                            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Ok</span>(discr_value) =
-                                <span class="self">self</span>.ecx.discriminant_for_variant(agg_ty, <span class="kw-2">*</span>variant_index)
+                            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(discr_value) = <span class="self">self
+                                </span>.ecx
+                                .discriminant_for_variant(agg_ty, <span class="kw-2">*</span>variant_index)
+                                .discard_err()
                         {
                             <span class="self">self</span>.process_immediate(bb, discr_target, discr_value, state);
                         }
@@ -1338,9 +1357,17 @@
             }
             <span class="comment">// Transfer the conditions on the copy rhs, after inversing polarity.
             </span>Rvalue::UnaryOp(UnOp::Not, Operand::Move(place) | Operand::Copy(place)) =&gt; {
+                <span class="kw">if </span>!place.ty(<span class="self">self</span>.body, <span class="self">self</span>.tcx).ty.is_bool() {
+                    <span class="comment">// Constructing the conditions by inverting the polarity
+                    // of equality is only correct for bools. That is to say,
+                    // `!a == b` is not `a != b` for integers greater than 1 bit.
+                    </span><span class="kw">return</span>;
+                }
                 <span class="kw">let </span><span class="prelude-val">Some</span>(conditions) = state.try_get_idx(lhs, <span class="kw-2">&amp;</span><span class="self">self</span>.map) <span class="kw">else </span>{ <span class="kw">return </span>};
                 <span class="kw">let </span><span class="prelude-val">Some</span>(place) = <span class="self">self</span>.map.find(place.as_ref()) <span class="kw">else </span>{ <span class="kw">return </span>};
-                <span class="kw">let </span>conds = conditions.map(<span class="self">self</span>.arena, Condition::inv);
+                <span class="comment">// FIXME: I think This could be generalized to not bool if we
+                // actually perform a logical not on the condition's value.
+                </span><span class="kw">let </span>conds = conditions.map(<span class="self">self</span>.arena, Condition::inv);
                 state.insert_value_idx(place, conds, <span class="kw-2">&amp;</span><span class="self">self</span>.map);
             }
             <span class="comment">// We expect `lhs ?= A`. We found `lhs = Eq(rhs, B)`.
@@ -1364,9 +1391,7 @@
                     // Avoid handling them, though this could be extended in the future.
                     </span><span class="kw">return</span>;
                 }
-                <span class="kw">let </span><span class="prelude-val">Some</span>(value) =
-                    value.const_.normalize(<span class="self">self</span>.tcx, <span class="self">self</span>.param_env).try_to_scalar_int()
-                <span class="kw">else </span>{
+                <span class="kw">let </span><span class="prelude-val">Some</span>(value) = value.const_.try_eval_scalar_int(<span class="self">self</span>.tcx, <span class="self">self</span>.param_env) <span class="kw">else </span>{
                     <span class="kw">return</span>;
                 };
                 <span class="kw">let </span>conds = conditions.map(<span class="self">self</span>.arena, |c| Condition {
@@ -1405,7 +1430,9 @@
                 <span class="comment">// `SetDiscriminant` may be a no-op if the assigned variant is the untagged variant
                 // of a niche encoding. If we cannot ensure that we write to the discriminant, do
                 // nothing.
-                </span><span class="kw">let </span><span class="prelude-val">Ok</span>(enum_layout) = <span class="self">self</span>.ecx.layout_of(enum_ty) <span class="kw">else </span>{ <span class="kw">return </span>};
+                </span><span class="kw">let </span><span class="prelude-val">Ok</span>(enum_layout) = <span class="self">self</span>.ecx.layout_of(enum_ty) <span class="kw">else </span>{
+                    <span class="kw">return</span>;
+                };
                 <span class="kw">let </span>writes_discriminant = <span class="kw">match </span>enum_layout.variants {
                     Variants::Single { index } =&gt; {
                         <span class="macro">assert_eq!</span>(index, <span class="kw-2">*</span>variant_index);
@@ -1418,7 +1445,8 @@
                     } =&gt; <span class="kw-2">*</span>variant_index != untagged_variant,
                 };
                 <span class="kw">if </span>writes_discriminant {
-                    <span class="kw">let </span><span class="prelude-val">Ok</span>(discr) = <span class="self">self</span>.ecx.discriminant_for_variant(enum_ty, <span class="kw-2">*</span>variant_index)
+                    <span class="kw">let </span><span class="prelude-val">Some</span>(discr) =
+                        <span class="self">self</span>.ecx.discriminant_for_variant(enum_ty, <span class="kw-2">*</span>variant_index).discard_err()
                     <span class="kw">else </span>{
                         <span class="kw">return</span>;
                     };
@@ -1495,7 +1523,9 @@
 
         <span class="kw">let </span><span class="prelude-val">Some</span>(discr) = discr.place() <span class="kw">else </span>{ <span class="kw">return </span>};
         <span class="kw">let </span>discr_ty = discr.ty(<span class="self">self</span>.body, <span class="self">self</span>.tcx).ty;
-        <span class="kw">let </span><span class="prelude-val">Ok</span>(discr_layout) = <span class="self">self</span>.ecx.layout_of(discr_ty) <span class="kw">else </span>{ <span class="kw">return </span>};
+        <span class="kw">let </span><span class="prelude-val">Ok</span>(discr_layout) = <span class="self">self</span>.ecx.layout_of(discr_ty) <span class="kw">else </span>{
+            <span class="kw">return</span>;
+        };
         <span class="kw">let </span><span class="prelude-val">Some</span>(conditions) = state.try_get(discr.as_ref(), <span class="kw-2">&amp;</span><span class="self">self</span>.map) <span class="kw">else </span>{ <span class="kw">return </span>};
 
         <span class="kw">if let </span><span class="prelude-val">Some</span>((value, <span class="kw">_</span>)) = targets.iter().find(|<span class="kw-2">&amp;</span>(<span class="kw">_</span>, target)| target == target_bb) {

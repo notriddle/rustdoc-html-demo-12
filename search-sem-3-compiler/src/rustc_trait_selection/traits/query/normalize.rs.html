@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/traits/query/normalize.rs`."><title>normalize.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_trait_selection/traits/query/</div>normalize.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/traits/query/normalize.rs`."><title>normalize.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_trait_selection/traits/query/</div>normalize.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -356,12 +356,15 @@
 <a href="#355" id="355">355</a>
 <a href="#356" id="356">356</a>
 <a href="#357" id="357">357</a>
-<a href="#358" id="358">358</a></pre></div><pre class="rust"><code><span class="doccomment">//! Code for the 'normalization' query. This consists of a wrapper
+<a href="#358" id="358">358</a>
+<a href="#359" id="359">359</a>
+<a href="#360" id="360">360</a></pre></div><pre class="rust"><code><span class="doccomment">//! Code for the 'normalization' query. This consists of a wrapper
 //! which folds deeply, invoking the underlying
 //! `normalize_canonicalized_projection_ty` query when it encounters projections.
 
 </span><span class="kw">use </span>rustc_data_structures::sso::SsoHashMap;
 <span class="kw">use </span>rustc_data_structures::stack::ensure_sufficient_stack;
+<span class="kw">use </span>rustc_infer::traits::PredicateObligations;
 <span class="kw">use </span>rustc_macros::extension;
 <span class="kw">pub use </span>rustc_middle::traits::query::NormalizationResult;
 <span class="kw">use </span>rustc_middle::ty::fold::{FallibleTypeFolder, TypeFoldable, TypeSuperFoldable};
@@ -378,8 +381,7 @@
 <span class="kw">use </span><span class="kw">crate</span>::infer::{InferCtxt, InferOk};
 <span class="kw">use </span><span class="kw">crate</span>::traits::normalize::needs_normalization;
 <span class="kw">use </span><span class="kw">crate</span>::traits::{
-    BoundVarReplacer, Normalized, ObligationCause, PlaceholderReplacer, PredicateObligation,
-    Reveal, ScrubbedTraitError,
+    BoundVarReplacer, Normalized, ObligationCause, PlaceholderReplacer, Reveal, ScrubbedTraitError,
 };
 
 <span class="attr">#[extension(<span class="kw">pub trait </span>QueryNormalizeExt&lt;<span class="lifetime">'tcx</span>&gt;)]
@@ -438,7 +440,9 @@
             <span class="kw">match </span><span class="kw">crate</span>::solve::deeply_normalize_with_skipped_universes::&lt;<span class="kw">_</span>, ScrubbedTraitError&lt;<span class="lifetime">'tcx</span>&gt;&gt;(
                 <span class="self">self</span>, value, universes,
             ) {
-                <span class="prelude-val">Ok</span>(value) =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(Normalized { value, obligations: <span class="macro">vec!</span>[] }),
+                <span class="prelude-val">Ok</span>(value) =&gt; {
+                    <span class="kw">return </span><span class="prelude-val">Ok</span>(Normalized { value, obligations: PredicateObligations::new() });
+                }
                 <span class="prelude-val">Err</span>(_errors) =&gt; {
                     <span class="kw">return </span><span class="prelude-val">Err</span>(NoSolution);
                 }
@@ -446,14 +450,14 @@
         }
 
         <span class="kw">if </span>!needs_normalization(<span class="kw-2">&amp;</span>value, <span class="self">self</span>.param_env.reveal()) {
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(Normalized { value, obligations: <span class="macro">vec!</span>[] });
+            <span class="kw">return </span><span class="prelude-val">Ok</span>(Normalized { value, obligations: PredicateObligations::new() });
         }
 
         <span class="kw">let </span><span class="kw-2">mut </span>normalizer = QueryNormalizer {
             infcx: <span class="self">self</span>.infcx,
             cause: <span class="self">self</span>.cause,
             param_env: <span class="self">self</span>.param_env,
-            obligations: <span class="macro">vec!</span>[],
+            obligations: PredicateObligations::new(),
             cache: SsoHashMap::new(),
             anon_depth: <span class="number">0</span>,
             universes,
@@ -522,7 +526,7 @@
     infcx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>InferCtxt&lt;<span class="lifetime">'tcx</span>&gt;,
     cause: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>ObligationCause&lt;<span class="lifetime">'tcx</span>&gt;,
     param_env: ty::ParamEnv&lt;<span class="lifetime">'tcx</span>&gt;,
-    obligations: Vec&lt;PredicateObligation&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+    obligations: PredicateObligations&lt;<span class="lifetime">'tcx</span>&gt;,
     cache: SsoHashMap&lt;Ty&lt;<span class="lifetime">'tcx</span>&gt;, Ty&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
     anon_depth: usize,
     universes: Vec&lt;<span class="prelude-ty">Option</span>&lt;ty::UniverseIndex&gt;&gt;,
@@ -696,7 +700,7 @@
             <span class="self">self</span>.infcx,
             <span class="kw-2">&amp;mut </span><span class="self">self</span>.universes,
             constant,
-            |constant| constant.normalize(<span class="self">self</span>.infcx.tcx, <span class="self">self</span>.param_env),
+            |constant| constant.normalize_internal(<span class="self">self</span>.infcx.tcx, <span class="self">self</span>.param_env),
         );
         <span class="macro">debug!</span>(<span class="question-mark">?</span>constant, <span class="question-mark">?</span><span class="self">self</span>.param_env);
         constant.try_super_fold_with(<span class="self">self</span>)

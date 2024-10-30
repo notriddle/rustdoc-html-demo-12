@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Flavor"],"fn":["compute_abi_info"]};

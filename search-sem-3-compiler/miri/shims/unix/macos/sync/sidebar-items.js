@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"trait":["EvalContextExt","EvalContextExtPriv"]};
+window.SIDEBAR_ITEMS = {"enum":["MacOsUnfairLock"],"trait":["EvalContextExt","EvalContextExtPriv"]};

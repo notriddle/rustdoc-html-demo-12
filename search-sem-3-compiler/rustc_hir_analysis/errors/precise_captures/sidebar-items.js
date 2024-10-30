@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["BadPreciseCapture","DuplicatePreciseCapture","LifetimeNotCaptured","LifetimesMustBeFirst","ParamNotCaptured","PreciseCaptureSelfAlias","SelfTyNotCaptured"]};
+window.SIDEBAR_ITEMS = {"struct":["BadPreciseCapture","DuplicatePreciseCapture","LifetimeImplicitlyCaptured","LifetimeNotCaptured","LifetimesMustBeFirst","ParamNotCaptured","PreciseCaptureSelfAlias","SelfTyNotCaptured"]};

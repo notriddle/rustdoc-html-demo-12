@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/unix/linux/epoll.rs`."><title>epoll.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../../src-files.js"></script><script defer src="../../../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/shims/unix/linux/</div>epoll.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/unix/linux/epoll.rs`."><title>epoll.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../../src-files.js"></script><script defer src="../../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/shims/unix/linux/</div>epoll.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -661,17 +661,13 @@
 <a href="#660" id="660">660</a>
 <a href="#661" id="661">661</a>
 <a href="#662" id="662">662</a>
-<a href="#663" id="663">663</a>
-<a href="#664" id="664">664</a>
-<a href="#665" id="665">665</a>
-<a href="#666" id="666">666</a>
-<a href="#667" id="667">667</a>
-<a href="#668" id="668">668</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::cell::RefCell;
+<a href="#663" id="663">663</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::cell::RefCell;
 <span class="kw">use </span>std::collections::BTreeMap;
 <span class="kw">use </span>std::io;
 <span class="kw">use </span>std::rc::{Rc, Weak};
 <span class="kw">use </span>std::time::Duration;
 
+<span class="kw">use </span><span class="kw">crate</span>::concurrency::VClock;
 <span class="kw">use </span><span class="kw">crate</span>::shims::unix::fd::{FdId, FileDescriptionRef, WeakFileDescriptionRef};
 <span class="kw">use </span><span class="kw">crate</span>::shims::unix::<span class="kw-2">*</span>;
 <span class="kw">use crate</span>::<span class="kw-2">*</span>;
@@ -687,7 +683,7 @@
     /// and file descriptor value.
     </span><span class="comment">// This is an Rc because EpollInterest need to hold a reference to update
     // it.
-    </span>ready_list: Rc&lt;RefCell&lt;BTreeMap&lt;(FdId, i32), EpollEventInstance&gt;&gt;&gt;,
+    </span>ready_list: Rc&lt;ReadyList&gt;,
     <span class="doccomment">/// A list of thread ids blocked on this epoll instance.
     </span>thread_id: RefCell&lt;Vec&lt;ThreadId&gt;&gt;,
 }
@@ -699,11 +695,13 @@
     </span>events: u32,
     <span class="doccomment">/// Original data retrieved from `epoll_event` during `epoll_ctl`.
     </span>data: u64,
+    <span class="doccomment">/// The release clock associated with this event.
+    </span>clock: VClock,
 }
 
 <span class="kw">impl </span>EpollEventInstance {
     <span class="kw">pub fn </span>new(events: u32, data: u64) -&gt; EpollEventInstance {
-        EpollEventInstance { events, data }
+        EpollEventInstance { events, data, clock: Default::default() }
     }
 }
 
@@ -731,7 +729,7 @@
     /// &lt;https://man7.org/linux/man-pages/man3/epoll_event.3type.html&gt;
     </span>data: u64,
     <span class="doccomment">/// Ready list of the epoll instance under which this EpollEventInterest is registered.
-    </span>ready_list: Rc&lt;RefCell&lt;BTreeMap&lt;(FdId, i32), EpollEventInstance&gt;&gt;&gt;,
+    </span>ready_list: Rc&lt;ReadyList&gt;,
     <span class="doccomment">/// The epoll file description that this EpollEventInterest is registered under.
     </span>weak_epfd: WeakFileDescriptionRef,
 }
@@ -754,6 +752,11 @@
     </span><span class="kw">pub </span>epollhup: bool,
     <span class="doccomment">/// Error condition happened on the associated file descriptor.
     </span><span class="kw">pub </span>epollerr: bool,
+}
+
+<span class="attr">#[derive(Debug, Default)]
+</span><span class="kw">struct </span>ReadyList {
+    mapping: RefCell&lt;BTreeMap&lt;(FdId, i32), EpollEventInstance&gt;&gt;,
 }
 
 <span class="kw">impl </span>EpollReadyEvents {
@@ -795,7 +798,7 @@
 }
 
 <span class="kw">impl </span>Epoll {
-    <span class="kw">fn </span>get_ready_list(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Rc&lt;RefCell&lt;BTreeMap&lt;(FdId, i32), EpollEventInstance&gt;&gt;&gt; {
+    <span class="kw">fn </span>get_ready_list(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Rc&lt;ReadyList&gt; {
         Rc::clone(<span class="kw-2">&amp;</span><span class="self">self</span>.ready_list)
     }
 }
@@ -810,7 +813,7 @@
         _communicate_allowed: bool,
         _ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, io::Result&lt;()&gt;&gt; {
-        <span class="prelude-val">Ok</span>(<span class="prelude-val">Ok</span>(()))
+        interp_ok(<span class="prelude-val">Ok</span>(()))
     }
 }
 
@@ -875,11 +878,8 @@
             );
         }
 
-        <span class="kw">let </span><span class="kw-2">mut </span>epoll_instance = Epoll::default();
-        epoll_instance.ready_list = Rc::new(RefCell::new(BTreeMap::new()));
-
         <span class="kw">let </span>fd = this.machine.fds.insert_new(Epoll::default());
-        <span class="prelude-val">Ok</span>(Scalar::from_i32(fd))
+        interp_ok(Scalar::from_i32(fd))
     }
 
     <span class="doccomment">/// This function performs control operations on the `Epoll` instance referred to by the file
@@ -919,24 +919,14 @@
         <span class="kw">let </span>epollhup = this.eval_libc_u32(<span class="string">"EPOLLHUP"</span>);
         <span class="kw">let </span>epollerr = this.eval_libc_u32(<span class="string">"EPOLLERR"</span>);
 
-        <span class="comment">// Fail on unsupported operations.
-        </span><span class="kw">if </span>op &amp; epoll_ctl_add != epoll_ctl_add
-            &amp;&amp; op &amp; epoll_ctl_mod != epoll_ctl_mod
-            &amp;&amp; op &amp; epoll_ctl_del != epoll_ctl_del
-        {
-            <span class="macro">throw_unsup_format!</span>(<span class="string">"epoll_ctl: encountered unknown unsupported operation {:#x}"</span>, op);
-        }
-
         <span class="comment">// Throw EINVAL if epfd and fd have the same value.
         </span><span class="kw">if </span>epfd_value == fd {
-            <span class="kw">let </span>einval = this.eval_libc(<span class="string">"EINVAL"</span>);
-            this.set_last_error(einval)<span class="question-mark">?</span>;
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(-<span class="number">1</span>));
+            <span class="kw">return </span>this.set_last_error_and_return_i32(LibcError(<span class="string">"EINVAL"</span>));
         }
 
         <span class="comment">// Check if epfd is a valid epoll file descriptor.
         </span><span class="kw">let </span><span class="prelude-val">Some</span>(epfd) = this.machine.fds.get(epfd_value) <span class="kw">else </span>{
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(this.fd_not_found()<span class="question-mark">?</span>));
+            <span class="kw">return </span>this.set_last_error_and_return_i32(LibcError(<span class="string">"EBADF"</span>));
         };
         <span class="kw">let </span>epoll_file_description = epfd
             .downcast::&lt;Epoll&gt;()
@@ -946,7 +936,7 @@
         <span class="kw">let </span>ready_list = <span class="kw-2">&amp;</span>epoll_file_description.ready_list;
 
         <span class="kw">let </span><span class="prelude-val">Some</span>(fd_ref) = this.machine.fds.get(fd) <span class="kw">else </span>{
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(this.fd_not_found()<span class="question-mark">?</span>));
+            <span class="kw">return </span>this.set_last_error_and_return_i32(LibcError(<span class="string">"EBADF"</span>));
         };
         <span class="kw">let </span>id = fd_ref.get_id();
 
@@ -996,15 +986,11 @@
             <span class="comment">// Check the existence of fd in the interest list.
             </span><span class="kw">if </span>op == epoll_ctl_add {
                 <span class="kw">if </span>interest_list.contains_key(<span class="kw-2">&amp;</span>epoll_key) {
-                    <span class="kw">let </span>eexist = this.eval_libc(<span class="string">"EEXIST"</span>);
-                    this.set_last_error(eexist)<span class="question-mark">?</span>;
-                    <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(-<span class="number">1</span>));
+                    <span class="kw">return </span>this.set_last_error_and_return_i32(LibcError(<span class="string">"EEXIST"</span>));
                 }
             } <span class="kw">else </span>{
                 <span class="kw">if </span>!interest_list.contains_key(<span class="kw-2">&amp;</span>epoll_key) {
-                    <span class="kw">let </span>enoent = this.eval_libc(<span class="string">"ENOENT"</span>);
-                    this.set_last_error(enoent)<span class="question-mark">?</span>;
-                    <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(-<span class="number">1</span>));
+                    <span class="kw">return </span>this.set_last_error_and_return_i32(LibcError(<span class="string">"ENOENT"</span>));
                 }
             }
 
@@ -1032,21 +1018,19 @@
             <span class="comment">// Notification will be returned for current epfd if there is event in the file
             // descriptor we registered.
             </span>check_and_update_one_event_interest(<span class="kw-2">&amp;</span>fd_ref, interest, id, this)<span class="question-mark">?</span>;
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(<span class="number">0</span>));
+            interp_ok(Scalar::from_i32(<span class="number">0</span>))
         } <span class="kw">else if </span>op == epoll_ctl_del {
             <span class="kw">let </span>epoll_key = (id, fd);
 
             <span class="comment">// Remove epoll_event_interest from interest_list.
             </span><span class="kw">let </span><span class="prelude-val">Some</span>(epoll_interest) = interest_list.remove(<span class="kw-2">&amp;</span>epoll_key) <span class="kw">else </span>{
-                <span class="kw">let </span>enoent = this.eval_libc(<span class="string">"ENOENT"</span>);
-                this.set_last_error(enoent)<span class="question-mark">?</span>;
-                <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(-<span class="number">1</span>));
+                <span class="kw">return </span>this.set_last_error_and_return_i32(LibcError(<span class="string">"ENOENT"</span>));
             };
             <span class="comment">// All related Weak&lt;EpollEventInterest&gt; will fail to upgrade after the drop.
             </span>drop(epoll_interest);
 
             <span class="comment">// Remove related epoll_interest from ready list.
-            </span>ready_list.borrow_mut().remove(<span class="kw-2">&amp;</span>epoll_key);
+            </span>ready_list.mapping.borrow_mut().remove(<span class="kw-2">&amp;</span>epoll_key);
 
             <span class="comment">// Remove dangling EpollEventInterest from its global table.
             // .unwrap() below should succeed because the file description id must have registered
@@ -1058,9 +1042,10 @@
                 .unwrap()
                 .retain(|event| event.upgrade().is_some());
 
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(<span class="number">0</span>));
+            interp_ok(Scalar::from_i32(<span class="number">0</span>))
+        } <span class="kw">else </span>{
+            <span class="macro">throw_unsup_format!</span>(<span class="string">"unsupported epoll_ctl operation: {op}"</span>);
         }
-        <span class="prelude-val">Ok</span>(Scalar::from_i32(-<span class="number">1</span>))
     }
 
     <span class="doccomment">/// The `epoll_wait()` system call waits for events on the `Epoll`
@@ -1069,19 +1054,19 @@
     /// list about file descriptors in the interest list that have some
     /// events available. Up to `maxevents` are returned by `epoll_wait()`.
     /// The `maxevents` argument must be greater than zero.
-
+    ///
     /// The `timeout` argument specifies the number of milliseconds that
     /// `epoll_wait()` will block. Time is measured against the
     /// CLOCK_MONOTONIC clock. If the timeout is zero, the function will not block,
     /// while if the timeout is -1, the function will block
     /// until at least one event has been retrieved (or an error
     /// occurred).
-
+    ///
     /// A call to `epoll_wait()` will block until either:
     /// • a file descriptor delivers an event;
     /// • the call is interrupted by a signal handler; or
     /// • the timeout expires.
-
+    ///
     /// Note that the timeout interval will be rounded up to the system
     /// clock granularity, and kernel scheduling delays mean that the
     /// blocking interval may overrun by a small amount. Specifying a
@@ -1111,10 +1096,7 @@
         <span class="kw">let </span>timeout = this.read_scalar(timeout)<span class="question-mark">?</span>.to_i32()<span class="question-mark">?</span>;
 
         <span class="kw">if </span>epfd_value &lt;= <span class="number">0 </span>|| maxevents &lt;= <span class="number">0 </span>{
-            <span class="kw">let </span>einval = this.eval_libc(<span class="string">"EINVAL"</span>);
-            this.set_last_error(einval)<span class="question-mark">?</span>;
-            this.write_int(-<span class="number">1</span>, dest)<span class="question-mark">?</span>;
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+            <span class="kw">return </span>this.set_last_error_and_return(LibcError(<span class="string">"EINVAL"</span>), dest);
         }
 
         <span class="comment">// This needs to come after the maxevents value check, or else maxevents.try_into().unwrap()
@@ -1125,9 +1107,7 @@
         )<span class="question-mark">?</span>;
 
         <span class="kw">let </span><span class="prelude-val">Some</span>(epfd) = this.machine.fds.get(epfd_value) <span class="kw">else </span>{
-            <span class="kw">let </span>result_value: i32 = this.fd_not_found()<span class="question-mark">?</span>;
-            this.write_int(result_value, dest)<span class="question-mark">?</span>;
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+            <span class="kw">return </span>this.set_last_error_and_return(LibcError(<span class="string">"EBADF"</span>), dest);
         };
         <span class="comment">// Create a weak ref of epfd and pass it to callback so we will make sure that epfd
         // is not close after the thread unblocks.
@@ -1141,13 +1121,12 @@
             <span class="kw">let </span>epoll_file_description = epfd
                 .downcast::&lt;Epoll&gt;()
                 .ok_or_else(|| <span class="macro">err_unsup_format!</span>(<span class="string">"non-epoll FD passed to `epoll_wait`"</span>))<span class="question-mark">?</span>;
-            <span class="kw">let </span>binding = epoll_file_description.get_ready_list();
-            ready_list_empty = binding.borrow_mut().is_empty();
+            ready_list_empty = epoll_file_description.ready_list.mapping.borrow().is_empty();
             thread_ids = epoll_file_description.thread_id.borrow_mut();
         }
         <span class="kw">if </span>timeout == <span class="number">0 </span>|| !ready_list_empty {
             <span class="comment">// If the ready list is not empty, or the timeout is 0, we can return immediately.
-            </span>blocking_epoll_callback(epfd_value, weak_epfd, dest, <span class="kw-2">&amp;</span>event, this)<span class="question-mark">?</span>;
+            </span>return_ready_list(epfd_value, weak_epfd, dest, <span class="kw-2">&amp;</span>event, this)<span class="question-mark">?</span>;
         } <span class="kw">else </span>{
             <span class="comment">// Blocking
             </span><span class="kw">let </span>timeout = <span class="kw">match </span>timeout {
@@ -1175,8 +1154,8 @@
                         event: MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
                     }
                     @unblock = |this| {
-                        blocking_epoll_callback(epfd_value, weak_epfd, <span class="kw-2">&amp;</span>dest, <span class="kw-2">&amp;</span>event, this)<span class="question-mark">?</span>;
-                        <span class="prelude-val">Ok</span>(())
+                        return_ready_list(epfd_value, weak_epfd, <span class="kw-2">&amp;</span>dest, <span class="kw-2">&amp;</span>event, this)<span class="question-mark">?</span>;
+                        interp_ok(())
                     }
                     @timeout = |this| {
                         <span class="comment">// No notification after blocking timeout.
@@ -1189,12 +1168,12 @@
                             </span>.thread_id.borrow_mut()
                             .retain(|<span class="kw-2">&amp;</span>id| id != this.active_thread());
                         this.write_int(<span class="number">0</span>, <span class="kw-2">&amp;</span>dest)<span class="question-mark">?</span>;
-                        <span class="prelude-val">Ok</span>(())
+                        interp_ok(())
                     }
                 ),
             );
         }
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="doccomment">/// For a specific file description, get its ready events and update the corresponding ready
@@ -1231,9 +1210,10 @@
                         // holds a strong ref to epoll_interest.
                         </span><span class="kw">let </span>epfd = epoll_interest.borrow().weak_epfd.upgrade().unwrap();
                         <span class="comment">// FIXME: We can randomly pick a thread to unblock.
-                        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(thread_id) =
-                            epfd.downcast::&lt;Epoll&gt;().unwrap().thread_id.borrow_mut().pop()
-                        {
+
+                        </span><span class="kw">let </span>epoll = epfd.downcast::&lt;Epoll&gt;().unwrap();
+
+                        <span class="kw">if let </span><span class="prelude-val">Some</span>(thread_id) = epoll.thread_id.borrow_mut().pop() {
                             waiter.push(thread_id);
                         };
                     }
@@ -1245,7 +1225,7 @@
         <span class="kw">for </span>thread_id <span class="kw">in </span>waiter {
             this.unblock_thread(thread_id, BlockReason::Epoll)<span class="question-mark">?</span>;
         }
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 }
 
@@ -1264,8 +1244,8 @@
             <span class="kw">return </span><span class="prelude-val">Some</span>(epoll_event_instance);
         }
     }
-    <span class="kw">return </span><span class="prelude-val">None</span>;
-}
+    <span class="prelude-val">None
+</span>}
 
 <span class="doccomment">/// This helper function checks whether an epoll notification should be triggered for a specific
 /// epoll_interest and, if necessary, triggers the notification, and returns whether the
@@ -1287,17 +1267,23 @@
     // insert an epoll_return to the ready list.
     </span><span class="kw">if </span>flags != <span class="number">0 </span>{
         <span class="kw">let </span>epoll_key = (id, epoll_event_interest.fd_num);
-        <span class="kw">let </span>ready_list = <span class="kw-2">&amp;mut </span>epoll_event_interest.ready_list.borrow_mut();
-        <span class="kw">let </span>event_instance = EpollEventInstance::new(flags, epoll_event_interest.data);
+        <span class="kw">let </span>ready_list = <span class="kw-2">&amp;mut </span>epoll_event_interest.ready_list.mapping.borrow_mut();
+        <span class="kw">let </span><span class="kw-2">mut </span>event_instance = EpollEventInstance::new(flags, epoll_event_interest.data);
+        <span class="comment">// If we are tracking data races, remember the current clock so we can sync with it later.
+        </span>ecx.release_clock(|clock| {
+            event_instance.clock.clone_from(clock);
+        });
         <span class="comment">// Triggers the notification by inserting it to the ready list.
         </span>ready_list.insert(epoll_key, event_instance);
-        <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="bool-val">true</span>);
+        interp_ok(<span class="bool-val">true</span>)
+    } <span class="kw">else </span>{
+        interp_ok(<span class="bool-val">false</span>)
     }
-    <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="bool-val">false</span>);
 }
 
-<span class="doccomment">/// Callback function after epoll_wait unblocks
-</span><span class="kw">fn </span>blocking_epoll_callback&lt;<span class="lifetime">'tcx</span>&gt;(
+<span class="doccomment">/// Stores the ready list of the `epfd` epoll instance into `events` (which must be an array),
+/// and the number of returned events into `dest`.
+</span><span class="kw">fn </span>return_ready_list&lt;<span class="lifetime">'tcx</span>&gt;(
     epfd_value: i32,
     weak_epfd: WeakFileDescriptionRef,
     dest: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -1313,7 +1299,8 @@
         .ok_or_else(|| <span class="macro">err_unsup_format!</span>(<span class="string">"non-epoll FD passed to `epoll_wait`"</span>))<span class="question-mark">?</span>;
 
     <span class="kw">let </span>ready_list = epoll_file_description.get_ready_list();
-    <span class="kw">let </span><span class="kw-2">mut </span>ready_list = ready_list.borrow_mut();
+
+    <span class="kw">let </span><span class="kw-2">mut </span>ready_list = ready_list.mapping.borrow_mut();
     <span class="kw">let </span><span class="kw-2">mut </span>num_of_events: i32 = <span class="number">0</span>;
     <span class="kw">let </span><span class="kw-2">mut </span>array_iter = ecx.project_array_fields(events)<span class="question-mark">?</span>;
 
@@ -1326,12 +1313,15 @@
                 ],
                 <span class="kw-2">&amp;</span>des.<span class="number">1</span>,
             )<span class="question-mark">?</span>;
+            <span class="comment">// Synchronize waking thread with the event of interest.
+            </span>ecx.acquire_clock(<span class="kw-2">&amp;</span>epoll_event_instance.clock);
+
             num_of_events = num_of_events.strict_add(<span class="number">1</span>);
         } <span class="kw">else </span>{
             <span class="kw">break</span>;
         }
     }
     ecx.write_int(num_of_events, dest)<span class="question-mark">?</span>;
-    <span class="prelude-val">Ok</span>(())
+    interp_ok(())
 }
 </code></pre></div></section></main></body></html>

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["expect_dyn_trait_in_self","get_vtable"],"struct":["VirtualIndex"]};
+window.SIDEBAR_ITEMS = {"fn":["dyn_trait_in_self","get_vtable","load_vtable"],"struct":["VirtualIndex"]};

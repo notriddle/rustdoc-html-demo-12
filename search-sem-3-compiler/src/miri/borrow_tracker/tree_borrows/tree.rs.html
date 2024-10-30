@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/tree_borrows/tree.rs`."><title>tree.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/borrow_tracker/tree_borrows/</div>tree.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/tree_borrows/tree.rs`."><title>tree.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/borrow_tracker/tree_borrows/</div>tree.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -1034,18 +1034,17 @@
 
 </span><span class="kw">use </span>std::{fmt, mem};
 
-<span class="kw">use </span>smallvec::SmallVec;
-
 <span class="kw">use </span>rustc_data_structures::fx::FxHashSet;
 <span class="kw">use </span>rustc_span::Span;
 <span class="kw">use </span>rustc_target::abi::Size;
+<span class="kw">use </span>smallvec::SmallVec;
 
-<span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::tree_borrows::{
-    Permission,
-    diagnostics::{<span class="self">self</span>, NodeDebugInfo, TbError, TransitionError},
-    perms::PermTransition,
-    unimap::{UniEntry, UniIndex, UniKeyMap, UniValMap},
+<span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::tree_borrows::Permission;
+<span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::tree_borrows::diagnostics::{
+    <span class="self">self</span>, NodeDebugInfo, TbError, TransitionError,
 };
+<span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::tree_borrows::perms::PermTransition;
+<span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::tree_borrows::unimap::{UniEntry, UniIndex, UniKeyMap, UniValMap};
 <span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::{GlobalState, ProtectorKind};
 <span class="kw">use crate</span>::<span class="kw-2">*</span>;
 
@@ -1660,7 +1659,7 @@
         {
             perms.insert(idx, perm);
         }
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="doccomment">/// Deallocation requires
@@ -1697,7 +1696,7 @@
                             <span class="prelude-val">Ok</span>(())
                         }
                     },
-                    |args: ErrHandlerArgs&lt;<span class="lifetime">'_</span>, TransitionError&gt;| -&gt; InterpError&lt;<span class="lifetime">'tcx</span>&gt; {
+                    |args: ErrHandlerArgs&lt;<span class="lifetime">'_</span>, TransitionError&gt;| -&gt; InterpErrorKind&lt;<span class="lifetime">'tcx</span>&gt; {
                         <span class="kw">let </span>ErrHandlerArgs { error_kind, conflicting_info, accessed_info } = args;
                         TbError {
                             conflicting_info,
@@ -1711,7 +1710,7 @@
                     },
                 )<span class="question-mark">?</span>;
         }
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="doccomment">/// Map the per-node and per-location `LocationState::perform_access`
@@ -1795,7 +1794,7 @@
         </span><span class="kw">let </span>err_handler = |perms_range: Range&lt;u64&gt;,
                            access_cause: diagnostics::AccessCause,
                            args: ErrHandlerArgs&lt;<span class="lifetime">'_</span>, TransitionError&gt;|
-         -&gt; InterpError&lt;<span class="lifetime">'tcx</span>&gt; {
+         -&gt; InterpErrorKind&lt;<span class="lifetime">'tcx</span>&gt; {
             <span class="kw">let </span>ErrHandlerArgs { error_kind, conflicting_info, accessed_info } = args;
             TbError {
                 conflicting_info,
@@ -1850,7 +1849,7 @@
                 }
             }
         }
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 }
 
@@ -1882,15 +1881,16 @@
     ) -&gt; <span class="prelude-ty">Option</span>&lt;UniIndex&gt; {
         <span class="kw">let </span>node = <span class="self">self</span>.nodes.get(idx).unwrap();
 
+        <span class="kw">let </span>[child_idx] = node.children[..] <span class="kw">else </span>{ <span class="kw">return </span><span class="prelude-val">None </span>};
+
         <span class="comment">// We never want to replace the root node, as it is also kept in `root_ptr_tags`.
-        </span><span class="kw">if </span>node.children.len() != <span class="number">1 </span>|| live.contains(<span class="kw-2">&amp;</span>node.tag) || node.parent.is_none() {
+        </span><span class="kw">if </span>live.contains(<span class="kw-2">&amp;</span>node.tag) || node.parent.is_none() {
             <span class="kw">return </span><span class="prelude-val">None</span>;
         }
         <span class="comment">// Since protected nodes are never GC'd (see `borrow_tracker::FrameExtra::visit_provenance`),
         // we know that `node` is not protected because otherwise `live` would
         // have contained `node.tag`.
-        </span><span class="kw">let </span>child_idx = node.children[<span class="number">0</span>];
-        <span class="kw">let </span>child = <span class="self">self</span>.nodes.get(child_idx).unwrap();
+        </span><span class="kw">let </span>child = <span class="self">self</span>.nodes.get(child_idx).unwrap();
         <span class="comment">// Check that for that one child, `can_be_replaced_by_child` holds for the permission
         // on all locations.
         </span><span class="kw">for </span>(<span class="kw">_</span>, data) <span class="kw">in </span><span class="self">self</span>.rperms.iter_all() {

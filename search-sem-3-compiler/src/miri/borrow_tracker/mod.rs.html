@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/borrow_tracker/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/borrow_tracker/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -504,16 +504,14 @@
 <a href="#503" id="503">503</a>
 <a href="#504" id="504">504</a>
 <a href="#505" id="505">505</a>
-<a href="#506" id="506">506</a>
-<a href="#507" id="507">507</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::cell::RefCell;
+<a href="#506" id="506">506</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::cell::RefCell;
 <span class="kw">use </span>std::fmt;
 <span class="kw">use </span>std::num::NonZero;
-
-<span class="kw">use </span>smallvec::SmallVec;
 
 <span class="kw">use </span>rustc_data_structures::fx::{FxHashMap, FxHashSet};
 <span class="kw">use </span>rustc_middle::mir::RetagKind;
 <span class="kw">use </span>rustc_target::abi::Size;
+<span class="kw">use </span>smallvec::SmallVec;
 
 <span class="kw">use crate</span>::<span class="kw-2">*</span>;
 <span class="kw">pub mod </span>stacked_borrows;
@@ -830,7 +828,7 @@
         <span class="kw">match </span>method {
             BorrowTrackerMethod::StackedBorrows =&gt; {
                 this.tcx.tcx.dcx().warn(<span class="string">"Stacked Borrows does not support named pointers; `miri_pointer_name` is a no-op"</span>);
-                <span class="prelude-val">Ok</span>(())
+                interp_ok(())
             }
             BorrowTrackerMethod::TreeBorrows =&gt;
                 this.tb_give_pointer_debug_name(ptr, nth_parent, name),
@@ -841,7 +839,7 @@
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
         <span class="kw">let </span><span class="prelude-val">Some</span>(borrow_tracker) = <span class="kw-2">&amp;</span>this.machine.borrow_tracker <span class="kw">else </span>{
             <span class="macro">eprintln!</span>(<span class="string">"attempted to print borrow state, but no borrow state is being tracked"</span>);
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+            <span class="kw">return </span>interp_ok(());
         };
         <span class="kw">let </span>method = borrow_tracker.borrow().borrow_tracker_method;
         <span class="kw">match </span>method {
@@ -884,7 +882,7 @@
             }
         }
         borrow_tracker.borrow_mut().end_call(<span class="kw-2">&amp;</span>frame.extra);
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 }
 
@@ -997,7 +995,7 @@
         alloc_id: AllocId, <span class="comment">// diagnostics
     </span>) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">match </span><span class="self">self </span>{
-            AllocState::StackedBorrows(_sb) =&gt; <span class="prelude-val">Ok</span>(()),
+            AllocState::StackedBorrows(_sb) =&gt; interp_ok(()),
             AllocState::TreeBorrows(tb) =&gt;
                 tb.borrow_mut().release_protector(machine, global, tag, alloc_id),
         }

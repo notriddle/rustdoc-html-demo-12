@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["ConstKind","InferConst"],"struct":["ConstVid","EffectVid","UnevaluatedConst"]};
+window.SIDEBAR_ITEMS = {"enum":["ConstKind","InferConst"],"struct":["ConstVid","UnevaluatedConst"]};

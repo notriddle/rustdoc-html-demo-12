@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["allocator"],"struct":["StrippedCfgItem"]};
+window.SIDEBAR_ITEMS = {"mod":["allocator","autodiff_attrs","typetree"],"struct":["StrippedCfgItem"]};

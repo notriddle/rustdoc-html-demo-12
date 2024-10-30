@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["Unhasher"],"type":["UnhashMap","UnhashSet"]};
+window.SIDEBAR_ITEMS = {"struct":["Unhasher"],"type":["UnhashMap","UnhashSet","UnindexMap"]};

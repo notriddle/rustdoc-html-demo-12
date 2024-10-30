@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/unix/sync.rs`."><title>sync.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/shims/unix/</div>sync.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/unix/sync.rs`."><title>sync.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/shims/unix/</div>sync.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -885,19 +885,63 @@
 <a href="#884" id="884">884</a>
 <a href="#885" id="885">885</a>
 <a href="#886" id="886">886</a>
-<a href="#887" id="887">887</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::sync::atomic::{AtomicBool, Ordering};
+<a href="#887" id="887">887</a>
+<a href="#888" id="888">888</a>
+<a href="#889" id="889">889</a>
+<a href="#890" id="890">890</a>
+<a href="#891" id="891">891</a>
+<a href="#892" id="892">892</a>
+<a href="#893" id="893">893</a>
+<a href="#894" id="894">894</a>
+<a href="#895" id="895">895</a>
+<a href="#896" id="896">896</a>
+<a href="#897" id="897">897</a>
+<a href="#898" id="898">898</a>
+<a href="#899" id="899">899</a></pre></div><pre class="rust"><code><span class="kw">use </span>std::sync::atomic::{AtomicBool, Ordering};
 
 <span class="kw">use </span>rustc_target::abi::Size;
 
+<span class="kw">use </span><span class="kw">crate</span>::concurrency::sync::LAZY_INIT_COOKIE;
 <span class="kw">use crate</span>::<span class="kw-2">*</span>;
 
-<span class="comment">// pthread_mutexattr_t is either 4 or 8 bytes, depending on the platform.
-// We ignore the platform layout and store our own fields:
+<span class="doccomment">/// Do a bytewise comparison of the two places, using relaxed atomic reads. This is used to check if
+/// a synchronization primitive matches its static initializer value.
+///
+/// The reads happen in chunks of 4, so all racing accesses must also use that access size.
+</span><span class="kw">fn </span>bytewise_equal_atomic_relaxed&lt;<span class="lifetime">'tcx</span>&gt;(
+    ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
+    left: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+    right: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
+) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, bool&gt; {
+    <span class="kw">let </span>size = left.layout.size;
+    <span class="macro">assert_eq!</span>(size, right.layout.size);
+
+    <span class="comment">// We do this in chunks of 4, so that we are okay to race with (sufficiently aligned)
+    // 4-byte atomic accesses.
+    </span><span class="macro">assert!</span>(size.bytes() % <span class="number">4 </span>== <span class="number">0</span>);
+    <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..(size.bytes() / <span class="number">4</span>) {
+        <span class="kw">let </span>offset = Size::from_bytes(i.strict_mul(<span class="number">4</span>));
+        <span class="kw">let </span>load = |place: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;| {
+            <span class="kw">let </span>byte = place.offset(offset, ecx.machine.layouts.u32, ecx)<span class="question-mark">?</span>;
+            ecx.read_scalar_atomic(<span class="kw-2">&amp;</span>byte, AtomicReadOrd::Relaxed)<span class="question-mark">?</span>.to_u32()
+        };
+        <span class="kw">let </span>left = load(left)<span class="question-mark">?</span>;
+        <span class="kw">let </span>right = load(right)<span class="question-mark">?</span>;
+        <span class="kw">if </span>left != right {
+            <span class="kw">return </span>interp_ok(<span class="bool-val">false</span>);
+        }
+    }
+
+    interp_ok(<span class="bool-val">true</span>)
+}
+
+<span class="comment">// # pthread_mutexattr_t
+// We store some data directly inside the type, ignoring the platform layout:
 // - kind: i32
 
 </span><span class="attr">#[inline]
 </span><span class="kw">fn </span>mutexattr_kind_offset&lt;<span class="lifetime">'tcx</span>&gt;(ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, u64&gt; {
-    <span class="prelude-val">Ok</span>(<span class="kw">match </span><span class="kw-2">&amp;*</span>ecx.tcx.sess.target.os {
+    interp_ok(<span class="kw">match </span><span class="kw-2">&amp;*</span>ecx.tcx.sess.target.os {
         <span class="string">"linux" </span>| <span class="string">"illumos" </span>| <span class="string">"solaris" </span>| <span class="string">"macos" </span>| <span class="string">"freebsd" </span>| <span class="string">"android" </span>=&gt; <span class="number">0</span>,
         os =&gt; <span class="macro">throw_unsup_format!</span>(<span class="string">"`pthread_mutexattr` is not supported on {os}"</span>),
     })
@@ -936,52 +980,72 @@
 /// field *not* PTHREAD_MUTEX_DEFAULT but this special flag.
 </span><span class="kw">const </span>PTHREAD_MUTEX_KIND_UNCHANGED: i32 = <span class="number">0x8000000</span>;
 
-<span class="doccomment">/// The mutex kind.
+<span class="doccomment">/// Translates the mutex kind from what is stored in pthread_mutexattr_t to our enum.
+</span><span class="kw">fn </span>mutexattr_translate_kind&lt;<span class="lifetime">'tcx</span>&gt;(
+    ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
+    kind: i32,
+) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, MutexKind&gt; {
+    interp_ok(<span class="kw">if </span>kind == (ecx.eval_libc_i32(<span class="string">"PTHREAD_MUTEX_NORMAL"</span>)) {
+        MutexKind::Normal
+    } <span class="kw">else if </span>kind == ecx.eval_libc_i32(<span class="string">"PTHREAD_MUTEX_ERRORCHECK"</span>) {
+        MutexKind::ErrorCheck
+    } <span class="kw">else if </span>kind == ecx.eval_libc_i32(<span class="string">"PTHREAD_MUTEX_RECURSIVE"</span>) {
+        MutexKind::Recursive
+    } <span class="kw">else if </span>kind == ecx.eval_libc_i32(<span class="string">"PTHREAD_MUTEX_DEFAULT"</span>)
+        || kind == PTHREAD_MUTEX_KIND_UNCHANGED
+    {
+        <span class="comment">// We check this *last* since PTHREAD_MUTEX_DEFAULT may be numerically equal to one of the
+        // others, and we want an explicit `mutexattr_settype` to work as expected.
+        </span>MutexKind::Default
+    } <span class="kw">else </span>{
+        <span class="macro">throw_unsup_format!</span>(<span class="string">"unsupported type of mutex: {kind}"</span>);
+    })
+}
+
+<span class="comment">// # pthread_mutex_t
+// We store some data directly inside the type, ignoring the platform layout:
+// - init: u32
+
+</span><span class="doccomment">/// The mutex kind.
 </span><span class="attr">#[derive(Debug, Clone, Copy)]
-</span><span class="kw">pub enum </span>MutexKind {
+</span><span class="kw">enum </span>MutexKind {
     Normal,
     Default,
     Recursive,
     ErrorCheck,
 }
 
-<span class="attr">#[derive(Debug)]
-</span><span class="doccomment">/// Additional data that we attach with each mutex instance.
-</span><span class="kw">pub struct </span>AdditionalMutexData {
-    <span class="doccomment">/// The mutex kind, used by some mutex implementations like pthreads mutexes.
-    </span><span class="kw">pub </span>kind: MutexKind,
-
-    <span class="doccomment">/// The address of the mutex.
-    </span><span class="kw">pub </span>address: u64,
+<span class="attr">#[derive(Debug, Clone, Copy)]
+</span><span class="kw">struct </span>PthreadMutex {
+    id: MutexId,
+    kind: MutexKind,
 }
 
-<span class="comment">// pthread_mutex_t is between 4 and 48 bytes, depending on the platform.
-// We ignore the platform layout and store our own fields:
-// - id: u32
-
-</span><span class="kw">fn </span>mutex_id_offset&lt;<span class="lifetime">'tcx</span>&gt;(ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, u64&gt; {
-    <span class="comment">// When adding a new OS, make sure we also support all its static initializers in
-    // `mutex_kind_from_static_initializer`!
-    </span><span class="kw">let </span>offset = <span class="kw">match </span><span class="kw-2">&amp;*</span>ecx.tcx.sess.target.os {
+<span class="doccomment">/// To ensure an initialized mutex that was moved somewhere else can be distinguished from
+/// a statically initialized mutex that is used the first time, we pick some offset within
+/// `pthread_mutex_t` and use it as an "initialized" flag.
+</span><span class="kw">fn </span>mutex_init_offset&lt;<span class="lifetime">'tcx</span>&gt;(ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Size&gt; {
+    <span class="kw">let </span>offset = <span class="kw">match </span><span class="kw-2">&amp;*</span>ecx.tcx.sess.target.os {
         <span class="string">"linux" </span>| <span class="string">"illumos" </span>| <span class="string">"solaris" </span>| <span class="string">"freebsd" </span>| <span class="string">"android" </span>=&gt; <span class="number">0</span>,
-        <span class="comment">// macOS stores a signature in the first bytes, so we have to move to offset 4.
+        <span class="comment">// macOS stores a signature in the first bytes, so we move to offset 4.
         </span><span class="string">"macos" </span>=&gt; <span class="number">4</span>,
         os =&gt; <span class="macro">throw_unsup_format!</span>(<span class="string">"`pthread_mutex` is not supported on {os}"</span>),
     };
+    <span class="kw">let </span>offset = Size::from_bytes(offset);
 
     <span class="comment">// Sanity-check this against PTHREAD_MUTEX_INITIALIZER (but only once):
-    // the id must start out as 0.
-    // FIXME on some platforms (e.g linux) there are more static initializers for
-    // recursive or error checking mutexes. We should also add thme in this sanity check.
+    // the `init` field must start out not equal to INIT_COOKIE.
     </span><span class="kw">static </span>SANITY: AtomicBool = AtomicBool::new(<span class="bool-val">false</span>);
     <span class="kw">if </span>!SANITY.swap(<span class="bool-val">true</span>, Ordering::Relaxed) {
         <span class="kw">let </span>check_static_initializer = |name| {
             <span class="kw">let </span>static_initializer = ecx.eval_path(<span class="kw-2">&amp;</span>[<span class="string">"libc"</span>, name]);
-            <span class="kw">let </span>id_field = static_initializer
-                .offset(Size::from_bytes(offset), ecx.machine.layouts.u32, ecx)
-                .unwrap();
-            <span class="kw">let </span>id = ecx.read_scalar(<span class="kw-2">&amp;</span>id_field).unwrap().to_u32().unwrap();
-            <span class="macro">assert_eq!</span>(id, <span class="number">0</span>, <span class="string">"{name} is incompatible with our pthread_mutex layout: id is not 0"</span>);
+            <span class="kw">let </span>init_field =
+                static_initializer.offset(offset, ecx.machine.layouts.u32, ecx).unwrap();
+            <span class="kw">let </span>init = ecx.read_scalar(<span class="kw-2">&amp;</span>init_field).unwrap().to_u32().unwrap();
+            <span class="macro">assert_ne!</span>(
+                init, LAZY_INIT_COOKIE,
+                <span class="string">"{name} is incompatible with our initialization cookie"
+            </span>);
         };
 
         check_static_initializer(<span class="string">"PTHREAD_MUTEX_INITIALIZER"</span>);
@@ -999,7 +1063,7 @@
         }
     }
 
-    <span class="prelude-val">Ok</span>(offset)
+    interp_ok(offset)
 }
 
 <span class="doccomment">/// Eagerly create and initialize a new mutex.
@@ -1007,42 +1071,33 @@
     ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
     mutex_ptr: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
     kind: MutexKind,
-) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
+) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, PthreadMutex&gt; {
     <span class="kw">let </span>mutex = ecx.deref_pointer(mutex_ptr)<span class="question-mark">?</span>;
-    <span class="kw">let </span>address = mutex.ptr().addr().bytes();
-    <span class="kw">let </span>data = Box::new(AdditionalMutexData { address, kind });
-    ecx.mutex_create(<span class="kw-2">&amp;</span>mutex, mutex_id_offset(ecx)<span class="question-mark">?</span>, <span class="prelude-val">Some</span>(data))<span class="question-mark">?</span>;
-    <span class="prelude-val">Ok</span>(())
+    <span class="kw">let </span>id = ecx.machine.sync.mutex_create();
+    <span class="kw">let </span>data = PthreadMutex { id, kind };
+    ecx.lazy_sync_init(<span class="kw-2">&amp;</span>mutex, mutex_init_offset(ecx)<span class="question-mark">?</span>, data)<span class="question-mark">?</span>;
+    interp_ok(data)
 }
 
 <span class="doccomment">/// Returns the `MutexId` of the mutex stored at `mutex_op`.
 ///
 /// `mutex_get_id` will also check if the mutex has been moved since its first use and
 /// return an error if it has.
-</span><span class="kw">fn </span>mutex_get_id&lt;<span class="lifetime">'tcx</span>&gt;(
-    ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
+</span><span class="kw">fn </span>mutex_get_data&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'a</span>&gt;(
+    ecx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
     mutex_ptr: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
-) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, MutexId&gt; {
+) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, PthreadMutex&gt; {
     <span class="kw">let </span>mutex = ecx.deref_pointer(mutex_ptr)<span class="question-mark">?</span>;
-    <span class="kw">let </span>address = mutex.ptr().addr().bytes();
-
-    <span class="kw">let </span>id = ecx.mutex_get_or_create_id(<span class="kw-2">&amp;</span>mutex, mutex_id_offset(ecx)<span class="question-mark">?</span>, |ecx| {
-        <span class="comment">// This is called if a static initializer was used and the lock has not been assigned
-        // an ID yet. We have to determine the mutex kind from the static initializer.
-        </span><span class="kw">let </span>kind = mutex_kind_from_static_initializer(ecx, <span class="kw-2">&amp;</span>mutex)<span class="question-mark">?</span>;
-
-        <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(Box::new(AdditionalMutexData { kind, address })))
-    })<span class="question-mark">?</span>;
-
-    <span class="comment">// Check that the mutex has not been moved since last use.
-    </span><span class="kw">let </span>data = ecx
-        .mutex_get_data::&lt;AdditionalMutexData&gt;(id)
-        .expect(<span class="string">"data should always exist for pthreads"</span>);
-    <span class="kw">if </span>data.address != address {
-        <span class="macro">throw_ub_format!</span>(<span class="string">"pthread_mutex_t can't be moved after first use"</span>)
-    }
-
-    <span class="prelude-val">Ok</span>(id)
+    ecx.lazy_sync_get_data(
+        <span class="kw-2">&amp;</span>mutex,
+        mutex_init_offset(ecx)<span class="question-mark">?</span>,
+        || <span class="macro">throw_ub_format!</span>(<span class="string">"`pthread_mutex_t` can't be moved after first use"</span>),
+        |ecx| {
+            <span class="kw">let </span>kind = mutex_kind_from_static_initializer(ecx, <span class="kw-2">&amp;</span>mutex)<span class="question-mark">?</span>;
+            <span class="kw">let </span>id = ecx.machine.sync.mutex_create();
+            interp_ok(PthreadMutex { id, kind })
+        },
+    )
 }
 
 <span class="doccomment">/// Returns the kind of a static initializer.
@@ -1050,112 +1105,91 @@
     ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
     mutex: <span class="kw-2">&amp;</span>MPlaceTy&lt;<span class="lifetime">'tcx</span>&gt;,
 ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, MutexKind&gt; {
-    <span class="prelude-val">Ok</span>(<span class="kw">match </span><span class="kw-2">&amp;*</span>ecx.tcx.sess.target.os {
-        <span class="comment">// Only linux has static initializers other than PTHREAD_MUTEX_DEFAULT.
-        </span><span class="string">"linux" </span>=&gt; {
-            <span class="kw">let </span>offset = <span class="kw">if </span>ecx.pointer_size().bytes() == <span class="number">8 </span>{ <span class="number">16 </span>} <span class="kw">else </span>{ <span class="number">12 </span>};
-            <span class="kw">let </span>kind_place =
-                mutex.offset(Size::from_bytes(offset), ecx.machine.layouts.i32, ecx)<span class="question-mark">?</span>;
-            <span class="kw">let </span>kind = ecx.read_scalar(<span class="kw-2">&amp;</span>kind_place)<span class="question-mark">?</span>.to_i32()<span class="question-mark">?</span>;
-            <span class="comment">// Here we give PTHREAD_MUTEX_DEFAULT priority so that
-            // PTHREAD_MUTEX_INITIALIZER behaves like `pthread_mutex_init` with a NULL argument.
-            </span><span class="kw">if </span>kind == ecx.eval_libc_i32(<span class="string">"PTHREAD_MUTEX_DEFAULT"</span>) {
-                MutexKind::Default
-            } <span class="kw">else </span>{
-                mutex_translate_kind(ecx, kind)<span class="question-mark">?
-            </span>}
-        }
-        <span class="kw">_ </span>=&gt; MutexKind::Default,
-    })
+    <span class="comment">// All the static initializers recognized here *must* be checked in `mutex_init_offset`!
+    </span><span class="kw">let </span>is_initializer =
+        |name| bytewise_equal_atomic_relaxed(ecx, mutex, <span class="kw-2">&amp;</span>ecx.eval_path(<span class="kw-2">&amp;</span>[<span class="string">"libc"</span>, name]));
+
+    <span class="comment">// PTHREAD_MUTEX_INITIALIZER is recognized on all targets.
+    </span><span class="kw">if </span>is_initializer(<span class="string">"PTHREAD_MUTEX_INITIALIZER"</span>)<span class="question-mark">? </span>{
+        <span class="kw">return </span>interp_ok(MutexKind::Default);
+    }
+    <span class="comment">// Support additional platform-specific initializers.
+    </span><span class="kw">match </span><span class="kw-2">&amp;*</span>ecx.tcx.sess.target.os {
+        <span class="string">"linux" </span>=&gt;
+            <span class="kw">if </span>is_initializer(<span class="string">"PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP"</span>)<span class="question-mark">? </span>{
+                <span class="kw">return </span>interp_ok(MutexKind::Recursive);
+            } <span class="kw">else if </span>is_initializer(<span class="string">"PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP"</span>)<span class="question-mark">? </span>{
+                <span class="kw">return </span>interp_ok(MutexKind::ErrorCheck);
+            },
+        <span class="kw">_ </span>=&gt; {}
+    }
+    <span class="macro">throw_unsup_format!</span>(<span class="string">"unsupported static initializer used for `pthread_mutex_t`"</span>);
 }
 
-<span class="kw">fn </span>mutex_translate_kind&lt;<span class="lifetime">'tcx</span>&gt;(
-    ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
-    kind: i32,
-) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, MutexKind&gt; {
-    <span class="prelude-val">Ok</span>(<span class="kw">if </span>kind == (ecx.eval_libc_i32(<span class="string">"PTHREAD_MUTEX_NORMAL"</span>)) {
-        MutexKind::Normal
-    } <span class="kw">else if </span>kind == ecx.eval_libc_i32(<span class="string">"PTHREAD_MUTEX_ERRORCHECK"</span>) {
-        MutexKind::ErrorCheck
-    } <span class="kw">else if </span>kind == ecx.eval_libc_i32(<span class="string">"PTHREAD_MUTEX_RECURSIVE"</span>) {
-        MutexKind::Recursive
-    } <span class="kw">else if </span>kind == ecx.eval_libc_i32(<span class="string">"PTHREAD_MUTEX_DEFAULT"</span>)
-        || kind == PTHREAD_MUTEX_KIND_UNCHANGED
-    {
-        <span class="comment">// We check this *last* since PTHREAD_MUTEX_DEFAULT may be numerically equal to one of the
-        // others, and we want an explicit `mutexattr_settype` to work as expected.
-        </span>MutexKind::Default
-    } <span class="kw">else </span>{
-        <span class="macro">throw_unsup_format!</span>(<span class="string">"unsupported type of mutex: {kind}"</span>);
-    })
+<span class="comment">// # pthread_rwlock_t
+// We store some data directly inside the type, ignoring the platform layout:
+// - init: u32
+
+</span><span class="attr">#[derive(Debug, Copy, Clone)]
+</span><span class="kw">struct </span>PthreadRwLock {
+    id: RwLockId,
 }
 
-<span class="comment">// pthread_rwlock_t is between 4 and 56 bytes, depending on the platform.
-// We ignore the platform layout and store our own fields:
-// - id: u32
-
-</span><span class="attr">#[derive(Debug)]
-</span><span class="doccomment">/// Additional data that we attach with each rwlock instance.
-</span><span class="kw">pub struct </span>AdditionalRwLockData {
-    <span class="doccomment">/// The address of the rwlock.
-    </span><span class="kw">pub </span>address: u64,
-}
-
-<span class="kw">fn </span>rwlock_id_offset&lt;<span class="lifetime">'tcx</span>&gt;(ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, u64&gt; {
+<span class="kw">fn </span>rwlock_init_offset&lt;<span class="lifetime">'tcx</span>&gt;(ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Size&gt; {
     <span class="kw">let </span>offset = <span class="kw">match </span><span class="kw-2">&amp;*</span>ecx.tcx.sess.target.os {
         <span class="string">"linux" </span>| <span class="string">"illumos" </span>| <span class="string">"solaris" </span>| <span class="string">"freebsd" </span>| <span class="string">"android" </span>=&gt; <span class="number">0</span>,
-        <span class="comment">// macOS stores a signature in the first bytes, so we have to move to offset 4.
+        <span class="comment">// macOS stores a signature in the first bytes, so we move to offset 4.
         </span><span class="string">"macos" </span>=&gt; <span class="number">4</span>,
         os =&gt; <span class="macro">throw_unsup_format!</span>(<span class="string">"`pthread_rwlock` is not supported on {os}"</span>),
     };
+    <span class="kw">let </span>offset = Size::from_bytes(offset);
 
     <span class="comment">// Sanity-check this against PTHREAD_RWLOCK_INITIALIZER (but only once):
-    // the id must start out as 0.
+    // the `init` field must start out not equal to LAZY_INIT_COOKIE.
     </span><span class="kw">static </span>SANITY: AtomicBool = AtomicBool::new(<span class="bool-val">false</span>);
     <span class="kw">if </span>!SANITY.swap(<span class="bool-val">true</span>, Ordering::Relaxed) {
         <span class="kw">let </span>static_initializer = ecx.eval_path(<span class="kw-2">&amp;</span>[<span class="string">"libc"</span>, <span class="string">"PTHREAD_RWLOCK_INITIALIZER"</span>]);
-        <span class="kw">let </span>id_field = static_initializer
-            .offset(Size::from_bytes(offset), ecx.machine.layouts.u32, ecx)
-            .unwrap();
-        <span class="kw">let </span>id = ecx.read_scalar(<span class="kw-2">&amp;</span>id_field).unwrap().to_u32().unwrap();
-        <span class="macro">assert_eq!</span>(
-            id, <span class="number">0</span>,
-            <span class="string">"PTHREAD_RWLOCK_INITIALIZER is incompatible with our pthread_rwlock layout: id is not 0"
+        <span class="kw">let </span>init_field = static_initializer.offset(offset, ecx.machine.layouts.u32, ecx).unwrap();
+        <span class="kw">let </span>init = ecx.read_scalar(<span class="kw-2">&amp;</span>init_field).unwrap().to_u32().unwrap();
+        <span class="macro">assert_ne!</span>(
+            init, LAZY_INIT_COOKIE,
+            <span class="string">"PTHREAD_RWLOCK_INITIALIZER is incompatible with our initialization cookie"
         </span>);
     }
 
-    <span class="prelude-val">Ok</span>(offset)
+    interp_ok(offset)
 }
 
-<span class="kw">fn </span>rwlock_get_id&lt;<span class="lifetime">'tcx</span>&gt;(
+<span class="kw">fn </span>rwlock_get_data&lt;<span class="lifetime">'tcx</span>&gt;(
     ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
     rwlock_ptr: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
-) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, RwLockId&gt; {
+) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, PthreadRwLock&gt; {
     <span class="kw">let </span>rwlock = ecx.deref_pointer(rwlock_ptr)<span class="question-mark">?</span>;
-    <span class="kw">let </span>address = rwlock.ptr().addr().bytes();
-
-    <span class="kw">let </span>id = ecx.rwlock_get_or_create_id(<span class="kw-2">&amp;</span>rwlock, rwlock_id_offset(ecx)<span class="question-mark">?</span>, |<span class="kw">_</span>| {
-        <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(Box::new(AdditionalRwLockData { address })))
-    })<span class="question-mark">?</span>;
-
-    <span class="comment">// Check that the rwlock has not been moved since last use.
-    </span><span class="kw">let </span>data = ecx
-        .rwlock_get_data::&lt;AdditionalRwLockData&gt;(id)
-        .expect(<span class="string">"data should always exist for pthreads"</span>);
-    <span class="kw">if </span>data.address != address {
-        <span class="macro">throw_ub_format!</span>(<span class="string">"pthread_rwlock_t can't be moved after first use"</span>)
-    }
-
-    <span class="prelude-val">Ok</span>(id)
+    ecx.lazy_sync_get_data(
+        <span class="kw-2">&amp;</span>rwlock,
+        rwlock_init_offset(ecx)<span class="question-mark">?</span>,
+        || <span class="macro">throw_ub_format!</span>(<span class="string">"`pthread_rwlock_t` can't be moved after first use"</span>),
+        |ecx| {
+            <span class="kw">if </span>!bytewise_equal_atomic_relaxed(
+                ecx,
+                <span class="kw-2">&amp;</span>rwlock,
+                <span class="kw-2">&amp;</span>ecx.eval_path(<span class="kw-2">&amp;</span>[<span class="string">"libc"</span>, <span class="string">"PTHREAD_RWLOCK_INITIALIZER"</span>]),
+            )<span class="question-mark">? </span>{
+                <span class="macro">throw_unsup_format!</span>(<span class="string">"unsupported static initializer used for `pthread_rwlock_t`"</span>);
+            }
+            <span class="kw">let </span>id = ecx.machine.sync.rwlock_create();
+            interp_ok(PthreadRwLock { id })
+        },
+    )
 }
 
-<span class="comment">// pthread_condattr_t.
-// We ignore the platform layout and store our own fields:
+<span class="comment">// # pthread_condattr_t
+// We store some data directly inside the type, ignoring the platform layout:
 // - clock: i32
 
 </span><span class="attr">#[inline]
 </span><span class="kw">fn </span>condattr_clock_offset&lt;<span class="lifetime">'tcx</span>&gt;(ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, u64&gt; {
-    <span class="prelude-val">Ok</span>(<span class="kw">match </span><span class="kw-2">&amp;*</span>ecx.tcx.sess.target.os {
+    interp_ok(<span class="kw">match </span><span class="kw-2">&amp;*</span>ecx.tcx.sess.target.os {
         <span class="string">"linux" </span>| <span class="string">"illumos" </span>| <span class="string">"solaris" </span>| <span class="string">"freebsd" </span>| <span class="string">"android" </span>=&gt; <span class="number">0</span>,
         <span class="comment">// macOS does not have a clock attribute.
         </span>os =&gt; <span class="macro">throw_unsup_format!</span>(<span class="string">"`pthread_condattr` clock field is not supported on {os}"</span>),
@@ -1175,19 +1209,6 @@
     </span>.to_i32()
 }
 
-<span class="kw">fn </span>cond_translate_clock_id&lt;<span class="lifetime">'tcx</span>&gt;(
-    ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
-    raw_id: i32,
-) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ClockId&gt; {
-    <span class="prelude-val">Ok</span>(<span class="kw">if </span>raw_id == ecx.eval_libc_i32(<span class="string">"CLOCK_REALTIME"</span>) {
-        ClockId::Realtime
-    } <span class="kw">else if </span>raw_id == ecx.eval_libc_i32(<span class="string">"CLOCK_MONOTONIC"</span>) {
-        ClockId::Monotonic
-    } <span class="kw">else </span>{
-        <span class="macro">throw_unsup_format!</span>(<span class="string">"unsupported clock id: {raw_id}"</span>);
-    })
-}
-
 <span class="kw">fn </span>condattr_set_clock_id&lt;<span class="lifetime">'tcx</span>&gt;(
     ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
     attr_ptr: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
@@ -1202,34 +1223,47 @@
     )
 }
 
-<span class="comment">// pthread_cond_t can be only 4 bytes in size, depending on the platform.
-// We ignore the platform layout and store our own fields:
-// - id: u32
+<span class="doccomment">/// Translates the clock from what is stored in pthread_condattr_t to our enum.
+</span><span class="kw">fn </span>condattr_translate_clock_id&lt;<span class="lifetime">'tcx</span>&gt;(
+    ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
+    raw_id: i32,
+) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ClockId&gt; {
+    interp_ok(<span class="kw">if </span>raw_id == ecx.eval_libc_i32(<span class="string">"CLOCK_REALTIME"</span>) {
+        ClockId::Realtime
+    } <span class="kw">else if </span>raw_id == ecx.eval_libc_i32(<span class="string">"CLOCK_MONOTONIC"</span>) {
+        ClockId::Monotonic
+    } <span class="kw">else </span>{
+        <span class="macro">throw_unsup_format!</span>(<span class="string">"unsupported clock id: {raw_id}"</span>);
+    })
+}
 
-</span><span class="kw">fn </span>cond_id_offset&lt;<span class="lifetime">'tcx</span>&gt;(ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, u64&gt; {
+<span class="comment">// # pthread_cond_t
+// We store some data directly inside the type, ignoring the platform layout:
+// - init: u32
+
+</span><span class="kw">fn </span>cond_init_offset&lt;<span class="lifetime">'tcx</span>&gt;(ecx: <span class="kw-2">&amp;</span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Size&gt; {
     <span class="kw">let </span>offset = <span class="kw">match </span><span class="kw-2">&amp;*</span>ecx.tcx.sess.target.os {
         <span class="string">"linux" </span>| <span class="string">"illumos" </span>| <span class="string">"solaris" </span>| <span class="string">"freebsd" </span>| <span class="string">"android" </span>=&gt; <span class="number">0</span>,
-        <span class="comment">// macOS stores a signature in the first bytes, so we have to move to offset 4.
+        <span class="comment">// macOS stores a signature in the first bytes, so we move to offset 4.
         </span><span class="string">"macos" </span>=&gt; <span class="number">4</span>,
         os =&gt; <span class="macro">throw_unsup_format!</span>(<span class="string">"`pthread_cond` is not supported on {os}"</span>),
     };
+    <span class="kw">let </span>offset = Size::from_bytes(offset);
 
     <span class="comment">// Sanity-check this against PTHREAD_COND_INITIALIZER (but only once):
-    // the id must start out as 0.
+    // the `init` field must start out not equal to LAZY_INIT_COOKIE.
     </span><span class="kw">static </span>SANITY: AtomicBool = AtomicBool::new(<span class="bool-val">false</span>);
     <span class="kw">if </span>!SANITY.swap(<span class="bool-val">true</span>, Ordering::Relaxed) {
         <span class="kw">let </span>static_initializer = ecx.eval_path(<span class="kw-2">&amp;</span>[<span class="string">"libc"</span>, <span class="string">"PTHREAD_COND_INITIALIZER"</span>]);
-        <span class="kw">let </span>id_field = static_initializer
-            .offset(Size::from_bytes(offset), ecx.machine.layouts.u32, ecx)
-            .unwrap();
-        <span class="kw">let </span>id = ecx.read_scalar(<span class="kw-2">&amp;</span>id_field).unwrap().to_u32().unwrap();
-        <span class="macro">assert_eq!</span>(
-            id, <span class="number">0</span>,
-            <span class="string">"PTHREAD_COND_INITIALIZER is incompatible with our pthread_cond layout: id is not 0"
+        <span class="kw">let </span>init_field = static_initializer.offset(offset, ecx.machine.layouts.u32, ecx).unwrap();
+        <span class="kw">let </span>init = ecx.read_scalar(<span class="kw-2">&amp;</span>init_field).unwrap().to_u32().unwrap();
+        <span class="macro">assert_ne!</span>(
+            init, LAZY_INIT_COOKIE,
+            <span class="string">"PTHREAD_COND_INITIALIZER is incompatible with our initialization cookie"
         </span>);
     }
 
-    <span class="prelude-val">Ok</span>(offset)
+    interp_ok(offset)
 }
 
 <span class="attr">#[derive(Debug, Clone, Copy)]
@@ -1238,36 +1272,46 @@
     Monotonic,
 }
 
-<span class="attr">#[derive(Debug)]
-</span><span class="doccomment">/// Additional data that we attach with each cond instance.
-</span><span class="kw">struct </span>AdditionalCondData {
-    <span class="doccomment">/// The address of the cond.
-    </span>address: u64,
-
-    <span class="doccomment">/// The clock id of the cond.
-    </span>clock_id: ClockId,
+<span class="attr">#[derive(Debug, Copy, Clone)]
+</span><span class="kw">struct </span>PthreadCondvar {
+    id: CondvarId,
+    clock: ClockId,
 }
 
-<span class="kw">fn </span>cond_get_id&lt;<span class="lifetime">'tcx</span>&gt;(
+<span class="kw">fn </span>cond_create&lt;<span class="lifetime">'tcx</span>&gt;(
     ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
     cond_ptr: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
-) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, CondvarId&gt; {
+    clock: ClockId,
+) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, PthreadCondvar&gt; {
     <span class="kw">let </span>cond = ecx.deref_pointer(cond_ptr)<span class="question-mark">?</span>;
-    <span class="kw">let </span>address = cond.ptr().addr().bytes();
-    <span class="kw">let </span>id = ecx.condvar_get_or_create_id(<span class="kw-2">&amp;</span>cond, cond_id_offset(ecx)<span class="question-mark">?</span>, |_ecx| {
-        <span class="comment">// This used the static initializer. The clock there is always CLOCK_REALTIME.
-        </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(Box::new(AdditionalCondData { address, clock_id: ClockId::Realtime })))
-    })<span class="question-mark">?</span>;
+    <span class="kw">let </span>id = ecx.machine.sync.condvar_create();
+    <span class="kw">let </span>data = PthreadCondvar { id, clock };
+    ecx.lazy_sync_init(<span class="kw-2">&amp;</span>cond, cond_init_offset(ecx)<span class="question-mark">?</span>, data)<span class="question-mark">?</span>;
+    interp_ok(data)
+}
 
-    <span class="comment">// Check that the mutex has not been moved since last use.
-    </span><span class="kw">let </span>data = ecx
-        .condvar_get_data::&lt;AdditionalCondData&gt;(id)
-        .expect(<span class="string">"data should always exist for pthreads"</span>);
-    <span class="kw">if </span>data.address != address {
-        <span class="macro">throw_ub_format!</span>(<span class="string">"pthread_cond_t can't be moved after first use"</span>)
-    }
-
-    <span class="prelude-val">Ok</span>(id)
+<span class="kw">fn </span>cond_get_data&lt;<span class="lifetime">'tcx</span>&gt;(
+    ecx: <span class="kw-2">&amp;mut </span>MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt;,
+    cond_ptr: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;,
+) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, PthreadCondvar&gt; {
+    <span class="kw">let </span>cond = ecx.deref_pointer(cond_ptr)<span class="question-mark">?</span>;
+    ecx.lazy_sync_get_data(
+        <span class="kw-2">&amp;</span>cond,
+        cond_init_offset(ecx)<span class="question-mark">?</span>,
+        || <span class="macro">throw_ub_format!</span>(<span class="string">"`pthread_cond_t` can't be moved after first use"</span>),
+        |ecx| {
+            <span class="kw">if </span>!bytewise_equal_atomic_relaxed(
+                ecx,
+                <span class="kw-2">&amp;</span>cond,
+                <span class="kw-2">&amp;</span>ecx.eval_path(<span class="kw-2">&amp;</span>[<span class="string">"libc"</span>, <span class="string">"PTHREAD_COND_INITIALIZER"</span>]),
+            )<span class="question-mark">? </span>{
+                <span class="macro">throw_unsup_format!</span>(<span class="string">"unsupported static initializer used for `pthread_cond_t`"</span>);
+            }
+            <span class="comment">// This used the static initializer. The clock there is always CLOCK_REALTIME.
+            </span><span class="kw">let </span>id = ecx.machine.sync.condvar_create();
+            interp_ok(PthreadCondvar { id, clock: ClockId::Realtime })
+        },
+    )
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; EvalContextExt&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><span class="kw">crate</span>::MiriInterpCx&lt;<span class="lifetime">'tcx</span>&gt; {}
@@ -1277,7 +1321,7 @@
 
         mutexattr_set_kind(this, attr_op, PTHREAD_MUTEX_KIND_UNCHANGED)<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_mutexattr_settype(
@@ -1298,10 +1342,10 @@
             mutexattr_set_kind(this, attr_op, kind)<span class="question-mark">?</span>;
         } <span class="kw">else </span>{
             <span class="kw">let </span>einval = this.eval_libc_i32(<span class="string">"EINVAL"</span>);
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(einval));
+            <span class="kw">return </span>interp_ok(Scalar::from_i32(einval));
         }
 
-        <span class="prelude-val">Ok</span>(Scalar::from_i32(<span class="number">0</span>))
+        interp_ok(Scalar::from_i32(<span class="number">0</span>))
     }
 
     <span class="kw">fn </span>pthread_mutexattr_destroy(<span class="kw-2">&amp;mut </span><span class="self">self</span>, attr_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ()&gt; {
@@ -1326,7 +1370,7 @@
             <span class="kw-2">&amp;</span>this.deref_pointer_as(attr_op, this.libc_ty_layout(<span class="string">"pthread_mutexattr_t"</span>))<span class="question-mark">?</span>,
         )<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_mutex_init(
@@ -1340,12 +1384,12 @@
         <span class="kw">let </span>kind = <span class="kw">if </span>this.ptr_is_null(attr)<span class="question-mark">? </span>{
             MutexKind::Default
         } <span class="kw">else </span>{
-            mutex_translate_kind(this, mutexattr_get_kind(this, attr_op)<span class="question-mark">?</span>)<span class="question-mark">?
+            mutexattr_translate_kind(this, mutexattr_get_kind(this, attr_op)<span class="question-mark">?</span>)<span class="question-mark">?
         </span>};
 
         mutex_create(this, mutex_op, kind)<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_mutex_lock(
@@ -1355,65 +1399,59 @@
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span>id = mutex_get_id(this, mutex_op)<span class="question-mark">?</span>;
-        <span class="kw">let </span>kind = this
-            .mutex_get_data::&lt;AdditionalMutexData&gt;(id)
-            .expect(<span class="string">"data should always exist for pthread mutexes"</span>)
-            .kind;
+        <span class="kw">let </span>mutex = mutex_get_data(this, mutex_op)<span class="question-mark">?</span>;
 
-        <span class="kw">let </span>ret = <span class="kw">if </span>this.mutex_is_locked(id) {
-            <span class="kw">let </span>owner_thread = this.mutex_get_owner(id);
+        <span class="kw">let </span>ret = <span class="kw">if </span>this.mutex_is_locked(mutex.id) {
+            <span class="kw">let </span>owner_thread = this.mutex_get_owner(mutex.id);
             <span class="kw">if </span>owner_thread != this.active_thread() {
-                this.mutex_enqueue_and_block(id, <span class="prelude-val">Some</span>((Scalar::from_i32(<span class="number">0</span>), dest.clone())));
-                <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+                this.mutex_enqueue_and_block(mutex.id, <span class="prelude-val">Some</span>((Scalar::from_i32(<span class="number">0</span>), dest.clone())));
+                <span class="kw">return </span>interp_ok(());
             } <span class="kw">else </span>{
                 <span class="comment">// Trying to acquire the same mutex again.
-                </span><span class="kw">match </span>kind {
+                </span><span class="kw">match </span>mutex.kind {
                     MutexKind::Default =&gt;
-                        <span class="macro">throw_ub_format!</span>(<span class="string">"trying to acquire already locked default mutex"</span>),
+                        <span class="macro">throw_ub_format!</span>(
+                            <span class="string">"trying to acquire default mutex already locked by the current thread"
+                        </span>),
                     MutexKind::Normal =&gt; <span class="macro">throw_machine_stop!</span>(TerminationInfo::Deadlock),
                     MutexKind::ErrorCheck =&gt; this.eval_libc_i32(<span class="string">"EDEADLK"</span>),
                     MutexKind::Recursive =&gt; {
-                        this.mutex_lock(id);
+                        this.mutex_lock(mutex.id);
                         <span class="number">0
                     </span>}
                 }
             }
         } <span class="kw">else </span>{
             <span class="comment">// The mutex is unlocked. Let's lock it.
-            </span>this.mutex_lock(id);
+            </span>this.mutex_lock(mutex.id);
             <span class="number">0
         </span>};
         this.write_scalar(Scalar::from_i32(ret), dest)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_mutex_trylock(<span class="kw-2">&amp;mut </span><span class="self">self</span>, mutex_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span>id = mutex_get_id(this, mutex_op)<span class="question-mark">?</span>;
-        <span class="kw">let </span>kind = this
-            .mutex_get_data::&lt;AdditionalMutexData&gt;(id)
-            .expect(<span class="string">"data should always exist for pthread mutexes"</span>)
-            .kind;
+        <span class="kw">let </span>mutex = mutex_get_data(this, mutex_op)<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(Scalar::from_i32(<span class="kw">if </span>this.mutex_is_locked(id) {
-            <span class="kw">let </span>owner_thread = this.mutex_get_owner(id);
+        interp_ok(Scalar::from_i32(<span class="kw">if </span>this.mutex_is_locked(mutex.id) {
+            <span class="kw">let </span>owner_thread = this.mutex_get_owner(mutex.id);
             <span class="kw">if </span>owner_thread != this.active_thread() {
                 this.eval_libc_i32(<span class="string">"EBUSY"</span>)
             } <span class="kw">else </span>{
-                <span class="kw">match </span>kind {
+                <span class="kw">match </span>mutex.kind {
                     MutexKind::Default | MutexKind::Normal | MutexKind::ErrorCheck =&gt;
                         this.eval_libc_i32(<span class="string">"EBUSY"</span>),
                     MutexKind::Recursive =&gt; {
-                        this.mutex_lock(id);
+                        this.mutex_lock(mutex.id);
                         <span class="number">0
                     </span>}
                 }
             }
         } <span class="kw">else </span>{
             <span class="comment">// The mutex is unlocked. Let's lock it.
-            </span>this.mutex_lock(id);
+            </span>this.mutex_lock(mutex.id);
             <span class="number">0
         </span>}))
     }
@@ -1421,20 +1459,16 @@
     <span class="kw">fn </span>pthread_mutex_unlock(<span class="kw-2">&amp;mut </span><span class="self">self</span>, mutex_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span>id = mutex_get_id(this, mutex_op)<span class="question-mark">?</span>;
-        <span class="kw">let </span>kind = this
-            .mutex_get_data::&lt;AdditionalMutexData&gt;(id)
-            .expect(<span class="string">"data should always exist for pthread mutexes"</span>)
-            .kind;
+        <span class="kw">let </span>mutex = mutex_get_data(this, mutex_op)<span class="question-mark">?</span>;
 
-        <span class="kw">if let </span><span class="prelude-val">Some</span>(_old_locked_count) = this.mutex_unlock(id)<span class="question-mark">? </span>{
+        <span class="kw">if let </span><span class="prelude-val">Some</span>(_old_locked_count) = this.mutex_unlock(mutex.id)<span class="question-mark">? </span>{
             <span class="comment">// The mutex was locked by the current thread.
-            </span><span class="prelude-val">Ok</span>(Scalar::from_i32(<span class="number">0</span>))
+            </span>interp_ok(Scalar::from_i32(<span class="number">0</span>))
         } <span class="kw">else </span>{
             <span class="comment">// The mutex was locked by another thread or not locked at all. See
             // the “Unlock When Not Owner” column in
             // https://pubs.opengroup.org/onlinepubs/9699919799/functions/pthread_mutex_unlock.html.
-            </span><span class="kw">match </span>kind {
+            </span><span class="kw">match </span>mutex.kind {
                 MutexKind::Default =&gt;
                     <span class="macro">throw_ub_format!</span>(
                         <span class="string">"unlocked a default mutex that was not locked by the current thread"
@@ -1444,7 +1478,7 @@
                         <span class="string">"unlocked a PTHREAD_MUTEX_NORMAL mutex that was not locked by the current thread"
                     </span>),
                 MutexKind::ErrorCheck | MutexKind::Recursive =&gt;
-                    <span class="prelude-val">Ok</span>(Scalar::from_i32(this.eval_libc_i32(<span class="string">"EPERM"</span>))),
+                    interp_ok(Scalar::from_i32(this.eval_libc_i32(<span class="string">"EPERM"</span>))),
             }
         }
     }
@@ -1454,9 +1488,9 @@
 
         <span class="comment">// Reading the field also has the side-effect that we detect double-`destroy`
         // since we make the field unint below.
-        </span><span class="kw">let </span>id = mutex_get_id(this, mutex_op)<span class="question-mark">?</span>;
+        </span><span class="kw">let </span>mutex = mutex_get_data(this, mutex_op)<span class="question-mark">?</span>;
 
-        <span class="kw">if </span>this.mutex_is_locked(id) {
+        <span class="kw">if </span>this.mutex_is_locked(mutex.id) {
             <span class="macro">throw_ub_format!</span>(<span class="string">"destroyed a locked mutex"</span>);
         }
 
@@ -1466,7 +1500,7 @@
         )<span class="question-mark">?</span>;
         <span class="comment">// FIXME: delete interpreter state associated with this mutex.
 
-        </span><span class="prelude-val">Ok</span>(())
+        </span>interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_rwlock_rdlock(
@@ -1476,7 +1510,7 @@
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span>id = rwlock_get_id(this, rwlock_op)<span class="question-mark">?</span>;
+        <span class="kw">let </span>id = rwlock_get_data(this, rwlock_op)<span class="question-mark">?</span>.id;
 
         <span class="kw">if </span>this.rwlock_is_write_locked(id) {
             this.rwlock_enqueue_and_block_reader(id, Scalar::from_i32(<span class="number">0</span>), dest.clone());
@@ -1485,19 +1519,19 @@
             this.write_null(dest)<span class="question-mark">?</span>;
         }
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_rwlock_tryrdlock(<span class="kw-2">&amp;mut </span><span class="self">self</span>, rwlock_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span>id = rwlock_get_id(this, rwlock_op)<span class="question-mark">?</span>;
+        <span class="kw">let </span>id = rwlock_get_data(this, rwlock_op)<span class="question-mark">?</span>.id;
 
         <span class="kw">if </span>this.rwlock_is_write_locked(id) {
-            <span class="prelude-val">Ok</span>(Scalar::from_i32(this.eval_libc_i32(<span class="string">"EBUSY"</span>)))
+            interp_ok(Scalar::from_i32(this.eval_libc_i32(<span class="string">"EBUSY"</span>)))
         } <span class="kw">else </span>{
             this.rwlock_reader_lock(id);
-            <span class="prelude-val">Ok</span>(Scalar::from_i32(<span class="number">0</span>))
+            interp_ok(Scalar::from_i32(<span class="number">0</span>))
         }
     }
 
@@ -1508,7 +1542,7 @@
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span>id = rwlock_get_id(this, rwlock_op)<span class="question-mark">?</span>;
+        <span class="kw">let </span>id = rwlock_get_data(this, rwlock_op)<span class="question-mark">?</span>.id;
 
         <span class="kw">if </span>this.rwlock_is_locked(id) {
             <span class="comment">// Note: this will deadlock if the lock is already locked by this
@@ -1529,30 +1563,30 @@
             this.write_null(dest)<span class="question-mark">?</span>;
         }
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_rwlock_trywrlock(<span class="kw-2">&amp;mut </span><span class="self">self</span>, rwlock_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, Scalar&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span>id = rwlock_get_id(this, rwlock_op)<span class="question-mark">?</span>;
+        <span class="kw">let </span>id = rwlock_get_data(this, rwlock_op)<span class="question-mark">?</span>.id;
 
         <span class="kw">if </span>this.rwlock_is_locked(id) {
-            <span class="prelude-val">Ok</span>(Scalar::from_i32(this.eval_libc_i32(<span class="string">"EBUSY"</span>)))
+            interp_ok(Scalar::from_i32(this.eval_libc_i32(<span class="string">"EBUSY"</span>)))
         } <span class="kw">else </span>{
             this.rwlock_writer_lock(id);
-            <span class="prelude-val">Ok</span>(Scalar::from_i32(<span class="number">0</span>))
+            interp_ok(Scalar::from_i32(<span class="number">0</span>))
         }
     }
 
     <span class="kw">fn </span>pthread_rwlock_unlock(<span class="kw-2">&amp;mut </span><span class="self">self</span>, rwlock_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ()&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span>id = rwlock_get_id(this, rwlock_op)<span class="question-mark">?</span>;
+        <span class="kw">let </span>id = rwlock_get_data(this, rwlock_op)<span class="question-mark">?</span>.id;
 
         <span class="attr">#[allow(clippy::if_same_then_else)]
         </span><span class="kw">if </span>this.rwlock_reader_unlock(id)<span class="question-mark">? </span>|| this.rwlock_writer_unlock(id)<span class="question-mark">? </span>{
-            <span class="prelude-val">Ok</span>(())
+            interp_ok(())
         } <span class="kw">else </span>{
             <span class="macro">throw_ub_format!</span>(<span class="string">"unlocked an rwlock that was not locked by the active thread"</span>);
         }
@@ -1563,7 +1597,7 @@
 
         <span class="comment">// Reading the field also has the side-effect that we detect double-`destroy`
         // since we make the field unint below.
-        </span><span class="kw">let </span>id = rwlock_get_id(this, rwlock_op)<span class="question-mark">?</span>;
+        </span><span class="kw">let </span>id = rwlock_get_data(this, rwlock_op)<span class="question-mark">?</span>.id;
 
         <span class="kw">if </span>this.rwlock_is_locked(id) {
             <span class="macro">throw_ub_format!</span>(<span class="string">"destroyed a locked rwlock"</span>);
@@ -1575,7 +1609,7 @@
         )<span class="question-mark">?</span>;
         <span class="comment">// FIXME: delete interpreter state associated with this rwlock.
 
-        </span><span class="prelude-val">Ok</span>(())
+        </span>interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_condattr_init(<span class="kw-2">&amp;mut </span><span class="self">self</span>, attr_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ()&gt; {
@@ -1590,7 +1624,7 @@
             condattr_set_clock_id(this, attr_op, default_clock_id)<span class="question-mark">?</span>;
         }
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_condattr_setclock(
@@ -1607,10 +1641,10 @@
             condattr_set_clock_id(this, attr_op, clock_id)<span class="question-mark">?</span>;
         } <span class="kw">else </span>{
             <span class="kw">let </span>einval = this.eval_libc_i32(<span class="string">"EINVAL"</span>);
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(Scalar::from_i32(einval));
+            <span class="kw">return </span>interp_ok(Scalar::from_i32(einval));
         }
 
-        <span class="prelude-val">Ok</span>(Scalar::from_i32(<span class="number">0</span>))
+        interp_ok(Scalar::from_i32(<span class="number">0</span>))
     }
 
     <span class="kw">fn </span>pthread_condattr_getclock(
@@ -1623,7 +1657,7 @@
         <span class="kw">let </span>clock_id = condattr_get_clock_id(this, attr_op)<span class="question-mark">?</span>;
         this.write_scalar(Scalar::from_i32(clock_id), <span class="kw-2">&amp;</span>this.deref_pointer(clk_id_op)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_condattr_destroy(<span class="kw-2">&amp;mut </span><span class="self">self</span>, attr_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ()&gt; {
@@ -1641,7 +1675,7 @@
             <span class="kw-2">&amp;</span>this.deref_pointer_as(attr_op, this.libc_ty_layout(<span class="string">"pthread_condattr_t"</span>))<span class="question-mark">?</span>,
         )<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_cond_init(
@@ -1658,31 +1692,25 @@
         } <span class="kw">else </span>{
             condattr_get_clock_id(this, attr_op)<span class="question-mark">?
         </span>};
-        <span class="kw">let </span>clock_id = cond_translate_clock_id(this, clock_id)<span class="question-mark">?</span>;
+        <span class="kw">let </span>clock_id = condattr_translate_clock_id(this, clock_id)<span class="question-mark">?</span>;
 
-        <span class="kw">let </span>cond = this.deref_pointer(cond_op)<span class="question-mark">?</span>;
-        <span class="kw">let </span>address = cond.ptr().addr().bytes();
-        this.condvar_create(
-            <span class="kw-2">&amp;</span>cond,
-            cond_id_offset(this)<span class="question-mark">?</span>,
-            <span class="prelude-val">Some</span>(Box::new(AdditionalCondData { address, clock_id })),
-        )<span class="question-mark">?</span>;
+        cond_create(this, cond_op, clock_id)<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_cond_signal(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cond_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ()&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
-        <span class="kw">let </span>id = cond_get_id(this, cond_op)<span class="question-mark">?</span>;
+        <span class="kw">let </span>id = cond_get_data(this, cond_op)<span class="question-mark">?</span>.id;
         this.condvar_signal(id)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_cond_broadcast(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cond_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ()&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
-        <span class="kw">let </span>id = cond_get_id(this, cond_op)<span class="question-mark">?</span>;
+        <span class="kw">let </span>id = cond_get_data(this, cond_op)<span class="question-mark">?</span>.id;
         <span class="kw">while </span>this.condvar_signal(id)<span class="question-mark">? </span>{}
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_cond_wait(
@@ -1693,11 +1721,11 @@
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span>id = cond_get_id(this, cond_op)<span class="question-mark">?</span>;
-        <span class="kw">let </span>mutex_id = mutex_get_id(this, mutex_op)<span class="question-mark">?</span>;
+        <span class="kw">let </span>data = cond_get_data(this, cond_op)<span class="question-mark">?</span>;
+        <span class="kw">let </span>mutex_id = mutex_get_data(this, mutex_op)<span class="question-mark">?</span>.id;
 
         this.condvar_wait(
-            id,
+            data.id,
             mutex_id,
             <span class="prelude-val">None</span>, <span class="comment">// no timeout
             </span>Scalar::from_i32(<span class="number">0</span>),
@@ -1705,7 +1733,7 @@
             </span>dest.clone(),
         )<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_cond_timedwait(
@@ -1717,25 +1745,21 @@
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
-        <span class="kw">let </span>id = cond_get_id(this, cond_op)<span class="question-mark">?</span>;
-        <span class="kw">let </span>mutex_id = mutex_get_id(this, mutex_op)<span class="question-mark">?</span>;
+        <span class="kw">let </span>data = cond_get_data(this, cond_op)<span class="question-mark">?</span>;
+        <span class="kw">let </span>mutex_id = mutex_get_data(this, mutex_op)<span class="question-mark">?</span>.id;
 
         <span class="comment">// Extract the timeout.
-        </span><span class="kw">let </span>clock_id = this
-            .condvar_get_data::&lt;AdditionalCondData&gt;(id)
-            .expect(<span class="string">"additional data should always be present for pthreads"</span>)
-            .clock_id;
-        <span class="kw">let </span>duration = <span class="kw">match </span>this
+        </span><span class="kw">let </span>duration = <span class="kw">match </span>this
             .read_timespec(<span class="kw-2">&amp;</span>this.deref_pointer_as(abstime_op, this.libc_ty_layout(<span class="string">"timespec"</span>))<span class="question-mark">?</span>)<span class="question-mark">?
         </span>{
             <span class="prelude-val">Some</span>(duration) =&gt; duration,
             <span class="prelude-val">None </span>=&gt; {
                 <span class="kw">let </span>einval = this.eval_libc(<span class="string">"EINVAL"</span>);
                 this.write_scalar(einval, dest)<span class="question-mark">?</span>;
-                <span class="kw">return </span><span class="prelude-val">Ok</span>(());
+                <span class="kw">return </span>interp_ok(());
             }
         };
-        <span class="kw">let </span>timeout_clock = <span class="kw">match </span>clock_id {
+        <span class="kw">let </span>timeout_clock = <span class="kw">match </span>data.clock {
             ClockId::Realtime =&gt; {
                 this.check_no_isolation(<span class="string">"`pthread_cond_timedwait` with `CLOCK_REALTIME`"</span>)<span class="question-mark">?</span>;
                 TimeoutClock::RealTime
@@ -1744,7 +1768,7 @@
         };
 
         this.condvar_wait(
-            id,
+            data.id,
             mutex_id,
             <span class="prelude-val">Some</span>((timeout_clock, TimeoutAnchor::Absolute, duration)),
             Scalar::from_i32(<span class="number">0</span>),
@@ -1752,7 +1776,7 @@
             </span>dest.clone(),
         )<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="kw">fn </span>pthread_cond_destroy(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cond_op: <span class="kw-2">&amp;</span>OpTy&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ()&gt; {
@@ -1760,7 +1784,7 @@
 
         <span class="comment">// Reading the field also has the side-effect that we detect double-`destroy`
         // since we make the field unint below.
-        </span><span class="kw">let </span>id = cond_get_id(this, cond_op)<span class="question-mark">?</span>;
+        </span><span class="kw">let </span>id = cond_get_data(this, cond_op)<span class="question-mark">?</span>.id;
         <span class="kw">if </span>this.condvar_is_awaited(id) {
             <span class="macro">throw_ub_format!</span>(<span class="string">"destroying an awaited conditional variable"</span>);
         }
@@ -1769,7 +1793,7 @@
         </span>this.write_uninit(<span class="kw-2">&amp;</span>this.deref_pointer_as(cond_op, this.libc_ty_layout(<span class="string">"pthread_cond_t"</span>))<span class="question-mark">?</span>)<span class="question-mark">?</span>;
         <span class="comment">// FIXME: delete interpreter state associated with this condvar.
 
-        </span><span class="prelude-val">Ok</span>(())
+        </span>interp_ok(())
     }
 }
 </code></pre></div></section></main></body></html>

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["Effect"],"mod":["cursor","direction","engine","fmt","graphviz","lattice","visitor"],"struct":["EffectIndex","GenKillSet","SwitchIntTarget"],"trait":["Analysis","AnalysisDomain","BitSetExt","GenKill","GenKillAnalysis","SwitchIntEdgeEffects"]};
+window.SIDEBAR_ITEMS = {"enum":["Effect"],"mod":["cursor","direction","fmt","graphviz","lattice","results","visitor"],"struct":["EffectIndex","SwitchIntTarget"],"trait":["Analysis","BitSetExt","GenKill","SwitchIntEdgeEffects"]};

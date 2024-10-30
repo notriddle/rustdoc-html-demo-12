@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["collect_footnote_def","render_footnotes_defs"],"struct":["FootnoteDef","Footnotes"]};

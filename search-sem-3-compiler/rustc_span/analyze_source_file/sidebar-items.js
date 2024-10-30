@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["analyze_source_file","analyze_source_file_dispatch","analyze_source_file_generic"]};
+window.SIDEBAR_ITEMS = {"fn":["analyze_source_file","analyze_source_file_dispatch","analyze_source_file_generic","analyze_source_file_sse2"]};

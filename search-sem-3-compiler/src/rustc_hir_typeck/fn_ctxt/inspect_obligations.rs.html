@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_typeck/src/fn_ctxt/inspect_obligations.rs`."><title>inspect_obligations.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_typeck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_typeck/fn_ctxt/</div>inspect_obligations.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_typeck/src/fn_ctxt/inspect_obligations.rs`."><title>inspect_obligations.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_typeck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_typeck/fn_ctxt/</div>inspect_obligations.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -137,11 +137,9 @@
 <a href="#136" id="136">136</a>
 <a href="#137" id="137">137</a>
 <a href="#138" id="138">138</a>
-<a href="#139" id="139">139</a>
-<a href="#140" id="140">140</a>
-<a href="#141" id="141">141</a></pre></div><pre class="rust"><code><span class="doccomment">//! A utility module to inspect currently ambiguous obligations in the current context.
+<a href="#139" id="139">139</a></pre></div><pre class="rust"><code><span class="doccomment">//! A utility module to inspect currently ambiguous obligations in the current context.
 
-</span><span class="kw">use </span>rustc_infer::traits::{<span class="self">self</span>, ObligationCause};
+</span><span class="kw">use </span>rustc_infer::traits::{<span class="self">self</span>, ObligationCause, PredicateObligations};
 <span class="kw">use </span>rustc_middle::traits::solve::Goal;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, Ty, TypeVisitableExt};
 <span class="kw">use </span>rustc_span::Span;
@@ -156,10 +154,7 @@
     <span class="doccomment">/// Returns a list of all obligations whose self type has been unified
     /// with the unconstrained type `self_ty`.
     </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"debug"</span>)]
-    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>obligations_for_self_ty(
-        <span class="kw-2">&amp;</span><span class="self">self</span>,
-        self_ty: ty::TyVid,
-    ) -&gt; Vec&lt;traits::PredicateObligation&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>obligations_for_self_ty(<span class="kw-2">&amp;</span><span class="self">self</span>, self_ty: ty::TyVid) -&gt; PredicateObligations&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">if </span><span class="self">self</span>.next_trait_solver() {
             <span class="self">self</span>.obligations_for_self_ty_next(self_ty)
         } <span class="kw">else </span>{
@@ -191,11 +186,12 @@
             | ty::PredicateKind::Clause(ty::ClauseKind::RegionOutlives(..))
             | ty::PredicateKind::Clause(ty::ClauseKind::TypeOutlives(..))
             | ty::PredicateKind::Clause(ty::ClauseKind::WellFormed(..))
-            | ty::PredicateKind::ObjectSafe(..)
+            | ty::PredicateKind::DynCompatible(..)
             | ty::PredicateKind::NormalizesTo(..)
             | ty::PredicateKind::AliasRelate(..)
             | ty::PredicateKind::Clause(ty::ClauseKind::ConstEvaluatable(..))
             | ty::PredicateKind::ConstEquate(..)
+            | ty::PredicateKind::Clause(ty::ClauseKind::HostEffect(..))
             | ty::PredicateKind::Ambiguous =&gt; <span class="bool-val">false</span>,
         }
     }
@@ -216,10 +212,10 @@
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>obligations_for_self_ty_next(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         self_ty: ty::TyVid,
-    ) -&gt; Vec&lt;traits::PredicateObligation&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+    ) -&gt; PredicateObligations&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>obligations = <span class="self">self</span>.fulfillment_cx.borrow().pending_obligations();
         <span class="macro">debug!</span>(<span class="question-mark">?</span>obligations);
-        <span class="kw">let </span><span class="kw-2">mut </span>obligations_for_self_ty = <span class="macro">vec!</span>[];
+        <span class="kw">let </span><span class="kw-2">mut </span>obligations_for_self_ty = PredicateObligations::new();
         <span class="kw">for </span>obligation <span class="kw">in </span>obligations {
             <span class="kw">let </span><span class="kw-2">mut </span>visitor = NestedObligationsForSelfTy {
                 fcx: <span class="self">self</span>,
@@ -244,7 +240,7 @@
     fcx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>FnCtxt&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;,
     self_ty: ty::TyVid,
     root_cause: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>ObligationCause&lt;<span class="lifetime">'tcx</span>&gt;,
-    obligations_for_self_ty: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>Vec&lt;traits::PredicateObligation&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+    obligations_for_self_ty: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span>PredicateObligations&lt;<span class="lifetime">'tcx</span>&gt;,
 }
 
 <span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; ProofTreeVisitor&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span>NestedObligationsForSelfTy&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {

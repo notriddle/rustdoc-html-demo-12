@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["Change"],"fn":["backtrack","colored_diff","diff","render_colored_changes","shortest_edit"]};
+window.SIDEBAR_ITEMS = {"enum":["Change"],"fn":["render_colored_changes"]};

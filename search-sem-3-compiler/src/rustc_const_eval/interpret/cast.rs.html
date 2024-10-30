@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/cast.rs`."><title>cast.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_const_eval/interpret/</div>cast.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/cast.rs`."><title>cast.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_const_eval/interpret/</div>cast.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -537,7 +537,8 @@
 
 <span class="kw">use </span><span class="kw">super</span>::util::ensure_monomorphic_enough;
 <span class="kw">use super</span>::{
-    FnVal, ImmTy, Immediate, InterpCx, Machine, OpTy, PlaceTy, err_inval, throw_ub, throw_ub_custom,
+    FnVal, ImmTy, Immediate, InterpCx, Machine, OpTy, PlaceTy, err_inval, interp_ok, throw_ub,
+    throw_ub_custom,
 };
 <span class="kw">use </span><span class="kw">crate</span>::fluent_generated <span class="kw">as </span>fluent;
 
@@ -555,7 +556,7 @@
             <span class="kw">if </span>cast_ty == dest.layout.ty { dest.layout } <span class="kw">else </span>{ <span class="self">self</span>.layout_of(cast_ty)<span class="question-mark">? </span>};
         <span class="comment">// FIXME: In which cases should we trigger UB when the source is uninit?
         </span><span class="kw">match </span>cast_kind {
-            CastKind::PointerCoercion(PointerCoercion::Unsize) =&gt; {
+            CastKind::PointerCoercion(PointerCoercion::Unsize, <span class="kw">_</span>) =&gt; {
                 <span class="self">self</span>.unsize_into(src, cast_layout, dest)<span class="question-mark">?</span>;
             }
 
@@ -591,11 +592,12 @@
 
             CastKind::PointerCoercion(
                 PointerCoercion::MutToConstPointer | PointerCoercion::ArrayToPointer,
+                <span class="kw">_</span>,
             ) =&gt; {
                 <span class="macro">bug!</span>(<span class="string">"{cast_kind:?} casts are for borrowck only, not runtime MIR"</span>);
             }
 
-            CastKind::PointerCoercion(PointerCoercion::ReifyFnPointer) =&gt; {
+            CastKind::PointerCoercion(PointerCoercion::ReifyFnPointer, <span class="kw">_</span>) =&gt; {
                 <span class="comment">// All reifications must be monomorphic, bail out otherwise.
                 </span>ensure_monomorphic_enough(<span class="kw-2">*</span><span class="self">self</span>.tcx, src.layout.ty)<span class="question-mark">?</span>;
 
@@ -617,7 +619,7 @@
                 }
             }
 
-            CastKind::PointerCoercion(PointerCoercion::UnsafeFnPointer) =&gt; {
+            CastKind::PointerCoercion(PointerCoercion::UnsafeFnPointer, <span class="kw">_</span>) =&gt; {
                 <span class="kw">let </span>src = <span class="self">self</span>.read_immediate(src)<span class="question-mark">?</span>;
                 <span class="kw">match </span>cast_ty.kind() {
                     ty::FnPtr(..) =&gt; {
@@ -628,7 +630,7 @@
                 }
             }
 
-            CastKind::PointerCoercion(PointerCoercion::ClosureFnPointer(<span class="kw">_</span>)) =&gt; {
+            CastKind::PointerCoercion(PointerCoercion::ClosureFnPointer(<span class="kw">_</span>), <span class="kw">_</span>) =&gt; {
                 <span class="comment">// All reifications must be monomorphic, bail out otherwise.
                 </span>ensure_monomorphic_enough(<span class="kw-2">*</span><span class="self">self</span>.tcx, src.layout.ty)<span class="question-mark">?</span>;
 
@@ -648,7 +650,7 @@
                 }
             }
 
-            CastKind::DynStar =&gt; {
+            CastKind::PointerCoercion(PointerCoercion::DynStar, <span class="kw">_</span>) =&gt; {
                 <span class="kw">if let </span>ty::Dynamic(data, <span class="kw">_</span>, ty::DynStar) = cast_ty.kind() {
                     <span class="comment">// Initial cast from sized to dyn trait
                     </span><span class="kw">let </span>vtable = <span class="self">self</span>.get_vtable_ptr(src.layout.ty, data)<span class="question-mark">?</span>;
@@ -679,7 +681,7 @@
                 <span class="self">self</span>.copy_op_allow_transmute(src, dest)<span class="question-mark">?</span>;
             }
         }
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="doccomment">/// Handles 'IntToInt' and 'IntToFloat' casts.
@@ -691,7 +693,7 @@
         <span class="macro">assert!</span>(src.layout.ty.is_integral() || src.layout.ty.is_char() || src.layout.ty.is_bool());
         <span class="macro">assert!</span>(cast_to.ty.is_floating_point() || cast_to.ty.is_integral() || cast_to.ty.is_char());
 
-        <span class="prelude-val">Ok</span>(ImmTy::from_scalar(
+        interp_ok(ImmTy::from_scalar(
             <span class="self">self</span>.cast_from_int_like(src.to_scalar(), src.layout, cast_to.ty)<span class="question-mark">?</span>,
             cast_to,
         ))
@@ -714,7 +716,7 @@
             FloatTy::F64 =&gt; <span class="self">self</span>.cast_from_float(src.to_scalar().to_f64()<span class="question-mark">?</span>, cast_to.ty),
             FloatTy::F128 =&gt; <span class="self">self</span>.cast_from_float(src.to_scalar().to_f128()<span class="question-mark">?</span>, cast_to.ty),
         };
-        <span class="prelude-val">Ok</span>(ImmTy::from_scalar(val, cast_to))
+        interp_ok(ImmTy::from_scalar(val, cast_to))
     }
 
     <span class="doccomment">/// Handles 'FnPtrToPtr' and 'PtrToPtr' casts.
@@ -725,17 +727,17 @@
     ) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>, ImmTy&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt; {
         <span class="macro">assert!</span>(src.layout.ty.is_any_ptr());
         <span class="macro">assert!</span>(cast_to.ty.is_unsafe_ptr());
-        <span class="comment">// Handle casting any ptr to raw ptr (might be a fat ptr).
+        <span class="comment">// Handle casting any ptr to raw ptr (might be a wide ptr).
         </span><span class="kw">if </span>cast_to.size == src.layout.size {
-            <span class="comment">// Thin or fat pointer that just has the ptr kind of target type changed.
-            </span><span class="kw">return </span><span class="prelude-val">Ok</span>(ImmTy::from_immediate(<span class="kw-2">**</span>src, cast_to));
+            <span class="comment">// Thin or wide pointer that just has the ptr kind of target type changed.
+            </span><span class="kw">return </span>interp_ok(ImmTy::from_immediate(<span class="kw-2">**</span>src, cast_to));
         } <span class="kw">else </span>{
-            <span class="comment">// Casting the metadata away from a fat ptr.
+            <span class="comment">// Casting the metadata away from a wide ptr.
             </span><span class="macro">assert_eq!</span>(src.layout.size, <span class="number">2 </span>* <span class="self">self</span>.pointer_size());
             <span class="macro">assert_eq!</span>(cast_to.size, <span class="self">self</span>.pointer_size());
             <span class="macro">assert!</span>(src.layout.ty.is_unsafe_ptr());
             <span class="kw">return match </span><span class="kw-2">**</span>src {
-                Immediate::ScalarPair(data, <span class="kw">_</span>) =&gt; <span class="prelude-val">Ok</span>(ImmTy::from_scalar(data, cast_to)),
+                Immediate::ScalarPair(data, <span class="kw">_</span>) =&gt; interp_ok(ImmTy::from_scalar(data, cast_to)),
                 Immediate::Scalar(..) =&gt; <span class="macro">span_bug!</span>(
                     <span class="self">self</span>.cur_span(),
                     <span class="string">"{:?} input to a fat-to-thin cast ({} -&gt; {})"</span>,
@@ -762,7 +764,10 @@
             <span class="prelude-val">Ok</span>(ptr) =&gt; M::expose_ptr(<span class="self">self</span>, ptr)<span class="question-mark">?</span>,
             <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; {} <span class="comment">// Do nothing, exposing an invalid pointer (`None` provenance) is a NOP.
         </span>};
-        <span class="prelude-val">Ok</span>(ImmTy::from_scalar(<span class="self">self</span>.cast_from_int_like(scalar, src.layout, cast_to.ty)<span class="question-mark">?</span>, cast_to))
+        interp_ok(ImmTy::from_scalar(
+            <span class="self">self</span>.cast_from_int_like(scalar, src.layout, cast_to.ty)<span class="question-mark">?</span>,
+            cast_to,
+        ))
     }
 
     <span class="kw">pub fn </span>pointer_with_exposed_provenance_cast(
@@ -780,7 +785,7 @@
 
         <span class="comment">// Then turn address into pointer.
         </span><span class="kw">let </span>ptr = M::ptr_from_addr_cast(<span class="self">self</span>, addr)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(ImmTy::from_scalar(Scalar::from_maybe_pointer(ptr, <span class="self">self</span>), cast_to))
+        interp_ok(ImmTy::from_scalar(Scalar::from_maybe_pointer(ptr, <span class="self">self</span>), cast_to))
     }
 
     <span class="doccomment">/// Low-level cast helper function. This works directly on scalars and can take 'int-like' input
@@ -802,7 +807,7 @@
             <span class="kw">_ </span>=&gt; <span class="macro">span_bug!</span>(<span class="self">self</span>.cur_span(), <span class="string">"invalid int-like cast from {}"</span>, src_layout.ty),
         };
 
-        <span class="prelude-val">Ok</span>(<span class="kw">match </span><span class="kw-2">*</span>cast_ty.kind() {
+        interp_ok(<span class="kw">match </span><span class="kw-2">*</span>cast_ty.kind() {
             <span class="comment">// int -&gt; int
             </span>Int(<span class="kw">_</span>) | Uint(<span class="kw">_</span>) =&gt; {
                 <span class="kw">let </span>size = <span class="kw">match </span><span class="kw-2">*</span>cast_ty.kind() {
@@ -852,19 +857,6 @@
     {
         <span class="kw">use </span>rustc_type_ir::TyKind::<span class="kw-2">*</span>;
 
-        <span class="kw">fn </span>adjust_nan&lt;
-            <span class="lifetime">'tcx</span>,
-            M: Machine&lt;<span class="lifetime">'tcx</span>&gt;,
-            F1: rustc_apfloat::Float + FloatConvert&lt;F2&gt;,
-            F2: rustc_apfloat::Float,
-        &gt;(
-            ecx: <span class="kw-2">&amp;</span>InterpCx&lt;<span class="lifetime">'tcx</span>, M&gt;,
-            f1: F1,
-            f2: F2,
-        ) -&gt; F2 {
-            <span class="kw">if </span>f2.is_nan() { M::generate_nan(ecx, <span class="kw-2">&amp;</span>[f1]) } <span class="kw">else </span>{ f2 }
-        }
-
         <span class="kw">match </span><span class="kw-2">*</span>dest_ty.kind() {
             <span class="comment">// float -&gt; uint
             </span>Uint(t) =&gt; {
@@ -885,11 +877,17 @@
             }
             <span class="comment">// float -&gt; float
             </span>Float(fty) =&gt; <span class="kw">match </span>fty {
-                FloatTy::F16 =&gt; Scalar::from_f16(adjust_nan(<span class="self">self</span>, f, f.convert(<span class="kw-2">&amp;mut </span><span class="bool-val">false</span>).value)),
-                FloatTy::F32 =&gt; Scalar::from_f32(adjust_nan(<span class="self">self</span>, f, f.convert(<span class="kw-2">&amp;mut </span><span class="bool-val">false</span>).value)),
-                FloatTy::F64 =&gt; Scalar::from_f64(adjust_nan(<span class="self">self</span>, f, f.convert(<span class="kw-2">&amp;mut </span><span class="bool-val">false</span>).value)),
+                FloatTy::F16 =&gt; {
+                    Scalar::from_f16(<span class="self">self</span>.adjust_nan(f.convert(<span class="kw-2">&amp;mut </span><span class="bool-val">false</span>).value, <span class="kw-2">&amp;</span>[f]))
+                }
+                FloatTy::F32 =&gt; {
+                    Scalar::from_f32(<span class="self">self</span>.adjust_nan(f.convert(<span class="kw-2">&amp;mut </span><span class="bool-val">false</span>).value, <span class="kw-2">&amp;</span>[f]))
+                }
+                FloatTy::F64 =&gt; {
+                    Scalar::from_f64(<span class="self">self</span>.adjust_nan(f.convert(<span class="kw-2">&amp;mut </span><span class="bool-val">false</span>).value, <span class="kw-2">&amp;</span>[f]))
+                }
                 FloatTy::F128 =&gt; {
-                    Scalar::from_f128(adjust_nan(<span class="self">self</span>, f, f.convert(<span class="kw-2">&amp;mut </span><span class="bool-val">false</span>).value))
+                    Scalar::from_f128(<span class="self">self</span>.adjust_nan(f.convert(<span class="kw-2">&amp;mut </span><span class="bool-val">false</span>).value, <span class="kw-2">&amp;</span>[f]))
                 }
             },
             <span class="comment">// That's it.
@@ -916,7 +914,9 @@
                 <span class="kw">let </span>ptr = <span class="self">self</span>.read_pointer(src)<span class="question-mark">?</span>;
                 <span class="kw">let </span>val = Immediate::new_slice(
                     ptr,
-                    length.eval_target_usize(<span class="kw-2">*</span><span class="self">self</span>.tcx, <span class="self">self</span>.param_env),
+                    length
+                        .try_to_target_usize(<span class="kw-2">*</span><span class="self">self</span>.tcx)
+                        .expect(<span class="string">"expected monomorphic const in const eval"</span>),
                     <span class="self">self</span>,
                 );
                 <span class="self">self</span>.write_immediate(val, dest)
@@ -1027,7 +1027,7 @@
                         <span class="self">self</span>.unsize_into(<span class="kw-2">&amp;</span>src_field, cast_ty_field, <span class="kw-2">&amp;</span>dst_field)<span class="question-mark">?</span>;
                     }
                 }
-                <span class="prelude-val">Ok</span>(())
+                interp_ok(())
             }
             <span class="kw">_ </span>=&gt; {
                 <span class="comment">// Do not ICE if we are not monomorphic enough.

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["cmse_layout_err","is_valid_cmse_inputs","is_valid_cmse_output","validate_cmse_abi"]};
+window.SIDEBAR_ITEMS = {"fn":["is_valid_cmse_inputs","is_valid_cmse_output","should_emit_generic_error","validate_cmse_abi"]};

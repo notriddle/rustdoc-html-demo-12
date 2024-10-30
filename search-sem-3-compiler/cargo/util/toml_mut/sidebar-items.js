@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["is_sorted"],"mod":["dependency","manifest","upgrade"]};
+window.SIDEBAR_ITEMS = {"mod":["dependency","manifest","upgrade"]};

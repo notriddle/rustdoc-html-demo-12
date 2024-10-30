@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/unix/unnamed_socket.rs`."><title>unnamed_socket.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/shims/unix/</div>unnamed_socket.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/unix/unnamed_socket.rs`."><title>unnamed_socket.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/shims/unix/</div>unnamed_socket.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -398,21 +398,30 @@
 <a href="#397" id="397">397</a>
 <a href="#398" id="398">398</a>
 <a href="#399" id="399">399</a>
-<a href="#400" id="400">400</a></pre></div><pre class="rust"><code><span class="doccomment">//! This implements "anonymous" sockets, that do not correspond to anything on the host system and
+<a href="#400" id="400">400</a>
+<a href="#401" id="401">401</a>
+<a href="#402" id="402">402</a>
+<a href="#403" id="403">403</a>
+<a href="#404" id="404">404</a>
+<a href="#405" id="405">405</a>
+<a href="#406" id="406">406</a>
+<a href="#407" id="407">407</a>
+<a href="#408" id="408">408</a></pre></div><pre class="rust"><code><span class="doccomment">//! This implements "anonymous" sockets, that do not correspond to anything on the host system and
 //! are entirely implemented inside Miri.
 //! We also use the same infrastructure to implement unnamed pipes.
 
 </span><span class="kw">use </span>std::cell::{Cell, OnceCell, RefCell};
 <span class="kw">use </span>std::collections::VecDeque;
 <span class="kw">use </span>std::io;
-<span class="kw">use </span>std::io::{Error, ErrorKind, Read};
+<span class="kw">use </span>std::io::{ErrorKind, Read};
 
 <span class="kw">use </span>rustc_target::abi::Size;
 
+<span class="kw">use </span><span class="kw">crate</span>::concurrency::VClock;
 <span class="kw">use </span><span class="kw">crate</span>::shims::unix::fd::{FileDescriptionRef, WeakFileDescriptionRef};
 <span class="kw">use </span><span class="kw">crate</span>::shims::unix::linux::epoll::{EpollReadyEvents, EvalContextExt <span class="kw">as _</span>};
 <span class="kw">use </span><span class="kw">crate</span>::shims::unix::<span class="kw-2">*</span>;
-<span class="kw">use crate</span>::{concurrency::VClock, <span class="kw-2">*</span>};
+<span class="kw">use crate</span>::<span class="kw-2">*</span>;
 
 <span class="doccomment">/// The maximum capacity of the socketpair buffer in bytes.
 /// This number is arbitrary as the value can always
@@ -502,7 +511,7 @@
                 epoll_ready_events.epollerr = <span class="bool-val">true</span>;
             }
         }
-        <span class="prelude-val">Ok</span>(epoll_ready_events)
+        interp_ok(epoll_ready_events)
     }
 
     <span class="kw">fn </span>close&lt;<span class="lifetime">'tcx</span>&gt;(
@@ -521,7 +530,7 @@
             <span class="comment">// Notify peer fd that close has happened, since that can unblock reads and writes.
             </span>ecx.check_and_update_readiness(<span class="kw-2">&amp;</span>peer_fd)<span class="question-mark">?</span>;
         }
-        <span class="prelude-val">Ok</span>(<span class="prelude-val">Ok</span>(()))
+        interp_ok(<span class="prelude-val">Ok</span>(()))
     }
 
     <span class="kw">fn </span>read&lt;<span class="lifetime">'tcx</span>&gt;(
@@ -537,8 +546,7 @@
 
         <span class="comment">// Always succeed on read size 0.
         </span><span class="kw">if </span>len == <span class="number">0 </span>{
-            <span class="kw">let </span>result = <span class="prelude-val">Ok</span>(<span class="number">0</span>);
-            <span class="kw">return </span>ecx.return_read_bytes_and_count(ptr, <span class="kw-2">&amp;</span>bytes, result, dest);
+            <span class="kw">return </span>ecx.return_read_success(ptr, <span class="kw-2">&amp;</span>bytes, <span class="number">0</span>, dest);
         }
 
         <span class="kw">let </span><span class="prelude-val">Some</span>(readbuf) = <span class="kw-2">&amp;</span><span class="self">self</span>.readbuf <span class="kw">else </span>{
@@ -551,8 +559,7 @@
             <span class="kw">if </span><span class="self">self</span>.peer_fd().upgrade().is_none() {
                 <span class="comment">// Socketpair with no peer and empty buffer.
                 // 0 bytes successfully read indicates end-of-file.
-                </span><span class="kw">let </span>result = <span class="prelude-val">Ok</span>(<span class="number">0</span>);
-                <span class="kw">return </span>ecx.return_read_bytes_and_count(ptr, <span class="kw-2">&amp;</span>bytes, result, dest);
+                </span><span class="kw">return </span>ecx.return_read_success(ptr, <span class="kw-2">&amp;</span>bytes, <span class="number">0</span>, dest);
             } <span class="kw">else </span>{
                 <span class="kw">if </span><span class="self">self</span>.is_nonblock {
                     <span class="comment">// Non-blocking socketpair with writer and empty buffer.
@@ -560,12 +567,11 @@
                     // EAGAIN or EWOULDBLOCK can be returned for socket,
                     // POSIX.1-2001 allows either error to be returned for this case.
                     // Since there is no ErrorKind for EAGAIN, WouldBlock is used.
-                    </span><span class="kw">let </span>result = <span class="prelude-val">Err</span>(Error::from(ErrorKind::WouldBlock));
-                    <span class="kw">return </span>ecx.return_read_bytes_and_count(ptr, <span class="kw-2">&amp;</span>bytes, result, dest);
+                    </span><span class="kw">return </span>ecx.set_last_error_and_return(ErrorKind::WouldBlock, dest);
                 } <span class="kw">else </span>{
                     <span class="comment">// Blocking socketpair with writer and empty buffer.
                     // FIXME: blocking is currently not supported
-                    </span><span class="macro">throw_unsup_format!</span>(<span class="string">"socketpair read: blocking isn't supported yet"</span>);
+                    </span><span class="macro">throw_unsup_format!</span>(<span class="string">"socketpair/pipe/pipe2 read: blocking isn't supported yet"</span>);
                 }
             }
         }
@@ -593,8 +599,7 @@
             ecx.check_and_update_readiness(<span class="kw-2">&amp;</span>peer_fd)<span class="question-mark">?</span>;
         }
 
-        <span class="kw">let </span>result = <span class="prelude-val">Ok</span>(actual_read_size);
-        ecx.return_read_bytes_and_count(ptr, <span class="kw-2">&amp;</span>bytes, result, dest)
+        ecx.return_read_success(ptr, <span class="kw-2">&amp;</span>bytes, actual_read_size, dest)
     }
 
     <span class="kw">fn </span>write&lt;<span class="lifetime">'tcx</span>&gt;(
@@ -609,16 +614,14 @@
         <span class="comment">// Always succeed on write size 0.
         // ("If count is zero and fd refers to a file other than a regular file, the results are not specified.")
         </span><span class="kw">if </span>len == <span class="number">0 </span>{
-            <span class="kw">let </span>result = <span class="prelude-val">Ok</span>(<span class="number">0</span>);
-            <span class="kw">return </span>ecx.return_written_byte_count_or_error(result, dest);
+            <span class="kw">return </span>ecx.return_write_success(<span class="number">0</span>, dest);
         }
 
         <span class="comment">// We are writing to our peer's readbuf.
         </span><span class="kw">let </span><span class="prelude-val">Some</span>(peer_fd) = <span class="self">self</span>.peer_fd().upgrade() <span class="kw">else </span>{
             <span class="comment">// If the upgrade from Weak to Rc fails, it indicates that all read ends have been
             // closed.
-            </span><span class="kw">let </span>result = <span class="prelude-val">Err</span>(Error::from(ErrorKind::BrokenPipe));
-            <span class="kw">return </span>ecx.return_written_byte_count_or_error(result, dest);
+            </span><span class="kw">return </span>ecx.set_last_error_and_return(ErrorKind::BrokenPipe, dest);
         };
 
         <span class="kw">let </span><span class="prelude-val">Some</span>(writebuf) = <span class="kw-2">&amp;</span>peer_fd.downcast::&lt;AnonSocket&gt;().unwrap().readbuf <span class="kw">else </span>{
@@ -632,17 +635,16 @@
         <span class="kw">if </span>available_space == <span class="number">0 </span>{
             <span class="kw">if </span><span class="self">self</span>.is_nonblock {
                 <span class="comment">// Non-blocking socketpair with a full buffer.
-                </span><span class="kw">let </span>result = <span class="prelude-val">Err</span>(Error::from(ErrorKind::WouldBlock));
-                <span class="kw">return </span>ecx.return_written_byte_count_or_error(result, dest);
+                </span><span class="kw">return </span>ecx.set_last_error_and_return(ErrorKind::WouldBlock, dest);
             } <span class="kw">else </span>{
                 <span class="comment">// Blocking socketpair with a full buffer.
-                </span><span class="macro">throw_unsup_format!</span>(<span class="string">"socketpair write: blocking isn't supported yet"</span>);
+                </span><span class="macro">throw_unsup_format!</span>(<span class="string">"socketpair/pipe/pipe2 write: blocking isn't supported yet"</span>);
             }
         }
         <span class="comment">// Remember this clock so `read` can synchronize with us.
-        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(clock) = <span class="kw-2">&amp;</span>ecx.release_clock() {
+        </span>ecx.release_clock(|clock| {
             writebuf.clock.join(clock);
-        }
+        });
         <span class="comment">// Do full write / partial write based on the space available.
         </span><span class="kw">let </span>actual_write_size = len.min(available_space);
         <span class="kw">let </span>bytes = ecx.read_bytes_ptr_strip_provenance(ptr, Size::from_bytes(len))<span class="question-mark">?</span>;
@@ -655,8 +657,7 @@
         // The kernel does this even if the fd was already readable before, so we follow suit.
         </span>ecx.check_and_update_readiness(<span class="kw-2">&amp;</span>peer_fd)<span class="question-mark">?</span>;
 
-        <span class="kw">let </span>result = <span class="prelude-val">Ok</span>(actual_write_size);
-        ecx.return_written_byte_count_or_error(result, dest)
+        ecx.return_write_success(actual_write_size, dest)
     }
 }
 
@@ -674,21 +675,24 @@
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
         <span class="kw">let </span>domain = this.read_scalar(domain)<span class="question-mark">?</span>.to_i32()<span class="question-mark">?</span>;
-        <span class="kw">let </span><span class="kw-2">mut </span>type_ = this.read_scalar(type_)<span class="question-mark">?</span>.to_i32()<span class="question-mark">?</span>;
+        <span class="kw">let </span><span class="kw-2">mut </span>flags = this.read_scalar(type_)<span class="question-mark">?</span>.to_i32()<span class="question-mark">?</span>;
         <span class="kw">let </span>protocol = this.read_scalar(protocol)<span class="question-mark">?</span>.to_i32()<span class="question-mark">?</span>;
         <span class="kw">let </span>sv = this.deref_pointer(sv)<span class="question-mark">?</span>;
 
         <span class="kw">let </span><span class="kw-2">mut </span>is_sock_nonblock = <span class="bool-val">false</span>;
 
-        <span class="comment">// Parse and remove the type flags that we support.
-        // SOCK_NONBLOCK only exists on Linux.
+        <span class="comment">// Interpret the flag. Every flag we recognize is "subtracted" from `flags`, so
+        // if there is anything left at the end, that's an unsupported flag.
         </span><span class="kw">if </span>this.tcx.sess.target.os == <span class="string">"linux" </span>{
-            <span class="kw">if </span>type_ &amp; this.eval_libc_i32(<span class="string">"SOCK_NONBLOCK"</span>) == this.eval_libc_i32(<span class="string">"SOCK_NONBLOCK"</span>) {
+            <span class="comment">// SOCK_NONBLOCK only exists on Linux.
+            </span><span class="kw">let </span>sock_nonblock = this.eval_libc_i32(<span class="string">"SOCK_NONBLOCK"</span>);
+            <span class="kw">let </span>sock_cloexec = this.eval_libc_i32(<span class="string">"SOCK_CLOEXEC"</span>);
+            <span class="kw">if </span>flags &amp; sock_nonblock == sock_nonblock {
                 is_sock_nonblock = <span class="bool-val">true</span>;
-                type_ &amp;= !(this.eval_libc_i32(<span class="string">"SOCK_NONBLOCK"</span>));
+                flags &amp;= !sock_nonblock;
             }
-            <span class="kw">if </span>type_ &amp; this.eval_libc_i32(<span class="string">"SOCK_CLOEXEC"</span>) == this.eval_libc_i32(<span class="string">"SOCK_CLOEXEC"</span>) {
-                type_ &amp;= !(this.eval_libc_i32(<span class="string">"SOCK_CLOEXEC"</span>));
+            <span class="kw">if </span>flags &amp; sock_cloexec == sock_cloexec {
+                flags &amp;= !sock_cloexec;
             }
         }
 
@@ -701,11 +705,11 @@
                                  and AF_LOCAL are allowed"</span>,
                 domain
             );
-        } <span class="kw">else if </span>type_ != this.eval_libc_i32(<span class="string">"SOCK_STREAM"</span>) {
+        } <span class="kw">else if </span>flags != this.eval_libc_i32(<span class="string">"SOCK_STREAM"</span>) {
             <span class="macro">throw_unsup_format!</span>(
                 <span class="string">"socketpair: type {:#x} is unsupported, only SOCK_STREAM, \
                                  SOCK_CLOEXEC and SOCK_NONBLOCK are allowed"</span>,
-                type_
+                flags
             );
         } <span class="kw">else if </span>protocol != <span class="number">0 </span>{
             <span class="macro">throw_unsup_format!</span>(
@@ -743,7 +747,7 @@
         this.write_scalar(sv0, <span class="kw-2">&amp;</span>sv)<span class="question-mark">?</span>;
         this.write_scalar(sv1, <span class="kw-2">&amp;</span>sv.offset(sv.layout.size, sv.layout, this)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(Scalar::from_i32(<span class="number">0</span>))
+        interp_ok(Scalar::from_i32(<span class="number">0</span>))
     }
 
     <span class="kw">fn </span>pipe2(
@@ -754,14 +758,26 @@
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
 
         <span class="kw">let </span>pipefd = this.deref_pointer_as(pipefd, this.machine.layouts.i32)<span class="question-mark">?</span>;
-        <span class="kw">let </span>flags = <span class="kw">match </span>flags {
+        <span class="kw">let </span><span class="kw-2">mut </span>flags = <span class="kw">match </span>flags {
             <span class="prelude-val">Some</span>(flags) =&gt; this.read_scalar(flags)<span class="question-mark">?</span>.to_i32()<span class="question-mark">?</span>,
             <span class="prelude-val">None </span>=&gt; <span class="number">0</span>,
         };
 
+        <span class="kw">let </span>cloexec = this.eval_libc_i32(<span class="string">"O_CLOEXEC"</span>);
+        <span class="kw">let </span>o_nonblock = this.eval_libc_i32(<span class="string">"O_NONBLOCK"</span>);
+
+        <span class="comment">// Interpret the flag. Every flag we recognize is "subtracted" from `flags`, so
+        // if there is anything left at the end, that's an unsupported flag.
+        </span><span class="kw">let </span><span class="kw-2">mut </span>is_nonblock = <span class="bool-val">false</span>;
+        <span class="kw">if </span>flags &amp; o_nonblock == o_nonblock {
+            is_nonblock = <span class="bool-val">true</span>;
+            flags &amp;= !o_nonblock;
+        }
         <span class="comment">// As usual we ignore CLOEXEC.
-        </span><span class="kw">let </span>cloexec = this.eval_libc_i32(<span class="string">"O_CLOEXEC"</span>);
-        <span class="kw">if </span>flags != <span class="number">0 </span>&amp;&amp; flags != cloexec {
+        </span><span class="kw">if </span>flags &amp; cloexec == cloexec {
+            flags &amp;= !cloexec;
+        }
+        <span class="kw">if </span>flags != <span class="number">0 </span>{
             <span class="macro">throw_unsup_format!</span>(<span class="string">"unsupported flags in `pipe2`"</span>);
         }
 
@@ -772,13 +788,13 @@
             readbuf: <span class="prelude-val">Some</span>(RefCell::new(Buffer::new())),
             peer_fd: OnceCell::new(),
             peer_lost_data: Cell::new(<span class="bool-val">false</span>),
-            is_nonblock: <span class="bool-val">false</span>,
+            is_nonblock,
         });
         <span class="kw">let </span>fd1 = fds.new_ref(AnonSocket {
             readbuf: <span class="prelude-val">None</span>,
             peer_fd: OnceCell::new(),
             peer_lost_data: Cell::new(<span class="bool-val">false</span>),
-            is_nonblock: <span class="bool-val">false</span>,
+            is_nonblock,
         });
 
         <span class="comment">// Make the file descriptions point to each other.
@@ -795,7 +811,7 @@
         this.write_scalar(pipefd0, <span class="kw-2">&amp;</span>pipefd)<span class="question-mark">?</span>;
         this.write_scalar(pipefd1, <span class="kw-2">&amp;</span>pipefd.offset(pipefd.layout.size, pipefd.layout, this)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
 
-        <span class="prelude-val">Ok</span>(Scalar::from_i32(<span class="number">0</span>))
+        interp_ok(Scalar::from_i32(<span class="number">0</span>))
     }
 }
 </code></pre></div></section></main></body></html>

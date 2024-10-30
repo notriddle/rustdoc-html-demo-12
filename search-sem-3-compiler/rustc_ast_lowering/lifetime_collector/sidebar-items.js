@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["lifetimes_in_bounds"],"struct":["LifetimeCollectVisitor"]};
+window.SIDEBAR_ITEMS = {"fn":["lifetimes_for_opaque"],"struct":["LifetimeCollectVisitor"]};

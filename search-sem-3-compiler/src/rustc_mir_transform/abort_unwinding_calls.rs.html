@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/abort_unwinding_calls.rs`."><title>abort_unwinding_calls.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>abort_unwinding_calls.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/abort_unwinding_calls.rs`."><title>abort_unwinding_calls.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../static.files/storage-59e33391.js"></script><script defer src="../../static.files/src-script-56102188.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>abort_unwinding_calls.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -104,7 +104,20 @@
 <a href="#103" id="103">103</a>
 <a href="#104" id="104">104</a>
 <a href="#105" id="105">105</a>
-<a href="#106" id="106">106</a></pre></div><pre class="rust"><code><span class="kw">use </span>rustc_ast::InlineAsmOptions;
+<a href="#106" id="106">106</a>
+<a href="#107" id="107">107</a>
+<a href="#108" id="108">108</a>
+<a href="#109" id="109">109</a>
+<a href="#110" id="110">110</a>
+<a href="#111" id="111">111</a>
+<a href="#112" id="112">112</a>
+<a href="#113" id="113">113</a>
+<a href="#114" id="114">114</a>
+<a href="#115" id="115">115</a>
+<a href="#116" id="116">116</a>
+<a href="#117" id="117">117</a>
+<a href="#118" id="118">118</a>
+<a href="#119" id="119">119</a></pre></div><pre class="rust"><code><span class="kw">use </span>rustc_ast::InlineAsmOptions;
 <span class="kw">use </span>rustc_middle::mir::<span class="kw-2">*</span>;
 <span class="kw">use </span>rustc_middle::span_bug;
 <span class="kw">use </span>rustc_middle::ty::{<span class="self">self</span>, TyCtxt, layout};
@@ -157,11 +170,20 @@
         // This will filter to functions with `extern "C-unwind"` ABIs, for
         // example.
         </span><span class="kw">for </span>block <span class="kw">in </span>body.basic_blocks.as_mut() {
+            <span class="kw">let </span><span class="prelude-val">Some</span>(terminator) = <span class="kw-2">&amp;mut </span>block.terminator <span class="kw">else </span>{ <span class="kw">continue </span>};
+            <span class="kw">let </span>span = terminator.source_info.span;
+
+            <span class="comment">// If we see an `UnwindResume` terminator inside a function that cannot unwind, we need
+            // to replace it with `UnwindTerminate`.
+            </span><span class="kw">if let </span>TerminatorKind::UnwindResume = <span class="kw-2">&amp;</span>terminator.kind
+                &amp;&amp; !body_can_unwind
+            {
+                terminator.kind = TerminatorKind::UnwindTerminate(UnwindTerminateReason::Abi);
+            }
+
             <span class="kw">if </span>block.is_cleanup {
                 <span class="kw">continue</span>;
             }
-            <span class="kw">let </span><span class="prelude-val">Some</span>(terminator) = <span class="kw-2">&amp;</span>block.terminator <span class="kw">else </span>{ <span class="kw">continue </span>};
-            <span class="kw">let </span>span = terminator.source_info.span;
 
             <span class="kw">let </span>call_can_unwind = <span class="kw">match </span><span class="kw-2">&amp;</span>terminator.kind {
                 TerminatorKind::Call { func, .. } =&gt; {
@@ -193,14 +215,18 @@
             <span class="kw">if </span>!call_can_unwind {
                 <span class="comment">// If this function call can't unwind, then there's no need for it
                 // to have a landing pad. This means that we can remove any cleanup
-                // registered for it.
+                // registered for it (and turn it into `UnwindAction::Unreachable`).
                 </span><span class="kw">let </span>cleanup = block.terminator_mut().unwind_mut().unwrap();
                 <span class="kw-2">*</span>cleanup = UnwindAction::Unreachable;
-            } <span class="kw">else if </span>!body_can_unwind {
+            } <span class="kw">else if </span>!body_can_unwind
+                &amp;&amp; <span class="macro">matches!</span>(terminator.unwind(), <span class="prelude-val">Some</span>(UnwindAction::Continue))
+            {
                 <span class="comment">// Otherwise if this function can unwind, then if the outer function
                 // can also unwind there's nothing to do. If the outer function
-                // can't unwind, however, we need to change the landing pad for this
-                // function call to one that aborts.
+                // can't unwind, however, we need to ensure that any `UnwindAction::Continue`
+                // is replaced with terminate. For those with `UnwindAction::Cleanup`,
+                // cleanup will still happen, and terminate will happen afterwards handled by
+                // the `UnwindResume` -&gt; `UnwindTerminate` terminator replacement.
                 </span><span class="kw">let </span>cleanup = block.terminator_mut().unwind_mut().unwrap();
                 <span class="kw-2">*</span>cleanup = UnwindAction::Terminate(UnwindTerminateReason::Abi);
             }

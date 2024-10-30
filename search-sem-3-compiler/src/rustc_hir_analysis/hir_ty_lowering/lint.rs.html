@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/hir_ty_lowering/lint.rs`."><title>lint.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_analysis/hir_ty_lowering/</div>lint.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/hir_ty_lowering/lint.rs`."><title>lint.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_analysis/hir_ty_lowering/</div>lint.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -346,7 +346,7 @@
 <a href="#345" id="345">345</a>
 <a href="#346" id="346">346</a></pre></div><pre class="rust"><code><span class="kw">use </span>rustc_ast::TraitObjectSyntax;
 <span class="kw">use </span>rustc_errors::codes::<span class="kw-2">*</span>;
-<span class="kw">use </span>rustc_errors::{Diag, EmissionGuarantee, StashKey};
+<span class="kw">use </span>rustc_errors::{Diag, EmissionGuarantee, ErrorGuaranteed, StashKey, Suggestions};
 <span class="kw">use </span>rustc_hir <span class="kw">as </span>hir;
 <span class="kw">use </span>rustc_hir::def::{DefKind, Res};
 <span class="kw">use </span>rustc_lint_defs::Applicability;
@@ -361,13 +361,16 @@
     ///
     /// *Bare* trait object types are ones that aren't preceded by the keyword `dyn`.
     /// In edition 2021 and onward we emit a hard error for them.
-    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>prohibit_or_lint_bare_trait_object_ty(<span class="kw-2">&amp;</span><span class="self">self</span>, self_ty: <span class="kw-2">&amp;</span>hir::Ty&lt;<span class="lifetime">'_</span>&gt;) {
+    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>prohibit_or_lint_bare_trait_object_ty(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        self_ty: <span class="kw-2">&amp;</span>hir::Ty&lt;<span class="lifetime">'_</span>&gt;,
+    ) -&gt; <span class="prelude-ty">Option</span>&lt;ErrorGuaranteed&gt; {
         <span class="kw">let </span>tcx = <span class="self">self</span>.tcx();
 
         <span class="kw">let </span>hir::TyKind::TraitObject([poly_trait_ref, ..], <span class="kw">_</span>, TraitObjectSyntax::None) =
             self_ty.kind
         <span class="kw">else </span>{
-            <span class="kw">return</span>;
+            <span class="kw">return </span><span class="prelude-val">None</span>;
         };
 
         <span class="kw">let </span>in_path = <span class="kw">match </span>tcx.parent_hir_node(self_ty.hir_id) {
@@ -393,7 +396,7 @@
                 .ok()
                 .is_some_and(|s| s.trim_end().ends_with(<span class="string">'&lt;'</span>));
 
-        <span class="kw">let </span>is_global = poly_trait_ref.<span class="number">0</span>.trait_ref.path.is_global();
+        <span class="kw">let </span>is_global = poly_trait_ref.trait_ref.path.is_global();
 
         <span class="kw">let </span><span class="kw-2">mut </span>sugg = <span class="macro">vec!</span>[(
             self_ty.span.shrink_to_lo(),
@@ -416,33 +419,44 @@
         }
 
         <span class="kw">if </span>self_ty.span.edition().at_least_rust_2021() {
-            <span class="kw">let </span>msg = <span class="string">"trait objects must include the `dyn` keyword"</span>;
-            <span class="kw">let </span>label = <span class="string">"add `dyn` keyword before this trait"</span>;
+            <span class="kw">let </span>msg = <span class="string">"expected a type, found a trait"</span>;
+            <span class="kw">let </span>label = <span class="string">"you can add the `dyn` keyword if you want a trait object"</span>;
             <span class="kw">let </span><span class="kw-2">mut </span>diag =
                 <span class="macro">rustc_errors::struct_span_code_err!</span>(<span class="self">self</span>.dcx(), self_ty.span, E0782, <span class="string">"{}"</span>, msg);
             <span class="kw">if </span>self_ty.span.can_be_used_for_suggestions()
                 &amp;&amp; !<span class="self">self</span>.maybe_suggest_impl_trait(self_ty, <span class="kw-2">&amp;mut </span>diag)
             {
-                <span class="comment">// FIXME: Only emit this suggestion if the trait is object safe.
+                <span class="comment">// FIXME: Only emit this suggestion if the trait is dyn-compatible.
                 </span>diag.multipart_suggestion_verbose(label, sugg, Applicability::MachineApplicable);
             }
             <span class="comment">// Check if the impl trait that we are considering is an impl of a local trait.
             </span><span class="self">self</span>.maybe_suggest_blanket_trait_impl(self_ty, <span class="kw-2">&amp;mut </span>diag);
             <span class="self">self</span>.maybe_suggest_assoc_ty_bound(self_ty, <span class="kw-2">&amp;mut </span>diag);
-            diag.stash(self_ty.span, StashKey::TraitMissingMethod);
+            <span class="comment">// In case there is an associate type with the same name
+            // Add the suggestion to this error
+            </span><span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">mut </span>sugg) =
+                tcx.dcx().steal_non_err(self_ty.span, StashKey::AssociatedTypeSuggestion)
+                &amp;&amp; <span class="kw">let </span>Suggestions::Enabled(<span class="kw-2">ref mut </span>s1) = diag.suggestions
+                &amp;&amp; <span class="kw">let </span>Suggestions::Enabled(<span class="kw-2">ref mut </span>s2) = sugg.suggestions
+            {
+                s1.append(s2);
+                sugg.cancel();
+            }
+            diag.stash(self_ty.span, StashKey::TraitMissingMethod)
         } <span class="kw">else </span>{
             tcx.node_span_lint(BARE_TRAIT_OBJECTS, self_ty.hir_id, self_ty.span, |lint| {
                 lint.primary_message(<span class="string">"trait objects without an explicit `dyn` are deprecated"</span>);
                 <span class="kw">if </span>self_ty.span.can_be_used_for_suggestions() {
                     lint.multipart_suggestion_verbose(
-                        <span class="string">"if this is an object-safe trait, use `dyn`"</span>,
+                        <span class="string">"if this is a dyn-compatible trait, use `dyn`"</span>,
                         sugg,
                         Applicability::MachineApplicable,
                     );
                 }
                 <span class="self">self</span>.maybe_suggest_blanket_trait_impl(self_ty, lint);
             });
-        }
+            <span class="prelude-val">None
+        </span>}
     }
 
     <span class="doccomment">/// Make sure that we are in the condition to suggest the blanket implementation.
@@ -454,17 +468,20 @@
         <span class="kw">let </span>tcx = <span class="self">self</span>.tcx();
         <span class="kw">let </span>parent_id = tcx.hir().get_parent_item(self_ty.hir_id).def_id;
         <span class="kw">if let </span>hir::Node::Item(hir::Item {
-            kind:
-                hir::ItemKind::Impl(hir::Impl {
-                    self_ty: impl_self_ty,
-                    of_trait: <span class="prelude-val">Some</span>(of_trait_ref),
-                    generics,
-                    ..
-                }),
+            kind: hir::ItemKind::Impl(hir::Impl { self_ty: impl_self_ty, of_trait, generics, .. }),
             ..
         }) = tcx.hir_node_by_def_id(parent_id)
             &amp;&amp; self_ty.hir_id == impl_self_ty.hir_id
         {
+            <span class="kw">let </span><span class="prelude-val">Some</span>(of_trait_ref) = of_trait <span class="kw">else </span>{
+                diag.span_suggestion_verbose(
+                    impl_self_ty.span.shrink_to_hi(),
+                    <span class="string">"you might have intended to implement this trait for a given type"</span>,
+                    <span class="macro">format!</span>(<span class="string">" for /* Type */"</span>),
+                    Applicability::HasPlaceholders,
+                );
+                <span class="kw">return</span>;
+            };
             <span class="kw">if </span>!of_trait_ref.trait_def_id().is_some_and(|def_id| def_id.is_local()) {
                 <span class="kw">return</span>;
             }
@@ -517,41 +534,31 @@
         // 1. Independent functions
         // 2. Functions inside trait blocks
         // 3. Functions inside impl blocks
-        </span><span class="kw">let </span>(sig, generics, owner) = <span class="kw">match </span>tcx.hir_node_by_def_id(parent_id) {
+        </span><span class="kw">let </span>(sig, generics) = <span class="kw">match </span>tcx.hir_node_by_def_id(parent_id) {
             hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(sig, generics, <span class="kw">_</span>), .. }) =&gt; {
-                (sig, generics, <span class="prelude-val">None</span>)
+                (sig, generics)
             }
             hir::Node::TraitItem(hir::TraitItem {
                 kind: hir::TraitItemKind::Fn(sig, <span class="kw">_</span>),
                 generics,
-                owner_id,
                 ..
-            }) =&gt; (sig, generics, <span class="prelude-val">Some</span>(tcx.parent(owner_id.to_def_id()))),
+            }) =&gt; (sig, generics),
             hir::Node::ImplItem(hir::ImplItem {
                 kind: hir::ImplItemKind::Fn(sig, <span class="kw">_</span>),
                 generics,
-                owner_id,
                 ..
-            }) =&gt; (sig, generics, <span class="prelude-val">Some</span>(tcx.parent(owner_id.to_def_id()))),
+            }) =&gt; (sig, generics),
             <span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="bool-val">false</span>,
         };
         <span class="kw">let </span><span class="prelude-val">Ok</span>(trait_name) = tcx.sess.source_map().span_to_snippet(self_ty.span) <span class="kw">else </span>{
             <span class="kw">return </span><span class="bool-val">false</span>;
         };
         <span class="kw">let </span>impl_sugg = <span class="macro">vec!</span>[(self_ty.span.shrink_to_lo(), <span class="string">"impl "</span>.to_string())];
-        <span class="kw">let </span><span class="kw-2">mut </span>is_downgradable = <span class="bool-val">true</span>;
-
         <span class="comment">// Check if trait object is safe for suggesting dynamic dispatch.
-        </span><span class="kw">let </span>is_object_safe = <span class="kw">match </span>self_ty.kind {
+        </span><span class="kw">let </span>is_dyn_compatible = <span class="kw">match </span>self_ty.kind {
             hir::TyKind::TraitObject(objects, ..) =&gt; {
-                objects.iter().all(|(o, <span class="kw">_</span>)| <span class="kw">match </span>o.trait_ref.path.res {
-                    Res::Def(DefKind::Trait, id) =&gt; {
-                        <span class="kw">if </span><span class="prelude-val">Some</span>(id) == owner {
-                            <span class="comment">// For recursive traits, don't downgrade the error. (#119652)
-                            </span>is_downgradable = <span class="bool-val">false</span>;
-                        }
-                        tcx.is_object_safe(id)
-                    }
+                objects.iter().all(|o| <span class="kw">match </span>o.trait_ref.path.res {
+                    Res::Def(DefKind::Trait, id) =&gt; tcx.is_dyn_compatible(id),
                     <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
                 })
             }
@@ -567,8 +574,8 @@
         </span><span class="kw">if let </span>hir::FnRetTy::Return(ty) = sig.decl.output
             &amp;&amp; ty.peel_refs().hir_id == self_ty.hir_id
         {
-            <span class="kw">let </span>pre = <span class="kw">if </span>!is_object_safe {
-                <span class="macro">format!</span>(<span class="string">"`{trait_name}` is not object safe, "</span>)
+            <span class="kw">let </span>pre = <span class="kw">if </span>!is_dyn_compatible {
+                <span class="macro">format!</span>(<span class="string">"`{trait_name}` is dyn-incompatible, "</span>)
             } <span class="kw">else </span>{
                 String::new()
             };
@@ -580,7 +587,7 @@
             diag.multipart_suggestion_verbose(msg, impl_sugg, Applicability::MachineApplicable);
 
             <span class="comment">// Suggest `Box&lt;dyn Trait&gt;` for return type
-            </span><span class="kw">if </span>is_object_safe {
+            </span><span class="kw">if </span>is_dyn_compatible {
                 <span class="comment">// If the return type is `&amp;Trait`, we don't want
                 // the ampersand to be displayed in the `Box&lt;dyn Trait&gt;`
                 // suggestion.
@@ -598,9 +605,6 @@
                     suggestion,
                     Applicability::MachineApplicable,
                 );
-            } <span class="kw">else if </span>is_downgradable {
-                <span class="comment">// We'll emit the object safety error already, with a structured suggestion.
-                </span>diag.downgrade_to_delayed_bug();
             }
             <span class="kw">return </span><span class="bool-val">true</span>;
         }
@@ -622,12 +626,8 @@
                 impl_sugg,
                 Applicability::MachineApplicable,
             );
-            <span class="kw">if </span>!is_object_safe {
-                diag.note(<span class="macro">format!</span>(<span class="string">"`{trait_name}` it is not object safe, so it can't be `dyn`"</span>));
-                <span class="kw">if </span>is_downgradable {
-                    <span class="comment">// We'll emit the object safety error already, with a structured suggestion.
-                    </span>diag.downgrade_to_delayed_bug();
-                }
+            <span class="kw">if </span>!is_dyn_compatible {
+                diag.note(<span class="macro">format!</span>(<span class="string">"`{trait_name}` it is dyn-incompatible, so it can't be `dyn`"</span>));
             } <span class="kw">else </span>{
                 <span class="comment">// No ampersand in suggestion if it's borrowed already
                 </span><span class="kw">let </span>(dyn_str, paren_dyn_str) =

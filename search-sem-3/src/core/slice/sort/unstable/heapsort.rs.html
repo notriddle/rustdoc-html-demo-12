@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `core/src/slice/sort/unstable/heapsort.rs`."><title>heapsort.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="core" data-themes="" data-resource-suffix="1.83.0" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../../../src-files1.83.0.js"></script><script defer src="../../../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">core/slice/sort/unstable/</div>heapsort.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `core/src/slice/sort/unstable/heapsort.rs`."><title>heapsort.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="core" data-themes="" data-resource-suffix="1.84.0" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../../../static.files/storage-59e33391.js"></script><script defer src="../../../../../static.files/src-script-56102188.js"></script><script defer src="../../../../../src-files1.84.0.js"></script><script defer src="../../../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">core/slice/sort/unstable/</div>heapsort.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -75,51 +75,49 @@
 <a href="#74" id="74">74</a>
 <a href="#75" id="75">75</a>
 <a href="#76" id="76">76</a>
-<a href="#77" id="77">77</a>
-<a href="#78" id="78">78</a>
-<a href="#79" id="79">79</a></pre></div><pre class="rust"><code><span class="doccomment">//! This module contains a branchless heapsort as fallback for unstable quicksort.
+<a href="#77" id="77">77</a></pre></div><pre class="rust"><code><span class="doccomment">//! This module contains a branchless heapsort as fallback for unstable quicksort.
 
-</span><span class="kw">use crate</span>::{intrinsics, ptr};
+</span><span class="kw">use crate</span>::{cmp, intrinsics, ptr};
 
 <span class="doccomment">/// Sorts `v` using heapsort, which guarantees *O*(*n* \* log(*n*)) worst-case.
 ///
 /// Never inline this, it sits the main hot-loop in `recurse` and is meant as unlikely algorithmic
 /// fallback.
-///
-/// SAFETY: The caller has to guarantee that `v.len()` &gt;= 2.
 </span><span class="attr">#[inline(never)]
-</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">unsafe fn </span>heapsort&lt;T, F&gt;(v: <span class="kw-2">&amp;mut </span>[T], is_less: <span class="kw-2">&amp;mut </span>F)
+</span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>heapsort&lt;T, F&gt;(v: <span class="kw-2">&amp;mut </span>[T], is_less: <span class="kw-2">&amp;mut </span>F)
 <span class="kw">where
     </span>F: FnMut(<span class="kw-2">&amp;</span>T, <span class="kw-2">&amp;</span>T) -&gt; bool,
 {
-    <span class="comment">// SAFETY: See function safety.
-    </span><span class="kw">unsafe </span>{
-        intrinsics::assume(v.len() &gt;= <span class="number">2</span>);
+    <span class="kw">let </span>len = v.len();
 
-        <span class="comment">// Build the heap in linear time.
-        </span><span class="kw">for </span>i <span class="kw">in </span>(<span class="number">0</span>..v.len() / <span class="number">2</span>).rev() {
-            sift_down(v, i, is_less);
-        }
-
-        <span class="comment">// Pop maximal elements from the heap.
-        </span><span class="kw">for </span>i <span class="kw">in </span>(<span class="number">1</span>..v.len()).rev() {
+    <span class="kw">for </span>i <span class="kw">in </span>(<span class="number">0</span>..len + len / <span class="number">2</span>).rev() {
+        <span class="kw">let </span>sift_idx = <span class="kw">if </span>i &gt;= len {
+            i - len
+        } <span class="kw">else </span>{
             v.swap(<span class="number">0</span>, i);
-            sift_down(<span class="kw-2">&amp;mut </span>v[..i], <span class="number">0</span>, is_less);
+            <span class="number">0
+        </span>};
+
+        <span class="comment">// SAFETY: The above calculation ensures that `sift_idx` is either 0 or
+        // `(len..(len + (len / 2))) - len`, which simplifies to `0..(len / 2)`.
+        // This guarantees the required `sift_idx &lt;= len`.
+        </span><span class="kw">unsafe </span>{
+            sift_down(<span class="kw-2">&amp;mut </span>v[..cmp::min(i, len)], sift_idx, is_less);
         }
     }
 }
 
 <span class="comment">// This binary heap respects the invariant `parent &gt;= child`.
 //
-// SAFETY: The caller has to guarantee that node &lt; `v.len()`.
-</span><span class="attr">#[inline(never)]
+// SAFETY: The caller has to guarantee that `node &lt;= v.len()`.
+</span><span class="attr">#[inline(always)]
 </span><span class="kw">unsafe fn </span>sift_down&lt;T, F&gt;(v: <span class="kw-2">&amp;mut </span>[T], <span class="kw-2">mut </span>node: usize, is_less: <span class="kw-2">&amp;mut </span>F)
 <span class="kw">where
     </span>F: FnMut(<span class="kw-2">&amp;</span>T, <span class="kw-2">&amp;</span>T) -&gt; bool,
 {
     <span class="comment">// SAFETY: See function safety.
     </span><span class="kw">unsafe </span>{
-        intrinsics::assume(node &lt; v.len());
+        intrinsics::assume(node &lt;= v.len());
     }
 
     <span class="kw">let </span>len = v.len();
@@ -148,9 +146,7 @@
                 <span class="kw">break</span>;
             }
 
-            <span class="comment">// Swap `node` with the greater child, move one step down, and continue sifting. This
-            // could be ptr::swap_nonoverlapping but that adds a significant amount of binary-size.
-            </span>ptr::swap(v_base.add(node), v_base.add(child));
+            ptr::swap_nonoverlapping(v_base.add(node), v_base.add(child), <span class="number">1</span>);
         }
 
         node = child;

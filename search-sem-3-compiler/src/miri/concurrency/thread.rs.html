@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/concurrency/thread.rs`."><title>thread.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-d33be337707cc2ad.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0-dev" data-channel="nightly" data-search-js="search-1654b55072aa070c.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-54bc299d2a5e4e43.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/concurrency/</div>thread.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/concurrency/thread.rs`."><title>thread.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-42caa33d.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.84.0-dev" data-channel="nightly" data-search-js="search-aa3cdf56.js" data-settings-js="settings-0f613d39.js" ><script src="../../../static.files/storage-59e33391.js"></script><script defer src="../../../static.files/src-script-56102188.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-5f194d8c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-893ab5e7.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/concurrency/</div>thread.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
 <a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
@@ -1217,8 +1217,7 @@
 <a href="#1216" id="1216">1216</a>
 <a href="#1217" id="1217">1217</a>
 <a href="#1218" id="1218">1218</a>
-<a href="#1219" id="1219">1219</a>
-<a href="#1220" id="1220">1220</a></pre></div><pre class="rust"><code><span class="doccomment">//! Implements threads.
+<a href="#1219" id="1219">1219</a></pre></div><pre class="rust"><code><span class="doccomment">//! Implements threads.
 
 </span><span class="kw">use </span>std::mem;
 <span class="kw">use </span>std::num::TryFromIntError;
@@ -1227,7 +1226,6 @@
 <span class="kw">use </span>std::time::{Duration, SystemTime};
 
 <span class="kw">use </span>either::Either;
-
 <span class="kw">use </span>rustc_const_eval::CTRL_C_RECEIVED;
 <span class="kw">use </span>rustc_data_structures::fx::FxHashMap;
 <span class="kw">use </span>rustc_hir::def_id::DefId;
@@ -1271,7 +1269,7 @@
     </span><span class="kw">fn </span>timeout(<span class="self">self</span>: Box&lt;<span class="self">Self</span>&gt;, _ecx: <span class="kw-2">&amp;mut </span>InterpCx&lt;<span class="lifetime">'tcx</span>, MiriMachine&lt;<span class="lifetime">'tcx</span>&gt;&gt;)
     -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt;;
 }
-<span class="kw">type </span>DynUnblockCallback&lt;<span class="lifetime">'tcx</span>&gt; = Box&lt;<span class="kw">dyn </span>UnblockCallback&lt;<span class="lifetime">'tcx</span>&gt; + <span class="lifetime">'tcx</span>&gt;;
+<span class="kw">pub type </span>DynUnblockCallback&lt;<span class="lifetime">'tcx</span>&gt; = Box&lt;<span class="kw">dyn </span>UnblockCallback&lt;<span class="lifetime">'tcx</span>&gt; + <span class="lifetime">'tcx</span>&gt;;
 
 <span class="attr">#[macro_export]
 </span><span class="macro">macro_rules!</span> callback {
@@ -1280,7 +1278,7 @@
         @unblock = |<span class="macro-nonterminal">$this</span>:ident| <span class="macro-nonterminal">$unblock</span>:block
     ) =&gt; {
         <span class="macro">callback!</span>(
-            @capture&lt;<span class="macro-nonterminal">$tcx</span>, $(<span class="macro-nonterminal">$lft</span>),<span class="kw-2">*</span>&gt; { $(<span class="macro-nonterminal">$name</span>: <span class="macro-nonterminal">$</span><span class="kw">type</span>),+ }
+            @capture&lt;<span class="macro-nonterminal">$tcx</span>, $(<span class="macro-nonterminal">$lft</span>),<span class="kw-2">*</span>&gt; { $(<span class="macro-nonterminal">$name</span>: <span class="macro-nonterminal">$</span><span class="kw">type</span>),* }
             @<span class="macro-nonterminal">unblock </span>= |<span class="macro-nonterminal">$this</span>| <span class="macro-nonterminal">$unblock
             </span>@timeout = |_this| {
                 <span class="macro">unreachable!</span>(
@@ -1322,7 +1320,7 @@
             </span>}
         }
 
-        Callback { $(<span class="macro-nonterminal">$name</span>,)* _phantom: std::marker::PhantomData }
+        Box::new(Callback { $(<span class="macro-nonterminal">$name</span>,)* _phantom: std::marker::PhantomData })
     }}
 }
 
@@ -1843,7 +1841,7 @@
         }
 
         <span class="self">self</span>.threads[id].join_status = ThreadJoinStatus::Detached;
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="doccomment">/// Mark that the active thread tries to join the thread with `joined_thread_id`.
@@ -1878,7 +1876,7 @@
                         <span class="kw">if let </span><span class="prelude-val">Some</span>(data_race) = <span class="kw-2">&amp;mut </span>this.machine.data_race {
                             data_race.thread_joined(<span class="kw-2">&amp;</span>this.machine.threads, joined_thread_id);
                         }
-                        <span class="prelude-val">Ok</span>(())
+                        interp_ok(())
                     }
                 ),
             );
@@ -1888,7 +1886,7 @@
                 data_race.thread_joined(<span class="self">self</span>, joined_thread_id);
             }
         }
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="doccomment">/// Mark that the active thread tries to exclusively join the thread with `joined_thread_id`.
@@ -1936,11 +1934,11 @@
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         reason: BlockReason,
         timeout: <span class="prelude-ty">Option</span>&lt;Timeout&gt;,
-        callback: <span class="kw">impl </span>UnblockCallback&lt;<span class="lifetime">'tcx</span>&gt; + <span class="lifetime">'tcx</span>,
+        callback: DynUnblockCallback&lt;<span class="lifetime">'tcx</span>&gt;,
     ) {
         <span class="kw">let </span>state = <span class="kw-2">&amp;mut </span><span class="self">self</span>.threads[<span class="self">self</span>.active_thread].state;
         <span class="macro">assert!</span>(state.is_enabled());
-        <span class="kw-2">*</span>state = ThreadState::Blocked { reason, timeout, callback: Box::new(callback) }
+        <span class="kw-2">*</span>state = ThreadState::Blocked { reason, timeout, callback }
     }
 
     <span class="doccomment">/// Change the active thread to some enabled thread.
@@ -1975,7 +1973,7 @@
         <span class="comment">// This thread and the program can keep going.
         </span><span class="kw">if </span><span class="self">self</span>.threads[<span class="self">self</span>.active_thread].state.is_enabled() &amp;&amp; !<span class="self">self</span>.yield_active_thread {
             <span class="comment">// The currently active thread is still enabled, just continue with it.
-            </span><span class="kw">return </span><span class="prelude-val">Ok</span>(SchedulingAction::ExecuteStep);
+            </span><span class="kw">return </span>interp_ok(SchedulingAction::ExecuteStep);
         }
         <span class="comment">// The active thread yielded or got terminated. Let's see if there are any timeouts to take
         // care of. We do this *before* running any other thread, to ensure that timeouts "in the
@@ -1985,7 +1983,7 @@
         // &lt;https://pubs.opengroup.org/onlinepubs/9699919799/functions/pthread_cond_timedwait.html&gt;
         </span><span class="kw">let </span>potential_sleep_time = <span class="self">self</span>.next_callback_wait_time(clock);
         <span class="kw">if </span>potential_sleep_time == <span class="prelude-val">Some</span>(Duration::ZERO) {
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(SchedulingAction::ExecuteTimeoutCallback);
+            <span class="kw">return </span>interp_ok(SchedulingAction::ExecuteTimeoutCallback);
         }
         <span class="comment">// No callbacks immediately scheduled, pick a regular thread to execute.
         // The active thread blocked or yielded. So we go search for another enabled thread.
@@ -2014,7 +2012,7 @@
         }
         <span class="self">self</span>.yield_active_thread = <span class="bool-val">false</span>;
         <span class="kw">if </span><span class="self">self</span>.threads[<span class="self">self</span>.active_thread].state.is_enabled() {
-            <span class="kw">return </span><span class="prelude-val">Ok</span>(SchedulingAction::ExecuteStep);
+            <span class="kw">return </span>interp_ok(SchedulingAction::ExecuteStep);
         }
         <span class="comment">// We have not found a thread to execute.
         </span><span class="kw">if </span><span class="self">self</span>.threads.iter().all(|thread| thread.state.is_terminated()) {
@@ -2023,7 +2021,7 @@
             <span class="comment">// All threads are currently blocked, but we have unexecuted
             // timeout_callbacks, which may unblock some of the threads. Hence,
             // sleep until the first callback.
-            </span><span class="prelude-val">Ok</span>(SchedulingAction::Sleep(sleep_time))
+            </span>interp_ok(SchedulingAction::Sleep(sleep_time))
         } <span class="kw">else </span>{
             <span class="macro">throw_machine_stop!</span>(TerminationInfo::Deadlock);
         }
@@ -2069,7 +2067,7 @@
         // https://github.com/rust-lang/miri/issues/1763). In this case,
         // just do nothing, which effectively just returns to the
         // scheduler.
-        </span><span class="kw">return </span><span class="prelude-val">Ok</span>(());
+        </span>interp_ok(())
     }
 
     <span class="attr">#[inline]
@@ -2082,7 +2080,7 @@
             .expect(<span class="string">"`on_stack_empty` not set up, or already running"</span>);
         <span class="kw">let </span>res = callback(this)<span class="question-mark">?</span>;
         this.active_thread_mut().on_stack_empty = <span class="prelude-val">Some</span>(callback);
-        <span class="prelude-val">Ok</span>(res)
+        interp_ok(res)
     }
 }
 
@@ -2100,7 +2098,7 @@
         <span class="kw">if let </span><span class="prelude-val">Some</span>(old_alloc) = this.machine.threads.get_thread_local_alloc_id(def_id) {
             <span class="comment">// We already have a thread-specific allocation id for this
             // thread-local static.
-            </span><span class="prelude-val">Ok</span>(old_alloc)
+            </span>interp_ok(old_alloc)
         } <span class="kw">else </span>{
             <span class="comment">// We need to allocate a thread-specific allocation id for this
             // thread-local static.
@@ -2113,7 +2111,7 @@
             </span><span class="kw">let </span><span class="kw-2">mut </span>alloc = alloc.inner().adjust_from_tcx(
                 <span class="kw-2">&amp;</span>this.tcx,
                 |bytes, align| {
-                    <span class="prelude-val">Ok</span>(MiriAllocBytes::from_bytes(std::borrow::Cow::Borrowed(bytes), align))
+                    interp_ok(MiriAllocBytes::from_bytes(std::borrow::Cow::Borrowed(bytes), align))
                 },
                 |ptr| this.global_root_pointer(ptr),
             )<span class="question-mark">?</span>;
@@ -2122,7 +2120,7 @@
             <span class="comment">// Create a fresh allocation with this content.
             </span><span class="kw">let </span>ptr = this.insert_allocation(alloc, MiriMemoryKind::Tls.into())<span class="question-mark">?</span>;
             this.machine.threads.set_thread_local_alloc(def_id, ptr);
-            <span class="prelude-val">Ok</span>(ptr)
+            interp_ok(ptr)
         }
     }
 
@@ -2185,7 +2183,7 @@
         <span class="comment">// Restore the old active thread frame.
         </span>this.machine.threads.set_active_thread_id(old_thread_id);
 
-        <span class="prelude-val">Ok</span>(new_thread_id)
+        interp_ok(new_thread_id)
     }
 
     <span class="doccomment">/// Handles thread termination of the active thread: wakes up threads joining on this one,
@@ -2243,7 +2241,7 @@
             this.unblock_thread(thread, unblock_reason)<span class="question-mark">?</span>;
         }
 
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="doccomment">/// Block the current thread, with an optional timeout.
@@ -2253,7 +2251,7 @@
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         reason: BlockReason,
         timeout: <span class="prelude-ty">Option</span>&lt;(TimeoutClock, TimeoutAnchor, Duration)&gt;,
-        callback: <span class="kw">impl </span>UnblockCallback&lt;<span class="lifetime">'tcx</span>&gt; + <span class="lifetime">'tcx</span>,
+        callback: DynUnblockCallback&lt;<span class="lifetime">'tcx</span>&gt;,
     ) {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
         <span class="kw">let </span>timeout = timeout.map(|(clock, anchor, duration)| {
@@ -2299,7 +2297,7 @@
         </span><span class="kw">let </span>old_thread = this.machine.threads.set_active_thread_id(thread);
         callback.unblock(this)<span class="question-mark">?</span>;
         this.machine.threads.set_active_thread_id(old_thread);
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="attr">#[inline]
@@ -2316,7 +2314,7 @@
     </span><span class="kw">fn </span>join_thread(<span class="kw-2">&amp;mut </span><span class="self">self</span>, joined_thread_id: ThreadId) -&gt; InterpResult&lt;<span class="lifetime">'tcx</span>&gt; {
         <span class="kw">let </span>this = <span class="self">self</span>.eval_context_mut();
         this.machine.threads.join_thread(joined_thread_id, this.machine.data_race.as_mut())<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="attr">#[inline]
@@ -2325,7 +2323,7 @@
         this.machine
             .threads
             .join_thread_exclusive(joined_thread_id, this.machine.data_race.as_mut())<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(())
+        interp_ok(())
     }
 
     <span class="attr">#[inline]

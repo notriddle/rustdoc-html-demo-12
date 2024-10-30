@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["canonicalizer","coherence","delegate","relate","resolve","solve"]};
+window.SIDEBAR_ITEMS = {"mod":["canonicalizer","coherence","delegate","resolve","solve"]};
