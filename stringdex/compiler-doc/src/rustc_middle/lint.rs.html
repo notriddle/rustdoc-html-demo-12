@@ -1,0 +1,434 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/lint.rs`."><title>lint.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_middle/</div>lint.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/cmp/index.html">std::cmp</a>;
+<a href=#2 id=2 data-nosnippet>2</a>
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span><a href="../../rustc_data_structures/fx/type.FxIndexMap.html">rustc_data_structures::fx::FxIndexMap</a>;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><a href="../../rustc_data_structures/sorted_map/struct.SortedMap.html">rustc_data_structures::sorted_map::SortedMap</a>;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>rustc_errors::{<a href="../../rustc_errors/diagnostic/struct.Diag.html">Diag</a>, MultiSpan};
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>rustc_hir::{<a href="../../rustc_hir/hir_id/struct.HirId.html">HirId</a>, <a href="../../rustc_hir/hir_id/struct.ItemLocalId.html">ItemLocalId</a>};
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>rustc_macros::{<a href="../../rustc_macros/derive.Decodable.html">Decodable</a>, <a href="../../rustc_macros/derive.Encodable.html">Encodable</a>, <a href="../../rustc_macros/derive.HashStable.html">HashStable</a>};
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="../../rustc_session/session/struct.Session.html">rustc_session::Session</a>;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span>rustc_session::lint::builtin::{<span class="self">self</span>, FORBIDDEN_LINT_GROUPS};
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>rustc_session::lint::{FutureIncompatibilityReason, Level, Lint, LintExpectationId, LintId};
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>rustc_span::{<a href="../../rustc_span/span_encoding/constant.DUMMY_SP.html">DUMMY_SP</a>, <a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>, <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>, <a href="../../rustc_span/symbol/kw/index.html">kw</a>};
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span><a href="https://docs.rs/tracing-attributes/0.1.30/tracing_attributes/attr.instrument.html">tracing::instrument</a>;
+<a href=#13 id=13 data-nosnippet>13</a>
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span><a href="ty/context.rs.html#1419-1421"><span class="kw">crate</span>::ty::TyCtxt</a>;
+<a href=#15 id=15 data-nosnippet>15</a>
+<a href=#16 id=16 data-nosnippet>16</a><span class="doccomment">/// How a lint level was set.
+<a href=#17 id=17 data-nosnippet>17</a></span><span class="attr">#[derive(Clone, Copy, PartialEq, Eq, Encodable, Decodable, HashStable, Debug)]
+<a href=#18 id=18 data-nosnippet>18</a></span><span class="kw">pub enum </span><a href="../../rustc_middle/lint/enum.LintLevelSource.html">LintLevelSource</a> {
+<a href=#19 id=19 data-nosnippet>19</a>    <span class="doccomment">/// Lint is at the default level as declared in rustc.
+<a href=#20 id=20 data-nosnippet>20</a>    </span>Default,
+<a href=#21 id=21 data-nosnippet>21</a>
+<a href=#22 id=22 data-nosnippet>22</a>    <span class="doccomment">/// Lint level was set by an attribute.
+<a href=#23 id=23 data-nosnippet>23</a>    </span>Node {
+<a href=#24 id=24 data-nosnippet>24</a>        name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>,
+<a href=#25 id=25 data-nosnippet>25</a>        span: <a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#26 id=26 data-nosnippet>26</a>        <span class="doccomment">/// RFC 2383 reason
+<a href=#27 id=27 data-nosnippet>27</a>        </span>reason: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>&gt;,
+<a href=#28 id=28 data-nosnippet>28</a>    },
+<a href=#29 id=29 data-nosnippet>29</a>
+<a href=#30 id=30 data-nosnippet>30</a>    <span class="doccomment">/// Lint level was set by a command-line flag.
+<a href=#31 id=31 data-nosnippet>31</a>    /// The provided `Level` is the level specified on the command line.
+<a href=#32 id=32 data-nosnippet>32</a>    /// (The actual level may be lower due to `--cap-lints`.)
+<a href=#33 id=33 data-nosnippet>33</a>    </span>CommandLine(<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>, Level),
+<a href=#34 id=34 data-nosnippet>34</a>}
+<a href=#35 id=35 data-nosnippet>35</a>
+<a href=#36 id=36 data-nosnippet>36</a><span class="kw">impl </span><a href="#18-34">LintLevelSource</a> {
+<a href=#37 id=37 data-nosnippet>37</a>    <span class="kw">pub fn </span>name(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a> {
+<a href=#38 id=38 data-nosnippet>38</a>        <span class="kw">match </span><span class="kw-2">*</span><span class="self"><a href="#37">self</a> </span>{
+<a href=#39 id=39 data-nosnippet>39</a>            <a href="#20">LintLevelSource::Default</a> =&gt; <a href="../../rustc_span/symbol/kw_generated/constant.Default.html">kw::Default</a>,
+<a href=#40 id=40 data-nosnippet>40</a>            <a href="#23-28">LintLevelSource::Node</a> { name, .. } =&gt; <a href="#40">name</a>,
+<a href=#41 id=41 data-nosnippet>41</a>            <a href="#33">LintLevelSource::CommandLine</a>(name, <span class="kw">_</span>) =&gt; <a href="#41">name</a>,
+<a href=#42 id=42 data-nosnippet>42</a>        }
+<a href=#43 id=43 data-nosnippet>43</a>    }
+<a href=#44 id=44 data-nosnippet>44</a>
+<a href=#45 id=45 data-nosnippet>45</a>    <span class="kw">pub fn </span>span(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="../../rustc_span/span_encoding/struct.Span.html">Span</a> {
+<a href=#46 id=46 data-nosnippet>46</a>        <span class="kw">match </span><span class="kw-2">*</span><span class="self"><a href="#45">self</a> </span>{
+<a href=#47 id=47 data-nosnippet>47</a>            <a href="#20">LintLevelSource::Default</a> =&gt; <a href="../../rustc_span/span_encoding/constant.DUMMY_SP.html">DUMMY_SP</a>,
+<a href=#48 id=48 data-nosnippet>48</a>            <a href="#23-28">LintLevelSource::Node</a> { span, .. } =&gt; <a href="#48">span</a>,
+<a href=#49 id=49 data-nosnippet>49</a>            <a href="#33">LintLevelSource::CommandLine</a>(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; <a href="../../rustc_span/span_encoding/constant.DUMMY_SP.html">DUMMY_SP</a>,
+<a href=#50 id=50 data-nosnippet>50</a>        }
+<a href=#51 id=51 data-nosnippet>51</a>    }
+<a href=#52 id=52 data-nosnippet>52</a>}
+<a href=#53 id=53 data-nosnippet>53</a>
+<a href=#54 id=54 data-nosnippet>54</a><span class="doccomment">/// Convenience helper for moving things around together that frequently are paired
+<a href=#55 id=55 data-nosnippet>55</a></span><span class="attr">#[derive(Copy, Clone, Debug, HashStable, Encodable, Decodable)]
+<a href=#56 id=56 data-nosnippet>56</a></span><span class="kw">pub struct </span><a href="../../rustc_middle/lint/struct.LevelAndSource.html">LevelAndSource</a> {
+<a href=#57 id=57 data-nosnippet>57</a>    <span class="kw">pub </span>level: Level,
+<a href=#58 id=58 data-nosnippet>58</a>    <span class="kw">pub </span>lint_id: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;LintExpectationId&gt;,
+<a href=#59 id=59 data-nosnippet>59</a>    <span class="kw">pub </span>src: <a href="#18-34">LintLevelSource</a>,
+<a href=#60 id=60 data-nosnippet>60</a>}
+<a href=#61 id=61 data-nosnippet>61</a>
+<a href=#62 id=62 data-nosnippet>62</a><span class="doccomment">/// Return type for the `shallow_lint_levels_on` query.
+<a href=#63 id=63 data-nosnippet>63</a>///
+<a href=#64 id=64 data-nosnippet>64</a>/// This map represents the set of allowed lints and allowance levels given
+<a href=#65 id=65 data-nosnippet>65</a>/// by the attributes for *a single HirId*.
+<a href=#66 id=66 data-nosnippet>66</a></span><span class="attr">#[derive(Default, Debug, HashStable)]
+<a href=#67 id=67 data-nosnippet>67</a></span><span class="kw">pub struct </span><a href="../../rustc_middle/lint/struct.ShallowLintLevelMap.html">ShallowLintLevelMap</a> {
+<a href=#68 id=68 data-nosnippet>68</a>    <span class="kw">pub </span>expectations: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;(LintExpectationId, <a href="#186-200">LintExpectation</a>)&gt;,
+<a href=#69 id=69 data-nosnippet>69</a>    <span class="kw">pub </span>specs: <a href="../../rustc_data_structures/sorted_map/struct.SortedMap.html">SortedMap</a>&lt;<a href="../../rustc_hir/hir_id/struct.ItemLocalId.html">ItemLocalId</a>, <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;LintId, <a href="#56-60">LevelAndSource</a>&gt;&gt;,
+<a href=#70 id=70 data-nosnippet>70</a>}
+<a href=#71 id=71 data-nosnippet>71</a>
+<a href=#72 id=72 data-nosnippet>72</a><span class="doccomment">/// From an initial level and source, verify the effect of special annotations:
+<a href=#73 id=73 data-nosnippet>73</a>/// `warnings` lint level and lint caps.
+<a href=#74 id=74 data-nosnippet>74</a>///
+<a href=#75 id=75 data-nosnippet>75</a>/// The return of this function is suitable for diagnostics.
+<a href=#76 id=76 data-nosnippet>76</a></span><span class="kw">pub fn </span><a href="../../rustc_middle/lint/fn.reveal_actual_level.html">reveal_actual_level</a>(
+<a href=#77 id=77 data-nosnippet>77</a>    level: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;(Level, <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;LintExpectationId&gt;)&gt;,
+<a href=#78 id=78 data-nosnippet>78</a>    src: <span class="kw-2">&amp;mut </span><a href="#18-34">LintLevelSource</a>,
+<a href=#79 id=79 data-nosnippet>79</a>    sess: <span class="kw-2">&amp;</span><a href="../../rustc_session/session/struct.Session.html">Session</a>,
+<a href=#80 id=80 data-nosnippet>80</a>    lint: LintId,
+<a href=#81 id=81 data-nosnippet>81</a>    probe_for_lint_level: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>(
+<a href=#82 id=82 data-nosnippet>82</a>        LintId,
+<a href=#83 id=83 data-nosnippet>83</a>    )
+<a href=#84 id=84 data-nosnippet>84</a>        -&gt; (<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;(Level, <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;LintExpectationId&gt;)&gt;, <a href="#18-34">LintLevelSource</a>),
+<a href=#85 id=85 data-nosnippet>85</a>) -&gt; (Level, <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;LintExpectationId&gt;) {
+<a href=#86 id=86 data-nosnippet>86</a>    <span class="comment">// If `level` is none then we actually assume the default level for this lint.
+<a href=#87 id=87 data-nosnippet>87</a>    </span><span class="kw">let </span>(<span class="kw-2">mut </span>level, <span class="kw-2">mut </span>lint_id) =
+<a href=#88 id=88 data-nosnippet>88</a>        <a href="#77">level</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or_else">unwrap_or_else</a>(|| (<a href="#80">lint</a>.lint.default_level(<a href="#79">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.edition">edition</a>()), <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>));
+<a href=#89 id=89 data-nosnippet>89</a>
+<a href=#90 id=90 data-nosnippet>90</a>    <span class="comment">// If we're about to issue a warning, check at the last minute for any
+<a href=#91 id=91 data-nosnippet>91</a>    // directives against the warnings "lint". If, for example, there's an
+<a href=#92 id=92 data-nosnippet>92</a>    // `allow(warnings)` in scope then we want to respect that instead.
+<a href=#93 id=93 data-nosnippet>93</a>    //
+<a href=#94 id=94 data-nosnippet>94</a>    // We exempt `FORBIDDEN_LINT_GROUPS` from this because it specifically
+<a href=#95 id=95 data-nosnippet>95</a>    // triggers in cases (like #80988) where you have `forbid(warnings)`,
+<a href=#96 id=96 data-nosnippet>96</a>    // and so if we turned that into an error, it'd defeat the purpose of the
+<a href=#97 id=97 data-nosnippet>97</a>    // future compatibility warning.
+<a href=#98 id=98 data-nosnippet>98</a>    </span><span class="kw">if </span><a href="#87">level</a> == Level::Warn &amp;&amp; <a href="#80">lint</a> != LintId::of(FORBIDDEN_LINT_GROUPS) {
+<a href=#99 id=99 data-nosnippet>99</a>        <span class="kw">let </span>(warnings_level, warnings_src) = <a href="#81">probe_for_lint_level</a>(LintId::of(builtin::WARNINGS));
+<a href=#100 id=100 data-nosnippet>100</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>((configured_warning_level, configured_lint_id)) = <a href="#99">warnings_level</a> {
+<a href=#101 id=101 data-nosnippet>101</a>            <span class="kw">if </span><a href="#100">configured_warning_level</a> != Level::Warn {
+<a href=#102 id=102 data-nosnippet>102</a>                <a href="#87">level</a> = <a href="#100">configured_warning_level</a>;
+<a href=#103 id=103 data-nosnippet>103</a>                <a href="#87">lint_id</a> = <a href="#100">configured_lint_id</a>;
+<a href=#104 id=104 data-nosnippet>104</a>                <span class="kw-2">*</span><a href="#78">src</a> = <a href="#99">warnings_src</a>;
+<a href=#105 id=105 data-nosnippet>105</a>            }
+<a href=#106 id=106 data-nosnippet>106</a>        }
+<a href=#107 id=107 data-nosnippet>107</a>    }
+<a href=#108 id=108 data-nosnippet>108</a>
+<a href=#109 id=109 data-nosnippet>109</a>    <span class="comment">// Ensure that we never exceed the `--cap-lints` argument unless the source is a --force-warn
+<a href=#110 id=110 data-nosnippet>110</a>    </span><a href="#87">level</a> = <span class="kw">if let </span><a href="#33">LintLevelSource::CommandLine</a>(<span class="kw">_</span>, Level::ForceWarn) = <a href="#78">src</a> {
+<a href=#111 id=111 data-nosnippet>111</a>        <a href="#87">level</a>
+<a href=#112 id=112 data-nosnippet>112</a>    } <span class="kw">else </span>{
+<a href=#113 id=113 data-nosnippet>113</a>        <a href="https://doc.rust-lang.org/nightly/core/cmp/fn.min.html">cmp::min</a>(<a href="#87">level</a>, <a href="#79">sess</a>.opts.lint_cap.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or">unwrap_or</a>(Level::Forbid))
+<a href=#114 id=114 data-nosnippet>114</a>    };
+<a href=#115 id=115 data-nosnippet>115</a>
+<a href=#116 id=116 data-nosnippet>116</a>    <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(driver_level) = <a href="#79">sess</a>.driver_lint_caps.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#80">lint</a>) {
+<a href=#117 id=117 data-nosnippet>117</a>        <span class="comment">// Ensure that we never exceed driver level.
+<a href=#118 id=118 data-nosnippet>118</a>        </span><a href="#87">level</a> = <a href="https://doc.rust-lang.org/nightly/core/cmp/fn.min.html">cmp::min</a>(<span class="kw-2">*</span><a href="#116">driver_level</a>, <a href="#87">level</a>);
+<a href=#119 id=119 data-nosnippet>119</a>    }
+<a href=#120 id=120 data-nosnippet>120</a>
+<a href=#121 id=121 data-nosnippet>121</a>    (<a href="#87">level</a>, <a href="#87">lint_id</a>)
+<a href=#122 id=122 data-nosnippet>122</a>}
+<a href=#123 id=123 data-nosnippet>123</a>
+<a href=#124 id=124 data-nosnippet>124</a><span class="kw">impl </span><a href="#67-70">ShallowLintLevelMap</a> {
+<a href=#125 id=125 data-nosnippet>125</a>    <span class="doccomment">/// Perform a deep probe in the HIR tree looking for the actual level for the lint.
+<a href=#126 id=126 data-nosnippet>126</a>    /// This lint level is not usable for diagnostics, it needs to be corrected by
+<a href=#127 id=127 data-nosnippet>127</a>    /// `reveal_actual_level` beforehand.
+<a href=#128 id=128 data-nosnippet>128</a>    </span><span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>, tcx), ret)]
+<a href=#129 id=129 data-nosnippet>129</a>    </span><span class="kw">fn </span>probe_for_lint_level(
+<a href=#130 id=130 data-nosnippet>130</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#131 id=131 data-nosnippet>131</a>        tcx: <a href="ty/context.rs.html#1419-1421">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#132 id=132 data-nosnippet>132</a>        id: LintId,
+<a href=#133 id=133 data-nosnippet>133</a>        start: <a href="../../rustc_hir/hir_id/struct.HirId.html">HirId</a>,
+<a href=#134 id=134 data-nosnippet>134</a>    ) -&gt; (<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;(Level, <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;LintExpectationId&gt;)&gt;, <a href="#18-34">LintLevelSource</a>) {
+<a href=#135 id=135 data-nosnippet>135</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(map) = <span class="self">self</span>.specs.get(<span class="kw-2">&amp;</span>start.local_id)
+<a href=#136 id=136 data-nosnippet>136</a>            &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>LevelAndSource { level, lint_id, src }) = map.get(<span class="kw-2">&amp;</span>id)
+<a href=#137 id=137 data-nosnippet>137</a>        {
+<a href=#138 id=138 data-nosnippet>138</a>            <span class="kw">return </span>(<span class="prelude-val">Some</span>((level, lint_id)), src);
+<a href=#139 id=139 data-nosnippet>139</a>        }
+<a href=#140 id=140 data-nosnippet>140</a>
+<a href=#141 id=141 data-nosnippet>141</a>        <span class="kw">let </span><span class="kw-2">mut </span>owner = start.owner;
+<a href=#142 id=142 data-nosnippet>142</a>        <span class="kw">let </span><span class="kw-2">mut </span>specs = <span class="kw-2">&amp;</span><span class="self">self</span>.specs;
+<a href=#143 id=143 data-nosnippet>143</a>
+<a href=#144 id=144 data-nosnippet>144</a>        <span class="kw">for </span>parent <span class="kw">in </span>tcx.hir_parent_id_iter(start) {
+<a href=#145 id=145 data-nosnippet>145</a>            <span class="kw">if </span>parent.owner != owner {
+<a href=#146 id=146 data-nosnippet>146</a>                owner = parent.owner;
+<a href=#147 id=147 data-nosnippet>147</a>                specs = <span class="kw-2">&amp;</span>tcx.shallow_lint_levels_on(owner).specs;
+<a href=#148 id=148 data-nosnippet>148</a>            }
+<a href=#149 id=149 data-nosnippet>149</a>            <span class="kw">if let </span><span class="prelude-val">Some</span>(map) = specs.get(<span class="kw-2">&amp;</span>parent.local_id)
+<a href=#150 id=150 data-nosnippet>150</a>                &amp;&amp; <span class="kw">let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>LevelAndSource { level, lint_id, src }) = map.get(<span class="kw-2">&amp;</span>id)
+<a href=#151 id=151 data-nosnippet>151</a>            {
+<a href=#152 id=152 data-nosnippet>152</a>                <span class="kw">return </span>(<span class="prelude-val">Some</span>((level, lint_id)), src);
+<a href=#153 id=153 data-nosnippet>153</a>            }
+<a href=#154 id=154 data-nosnippet>154</a>        }
+<a href=#155 id=155 data-nosnippet>155</a>
+<a href=#156 id=156 data-nosnippet>156</a>        (<span class="prelude-val">None</span>, LintLevelSource::Default)
+<a href=#157 id=157 data-nosnippet>157</a>    }
+<a href=#158 id=158 data-nosnippet>158</a>
+<a href=#159 id=159 data-nosnippet>159</a>    <span class="doccomment">/// Fetch and return the user-visible lint level for the given lint at the given HirId.
+<a href=#160 id=160 data-nosnippet>160</a>    </span><span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>, tcx), ret)]
+<a href=#161 id=161 data-nosnippet>161</a>    </span><span class="kw">pub fn </span>lint_level_id_at_node(
+<a href=#162 id=162 data-nosnippet>162</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#163 id=163 data-nosnippet>163</a>        tcx: <a href="ty/context.rs.html#1419-1421">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#164 id=164 data-nosnippet>164</a>        lint: LintId,
+<a href=#165 id=165 data-nosnippet>165</a>        cur: <a href="../../rustc_hir/hir_id/struct.HirId.html">HirId</a>,
+<a href=#166 id=166 data-nosnippet>166</a>    ) -&gt; <a href="#56-60">LevelAndSource</a> {
+<a href=#167 id=167 data-nosnippet>167</a>        <span class="kw">let </span>(level, <span class="kw-2">mut </span>src) = <span class="self">self</span>.probe_for_lint_level(tcx, lint, cur);
+<a href=#168 id=168 data-nosnippet>168</a>        <span class="kw">let </span>(level, lint_id) = reveal_actual_level(level, <span class="kw-2">&amp;mut </span>src, tcx.sess, lint, |lint| {
+<a href=#169 id=169 data-nosnippet>169</a>            <span class="self">self</span>.probe_for_lint_level(tcx, lint, cur)
+<a href=#170 id=170 data-nosnippet>170</a>        });
+<a href=#171 id=171 data-nosnippet>171</a>        LevelAndSource { level, lint_id, src }
+<a href=#172 id=172 data-nosnippet>172</a>    }
+<a href=#173 id=173 data-nosnippet>173</a>}
+<a href=#174 id=174 data-nosnippet>174</a>
+<a href=#175 id=175 data-nosnippet>175</a><span class="kw">impl </span><a href="ty/context.rs.html#1419-1421">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt; {
+<a href=#176 id=176 data-nosnippet>176</a>    <span class="doccomment">/// Fetch and return the user-visible lint level for the given lint at the given HirId.
+<a href=#177 id=177 data-nosnippet>177</a>    </span><span class="kw">pub fn </span>lint_level_at_node(<span class="self">self</span>, lint: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>Lint, id: <a href="../../rustc_hir/hir_id/struct.HirId.html">HirId</a>) -&gt; <a href="#56-60">LevelAndSource</a> {
+<a href=#178 id=178 data-nosnippet>178</a>        <a class="self" href="#177">self</a>.<a href="query/mod.rs.html#2685">shallow_lint_levels_on</a>(<a href="#177">id</a>.owner).<a href="#161-172">lint_level_id_at_node</a>(<a class="self" href="#177">self</a>, LintId::of(<a href="#177">lint</a>), <a href="#177">id</a>)
+<a href=#179 id=179 data-nosnippet>179</a>    }
+<a href=#180 id=180 data-nosnippet>180</a>}
+<a href=#181 id=181 data-nosnippet>181</a>
+<a href=#182 id=182 data-nosnippet>182</a><span class="doccomment">/// This struct represents a lint expectation and holds all required information
+<a href=#183 id=183 data-nosnippet>183</a>/// to emit the `unfulfilled_lint_expectations` lint if it is unfulfilled after
+<a href=#184 id=184 data-nosnippet>184</a>/// the `LateLintPass` has completed.
+<a href=#185 id=185 data-nosnippet>185</a></span><span class="attr">#[derive(Clone, Debug, Encodable, Decodable, HashStable)]
+<a href=#186 id=186 data-nosnippet>186</a></span><span class="kw">pub struct </span><a href="../../rustc_middle/lint/struct.LintExpectation.html">LintExpectation</a> {
+<a href=#187 id=187 data-nosnippet>187</a>    <span class="doccomment">/// The reason for this expectation that can optionally be added as part of
+<a href=#188 id=188 data-nosnippet>188</a>    /// the attribute. It will be displayed as part of the lint message.
+<a href=#189 id=189 data-nosnippet>189</a>    </span><span class="kw">pub </span>reason: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>&gt;,
+<a href=#190 id=190 data-nosnippet>190</a>    <span class="doccomment">/// The [`Span`] of the attribute that this expectation originated from.
+<a href=#191 id=191 data-nosnippet>191</a>    </span><span class="kw">pub </span>emission_span: <a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#192 id=192 data-nosnippet>192</a>    <span class="doccomment">/// Lint messages for the `unfulfilled_lint_expectations` lint will be
+<a href=#193 id=193 data-nosnippet>193</a>    /// adjusted to include an additional note. Therefore, we have to track if
+<a href=#194 id=194 data-nosnippet>194</a>    /// the expectation is for the lint.
+<a href=#195 id=195 data-nosnippet>195</a>    </span><span class="kw">pub </span>is_unfulfilled_lint_expectations: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
+<a href=#196 id=196 data-nosnippet>196</a>    <span class="doccomment">/// This will hold the name of the tool that this lint belongs to. For
+<a href=#197 id=197 data-nosnippet>197</a>    /// the lint `clippy::some_lint` the tool would be `clippy`, the same
+<a href=#198 id=198 data-nosnippet>198</a>    /// goes for `rustdoc`. This will be `None` for rustc lints
+<a href=#199 id=199 data-nosnippet>199</a>    </span><span class="kw">pub </span>lint_tool: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>&gt;,
+<a href=#200 id=200 data-nosnippet>200</a>}
+<a href=#201 id=201 data-nosnippet>201</a>
+<a href=#202 id=202 data-nosnippet>202</a><span class="kw">impl </span><a href="#186-200">LintExpectation</a> {
+<a href=#203 id=203 data-nosnippet>203</a>    <span class="kw">pub fn </span>new(
+<a href=#204 id=204 data-nosnippet>204</a>        reason: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>&gt;,
+<a href=#205 id=205 data-nosnippet>205</a>        emission_span: <a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#206 id=206 data-nosnippet>206</a>        is_unfulfilled_lint_expectations: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
+<a href=#207 id=207 data-nosnippet>207</a>        lint_tool: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>&gt;,
+<a href=#208 id=208 data-nosnippet>208</a>    ) -&gt; <span class="self">Self </span>{
+<a href=#209 id=209 data-nosnippet>209</a>        <span class="self">Self </span>{ <a href="#204">reason</a>, <a href="#205">emission_span</a>, <a href="#206">is_unfulfilled_lint_expectations</a>, <a href="#207">lint_tool</a> }
+<a href=#210 id=210 data-nosnippet>210</a>    }
+<a href=#211 id=211 data-nosnippet>211</a>}
+<a href=#212 id=212 data-nosnippet>212</a>
+<a href=#213 id=213 data-nosnippet>213</a><span class="kw">fn </span><a href="../../rustc_middle/lint/fn.explain_lint_level_source.html">explain_lint_level_source</a>(
+<a href=#214 id=214 data-nosnippet>214</a>    lint: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>Lint,
+<a href=#215 id=215 data-nosnippet>215</a>    level: Level,
+<a href=#216 id=216 data-nosnippet>216</a>    src: <a href="#18-34">LintLevelSource</a>,
+<a href=#217 id=217 data-nosnippet>217</a>    err: <span class="kw-2">&amp;mut </span><a href="../../rustc_errors/diagnostic/struct.Diag.html">Diag</a>&lt;<span class="lifetime">'_</span>, ()&gt;,
+<a href=#218 id=218 data-nosnippet>218</a>) {
+<a href=#219 id=219 data-nosnippet>219</a>    <span class="kw">let </span>name = <a href="#214">lint</a>.name_lower();
+<a href=#220 id=220 data-nosnippet>220</a>    <span class="kw">if let </span>Level::Allow = <a href="#215">level</a> {
+<a href=#221 id=221 data-nosnippet>221</a>        <span class="comment">// Do not point at `#[allow(compat_lint)]` as the reason for a compatibility lint
+<a href=#222 id=222 data-nosnippet>222</a>        // triggering. (#121009)
+<a href=#223 id=223 data-nosnippet>223</a>        </span><span class="kw">return</span>;
+<a href=#224 id=224 data-nosnippet>224</a>    }
+<a href=#225 id=225 data-nosnippet>225</a>    <span class="kw">match </span><a href="#216">src</a> {
+<a href=#226 id=226 data-nosnippet>226</a>        <a href="#20">LintLevelSource::Default</a> =&gt; {
+<a href=#227 id=227 data-nosnippet>227</a>            <a href="#217">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.note_once">note_once</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"`#[{}({})]` on by default"</span>, level.as_str(), name));
+<a href=#228 id=228 data-nosnippet>228</a>        }
+<a href=#229 id=229 data-nosnippet>229</a>        <a href="#33">LintLevelSource::CommandLine</a>(lint_flag_val, orig_level) =&gt; {
+<a href=#230 id=230 data-nosnippet>230</a>            <span class="kw">let </span>flag = <a href="#229">orig_level</a>.to_cmd_flag();
+<a href=#231 id=231 data-nosnippet>231</a>            <span class="kw">let </span>hyphen_case_lint_name = <a href="#219">name</a>.<a href="https://doc.rust-lang.org/nightly/alloc/foreigntype.str.html#method.replace">replace</a>(<span class="string">'_'</span>, <span class="string">"-"</span>);
+<a href=#232 id=232 data-nosnippet>232</a>            <span class="kw">if </span><a href="#229">lint_flag_val</a>.<a href="../../rustc_span/symbol/struct.Symbol.html#method.as_str">as_str</a>() == <a href="#219">name</a> {
+<a href=#233 id=233 data-nosnippet>233</a>                <a href="#217">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.note_once">note_once</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#234 id=234 data-nosnippet>234</a>                    <span class="string">"requested on the command line with `{flag} {hyphen_case_lint_name}`"
+<a href=#235 id=235 data-nosnippet>235</a>                </span>));
+<a href=#236 id=236 data-nosnippet>236</a>            } <span class="kw">else </span>{
+<a href=#237 id=237 data-nosnippet>237</a>                <span class="kw">let </span>hyphen_case_flag_val = <a href="#229">lint_flag_val</a>.<a href="../../rustc_span/symbol/struct.Symbol.html#method.as_str">as_str</a>().<a href="https://doc.rust-lang.org/nightly/alloc/foreigntype.str.html#method.replace">replace</a>(<span class="string">'_'</span>, <span class="string">"-"</span>);
+<a href=#238 id=238 data-nosnippet>238</a>                <a href="#217">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.note_once">note_once</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#239 id=239 data-nosnippet>239</a>                    <span class="string">"`{flag} {hyphen_case_lint_name}` implied by `{flag} {hyphen_case_flag_val}`"
+<a href=#240 id=240 data-nosnippet>240</a>                </span>));
+<a href=#241 id=241 data-nosnippet>241</a>                <span class="kw">if </span><a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.matches.html">matches!</a>(orig_level, Level::Warn | Level::Deny) {
+<a href=#242 id=242 data-nosnippet>242</a>                    <a href="#217">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.help_once">help_once</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#243 id=243 data-nosnippet>243</a>                        <span class="string">"to override `{flag} {hyphen_case_flag_val}` add `#[allow({name})]`"
+<a href=#244 id=244 data-nosnippet>244</a>                    </span>));
+<a href=#245 id=245 data-nosnippet>245</a>                }
+<a href=#246 id=246 data-nosnippet>246</a>            }
+<a href=#247 id=247 data-nosnippet>247</a>        }
+<a href=#248 id=248 data-nosnippet>248</a>        <a href="#23-28">LintLevelSource::Node</a> { name: lint_attr_name, span, reason, .. } =&gt; {
+<a href=#249 id=249 data-nosnippet>249</a>            <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(rationale) = <a href="#248">reason</a> {
+<a href=#250 id=250 data-nosnippet>250</a>                <a href="#217">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.note">note</a>(<a href="#249">rationale</a>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>());
+<a href=#251 id=251 data-nosnippet>251</a>            }
+<a href=#252 id=252 data-nosnippet>252</a>            <a href="#217">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.span_note_once">span_note_once</a>(<a href="#248">span</a>, <span class="string">"the lint level is defined here"</span>);
+<a href=#253 id=253 data-nosnippet>253</a>            <span class="kw">if </span><a href="#248">lint_attr_name</a>.<a href="../../rustc_span/symbol/struct.Symbol.html#method.as_str">as_str</a>() != <a href="#219">name</a> {
+<a href=#254 id=254 data-nosnippet>254</a>                <span class="kw">let </span>level_str = <a href="#215">level</a>.as_str();
+<a href=#255 id=255 data-nosnippet>255</a>                <a href="#217">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.note_once">note_once</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#256 id=256 data-nosnippet>256</a>                    <span class="string">"`#[{level_str}({name})]` implied by `#[{level_str}({lint_attr_name})]`"
+<a href=#257 id=257 data-nosnippet>257</a>                </span>));
+<a href=#258 id=258 data-nosnippet>258</a>            }
+<a href=#259 id=259 data-nosnippet>259</a>        }
+<a href=#260 id=260 data-nosnippet>260</a>    }
+<a href=#261 id=261 data-nosnippet>261</a>}
+<a href=#262 id=262 data-nosnippet>262</a>
+<a href=#263 id=263 data-nosnippet>263</a><span class="doccomment">/// The innermost function for emitting lints.
+<a href=#264 id=264 data-nosnippet>264</a>///
+<a href=#265 id=265 data-nosnippet>265</a>/// If you are looking to implement a lint, look for higher level functions,
+<a href=#266 id=266 data-nosnippet>266</a>/// for example:
+<a href=#267 id=267 data-nosnippet>267</a>/// - [`TyCtxt::emit_node_span_lint`]
+<a href=#268 id=268 data-nosnippet>268</a>/// - [`TyCtxt::node_span_lint`]
+<a href=#269 id=269 data-nosnippet>269</a>/// - [`TyCtxt::emit_node_lint`]
+<a href=#270 id=270 data-nosnippet>270</a>/// - [`TyCtxt::node_lint`]
+<a href=#271 id=271 data-nosnippet>271</a>/// - `LintContext::opt_span_lint`
+<a href=#272 id=272 data-nosnippet>272</a>///
+<a href=#273 id=273 data-nosnippet>273</a>/// ## `decorate`
+<a href=#274 id=274 data-nosnippet>274</a>///
+<a href=#275 id=275 data-nosnippet>275</a>/// It is not intended to call `emit`/`cancel` on the `Diag` passed in the `decorate` callback.
+<a href=#276 id=276 data-nosnippet>276</a></span><span class="attr">#[track_caller]
+<a href=#277 id=277 data-nosnippet>277</a></span><span class="kw">pub fn </span><a href="../../rustc_middle/lint/fn.lint_level.html">lint_level</a>(
+<a href=#278 id=278 data-nosnippet>278</a>    sess: <span class="kw-2">&amp;</span><a href="../../rustc_session/session/struct.Session.html">Session</a>,
+<a href=#279 id=279 data-nosnippet>279</a>    lint: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>Lint,
+<a href=#280 id=280 data-nosnippet>280</a>    level: <a href="#56-60">LevelAndSource</a>,
+<a href=#281 id=281 data-nosnippet>281</a>    span: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;MultiSpan&gt;,
+<a href=#282 id=282 data-nosnippet>282</a>    decorate: <span class="kw">impl for</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>&gt; <a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>(<span class="kw-2">&amp;</span><span class="lifetime">'b </span><span class="kw-2">mut </span><a href="../../rustc_errors/diagnostic/struct.Diag.html">Diag</a>&lt;<span class="lifetime">'a</span>, ()&gt;),
+<a href=#283 id=283 data-nosnippet>283</a>) {
+<a href=#284 id=284 data-nosnippet>284</a>    <span class="comment">// Avoid codegen bloat from monomorphization by immediately doing dyn dispatch of `decorate` to
+<a href=#285 id=285 data-nosnippet>285</a>    // the "real" work.
+<a href=#286 id=286 data-nosnippet>286</a>    </span><span class="attr">#[track_caller]
+<a href=#287 id=287 data-nosnippet>287</a>    </span><span class="kw">fn </span>lint_level_impl(
+<a href=#288 id=288 data-nosnippet>288</a>        sess: <span class="kw-2">&amp;</span><a href="../../rustc_session/session/struct.Session.html">Session</a>,
+<a href=#289 id=289 data-nosnippet>289</a>        lint: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>Lint,
+<a href=#290 id=290 data-nosnippet>290</a>        level: <a href="#56-60">LevelAndSource</a>,
+<a href=#291 id=291 data-nosnippet>291</a>        span: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;MultiSpan&gt;,
+<a href=#292 id=292 data-nosnippet>292</a>        decorate: <a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html">Box</a>&lt;<span class="kw">dyn </span><span class="lifetime">'_ </span>+ <span class="kw">for</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>&gt; <a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>(<span class="kw-2">&amp;</span><span class="lifetime">'b </span><span class="kw-2">mut </span><a href="../../rustc_errors/diagnostic/struct.Diag.html">Diag</a>&lt;<span class="lifetime">'a</span>, ()&gt;)&gt;,
+<a href=#293 id=293 data-nosnippet>293</a>    ) {
+<a href=#294 id=294 data-nosnippet>294</a>        <span class="kw">let </span><a href="#56-60">LevelAndSource</a> { level, lint_id, src } = <a href="#290">level</a>;
+<a href=#295 id=295 data-nosnippet>295</a>
+<a href=#296 id=296 data-nosnippet>296</a>        <span class="comment">// Check for future incompatibility lints and issue a stronger warning.
+<a href=#297 id=297 data-nosnippet>297</a>        </span><span class="kw">let </span>future_incompatible = <a href="#289">lint</a>.future_incompatible;
+<a href=#298 id=298 data-nosnippet>298</a>
+<a href=#299 id=299 data-nosnippet>299</a>        <span class="kw">let </span>has_future_breakage = <a href="#297">future_incompatible</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map_or">map_or</a>(
+<a href=#300 id=300 data-nosnippet>300</a>            <span class="comment">// Default allow lints trigger too often for testing.
+<a href=#301 id=301 data-nosnippet>301</a>            </span><a href="#288">sess</a>.opts.unstable_opts.future_incompat_test &amp;&amp; <a href="#289">lint</a>.default_level != Level::Allow,
+<a href=#302 id=302 data-nosnippet>302</a>            |incompat| <a href="#302">incompat</a>.report_in_deps,
+<a href=#303 id=303 data-nosnippet>303</a>        );
+<a href=#304 id=304 data-nosnippet>304</a>
+<a href=#305 id=305 data-nosnippet>305</a>        <span class="comment">// Convert lint level to error level.
+<a href=#306 id=306 data-nosnippet>306</a>        </span><span class="kw">let </span>err_level = <span class="kw">match </span><a href="#294">level</a> {
+<a href=#307 id=307 data-nosnippet>307</a>            Level::Allow =&gt; {
+<a href=#308 id=308 data-nosnippet>308</a>                <span class="kw">if </span><a href="#299">has_future_breakage</a> {
+<a href=#309 id=309 data-nosnippet>309</a>                    <a href="../../rustc_errors/enum.Level.html#variant.Allow">rustc_errors::Level::Allow</a>
+<a href=#310 id=310 data-nosnippet>310</a>                } <span class="kw">else </span>{
+<a href=#311 id=311 data-nosnippet>311</a>                    <span class="kw">return</span>;
+<a href=#312 id=312 data-nosnippet>312</a>                }
+<a href=#313 id=313 data-nosnippet>313</a>            }
+<a href=#314 id=314 data-nosnippet>314</a>            Level::Expect =&gt; {
+<a href=#315 id=315 data-nosnippet>315</a>                <span class="comment">// This case is special as we actually allow the lint itself in this context, but
+<a href=#316 id=316 data-nosnippet>316</a>                // we can't return early like in the case for `Level::Allow` because we still
+<a href=#317 id=317 data-nosnippet>317</a>                // need the lint diagnostic to be emitted to `rustc_error::DiagCtxtInner`.
+<a href=#318 id=318 data-nosnippet>318</a>                //
+<a href=#319 id=319 data-nosnippet>319</a>                // We can also not mark the lint expectation as fulfilled here right away, as it
+<a href=#320 id=320 data-nosnippet>320</a>                // can still be cancelled in the decorate function. All of this means that we simply
+<a href=#321 id=321 data-nosnippet>321</a>                // create a `Diag` and continue as we would for warnings.
+<a href=#322 id=322 data-nosnippet>322</a>                </span><a href="../../rustc_errors/enum.Level.html#variant.Expect">rustc_errors::Level::Expect</a>
+<a href=#323 id=323 data-nosnippet>323</a>            }
+<a href=#324 id=324 data-nosnippet>324</a>            Level::ForceWarn =&gt; <a href="../../rustc_errors/enum.Level.html#variant.ForceWarning">rustc_errors::Level::ForceWarning</a>,
+<a href=#325 id=325 data-nosnippet>325</a>            Level::Warn =&gt; <a href="../../rustc_errors/enum.Level.html#variant.Warning">rustc_errors::Level::Warning</a>,
+<a href=#326 id=326 data-nosnippet>326</a>            Level::Deny | Level::Forbid =&gt; <a href="../../rustc_errors/enum.Level.html#variant.Error">rustc_errors::Level::Error</a>,
+<a href=#327 id=327 data-nosnippet>327</a>        };
+<a href=#328 id=328 data-nosnippet>328</a>        <span class="kw">let </span><span class="kw-2">mut </span>err = <a href="../../rustc_errors/diagnostic/struct.Diag.html#method.new">Diag::new</a>(<a href="#288">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.dcx">dcx</a>(), <a href="#306">err_level</a>, <span class="string">""</span>);
+<a href=#329 id=329 data-nosnippet>329</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(span) = <a href="#291">span</a> {
+<a href=#330 id=330 data-nosnippet>330</a>            <a href="#328">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.span">span</a>(<a href="#329">span</a>);
+<a href=#331 id=331 data-nosnippet>331</a>        }
+<a href=#332 id=332 data-nosnippet>332</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(lint_id) = <a href="#294">lint_id</a> {
+<a href=#333 id=333 data-nosnippet>333</a>            <a href="#328">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.lint_id">lint_id</a>(<a href="#332">lint_id</a>);
+<a href=#334 id=334 data-nosnippet>334</a>        }
+<a href=#335 id=335 data-nosnippet>335</a>
+<a href=#336 id=336 data-nosnippet>336</a>        <span class="comment">// If this code originates in a foreign macro, aka something that this crate
+<a href=#337 id=337 data-nosnippet>337</a>        // did not itself author, then it's likely that there's nothing this crate
+<a href=#338 id=338 data-nosnippet>338</a>        // can do about it. We probably want to skip the lint entirely.
+<a href=#339 id=339 data-nosnippet>339</a>        </span><span class="kw">if </span><a href="#328">err</a>.span.primary_spans().<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.any">any</a>(|s| <a href="#339">s</a>.<a href="../../rustc_span/span_encoding/struct.Span.html#method.in_external_macro">in_external_macro</a>(<a href="#288">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.source_map">source_map</a>())) {
+<a href=#340 id=340 data-nosnippet>340</a>            <span class="comment">// Any suggestions made here are likely to be incorrect, so anything we
+<a href=#341 id=341 data-nosnippet>341</a>            // emit shouldn't be automatically fixed by rustfix.
+<a href=#342 id=342 data-nosnippet>342</a>            </span><a href="#328">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.disable_suggestions">disable_suggestions</a>();
+<a href=#343 id=343 data-nosnippet>343</a>
+<a href=#344 id=344 data-nosnippet>344</a>            <span class="comment">// If this is a future incompatible that is not an edition fixing lint
+<a href=#345 id=345 data-nosnippet>345</a>            // it'll become a hard error, so we have to emit *something*. Also,
+<a href=#346 id=346 data-nosnippet>346</a>            // if this lint occurs in the expansion of a macro from an external crate,
+<a href=#347 id=347 data-nosnippet>347</a>            // allow individual lints to opt-out from being reported.
+<a href=#348 id=348 data-nosnippet>348</a>            </span><span class="kw">let </span>incompatible = <a href="#297">future_incompatible</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_some_and">is_some_and</a>(|f| <a href="#348">f</a>.reason.edition().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_none">is_none</a>());
+<a href=#349 id=349 data-nosnippet>349</a>
+<a href=#350 id=350 data-nosnippet>350</a>            <span class="kw">if </span>!<a href="#348">incompatible</a> &amp;&amp; !<a href="#289">lint</a>.report_in_external_macro {
+<a href=#351 id=351 data-nosnippet>351</a>                <a href="#328">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.cancel">cancel</a>();
+<a href=#352 id=352 data-nosnippet>352</a>
+<a href=#353 id=353 data-nosnippet>353</a>                <span class="comment">// Don't continue further, since we don't want to have
+<a href=#354 id=354 data-nosnippet>354</a>                // `diag_span_note_once` called for a diagnostic that isn't emitted.
+<a href=#355 id=355 data-nosnippet>355</a>                </span><span class="kw">return</span>;
+<a href=#356 id=356 data-nosnippet>356</a>            }
+<a href=#357 id=357 data-nosnippet>357</a>        }
+<a href=#358 id=358 data-nosnippet>358</a>
+<a href=#359 id=359 data-nosnippet>359</a>        <a href="#328">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.is_lint">is_lint</a>(<a href="#289">lint</a>.name_lower(), <a href="#299">has_future_breakage</a>);
+<a href=#360 id=360 data-nosnippet>360</a>
+<a href=#361 id=361 data-nosnippet>361</a>        <span class="comment">// Lint diagnostics that are covered by the expect level will not be emitted outside
+<a href=#362 id=362 data-nosnippet>362</a>        // the compiler. It is therefore not necessary to add any information for the user.
+<a href=#363 id=363 data-nosnippet>363</a>        // This will therefore directly call the decorate function which will in turn emit
+<a href=#364 id=364 data-nosnippet>364</a>        // the diagnostic.
+<a href=#365 id=365 data-nosnippet>365</a>        </span><span class="kw">if let </span>Level::Expect = <a href="#294">level</a> {
+<a href=#366 id=366 data-nosnippet>366</a>            <a href="#292">decorate</a>(<span class="kw-2">&amp;mut </span><a href="#328">err</a>);
+<a href=#367 id=367 data-nosnippet>367</a>            <a href="#328">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.emit">emit</a>();
+<a href=#368 id=368 data-nosnippet>368</a>            <span class="kw">return</span>;
+<a href=#369 id=369 data-nosnippet>369</a>        }
+<a href=#370 id=370 data-nosnippet>370</a>
+<a href=#371 id=371 data-nosnippet>371</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(future_incompatible) = <a href="#297">future_incompatible</a> {
+<a href=#372 id=372 data-nosnippet>372</a>            <span class="kw">let </span>explanation = <span class="kw">match </span><a href="#371">future_incompatible</a>.reason {
+<a href=#373 id=373 data-nosnippet>373</a>                FutureIncompatibilityReason::FutureReleaseError =&gt; {
+<a href=#374 id=374 data-nosnippet>374</a>                    <span class="string">"this was previously accepted by the compiler but is being phased out; \
+<a href=#375 id=375 data-nosnippet>375</a>                         it will become a hard error in a future release!"
+<a href=#376 id=376 data-nosnippet>376</a>                        </span>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/trait.ToOwned.html#tymethod.to_owned">to_owned</a>()
+<a href=#377 id=377 data-nosnippet>377</a>                }
+<a href=#378 id=378 data-nosnippet>378</a>                FutureIncompatibilityReason::FutureReleaseSemanticsChange =&gt; {
+<a href=#379 id=379 data-nosnippet>379</a>                    <span class="string">"this will change its meaning in a future release!"</span>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/trait.ToOwned.html#tymethod.to_owned">to_owned</a>()
+<a href=#380 id=380 data-nosnippet>380</a>                }
+<a href=#381 id=381 data-nosnippet>381</a>                FutureIncompatibilityReason::EditionError(edition) =&gt; {
+<a href=#382 id=382 data-nosnippet>382</a>                    <span class="kw">let </span>current_edition = <a href="#288">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.edition">edition</a>();
+<a href=#383 id=383 data-nosnippet>383</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#384 id=384 data-nosnippet>384</a>                        <span class="string">"this is accepted in the current edition (Rust {current_edition}) but is a hard error in Rust {edition}!"
+<a href=#385 id=385 data-nosnippet>385</a>                    </span>)
+<a href=#386 id=386 data-nosnippet>386</a>                }
+<a href=#387 id=387 data-nosnippet>387</a>                FutureIncompatibilityReason::EditionSemanticsChange(edition) =&gt; {
+<a href=#388 id=388 data-nosnippet>388</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"this changes meaning in Rust {edition}"</span>)
+<a href=#389 id=389 data-nosnippet>389</a>                }
+<a href=#390 id=390 data-nosnippet>390</a>                FutureIncompatibilityReason::EditionAndFutureReleaseError(edition) =&gt; {
+<a href=#391 id=391 data-nosnippet>391</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#392 id=392 data-nosnippet>392</a>                        <span class="string">"this was previously accepted by the compiler but is being phased out; \
+<a href=#393 id=393 data-nosnippet>393</a>                         it will become a hard error in Rust {edition} and in a future release in all editions!"
+<a href=#394 id=394 data-nosnippet>394</a>                    </span>)
+<a href=#395 id=395 data-nosnippet>395</a>                }
+<a href=#396 id=396 data-nosnippet>396</a>                FutureIncompatibilityReason::EditionAndFutureReleaseSemanticsChange(edition) =&gt; {
+<a href=#397 id=397 data-nosnippet>397</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#398 id=398 data-nosnippet>398</a>                        <span class="string">"this changes meaning in Rust {edition} and in a future release in all editions!"
+<a href=#399 id=399 data-nosnippet>399</a>                    </span>)
+<a href=#400 id=400 data-nosnippet>400</a>                }
+<a href=#401 id=401 data-nosnippet>401</a>                FutureIncompatibilityReason::Custom(reason) =&gt; <a href="#401">reason</a>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/trait.ToOwned.html#tymethod.to_owned">to_owned</a>(),
+<a href=#402 id=402 data-nosnippet>402</a>            };
+<a href=#403 id=403 data-nosnippet>403</a>
+<a href=#404 id=404 data-nosnippet>404</a>            <span class="kw">if </span><a href="#371">future_incompatible</a>.explain_reason {
+<a href=#405 id=405 data-nosnippet>405</a>                <a href="#328">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.warn">warn</a>(<a href="#372">explanation</a>);
+<a href=#406 id=406 data-nosnippet>406</a>            }
+<a href=#407 id=407 data-nosnippet>407</a>            <span class="kw">if </span>!<a href="#371">future_incompatible</a>.reference.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.is_empty">is_empty</a>() {
+<a href=#408 id=408 data-nosnippet>408</a>                <span class="kw">let </span>citation =
+<a href=#409 id=409 data-nosnippet>409</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"for more information, see {}"</span>, future_incompatible.reference);
+<a href=#410 id=410 data-nosnippet>410</a>                <a href="#328">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.note">note</a>(<a href="#408">citation</a>);
+<a href=#411 id=411 data-nosnippet>411</a>            }
+<a href=#412 id=412 data-nosnippet>412</a>        }
+<a href=#413 id=413 data-nosnippet>413</a>
+<a href=#414 id=414 data-nosnippet>414</a>        <span class="comment">// Finally, run `decorate`. `decorate` can call `trimmed_path_str` (directly or indirectly),
+<a href=#415 id=415 data-nosnippet>415</a>        // so we need to make sure when we do call `decorate` that the diagnostic is eventually
+<a href=#416 id=416 data-nosnippet>416</a>        // emitted or we'll get a `must_produce_diag` ICE.
+<a href=#417 id=417 data-nosnippet>417</a>        //
+<a href=#418 id=418 data-nosnippet>418</a>        // When is a diagnostic *eventually* emitted? Well, that is determined by 2 factors:
+<a href=#419 id=419 data-nosnippet>419</a>        // 1. If the corresponding `rustc_errors::Level` is beyond warning, i.e. `ForceWarning(_)`
+<a href=#420 id=420 data-nosnippet>420</a>        //    or `Error`, then the diagnostic will be emitted regardless of CLI options.
+<a href=#421 id=421 data-nosnippet>421</a>        // 2. If the corresponding `rustc_errors::Level` is warning, then that can be affected by
+<a href=#422 id=422 data-nosnippet>422</a>        //    `-A warnings` or `--cap-lints=xxx` on the command line. In which case, the diagnostic
+<a href=#423 id=423 data-nosnippet>423</a>        //    will be emitted if `can_emit_warnings` is true.
+<a href=#424 id=424 data-nosnippet>424</a>        </span><span class="kw">let </span>skip = <a href="#306">err_level</a> == <a href="../../rustc_errors/enum.Level.html#variant.Warning">rustc_errors::Level::Warning</a> &amp;&amp; !<a href="#288">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.dcx">dcx</a>().<a href="../../rustc_errors/struct.DiagCtxt.html#method.can_emit_warnings">can_emit_warnings</a>();
+<a href=#425 id=425 data-nosnippet>425</a>
+<a href=#426 id=426 data-nosnippet>426</a>        <span class="kw">if </span>!<a href="#424">skip</a> {
+<a href=#427 id=427 data-nosnippet>427</a>            <a href="#292">decorate</a>(<span class="kw-2">&amp;mut </span><a href="#328">err</a>);
+<a href=#428 id=428 data-nosnippet>428</a>        }
+<a href=#429 id=429 data-nosnippet>429</a>
+<a href=#430 id=430 data-nosnippet>430</a>        <a href="#213-261">explain_lint_level_source</a>(<a href="#289">lint</a>, <a href="#294">level</a>, <a href="#294">src</a>, <span class="kw-2">&amp;mut </span><a href="#328">err</a>);
+<a href=#431 id=431 data-nosnippet>431</a>        <a href="#328">err</a>.<a href="../../rustc_errors/diagnostic/struct.Diag.html#method.emit">emit</a>()
+<a href=#432 id=432 data-nosnippet>432</a>    }
+<a href=#433 id=433 data-nosnippet>433</a>    <a href="#287-432">lint_level_impl</a>(<a href="#278">sess</a>, <a href="#279">lint</a>, <a href="#280">level</a>, <a href="#281">span</a>, <a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html#method.new">Box::new</a>(<a href="#282">decorate</a>))
+<a href=#434 id=434 data-nosnippet>434</a>}</code></pre></div></section></main></body></html>

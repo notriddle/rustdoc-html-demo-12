@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["compute_sccs_applying_placeholder_outlives_constraints","region_definitions","rewrite_placeholder_outlives"],"struct":["LoweredConstraints","RegionTracker","SccAnnotations"]};

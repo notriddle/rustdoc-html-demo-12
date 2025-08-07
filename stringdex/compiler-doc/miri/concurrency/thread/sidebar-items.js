@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BlockReason","SchedulingAction","ThreadJoinStatus","ThreadState","Timeout","TimeoutAnchor","TimeoutClock","TlsAllocAction","UnblockKind"],"struct":["Thread","ThreadId","ThreadManager","ThreadNotFound"],"trait":["EvalContextExt","EvalContextPrivExt"],"type":["DynUnblockCallback","StackEmptyCallback"]};

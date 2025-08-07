@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["assume_scalar_range","transmute_scalar"]};

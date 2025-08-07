@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AllPathsToHeadCoinductive","PathKind","UsageKind"],"struct":["GlobalCache","PathsToNested","SearchGraph"],"trait":["Cx","Delegate"]};

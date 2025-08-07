@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["write_leb128"],"struct":["MemEncoder"]};

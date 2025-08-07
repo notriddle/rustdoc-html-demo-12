@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["FdId","FdIdWith","FdTable","FileDescriptionRef","FileHandle","NullOutput","WeakFileDescriptionRef"],"trait":["EvalContextExt","FileDescription","FileDescriptionExt"],"type":["DynFileDescriptionRef","FdNum"]};

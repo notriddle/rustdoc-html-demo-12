@@ -1,0 +1,148 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/polonius/legacy/loan_kills.rs`."><title>loan_kills.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-1b37d467.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/polonius/legacy/</div>loan_kills.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="../../../../rustc_middle/mir/visit/trait.Visitor.html">rustc_middle::mir::visit::Visitor</a>;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span>rustc_middle::mir::{
+<a href=#3 id=3 data-nosnippet>3</a>    <a href="../../../../rustc_middle/mir/struct.Body.html">Body</a>, <a href="../../../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="../../../../rustc_middle/mir/struct.Location.html">Location</a>, <a href="../../../../rustc_middle/mir/syntax/struct.Place.html">Place</a>, <a href="../../../../rustc_middle/mir/statement/struct.PlaceRef.html">PlaceRef</a>, <a href="../../../../rustc_middle/mir/syntax/enum.ProjectionElem.html">ProjectionElem</a>, <a href="../../../../rustc_middle/mir/syntax/enum.Rvalue.html">Rvalue</a>, <a href="../../../../rustc_middle/mir/statement/struct.Statement.html">Statement</a>, <a href="../../../../rustc_middle/mir/syntax/enum.StatementKind.html">StatementKind</a>,
+<a href=#4 id=4 data-nosnippet>4</a>    <a href="../../../../rustc_middle/mir/terminator/struct.Terminator.html">Terminator</a>, <a href="../../../../rustc_middle/mir/syntax/enum.TerminatorKind.html">TerminatorKind</a>,
+<a href=#5 id=5 data-nosnippet>5</a>};
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">rustc_middle::ty::TyCtxt</a>;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span><a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">tracing::debug</a>;
+<a href=#8 id=8 data-nosnippet>8</a>
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use super</span>::{<a href="facts.rs.html#52">PoloniusFacts</a>, <a href="location.rs.html#16-19">PoloniusLocationTable</a>};
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><a href="../../borrow_set.rs.html#16-34"><span class="kw">crate</span>::borrow_set::BorrowSet</a>;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><a href="../../places_conflict.rs.html#81-97"><span class="kw">crate</span>::places_conflict</a>;
+<a href=#12 id=12 data-nosnippet>12</a>
+<a href=#13 id=13 data-nosnippet>13</a><span class="doccomment">/// Emit `loan_killed_at` and `cfg_edge` facts at the same time.
+<a href=#14 id=14 data-nosnippet>14</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../../rustc_borrowck/polonius/legacy/loan_kills/fn.emit_loan_kills.html">emit_loan_kills</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#15 id=15 data-nosnippet>15</a>    tcx: <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#16 id=16 data-nosnippet>16</a>    facts: <span class="kw-2">&amp;mut </span><a href="facts.rs.html#52">PoloniusFacts</a>,
+<a href=#17 id=17 data-nosnippet>17</a>    body: <span class="kw-2">&amp;</span><a href="../../../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#18 id=18 data-nosnippet>18</a>    location_table: <span class="kw-2">&amp;</span><a href="location.rs.html#16-19">PoloniusLocationTable</a>,
+<a href=#19 id=19 data-nosnippet>19</a>    borrow_set: <span class="kw-2">&amp;</span><a href="../../borrow_set.rs.html#16-34">BorrowSet</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#20 id=20 data-nosnippet>20</a>) {
+<a href=#21 id=21 data-nosnippet>21</a>    <span class="kw">let </span><span class="kw-2">mut </span>visitor = <a href="#27-33">LoanKillsGenerator</a> { <a href="#19">borrow_set</a>, <a href="#15">tcx</a>, <a href="#18">location_table</a>, <a href="#16">facts</a>, <a href="#17">body</a> };
+<a href=#22 id=22 data-nosnippet>22</a>    <span class="kw">for </span>(bb, data) <span class="kw">in </span>body.basic_blocks.iter_enumerated() {
+<a href=#23 id=23 data-nosnippet>23</a>        visitor.visit_basic_block_data(bb, data);
+<a href=#24 id=24 data-nosnippet>24</a>    }
+<a href=#25 id=25 data-nosnippet>25</a>}
+<a href=#26 id=26 data-nosnippet>26</a>
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">struct </span><a href="../../../../rustc_borrowck/polonius/legacy/loan_kills/struct.LoanKillsGenerator.html">LoanKillsGenerator</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#28 id=28 data-nosnippet>28</a>    tcx: <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#29 id=29 data-nosnippet>29</a>    facts: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><a href="facts.rs.html#52">PoloniusFacts</a>,
+<a href=#30 id=30 data-nosnippet>30</a>    location_table: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="location.rs.html#16-19">PoloniusLocationTable</a>,
+<a href=#31 id=31 data-nosnippet>31</a>    borrow_set: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../borrow_set.rs.html#16-34">BorrowSet</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#32 id=32 data-nosnippet>32</a>    body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#33 id=33 data-nosnippet>33</a>}
+<a href=#34 id=34 data-nosnippet>34</a>
+<a href=#35 id=35 data-nosnippet>35</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; <a href="../../../../rustc_middle/mir/visit/trait.Visitor.html">Visitor</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#27-33">LoanKillsGenerator</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#36 id=36 data-nosnippet>36</a>    <span class="kw">fn </span>visit_statement(<span class="kw-2">&amp;mut </span><span class="self">self</span>, statement: <span class="kw-2">&amp;</span><a href="../../../../rustc_middle/mir/statement/struct.Statement.html">Statement</a>&lt;<span class="lifetime">'tcx</span>&gt;, location: <a href="../../../../rustc_middle/mir/struct.Location.html">Location</a>) {
+<a href=#37 id=37 data-nosnippet>37</a>        <span class="comment">// Also record CFG facts here.
+<a href=#38 id=38 data-nosnippet>38</a>        </span><a class="self" href="#36">self</a>.facts.cfg_edge.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>((
+<a href=#39 id=39 data-nosnippet>39</a>            <a class="self" href="#36">self</a>.location_table.<a href="location.rs.html#56-60">start_index</a>(<a href="#36">location</a>),
+<a href=#40 id=40 data-nosnippet>40</a>            <a class="self" href="#36">self</a>.location_table.<a href="location.rs.html#62-66">mid_index</a>(<a href="#36">location</a>),
+<a href=#41 id=41 data-nosnippet>41</a>        ));
+<a href=#42 id=42 data-nosnippet>42</a>
+<a href=#43 id=43 data-nosnippet>43</a>        <a class="self" href="#36">self</a>.facts.cfg_edge.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>((
+<a href=#44 id=44 data-nosnippet>44</a>            <a class="self" href="#36">self</a>.location_table.<a href="location.rs.html#62-66">mid_index</a>(<a href="#36">location</a>),
+<a href=#45 id=45 data-nosnippet>45</a>            <a class="self" href="#36">self</a>.location_table.<a href="location.rs.html#56-60">start_index</a>(<a href="#36">location</a>.<a href="../../../../rustc_middle/mir/struct.Location.html#method.successor_within_block">successor_within_block</a>()),
+<a href=#46 id=46 data-nosnippet>46</a>        ));
+<a href=#47 id=47 data-nosnippet>47</a>
+<a href=#48 id=48 data-nosnippet>48</a>        <span class="comment">// If there are borrows on this now dead local, we need to record them as `killed`.
+<a href=#49 id=49 data-nosnippet>49</a>        </span><span class="kw">if let </span><a href="../../../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.StorageDead">StatementKind::StorageDead</a>(local) = <a href="#36">statement</a>.kind {
+<a href=#50 id=50 data-nosnippet>50</a>            <a class="self" href="#36">self</a>.<a href="#139-147">record_killed_borrows_for_local</a>(<a href="#49">local</a>, <a href="#36">location</a>);
+<a href=#51 id=51 data-nosnippet>51</a>        }
+<a href=#52 id=52 data-nosnippet>52</a>
+<a href=#53 id=53 data-nosnippet>53</a>        <a class="self" href="#36">self</a>.<a href="../../../../rustc_middle/mir/visit/trait.Visitor.html#tymethod.super_statement">super_statement</a>(<a href="#36">statement</a>, <a href="#36">location</a>);
+<a href=#54 id=54 data-nosnippet>54</a>    }
+<a href=#55 id=55 data-nosnippet>55</a>
+<a href=#56 id=56 data-nosnippet>56</a>    <span class="kw">fn </span>visit_assign(<span class="kw-2">&amp;mut </span><span class="self">self</span>, place: <span class="kw-2">&amp;</span><a href="../../../../rustc_middle/mir/syntax/struct.Place.html">Place</a>&lt;<span class="lifetime">'tcx</span>&gt;, rvalue: <span class="kw-2">&amp;</span><a href="../../../../rustc_middle/mir/syntax/enum.Rvalue.html">Rvalue</a>&lt;<span class="lifetime">'tcx</span>&gt;, location: <a href="../../../../rustc_middle/mir/struct.Location.html">Location</a>) {
+<a href=#57 id=57 data-nosnippet>57</a>        <span class="comment">// When we see `X = ...`, then kill borrows of
+<a href=#58 id=58 data-nosnippet>58</a>        // `(*X).foo` and so forth.
+<a href=#59 id=59 data-nosnippet>59</a>        </span><a class="self" href="#56">self</a>.<a href="#92-136">record_killed_borrows_for_place</a>(<span class="kw-2">*</span><a href="#56">place</a>, <a href="#56">location</a>);
+<a href=#60 id=60 data-nosnippet>60</a>        <a class="self" href="#56">self</a>.<a href="../../../../rustc_middle/mir/visit/trait.Visitor.html#tymethod.super_assign">super_assign</a>(<a href="#56">place</a>, <a href="#56">rvalue</a>, <a href="#56">location</a>);
+<a href=#61 id=61 data-nosnippet>61</a>    }
+<a href=#62 id=62 data-nosnippet>62</a>
+<a href=#63 id=63 data-nosnippet>63</a>    <span class="kw">fn </span>visit_terminator(<span class="kw-2">&amp;mut </span><span class="self">self</span>, terminator: <span class="kw-2">&amp;</span><a href="../../../../rustc_middle/mir/terminator/struct.Terminator.html">Terminator</a>&lt;<span class="lifetime">'tcx</span>&gt;, location: <a href="../../../../rustc_middle/mir/struct.Location.html">Location</a>) {
+<a href=#64 id=64 data-nosnippet>64</a>        <span class="comment">// Also record CFG facts here.
+<a href=#65 id=65 data-nosnippet>65</a>        </span><a class="self" href="#63">self</a>.facts.cfg_edge.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>((
+<a href=#66 id=66 data-nosnippet>66</a>            <a class="self" href="#63">self</a>.location_table.<a href="location.rs.html#56-60">start_index</a>(<a href="#63">location</a>),
+<a href=#67 id=67 data-nosnippet>67</a>            <a class="self" href="#63">self</a>.location_table.<a href="location.rs.html#62-66">mid_index</a>(<a href="#63">location</a>),
+<a href=#68 id=68 data-nosnippet>68</a>        ));
+<a href=#69 id=69 data-nosnippet>69</a>
+<a href=#70 id=70 data-nosnippet>70</a>        <span class="kw">let </span>successor_blocks = <a href="#63">terminator</a>.<a href="../../../../rustc_middle/mir/terminator/struct.Terminator.html#method.successors">successors</a>();
+<a href=#71 id=71 data-nosnippet>71</a>        <a class="self" href="#63">self</a>.facts.cfg_edge.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.reserve">reserve</a>(<a href="#70">successor_blocks</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.size_hint">size_hint</a>().<span class="number">0</span>);
+<a href=#72 id=72 data-nosnippet>72</a>        <span class="kw">for </span>successor_block <span class="kw">in </span>successor_blocks {
+<a href=#73 id=73 data-nosnippet>73</a>            <span class="self">self</span>.facts.cfg_edge.push((
+<a href=#74 id=74 data-nosnippet>74</a>                <span class="self">self</span>.location_table.mid_index(location),
+<a href=#75 id=75 data-nosnippet>75</a>                <span class="self">self</span>.location_table.start_index(successor_block.start_location()),
+<a href=#76 id=76 data-nosnippet>76</a>            ));
+<a href=#77 id=77 data-nosnippet>77</a>        }
+<a href=#78 id=78 data-nosnippet>78</a>
+<a href=#79 id=79 data-nosnippet>79</a>        <span class="comment">// A `Call` terminator's return value can be a local which has borrows,
+<a href=#80 id=80 data-nosnippet>80</a>        // so we need to record those as `killed` as well.
+<a href=#81 id=81 data-nosnippet>81</a>        </span><span class="kw">if let </span><a href="../../../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.Call">TerminatorKind::Call</a> { destination, .. } = <a href="#63">terminator</a>.kind {
+<a href=#82 id=82 data-nosnippet>82</a>            <a class="self" href="#63">self</a>.<a href="#92-136">record_killed_borrows_for_place</a>(<a href="#81">destination</a>, <a href="#63">location</a>);
+<a href=#83 id=83 data-nosnippet>83</a>        }
+<a href=#84 id=84 data-nosnippet>84</a>
+<a href=#85 id=85 data-nosnippet>85</a>        <a class="self" href="#63">self</a>.<a href="../../../../rustc_middle/mir/visit/trait.Visitor.html#tymethod.super_terminator">super_terminator</a>(<a href="#63">terminator</a>, <a href="#63">location</a>);
+<a href=#86 id=86 data-nosnippet>86</a>    }
+<a href=#87 id=87 data-nosnippet>87</a>}
+<a href=#88 id=88 data-nosnippet>88</a>
+<a href=#89 id=89 data-nosnippet>89</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="#27-33">LoanKillsGenerator</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#90 id=90 data-nosnippet>90</a>    <span class="doccomment">/// Records the borrows on the specified place as `killed`. For example, when assigning to a
+<a href=#91 id=91 data-nosnippet>91</a>    /// local, or on a call's return destination.
+<a href=#92 id=92 data-nosnippet>92</a>    </span><span class="kw">fn </span>record_killed_borrows_for_place(<span class="kw-2">&amp;mut </span><span class="self">self</span>, place: <a href="../../../../rustc_middle/mir/syntax/struct.Place.html">Place</a>&lt;<span class="lifetime">'tcx</span>&gt;, location: <a href="../../../../rustc_middle/mir/struct.Location.html">Location</a>) {
+<a href=#93 id=93 data-nosnippet>93</a>        <span class="comment">// Depending on the `Place` we're killing:
+<a href=#94 id=94 data-nosnippet>94</a>        // - if it's a local, or a single deref of a local,
+<a href=#95 id=95 data-nosnippet>95</a>        //   we kill all the borrows on the local.
+<a href=#96 id=96 data-nosnippet>96</a>        // - if it's a deeper projection, we have to filter which
+<a href=#97 id=97 data-nosnippet>97</a>        //   of the borrows are killed: the ones whose `borrowed_place`
+<a href=#98 id=98 data-nosnippet>98</a>        //   conflicts with the `place`.
+<a href=#99 id=99 data-nosnippet>99</a>        </span><span class="kw">match </span><a href="#92">place</a>.<a href="../../../../rustc_middle/mir/syntax/struct.Place.html#method.as_ref">as_ref</a>() {
+<a href=#100 id=100 data-nosnippet>100</a>            <a href="../../../../rustc_middle/mir/statement/struct.PlaceRef.html">PlaceRef</a> { local, projection: <span class="kw-2">&amp;</span>[] }
+<a href=#101 id=101 data-nosnippet>101</a>            | <a href="../../../../rustc_middle/mir/statement/struct.PlaceRef.html">PlaceRef</a> { local, projection: <span class="kw-2">&amp;</span>[ProjectionElem::Deref] } =&gt; {
+<a href=#102 id=102 data-nosnippet>102</a>                <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(
+<a href=#103 id=103 data-nosnippet>103</a>                    <span class="string">"Recording `killed` facts for borrows of local={:?} at location={:?}"</span>,
+<a href=#104 id=104 data-nosnippet>104</a>                    local, location
+<a href=#105 id=105 data-nosnippet>105</a>                );
+<a href=#106 id=106 data-nosnippet>106</a>
+<a href=#107 id=107 data-nosnippet>107</a>                <a class="self" href="#92">self</a>.<a href="#139-147">record_killed_borrows_for_local</a>(<a href="#100">local</a>, <a href="#92">location</a>);
+<a href=#108 id=108 data-nosnippet>108</a>            }
+<a href=#109 id=109 data-nosnippet>109</a>
+<a href=#110 id=110 data-nosnippet>110</a>            <a href="../../../../rustc_middle/mir/statement/struct.PlaceRef.html">PlaceRef</a> { local, projection: <span class="kw-2">&amp;</span>[.., <span class="kw">_</span>] } =&gt; {
+<a href=#111 id=111 data-nosnippet>111</a>                <span class="comment">// Kill conflicting borrows of the innermost local.
+<a href=#112 id=112 data-nosnippet>112</a>                </span><a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(
+<a href=#113 id=113 data-nosnippet>113</a>                    <span class="string">"Recording `killed` facts for borrows of \
+<a href=#114 id=114 data-nosnippet>114</a>                            innermost projected local={:?} at location={:?}"</span>,
+<a href=#115 id=115 data-nosnippet>115</a>                    local, location
+<a href=#116 id=116 data-nosnippet>116</a>                );
+<a href=#117 id=117 data-nosnippet>117</a>
+<a href=#118 id=118 data-nosnippet>118</a>                <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(borrow_indices) = <a class="self" href="#92">self</a>.borrow_set.local_map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#110">local</a>) {
+<a href=#119 id=119 data-nosnippet>119</a>                    <span class="kw">for </span><span class="kw-2">&amp;</span>borrow_index <span class="kw">in </span>borrow_indices {
+<a href=#120 id=120 data-nosnippet>120</a>                        <span class="kw">let </span>places_conflict = places_conflict::places_conflict(
+<a href=#121 id=121 data-nosnippet>121</a>                            <span class="self">self</span>.tcx,
+<a href=#122 id=122 data-nosnippet>122</a>                            <span class="self">self</span>.body,
+<a href=#123 id=123 data-nosnippet>123</a>                            <span class="self">self</span>.borrow_set[borrow_index].borrowed_place,
+<a href=#124 id=124 data-nosnippet>124</a>                            place,
+<a href=#125 id=125 data-nosnippet>125</a>                            places_conflict::PlaceConflictBias::NoOverlap,
+<a href=#126 id=126 data-nosnippet>126</a>                        );
+<a href=#127 id=127 data-nosnippet>127</a>
+<a href=#128 id=128 data-nosnippet>128</a>                        <span class="kw">if </span>places_conflict {
+<a href=#129 id=129 data-nosnippet>129</a>                            <span class="kw">let </span>location_index = <span class="self">self</span>.location_table.mid_index(location);
+<a href=#130 id=130 data-nosnippet>130</a>                            <span class="self">self</span>.facts.loan_killed_at.push((borrow_index, location_index));
+<a href=#131 id=131 data-nosnippet>131</a>                        }
+<a href=#132 id=132 data-nosnippet>132</a>                    }
+<a href=#133 id=133 data-nosnippet>133</a>                }
+<a href=#134 id=134 data-nosnippet>134</a>            }
+<a href=#135 id=135 data-nosnippet>135</a>        }
+<a href=#136 id=136 data-nosnippet>136</a>    }
+<a href=#137 id=137 data-nosnippet>137</a>
+<a href=#138 id=138 data-nosnippet>138</a>    <span class="doccomment">/// Records the borrows on the specified local as `killed`.
+<a href=#139 id=139 data-nosnippet>139</a>    </span><span class="kw">fn </span>record_killed_borrows_for_local(<span class="kw-2">&amp;mut </span><span class="self">self</span>, local: <a href="../../../../rustc_middle/mir/struct.Local.html">Local</a>, location: <a href="../../../../rustc_middle/mir/struct.Location.html">Location</a>) {
+<a href=#140 id=140 data-nosnippet>140</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(borrow_indices) = <a class="self" href="#139">self</a>.borrow_set.local_map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#139">local</a>) {
+<a href=#141 id=141 data-nosnippet>141</a>            <span class="kw">let </span>location_index = <a class="self" href="#139">self</a>.location_table.<a href="location.rs.html#62-66">mid_index</a>(<a href="#139">location</a>);
+<a href=#142 id=142 data-nosnippet>142</a>            <a class="self" href="#139">self</a>.facts.loan_killed_at.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.reserve">reserve</a>(<a href="#140">borrow_indices</a>.<a href="https://docs.rs/indexmap/2.10.0/indexmap/set/struct.IndexSet.html#method.len">len</a>());
+<a href=#143 id=143 data-nosnippet>143</a>            <span class="kw">for </span><span class="kw-2">&amp;</span>borrow_index <span class="kw">in </span>borrow_indices {
+<a href=#144 id=144 data-nosnippet>144</a>                <span class="self">self</span>.facts.loan_killed_at.push((borrow_index, location_index));
+<a href=#145 id=145 data-nosnippet>145</a>            }
+<a href=#146 id=146 data-nosnippet>146</a>        }
+<a href=#147 id=147 data-nosnippet>147</a>    }
+<a href=#148 id=148 data-nosnippet>148</a>}</code></pre></div></section></main></body></html>

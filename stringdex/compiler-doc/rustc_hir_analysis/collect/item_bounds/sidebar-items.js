@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["associated_type_bounds","explicit_item_bounds","explicit_item_bounds_with_filter","explicit_item_self_bounds","impl_super_outlives","item_bounds","item_non_self_bounds","item_self_bounds","opaque_type_bounds","remap_gat_vars_and_recurse_into_nested_projections"],"struct":["AssocTyToOpaque","MapAndCompressBoundVars"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_BYTES_TO_HASH","MAX_HASHED_BUFFER_LEN"],"enum":["AllocError","AllocInit"],"fn":["all_zero","alloc_range"],"mod":["init_mask","provenance_map"],"struct":["AllocFlags","AllocRange","Allocation","ConstAllocation"],"trait":["AllocBytes"],"type":["AllocResult"]};

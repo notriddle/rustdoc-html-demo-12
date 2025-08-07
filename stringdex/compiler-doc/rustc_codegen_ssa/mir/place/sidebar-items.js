@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["codegen_tag_value","round_up_const_value_to_alignment"],"struct":["PlaceRef","PlaceValue","UninhabitedVariantError"]};

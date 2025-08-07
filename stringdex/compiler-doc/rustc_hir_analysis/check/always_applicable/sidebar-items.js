@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_drop_impl","check_negative_auto_trait_impl","ensure_impl_params_and_item_params_correspond","ensure_impl_predicates_are_implied_by_item_defn"]};

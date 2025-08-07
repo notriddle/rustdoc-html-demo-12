@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CALL_PENALTY","CONST_SWITCH_BONUS","INSTR_COST","LANDINGPAD_PENALTY","LARGE_SWITCH_PENALTY","RESUME_PENALTY"],"fn":["is_call_like"],"struct":["CostChecker"]};

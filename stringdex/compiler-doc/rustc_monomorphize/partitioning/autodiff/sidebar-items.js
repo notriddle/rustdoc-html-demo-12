@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["adjust_activity_to_abi","find_autodiff_source_functions"]};

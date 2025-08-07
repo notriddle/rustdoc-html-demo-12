@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["expand_manifest","is_whitespace","sanitize_name","strip_shebang"],"struct":["ScriptSource"]};

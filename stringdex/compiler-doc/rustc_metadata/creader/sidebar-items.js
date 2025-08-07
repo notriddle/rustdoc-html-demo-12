@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CrateOrigin","DylibError","LoadResult","LoadedMacro"],"fn":["attempt_load_dylib","fn_spans","format_dlopen_err","load_dylib","load_symbol_from_dylib"],"struct":["CStore","CrateDump","CrateMetadataRef","Library"],"trait":["MetadataLoader"],"type":["MetadataLoaderDyn"]};

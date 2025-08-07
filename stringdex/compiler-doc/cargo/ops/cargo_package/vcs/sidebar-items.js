@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_repo_state","collect_statuses","configure_dirwalk","dirty_files_outside_pkg_root","git","relative_package_root","status_submodules","warn_symlink_checked_out_as_plain_text_file"],"struct":["GitVcsInfo","VcsInfo"]};

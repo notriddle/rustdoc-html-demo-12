@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["make_bridge_trait"],"trait":["AdtDef","AliasDef","Allocation","AssocDef","BrNamedDef","ClosureDef","ConstDef","CoroutineClosureDef","CoroutineDef","CoroutineWitnessDef","CrateItem","Error","FnDef","ForeignDef","ForeignModuleDef","GenericDef","ImplDef","OpaqueDef","ParamDef","Prov","RegionDef","StaticDef","TraitDef"]};

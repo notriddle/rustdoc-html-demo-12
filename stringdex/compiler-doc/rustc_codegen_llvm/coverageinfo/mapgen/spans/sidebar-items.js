@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_coords","make_coords"],"struct":["Coords"]};

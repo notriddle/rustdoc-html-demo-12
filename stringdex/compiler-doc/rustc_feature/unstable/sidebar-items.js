@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INCOMPATIBLE_FEATURES"],"enum":["FeatureStatus"],"macro":["declare_features","status_to_enum"],"static":["UNSTABLE_LANG_FEATURES"],"struct":["EnabledLangFeature","EnabledLibFeature","Features"]};

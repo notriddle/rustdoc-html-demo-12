@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["parse_derive_like"],"struct":["ProcMacroAttributeParser","ProcMacroDeriveParser","ProcMacroParser","RustcBuiltinMacroParser"]};

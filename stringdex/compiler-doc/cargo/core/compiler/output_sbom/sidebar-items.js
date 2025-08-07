@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SbomDependencyType"],"fn":["build_sbom","build_sbom_graph"],"struct":["Sbom","SbomCrate","SbomDependency","SbomFormatVersion","SbomIndex","SbomRustc"]};

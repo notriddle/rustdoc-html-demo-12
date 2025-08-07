@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CombineMapType","ConstraintKind","GenericKind","UndoLog","VerifyBound"],"mod":["leak_check"],"struct":["Constraint","RegionConstraintCollector","RegionConstraintData","RegionConstraintStorage","RegionSnapshot","RegionVariableInfo","TwoRegions","Verify","VerifyIfEq"],"type":["CombineMap","VarInfos"]};

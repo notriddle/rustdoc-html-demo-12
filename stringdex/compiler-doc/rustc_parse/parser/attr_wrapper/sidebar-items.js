@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["UsePreAttrPos"],"fn":["has_cfg_or_cfg_attr","needs_tokens"],"struct":["AttrWrapper","CollectPos"]};

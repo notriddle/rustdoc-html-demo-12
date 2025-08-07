@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["VENDOR_DIR"],"fn":["default_paths_to_vendor"],"struct":["Vendor","VendorOutput"]};

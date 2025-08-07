@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["RUSTDOC_JSON_TYPES"],"fn":["check"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DiagArgValue"],"macro":["with_fn"],"struct":["BugAbort","Diag","DiagInner","DiagLocation","DiagStyledString","FatalAbort","IsLint","StringPart","Subdiag"],"trait":["Diagnostic","EmissionGuarantee","IntoDiagArg","LintDiagnostic","Subdiagnostic"],"type":["DiagArg","DiagArgMap","DiagArgName"]};

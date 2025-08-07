@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CommentKind","Delimiter","IdentIsRaw","InvisibleOrigin","LitKind","MetaVarKind","NonterminalKind","NtExprKind","NtPatKind","TokenKind"],"fn":["ident_can_begin_expr","ident_can_begin_type"],"mod":["size_asserts"],"struct":["Lit","Token"]};

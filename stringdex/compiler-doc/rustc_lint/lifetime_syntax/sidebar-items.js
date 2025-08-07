@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LifetimeSyntaxCategory"],"fn":["build_mismatch_suggestion","check_fn_like","emit_mismatch_diagnostic","lifetimes_use_matched_syntax","report_mismatches"],"static":["MISMATCHED_LIFETIME_SYNTAXES"],"struct":["Info","LifetimeInfoCollector","LifetimeSyntax","LifetimeSyntaxCategories"],"type":["LifetimeInfoMap"]};

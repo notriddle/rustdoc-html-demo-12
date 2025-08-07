@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["register_member_constraints","take_opaques_and_register_member_constraints"],"struct":["ConstrainOpaqueTypeRegionVisitor"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PATH_REMAP"],"enum":["Alias","Kind","PathSet","ReallyDefault"],"fn":["crate_description","remap_paths"],"mod":["cargo"],"struct":["Builder","CLIStepPath","Libdir","RunConfig","ShouldRun","StepDescription","StepMetadata","TaskPath"],"trait":["AnyDebug","Step"]};

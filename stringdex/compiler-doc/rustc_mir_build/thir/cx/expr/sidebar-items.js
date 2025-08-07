@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["assign_op","bin_op"],"trait":["ToBorrowKind"]};

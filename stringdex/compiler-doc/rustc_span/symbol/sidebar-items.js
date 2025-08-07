@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PREDEFINED_SYMBOLS_COUNT","STDLIB_STABLE_CRATES","SYMBOL_DIGITS_BASE"],"fn":["used_keywords"],"mod":["kw","sym"],"struct":["ByteSymbol","Ident","IdentPrinter","Interner","InternerInner","MacroRulesNormalizedIdent","Symbol","SymbolIndex"]};

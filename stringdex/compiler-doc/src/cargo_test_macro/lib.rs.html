@@ -1,0 +1,361 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/cargo/crates/cargo-test-macro/src/lib.rs`."><title>lib.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="cargo_test_macro" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">cargo_test_macro/</div>lib.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! # Cargo test macro.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! This is meant to be consumed alongside `cargo-test-support`. See
+<a href=#4 id=4 data-nosnippet>4</a>//! &lt;https://rust-lang.github.io/cargo/contrib/&gt; for a guide on writing tests.
+<a href=#5 id=5 data-nosnippet>5</a>//!
+<a href=#6 id=6 data-nosnippet>6</a>//! &gt; This crate is maintained by the Cargo team, primarily for use by Cargo
+<a href=#7 id=7 data-nosnippet>7</a>//! &gt; and not intended for external use. This
+<a href=#8 id=8 data-nosnippet>8</a>//! &gt; crate may make major changes to its APIs or be deprecated without warning.
+<a href=#9 id=9 data-nosnippet>9</a>
+<a href=#10 id=10 data-nosnippet>10</a></span><span class="kw">use </span>proc_macro::<span class="kw-2">*</span>;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>std::path::Path;
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>std::process::Command;
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span>std::sync::LazyLock;
+<a href=#14 id=14 data-nosnippet>14</a>
+<a href=#15 id=15 data-nosnippet>15</a><span class="doccomment">/// Replacement for `#[test]`
+<a href=#16 id=16 data-nosnippet>16</a>///
+<a href=#17 id=17 data-nosnippet>17</a>/// The `#[cargo_test]` attribute extends `#[test]` with some setup before starting the test.
+<a href=#18 id=18 data-nosnippet>18</a>/// It will create a filesystem "sandbox" under the "cargo integration test" directory for each test, such as `/path/to/cargo/target/tmp/cit/t123/`.
+<a href=#19 id=19 data-nosnippet>19</a>/// The sandbox will contain a `home` directory that will be used instead of your normal home directory.
+<a href=#20 id=20 data-nosnippet>20</a>///
+<a href=#21 id=21 data-nosnippet>21</a>/// The `#[cargo_test]` attribute takes several options that will affect how the test is generated.
+<a href=#22 id=22 data-nosnippet>22</a>/// They are listed in parentheses separated with commas, such as:
+<a href=#23 id=23 data-nosnippet>23</a>///
+<a href=#24 id=24 data-nosnippet>24</a>/// ```rust,ignore
+<a href=#25 id=25 data-nosnippet>25</a>/// #[cargo_test(nightly, reason = "-Zfoo is unstable")]
+<a href=#26 id=26 data-nosnippet>26</a>/// ```
+<a href=#27 id=27 data-nosnippet>27</a>///
+<a href=#28 id=28 data-nosnippet>28</a>/// The options it supports are:
+<a href=#29 id=29 data-nosnippet>29</a>///
+<a href=#30 id=30 data-nosnippet>30</a>/// * `&gt;=1.64` --- This indicates that the test will only run with the given version of `rustc` or newer.
+<a href=#31 id=31 data-nosnippet>31</a>///   This can be used when a new `rustc` feature has been stabilized that the test depends on.
+<a href=#32 id=32 data-nosnippet>32</a>///   If this is specified, a `reason` is required to explain why it is being checked.
+<a href=#33 id=33 data-nosnippet>33</a>/// * `nightly` --- This will cause the test to be ignored if not running on the nightly toolchain.
+<a href=#34 id=34 data-nosnippet>34</a>///   This is useful for tests that use unstable options in `rustc` or `rustdoc`.
+<a href=#35 id=35 data-nosnippet>35</a>///   These tests are run in Cargo's CI, but are disabled in rust-lang/rust's CI due to the difficulty of updating both repos simultaneously.
+<a href=#36 id=36 data-nosnippet>36</a>///   A `reason` field is required to explain why it is nightly-only.
+<a href=#37 id=37 data-nosnippet>37</a>/// * `requires = "&lt;cmd&gt;"` --- This indicates a command that is required to be installed to be run.
+<a href=#38 id=38 data-nosnippet>38</a>///   For example, `requires = "rustfmt"` means the test will only run if the executable `rustfmt` is installed.
+<a href=#39 id=39 data-nosnippet>39</a>///   These tests are *always* run on CI.
+<a href=#40 id=40 data-nosnippet>40</a>///   This is mainly used to avoid requiring contributors from having every dependency installed.
+<a href=#41 id=41 data-nosnippet>41</a>/// * `build_std_real` --- This is a "real" `-Zbuild-std` test (in the `build_std` integration test).
+<a href=#42 id=42 data-nosnippet>42</a>///   This only runs on nightly, and only if the environment variable `CARGO_RUN_BUILD_STD_TESTS` is set (these tests on run on Linux).
+<a href=#43 id=43 data-nosnippet>43</a>/// * `build_std_mock` --- This is a "mock" `-Zbuild-std` test (which uses a mock standard library).
+<a href=#44 id=44 data-nosnippet>44</a>///   This only runs on nightly, and is disabled for windows-gnu.
+<a href=#45 id=45 data-nosnippet>45</a>/// * `public_network_test` --- This tests contacts the public internet.
+<a href=#46 id=46 data-nosnippet>46</a>///   These tests are disabled unless the `CARGO_PUBLIC_NETWORK_TESTS` environment variable is set.
+<a href=#47 id=47 data-nosnippet>47</a>///   Use of this should be *extremely rare*, please avoid using it if possible.
+<a href=#48 id=48 data-nosnippet>48</a>///   The hosts it contacts should have a relatively high confidence that they are reliable and stable (such as github.com), especially in CI.
+<a href=#49 id=49 data-nosnippet>49</a>///   The tests should be carefully considered for developer security and privacy as well.
+<a href=#50 id=50 data-nosnippet>50</a>/// * `container_test` --- This indicates that it is a test that uses Docker.
+<a href=#51 id=51 data-nosnippet>51</a>///   These tests are disabled unless the `CARGO_CONTAINER_TESTS` environment variable is set.
+<a href=#52 id=52 data-nosnippet>52</a>///   This requires that you have Docker installed.
+<a href=#53 id=53 data-nosnippet>53</a>///   The SSH tests also assume that you have OpenSSH installed.
+<a href=#54 id=54 data-nosnippet>54</a>///   These should work on Linux, macOS, and Windows where possible.
+<a href=#55 id=55 data-nosnippet>55</a>///   Unfortunately these tests are not run in CI for macOS or Windows (no Docker on macOS, and Windows does not support Linux images).
+<a href=#56 id=56 data-nosnippet>56</a>///   See [`cargo-test-support::containers`](https://doc.rust-lang.org/nightly/nightly-rustc/cargo_test_support/containers) for more on writing these tests.
+<a href=#57 id=57 data-nosnippet>57</a>/// * `ignore_windows="reason"` --- Indicates that the test should be ignored on windows for the given reason.
+<a href=#58 id=58 data-nosnippet>58</a></span><span class="attr">#[proc_macro_attribute]
+<a href=#59 id=59 data-nosnippet>59</a></span><span class="kw">pub fn </span>cargo_test(attr: TokenStream, item: TokenStream) -&gt; TokenStream {
+<a href=#60 id=60 data-nosnippet>60</a>    <span class="comment">// Ideally these options would be embedded in the test itself. However, I
+<a href=#61 id=61 data-nosnippet>61</a>    // find it very helpful to have the test clearly state whether or not it
+<a href=#62 id=62 data-nosnippet>62</a>    // is ignored. It would be nice to have some kind of runtime ignore
+<a href=#63 id=63 data-nosnippet>63</a>    // support (such as
+<a href=#64 id=64 data-nosnippet>64</a>    // https://internals.rust-lang.org/t/pre-rfc-skippable-tests/14611).
+<a href=#65 id=65 data-nosnippet>65</a>    //
+<a href=#66 id=66 data-nosnippet>66</a>    // Unfortunately a big drawback here is that if the environment changes
+<a href=#67 id=67 data-nosnippet>67</a>    // (such as the existence of the `git` CLI), this will not trigger a
+<a href=#68 id=68 data-nosnippet>68</a>    // rebuild and the test will still be ignored. In theory, something like
+<a href=#69 id=69 data-nosnippet>69</a>    // `tracked_env` or `tracked_path`
+<a href=#70 id=70 data-nosnippet>70</a>    // (https://github.com/rust-lang/rust/issues/99515) could help with this,
+<a href=#71 id=71 data-nosnippet>71</a>    // but they don't really handle the absence of files well.
+<a href=#72 id=72 data-nosnippet>72</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>ignore = <span class="bool-val">false</span>;
+<a href=#73 id=73 data-nosnippet>73</a>    <span class="kw">let </span><span class="kw-2">mut </span>requires_reason = <span class="bool-val">false</span>;
+<a href=#74 id=74 data-nosnippet>74</a>    <span class="kw">let </span><span class="kw-2">mut </span>explicit_reason = <span class="prelude-val">None</span>;
+<a href=#75 id=75 data-nosnippet>75</a>    <span class="kw">let </span><span class="kw-2">mut </span>implicit_reasons = Vec::new();
+<a href=#76 id=76 data-nosnippet>76</a>    <span class="macro">macro_rules!</span> set_ignore {
+<a href=#77 id=77 data-nosnippet>77</a>        (<span class="macro-nonterminal">$predicate</span>:expr, $(<span class="macro-nonterminal">$arg</span>:tt)<span class="kw-2">*</span>) =&gt; {
+<a href=#78 id=78 data-nosnippet>78</a>            <span class="kw">let </span>p = <span class="macro-nonterminal">$predicate</span>;
+<a href=#79 id=79 data-nosnippet>79</a>            ignore |= p;
+<a href=#80 id=80 data-nosnippet>80</a>            <span class="kw">if </span>p {
+<a href=#81 id=81 data-nosnippet>81</a>                implicit_reasons.push(std::fmt::format(<span class="macro">format_args!</span>($(<span class="macro-nonterminal">$arg</span>)<span class="kw-2">*</span>)));
+<a href=#82 id=82 data-nosnippet>82</a>            }
+<a href=#83 id=83 data-nosnippet>83</a>        };
+<a href=#84 id=84 data-nosnippet>84</a>    }
+<a href=#85 id=85 data-nosnippet>85</a>    <span class="kw">let </span>is_not_nightly = !version().<span class="number">1</span>;
+<a href=#86 id=86 data-nosnippet>86</a>    <span class="kw">for </span>rule <span class="kw">in </span>split_rules(attr) {
+<a href=#87 id=87 data-nosnippet>87</a>        <span class="kw">match </span>rule.as_str() {
+<a href=#88 id=88 data-nosnippet>88</a>            <span class="string">"build_std_real" </span>=&gt; {
+<a href=#89 id=89 data-nosnippet>89</a>                <span class="comment">// Only run the "real" build-std tests on nightly and with an
+<a href=#90 id=90 data-nosnippet>90</a>                // explicit opt-in (these generally only work on linux, and
+<a href=#91 id=91 data-nosnippet>91</a>                // have some extra requirements, and are slow, and can pollute
+<a href=#92 id=92 data-nosnippet>92</a>                // the environment since it downloads dependencies).
+<a href=#93 id=93 data-nosnippet>93</a>                </span><span class="macro">set_ignore!</span>(is_not_nightly, <span class="string">"requires nightly"</span>);
+<a href=#94 id=94 data-nosnippet>94</a>                <span class="macro">set_ignore!</span>(
+<a href=#95 id=95 data-nosnippet>95</a>                    <span class="macro">option_env!</span>(<span class="string">"CARGO_RUN_BUILD_STD_TESTS"</span>).is_none(),
+<a href=#96 id=96 data-nosnippet>96</a>                    <span class="string">"CARGO_RUN_BUILD_STD_TESTS must be set"
+<a href=#97 id=97 data-nosnippet>97</a>                </span>);
+<a href=#98 id=98 data-nosnippet>98</a>            }
+<a href=#99 id=99 data-nosnippet>99</a>            <span class="string">"build_std_mock" </span>=&gt; {
+<a href=#100 id=100 data-nosnippet>100</a>                <span class="comment">// Only run the "mock" build-std tests on nightly and disable
+<a href=#101 id=101 data-nosnippet>101</a>                // for windows-gnu which is missing object files (see
+<a href=#102 id=102 data-nosnippet>102</a>                // https://github.com/rust-lang/wg-cargo-std-aware/issues/46).
+<a href=#103 id=103 data-nosnippet>103</a>                </span><span class="macro">set_ignore!</span>(is_not_nightly, <span class="string">"requires nightly"</span>);
+<a href=#104 id=104 data-nosnippet>104</a>                <span class="macro">set_ignore!</span>(
+<a href=#105 id=105 data-nosnippet>105</a>                    <span class="macro">cfg!</span>(all(target_os = <span class="string">"windows"</span>, target_env = <span class="string">"gnu"</span>)),
+<a href=#106 id=106 data-nosnippet>106</a>                    <span class="string">"does not work on windows-gnu"
+<a href=#107 id=107 data-nosnippet>107</a>                </span>);
+<a href=#108 id=108 data-nosnippet>108</a>            }
+<a href=#109 id=109 data-nosnippet>109</a>            <span class="string">"container_test" </span>=&gt; {
+<a href=#110 id=110 data-nosnippet>110</a>                <span class="comment">// These tests must be opt-in because they require docker.
+<a href=#111 id=111 data-nosnippet>111</a>                </span><span class="macro">set_ignore!</span>(
+<a href=#112 id=112 data-nosnippet>112</a>                    <span class="macro">option_env!</span>(<span class="string">"CARGO_CONTAINER_TESTS"</span>).is_none(),
+<a href=#113 id=113 data-nosnippet>113</a>                    <span class="string">"CARGO_CONTAINER_TESTS must be set"
+<a href=#114 id=114 data-nosnippet>114</a>                </span>);
+<a href=#115 id=115 data-nosnippet>115</a>            }
+<a href=#116 id=116 data-nosnippet>116</a>            <span class="string">"public_network_test" </span>=&gt; {
+<a href=#117 id=117 data-nosnippet>117</a>                <span class="comment">// These tests must be opt-in because they touch the public
+<a href=#118 id=118 data-nosnippet>118</a>                // network. The use of these should be **EXTREMELY RARE**, and
+<a href=#119 id=119 data-nosnippet>119</a>                // should only touch things which would nearly certainly work
+<a href=#120 id=120 data-nosnippet>120</a>                // in CI (like github.com).
+<a href=#121 id=121 data-nosnippet>121</a>                </span><span class="macro">set_ignore!</span>(
+<a href=#122 id=122 data-nosnippet>122</a>                    <span class="macro">option_env!</span>(<span class="string">"CARGO_PUBLIC_NETWORK_TESTS"</span>).is_none(),
+<a href=#123 id=123 data-nosnippet>123</a>                    <span class="string">"CARGO_PUBLIC_NETWORK_TESTS must be set"
+<a href=#124 id=124 data-nosnippet>124</a>                </span>);
+<a href=#125 id=125 data-nosnippet>125</a>            }
+<a href=#126 id=126 data-nosnippet>126</a>            <span class="string">"nightly" </span>=&gt; {
+<a href=#127 id=127 data-nosnippet>127</a>                requires_reason = <span class="bool-val">true</span>;
+<a href=#128 id=128 data-nosnippet>128</a>                <span class="macro">set_ignore!</span>(is_not_nightly, <span class="string">"requires nightly"</span>);
+<a href=#129 id=129 data-nosnippet>129</a>            }
+<a href=#130 id=130 data-nosnippet>130</a>            <span class="string">"requires_rustup_stable" </span>=&gt; {
+<a href=#131 id=131 data-nosnippet>131</a>                <span class="macro">set_ignore!</span>(
+<a href=#132 id=132 data-nosnippet>132</a>                    !has_rustup_stable(),
+<a href=#133 id=133 data-nosnippet>133</a>                    <span class="string">"rustup or stable toolchain not installed"
+<a href=#134 id=134 data-nosnippet>134</a>                </span>);
+<a href=#135 id=135 data-nosnippet>135</a>            }
+<a href=#136 id=136 data-nosnippet>136</a>            s <span class="kw">if </span>s.starts_with(<span class="string">"requires="</span>) =&gt; {
+<a href=#137 id=137 data-nosnippet>137</a>                <span class="kw">let </span>command = <span class="kw-2">&amp;</span>s[<span class="number">9</span>..];
+<a href=#138 id=138 data-nosnippet>138</a>                <span class="kw">let </span><span class="prelude-val">Ok</span>(literal) = command.parse::&lt;Literal&gt;() <span class="kw">else </span>{
+<a href=#139 id=139 data-nosnippet>139</a>                    <span class="macro">panic!</span>(<span class="string">"expect a string literal, found: {command}"</span>);
+<a href=#140 id=140 data-nosnippet>140</a>                };
+<a href=#141 id=141 data-nosnippet>141</a>                <span class="kw">let </span>literal = literal.to_string();
+<a href=#142 id=142 data-nosnippet>142</a>                <span class="kw">let </span><span class="prelude-val">Some</span>(command) = literal
+<a href=#143 id=143 data-nosnippet>143</a>                    .strip_prefix(<span class="string">'"'</span>)
+<a href=#144 id=144 data-nosnippet>144</a>                    .and_then(|lit| lit.strip_suffix(<span class="string">'"'</span>))
+<a href=#145 id=145 data-nosnippet>145</a>                <span class="kw">else </span>{
+<a href=#146 id=146 data-nosnippet>146</a>                    <span class="macro">panic!</span>(<span class="string">"expect a quoted string literal, found: {literal}"</span>);
+<a href=#147 id=147 data-nosnippet>147</a>                };
+<a href=#148 id=148 data-nosnippet>148</a>                <span class="macro">set_ignore!</span>(!has_command(command), <span class="string">"{command} not installed"</span>);
+<a href=#149 id=149 data-nosnippet>149</a>            }
+<a href=#150 id=150 data-nosnippet>150</a>            s <span class="kw">if </span>s.starts_with(<span class="string">"&gt;=1."</span>) =&gt; {
+<a href=#151 id=151 data-nosnippet>151</a>                requires_reason = <span class="bool-val">true</span>;
+<a href=#152 id=152 data-nosnippet>152</a>                <span class="kw">let </span>min_minor = s[<span class="number">4</span>..].parse().unwrap();
+<a href=#153 id=153 data-nosnippet>153</a>                <span class="kw">let </span>minor = version().<span class="number">0</span>;
+<a href=#154 id=154 data-nosnippet>154</a>                <span class="macro">set_ignore!</span>(minor &lt; min_minor, <span class="string">"requires rustc 1.{minor} or newer"</span>);
+<a href=#155 id=155 data-nosnippet>155</a>            }
+<a href=#156 id=156 data-nosnippet>156</a>            s <span class="kw">if </span>s.starts_with(<span class="string">"reason="</span>) =&gt; {
+<a href=#157 id=157 data-nosnippet>157</a>                explicit_reason = <span class="prelude-val">Some</span>(s[<span class="number">7</span>..].parse().unwrap());
+<a href=#158 id=158 data-nosnippet>158</a>            }
+<a href=#159 id=159 data-nosnippet>159</a>            s <span class="kw">if </span>s.starts_with(<span class="string">"ignore_windows="</span>) =&gt; {
+<a href=#160 id=160 data-nosnippet>160</a>                <span class="macro">set_ignore!</span>(<span class="macro">cfg!</span>(windows), <span class="string">"{}"</span>, <span class="kw-2">&amp;</span>s[<span class="number">16</span>..s.len() - <span class="number">1</span>]);
+<a href=#161 id=161 data-nosnippet>161</a>            }
+<a href=#162 id=162 data-nosnippet>162</a>            <span class="kw">_ </span>=&gt; <span class="macro">panic!</span>(<span class="string">"unknown rule {:?}"</span>, rule),
+<a href=#163 id=163 data-nosnippet>163</a>        }
+<a href=#164 id=164 data-nosnippet>164</a>    }
+<a href=#165 id=165 data-nosnippet>165</a>    <span class="kw">if </span>requires_reason &amp;&amp; explicit_reason.is_none() {
+<a href=#166 id=166 data-nosnippet>166</a>        <span class="macro">panic!</span>(
+<a href=#167 id=167 data-nosnippet>167</a>            <span class="string">"#[cargo_test] with a rule also requires a reason, \
+<a href=#168 id=168 data-nosnippet>168</a>            such as #[cargo_test(nightly, reason = \"needs -Z unstable-thing\")]"
+<a href=#169 id=169 data-nosnippet>169</a>        </span>);
+<a href=#170 id=170 data-nosnippet>170</a>    }
+<a href=#171 id=171 data-nosnippet>171</a>
+<a href=#172 id=172 data-nosnippet>172</a>    <span class="comment">// Construct the appropriate attributes.
+<a href=#173 id=173 data-nosnippet>173</a>    </span><span class="kw">let </span>span = Span::call_site();
+<a href=#174 id=174 data-nosnippet>174</a>    <span class="kw">let </span><span class="kw-2">mut </span>ret = TokenStream::new();
+<a href=#175 id=175 data-nosnippet>175</a>    <span class="kw">let </span>add_attr = |ret: <span class="kw-2">&amp;mut </span>TokenStream, attr_name, attr_input| {
+<a href=#176 id=176 data-nosnippet>176</a>        ret.extend(<span class="prelude-val">Some</span>(TokenTree::from(Punct::new(<span class="string">'#'</span>, Spacing::Alone))));
+<a href=#177 id=177 data-nosnippet>177</a>        <span class="kw">let </span>attr = TokenTree::from(Ident::new(attr_name, span));
+<a href=#178 id=178 data-nosnippet>178</a>        <span class="kw">let </span><span class="kw-2">mut </span>attr_stream: TokenStream = attr.into();
+<a href=#179 id=179 data-nosnippet>179</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(input) = attr_input {
+<a href=#180 id=180 data-nosnippet>180</a>            attr_stream.extend(input);
+<a href=#181 id=181 data-nosnippet>181</a>        }
+<a href=#182 id=182 data-nosnippet>182</a>        ret.extend(<span class="prelude-val">Some</span>(TokenTree::from(Group::new(
+<a href=#183 id=183 data-nosnippet>183</a>            Delimiter::Bracket,
+<a href=#184 id=184 data-nosnippet>184</a>            attr_stream,
+<a href=#185 id=185 data-nosnippet>185</a>        ))));
+<a href=#186 id=186 data-nosnippet>186</a>    };
+<a href=#187 id=187 data-nosnippet>187</a>    add_attr(<span class="kw-2">&amp;mut </span>ret, <span class="string">"test"</span>, <span class="prelude-val">None</span>);
+<a href=#188 id=188 data-nosnippet>188</a>    <span class="kw">if </span>ignore {
+<a href=#189 id=189 data-nosnippet>189</a>        <span class="kw">let </span>reason = explicit_reason
+<a href=#190 id=190 data-nosnippet>190</a>            .or_else(|| {
+<a href=#191 id=191 data-nosnippet>191</a>                (!implicit_reasons.is_empty())
+<a href=#192 id=192 data-nosnippet>192</a>                    .then(|| TokenTree::from(Literal::string(<span class="kw-2">&amp;</span>implicit_reasons.join(<span class="string">", "</span>))).into())
+<a href=#193 id=193 data-nosnippet>193</a>            })
+<a href=#194 id=194 data-nosnippet>194</a>            .map(|reason: TokenStream| {
+<a href=#195 id=195 data-nosnippet>195</a>                <span class="kw">let </span><span class="kw-2">mut </span>stream = TokenStream::new();
+<a href=#196 id=196 data-nosnippet>196</a>                stream.extend(<span class="prelude-val">Some</span>(TokenTree::from(Punct::new(<span class="string">'='</span>, Spacing::Alone))));
+<a href=#197 id=197 data-nosnippet>197</a>                stream.extend(<span class="prelude-val">Some</span>(reason));
+<a href=#198 id=198 data-nosnippet>198</a>                stream
+<a href=#199 id=199 data-nosnippet>199</a>            });
+<a href=#200 id=200 data-nosnippet>200</a>        add_attr(<span class="kw-2">&amp;mut </span>ret, <span class="string">"ignore"</span>, reason);
+<a href=#201 id=201 data-nosnippet>201</a>    }
+<a href=#202 id=202 data-nosnippet>202</a>
+<a href=#203 id=203 data-nosnippet>203</a>    <span class="comment">// Find where the function body starts, and add the boilerplate at the start.
+<a href=#204 id=204 data-nosnippet>204</a>    </span><span class="kw">for </span>token <span class="kw">in </span>item {
+<a href=#205 id=205 data-nosnippet>205</a>        <span class="kw">let </span>group = <span class="kw">match </span>token {
+<a href=#206 id=206 data-nosnippet>206</a>            TokenTree::Group(g) =&gt; {
+<a href=#207 id=207 data-nosnippet>207</a>                <span class="kw">if </span>g.delimiter() == Delimiter::Brace {
+<a href=#208 id=208 data-nosnippet>208</a>                    g
+<a href=#209 id=209 data-nosnippet>209</a>                } <span class="kw">else </span>{
+<a href=#210 id=210 data-nosnippet>210</a>                    ret.extend(<span class="prelude-val">Some</span>(TokenTree::Group(g)));
+<a href=#211 id=211 data-nosnippet>211</a>                    <span class="kw">continue</span>;
+<a href=#212 id=212 data-nosnippet>212</a>                }
+<a href=#213 id=213 data-nosnippet>213</a>            }
+<a href=#214 id=214 data-nosnippet>214</a>            other =&gt; {
+<a href=#215 id=215 data-nosnippet>215</a>                ret.extend(<span class="prelude-val">Some</span>(other));
+<a href=#216 id=216 data-nosnippet>216</a>                <span class="kw">continue</span>;
+<a href=#217 id=217 data-nosnippet>217</a>            }
+<a href=#218 id=218 data-nosnippet>218</a>        };
+<a href=#219 id=219 data-nosnippet>219</a>
+<a href=#220 id=220 data-nosnippet>220</a>        <span class="kw">let </span><span class="kw-2">mut </span>new_body = to_token_stream(
+<a href=#221 id=221 data-nosnippet>221</a>            <span class="string">r#"let _test_guard = {
+<a href=#222 id=222 data-nosnippet>222</a>                let tmp_dir = option_env!("CARGO_TARGET_TMPDIR");
+<a href=#223 id=223 data-nosnippet>223</a>                cargo_test_support::paths::init_root(tmp_dir)
+<a href=#224 id=224 data-nosnippet>224</a>            };"#</span>,
+<a href=#225 id=225 data-nosnippet>225</a>        );
+<a href=#226 id=226 data-nosnippet>226</a>
+<a href=#227 id=227 data-nosnippet>227</a>        new_body.extend(group.stream());
+<a href=#228 id=228 data-nosnippet>228</a>        ret.extend(<span class="prelude-val">Some</span>(TokenTree::from(Group::new(
+<a href=#229 id=229 data-nosnippet>229</a>            group.delimiter(),
+<a href=#230 id=230 data-nosnippet>230</a>            new_body,
+<a href=#231 id=231 data-nosnippet>231</a>        ))));
+<a href=#232 id=232 data-nosnippet>232</a>    }
+<a href=#233 id=233 data-nosnippet>233</a>
+<a href=#234 id=234 data-nosnippet>234</a>    ret
+<a href=#235 id=235 data-nosnippet>235</a>}
+<a href=#236 id=236 data-nosnippet>236</a>
+<a href=#237 id=237 data-nosnippet>237</a><span class="kw">fn </span>split_rules(t: TokenStream) -&gt; Vec&lt;String&gt; {
+<a href=#238 id=238 data-nosnippet>238</a>    <span class="kw">let </span>tts: Vec&lt;<span class="kw">_</span>&gt; = t.into_iter().collect();
+<a href=#239 id=239 data-nosnippet>239</a>    tts.split(|tt| <span class="kw">match </span>tt {
+<a href=#240 id=240 data-nosnippet>240</a>        TokenTree::Punct(p) =&gt; p.as_char() == <span class="string">','</span>,
+<a href=#241 id=241 data-nosnippet>241</a>        <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
+<a href=#242 id=242 data-nosnippet>242</a>    })
+<a href=#243 id=243 data-nosnippet>243</a>    .filter(|parts| !parts.is_empty())
+<a href=#244 id=244 data-nosnippet>244</a>    .map(|parts| {
+<a href=#245 id=245 data-nosnippet>245</a>        parts
+<a href=#246 id=246 data-nosnippet>246</a>            .into_iter()
+<a href=#247 id=247 data-nosnippet>247</a>            .map(|part| part.to_string())
+<a href=#248 id=248 data-nosnippet>248</a>            .collect::&lt;String&gt;()
+<a href=#249 id=249 data-nosnippet>249</a>    })
+<a href=#250 id=250 data-nosnippet>250</a>    .collect()
+<a href=#251 id=251 data-nosnippet>251</a>}
+<a href=#252 id=252 data-nosnippet>252</a>
+<a href=#253 id=253 data-nosnippet>253</a><span class="kw">fn </span>to_token_stream(code: <span class="kw-2">&amp;</span>str) -&gt; TokenStream {
+<a href=#254 id=254 data-nosnippet>254</a>    code.parse().unwrap()
+<a href=#255 id=255 data-nosnippet>255</a>}
+<a href=#256 id=256 data-nosnippet>256</a>
+<a href=#257 id=257 data-nosnippet>257</a><span class="kw">static </span>VERSION: std::sync::LazyLock&lt;(u32, bool)&gt; = LazyLock::new(|| {
+<a href=#258 id=258 data-nosnippet>258</a>    <span class="kw">let </span>output = Command::new(<span class="string">"rustc"</span>)
+<a href=#259 id=259 data-nosnippet>259</a>        .arg(<span class="string">"-V"</span>)
+<a href=#260 id=260 data-nosnippet>260</a>        .output()
+<a href=#261 id=261 data-nosnippet>261</a>        .expect(<span class="string">"rustc should run"</span>);
+<a href=#262 id=262 data-nosnippet>262</a>    <span class="kw">let </span>stdout = std::str::from_utf8(<span class="kw-2">&amp;</span>output.stdout).expect(<span class="string">"utf8"</span>);
+<a href=#263 id=263 data-nosnippet>263</a>    <span class="kw">let </span>vers = stdout.split_whitespace().skip(<span class="number">1</span>).next().unwrap();
+<a href=#264 id=264 data-nosnippet>264</a>    <span class="kw">let </span>is_nightly = <span class="macro">option_env!</span>(<span class="string">"CARGO_TEST_DISABLE_NIGHTLY"</span>).is_none()
+<a href=#265 id=265 data-nosnippet>265</a>        &amp;&amp; (vers.contains(<span class="string">"-nightly"</span>) || vers.contains(<span class="string">"-dev"</span>));
+<a href=#266 id=266 data-nosnippet>266</a>    <span class="kw">let </span>minor = vers.split(<span class="string">'.'</span>).skip(<span class="number">1</span>).next().unwrap().parse().unwrap();
+<a href=#267 id=267 data-nosnippet>267</a>    (minor, is_nightly)
+<a href=#268 id=268 data-nosnippet>268</a>});
+<a href=#269 id=269 data-nosnippet>269</a>
+<a href=#270 id=270 data-nosnippet>270</a><span class="kw">fn </span>version() -&gt; (u32, bool) {
+<a href=#271 id=271 data-nosnippet>271</a>    LazyLock::force(<span class="kw-2">&amp;</span>VERSION).clone()
+<a href=#272 id=272 data-nosnippet>272</a>}
+<a href=#273 id=273 data-nosnippet>273</a>
+<a href=#274 id=274 data-nosnippet>274</a><span class="kw">fn </span>check_command(command_path: <span class="kw-2">&amp;</span>Path, args: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span>str]) -&gt; bool {
+<a href=#275 id=275 data-nosnippet>275</a>    <span class="kw">let </span><span class="kw-2">mut </span>command = Command::new(command_path);
+<a href=#276 id=276 data-nosnippet>276</a>    <span class="kw">let </span>command_name = command.get_program().to_str().unwrap().to_owned();
+<a href=#277 id=277 data-nosnippet>277</a>    command.args(args);
+<a href=#278 id=278 data-nosnippet>278</a>    <span class="kw">let </span>output = <span class="kw">match </span>command.output() {
+<a href=#279 id=279 data-nosnippet>279</a>        <span class="prelude-val">Ok</span>(output) =&gt; output,
+<a href=#280 id=280 data-nosnippet>280</a>        <span class="prelude-val">Err</span>(e) =&gt; {
+<a href=#281 id=281 data-nosnippet>281</a>            <span class="comment">// * hg is not installed on GitHub macOS or certain constrained
+<a href=#282 id=282 data-nosnippet>282</a>            //   environments like Docker. Consider installing it if Cargo
+<a href=#283 id=283 data-nosnippet>283</a>            //   gains more hg support, but otherwise it isn't critical.
+<a href=#284 id=284 data-nosnippet>284</a>            // * lldb is not pre-installed on Ubuntu and Windows, so skip.
+<a href=#285 id=285 data-nosnippet>285</a>            </span><span class="kw">if </span>is_ci() &amp;&amp; !<span class="macro">matches!</span>(command_name.as_str(), <span class="string">"hg" </span>| <span class="string">"lldb"</span>) {
+<a href=#286 id=286 data-nosnippet>286</a>                <span class="macro">panic!</span>(<span class="string">"expected command `{command_name}` to be somewhere in PATH: {e}"</span>,);
+<a href=#287 id=287 data-nosnippet>287</a>            }
+<a href=#288 id=288 data-nosnippet>288</a>            <span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#289 id=289 data-nosnippet>289</a>        }
+<a href=#290 id=290 data-nosnippet>290</a>    };
+<a href=#291 id=291 data-nosnippet>291</a>    <span class="kw">if </span>!output.status.success() {
+<a href=#292 id=292 data-nosnippet>292</a>        <span class="macro">panic!</span>(
+<a href=#293 id=293 data-nosnippet>293</a>            <span class="string">"expected command `{command_name}` to be runnable, got error {}:\n\
+<a href=#294 id=294 data-nosnippet>294</a>            stderr:{}\n\
+<a href=#295 id=295 data-nosnippet>295</a>            stdout:{}\n"</span>,
+<a href=#296 id=296 data-nosnippet>296</a>            output.status,
+<a href=#297 id=297 data-nosnippet>297</a>            String::from_utf8_lossy(<span class="kw-2">&amp;</span>output.stderr),
+<a href=#298 id=298 data-nosnippet>298</a>            String::from_utf8_lossy(<span class="kw-2">&amp;</span>output.stdout)
+<a href=#299 id=299 data-nosnippet>299</a>        );
+<a href=#300 id=300 data-nosnippet>300</a>    }
+<a href=#301 id=301 data-nosnippet>301</a>    <span class="bool-val">true
+<a href=#302 id=302 data-nosnippet>302</a></span>}
+<a href=#303 id=303 data-nosnippet>303</a>
+<a href=#304 id=304 data-nosnippet>304</a><span class="kw">fn </span>has_command(command: <span class="kw-2">&amp;</span>str) -&gt; bool {
+<a href=#305 id=305 data-nosnippet>305</a>    <span class="kw">use </span>std::env::consts::EXE_EXTENSION;
+<a href=#306 id=306 data-nosnippet>306</a>    <span class="comment">// ALLOWED: For testing cargo itself only.
+<a href=#307 id=307 data-nosnippet>307</a>    </span><span class="attr">#[allow(clippy::disallowed_methods)]
+<a href=#308 id=308 data-nosnippet>308</a>    </span><span class="kw">let </span><span class="prelude-val">Some</span>(paths) = std::env::var_os(<span class="string">"PATH"</span>) <span class="kw">else </span>{
+<a href=#309 id=309 data-nosnippet>309</a>        <span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#310 id=310 data-nosnippet>310</a>    };
+<a href=#311 id=311 data-nosnippet>311</a>    std::env::split_paths(<span class="kw-2">&amp;</span>paths)
+<a href=#312 id=312 data-nosnippet>312</a>        .flat_map(|path| {
+<a href=#313 id=313 data-nosnippet>313</a>            <span class="kw">let </span>candidate = path.join(<span class="kw-2">&amp;</span>command);
+<a href=#314 id=314 data-nosnippet>314</a>            <span class="kw">let </span>with_exe = <span class="kw">if </span>EXE_EXTENSION.is_empty() {
+<a href=#315 id=315 data-nosnippet>315</a>                <span class="prelude-val">None
+<a href=#316 id=316 data-nosnippet>316</a>            </span>} <span class="kw">else </span>{
+<a href=#317 id=317 data-nosnippet>317</a>                <span class="prelude-val">Some</span>(candidate.with_extension(EXE_EXTENSION))
+<a href=#318 id=318 data-nosnippet>318</a>            };
+<a href=#319 id=319 data-nosnippet>319</a>            std::iter::once(candidate).chain(with_exe)
+<a href=#320 id=320 data-nosnippet>320</a>        })
+<a href=#321 id=321 data-nosnippet>321</a>        .find(|p| is_executable(p))
+<a href=#322 id=322 data-nosnippet>322</a>        .is_some()
+<a href=#323 id=323 data-nosnippet>323</a>}
+<a href=#324 id=324 data-nosnippet>324</a>
+<a href=#325 id=325 data-nosnippet>325</a><span class="attr">#[cfg(unix)]
+<a href=#326 id=326 data-nosnippet>326</a></span><span class="kw">fn </span>is_executable&lt;P: AsRef&lt;Path&gt;&gt;(path: P) -&gt; bool {
+<a href=#327 id=327 data-nosnippet>327</a>    <span class="kw">use </span>std::os::unix::prelude::<span class="kw-2">*</span>;
+<a href=#328 id=328 data-nosnippet>328</a>    std::fs::metadata(path)
+<a href=#329 id=329 data-nosnippet>329</a>        .map(|metadata| metadata.is_file() &amp;&amp; metadata.permissions().mode() &amp; <span class="number">0o111 </span>!= <span class="number">0</span>)
+<a href=#330 id=330 data-nosnippet>330</a>        .unwrap_or(<span class="bool-val">false</span>)
+<a href=#331 id=331 data-nosnippet>331</a>}
+<a href=#332 id=332 data-nosnippet>332</a>
+<a href=#333 id=333 data-nosnippet>333</a><span class="attr">#[cfg(windows)]
+<a href=#334 id=334 data-nosnippet>334</a></span><span class="kw">fn </span>is_executable&lt;P: AsRef&lt;Path&gt;&gt;(path: P) -&gt; bool {
+<a href=#335 id=335 data-nosnippet>335</a>    path.as_ref().is_file()
+<a href=#336 id=336 data-nosnippet>336</a>}
+<a href=#337 id=337 data-nosnippet>337</a>
+<a href=#338 id=338 data-nosnippet>338</a><span class="kw">fn </span>has_rustup_stable() -&gt; bool {
+<a href=#339 id=339 data-nosnippet>339</a>    <span class="kw">if </span><span class="macro">option_env!</span>(<span class="string">"CARGO_TEST_DISABLE_NIGHTLY"</span>).is_some() {
+<a href=#340 id=340 data-nosnippet>340</a>        <span class="comment">// This cannot run on rust-lang/rust CI due to the lack of rustup.
+<a href=#341 id=341 data-nosnippet>341</a>        </span><span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#342 id=342 data-nosnippet>342</a>    }
+<a href=#343 id=343 data-nosnippet>343</a>    <span class="comment">// Cargo mucks with PATH on Windows, adding sysroot host libdir, which is
+<a href=#344 id=344 data-nosnippet>344</a>    // "bin", which circumvents the rustup wrapper. Use the path directly from
+<a href=#345 id=345 data-nosnippet>345</a>    // CARGO_HOME.
+<a href=#346 id=346 data-nosnippet>346</a>    </span><span class="kw">let </span>home = <span class="kw">match </span><span class="macro">option_env!</span>(<span class="string">"CARGO_HOME"</span>) {
+<a href=#347 id=347 data-nosnippet>347</a>        <span class="prelude-val">Some</span>(home) =&gt; home,
+<a href=#348 id=348 data-nosnippet>348</a>        <span class="prelude-val">None </span><span class="kw">if </span>is_ci() =&gt; <span class="macro">panic!</span>(<span class="string">"expected to run under rustup"</span>),
+<a href=#349 id=349 data-nosnippet>349</a>        <span class="prelude-val">None </span>=&gt; <span class="kw">return </span><span class="bool-val">false</span>,
+<a href=#350 id=350 data-nosnippet>350</a>    };
+<a href=#351 id=351 data-nosnippet>351</a>    <span class="kw">let </span>cargo = Path::new(home).join(<span class="string">"bin/cargo"</span>);
+<a href=#352 id=352 data-nosnippet>352</a>    check_command(<span class="kw-2">&amp;</span>cargo, <span class="kw-2">&amp;</span>[<span class="string">"+stable"</span>, <span class="string">"--version"</span>])
+<a href=#353 id=353 data-nosnippet>353</a>}
+<a href=#354 id=354 data-nosnippet>354</a>
+<a href=#355 id=355 data-nosnippet>355</a><span class="doccomment">/// Whether or not this running in a Continuous Integration environment.
+<a href=#356 id=356 data-nosnippet>356</a></span><span class="kw">fn </span>is_ci() -&gt; bool {
+<a href=#357 id=357 data-nosnippet>357</a>    <span class="comment">// Consider using `tracked_env` instead of option_env! when it is stabilized.
+<a href=#358 id=358 data-nosnippet>358</a>    // `tracked_env` will handle changes, but not require rebuilding the macro
+<a href=#359 id=359 data-nosnippet>359</a>    // itself like option_env does.
+<a href=#360 id=360 data-nosnippet>360</a>    </span><span class="macro">option_env!</span>(<span class="string">"CI"</span>).is_some() || <span class="macro">option_env!</span>(<span class="string">"TF_BUILD"</span>).is_some()
+<a href=#361 id=361 data-nosnippet>361</a>}</code></pre></div></section></main></body></html>

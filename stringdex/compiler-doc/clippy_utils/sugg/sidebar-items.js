@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EMPTY","ONE","ZERO"],"enum":["Associativity","Sugg"],"fn":["associativity","binop_to_string","deref_closure_args","has_enclosing_paren","indentation","make_assoc","make_binop","make_unop"],"macro":["forward_binop_impls_to_ref"],"struct":["DerefClosure","DerefDelegate","ParenHelper"],"trait":["DiagExt"]};

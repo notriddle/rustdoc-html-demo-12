@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["filter_def_ids"],"mod":["alloc","bridge","builder","context","rustc_internal"],"struct":["Container","IndexMap","Tables"],"trait":["Bridge","IndexedVal"]};

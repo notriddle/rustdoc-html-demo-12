@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["has_implicit_borrow","peel_derefs_adjustments","peel_place_mappers"],"static":["DANGEROUS_IMPLICIT_AUTOREFS"],"struct":["ImplicitAutorefs"]};

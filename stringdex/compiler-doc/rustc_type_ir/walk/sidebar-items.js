@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["push_inner","push_ty_pat"],"struct":["TypeWalker"],"type":["TypeWalkerStack"]};

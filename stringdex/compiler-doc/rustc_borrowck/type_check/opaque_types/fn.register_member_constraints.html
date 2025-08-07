@@ -1,0 +1,102 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Given the map `opaque_types` containing the opaque `impl Trait` types whose underlying, hidden types are being inferred, this method adds constraints to the regions appearing in those underlying hidden types to ensure that they at least do not refer to random scopes within the current function. These constraints are not (quite) sufficient to guarantee that the regions are actually legal values; that final condition is imposed after region inference is done."><title>register_member_constraints in rustc_borrowck::type_check::opaque_types - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">register_member_constraints</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../rustc_borrowck/index.html"><img class="rust-logo" src="../../../static.files/rust-logo-9a9549ea.svg" alt="logo"></a><h2><a href="../../../rustc_borrowck/index.html">rustc_<wbr>borrowck</a><span class="version">1.91.0-dev</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">register_<wbr>member_<wbr>constraints</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#the-problem" title="The Problem">The Problem</a></li><li><a href="#the-solution" title="The Solution">The Solution</a></li><li><a href="#constrain-regions-not-the-hidden-concrete-type" title="Constrain regions, not the hidden concrete type">Constrain regions, not the hidden concrete type</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="index.html">In rustc_<wbr>borrowck::<wbr>type_<wbr>check::<wbr>opaque_<wbr>types</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">rustc_borrowck</a>::<wbr><a href="../index.html">type_check</a>::<wbr><a href="index.html">opaque_types</a></div><h1>Function <span class="fn">register_<wbr>member_<wbr>constraints</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/rustc_borrowck/type_check/opaque_types.rs.html#195-245">Source</a> </span></div><pre class="rust item-decl"><code>fn register_member_constraints&lt;'tcx&gt;(
+    typeck: &amp;mut <a class="struct" href="../struct.TypeChecker.html" title="struct rustc_borrowck::type_check::TypeChecker">TypeChecker</a>&lt;'_, 'tcx&gt;,
+    member_constraints: &amp;mut <a class="struct" href="../../member_constraints/struct.MemberConstraintSet.html" title="struct rustc_borrowck::member_constraints::MemberConstraintSet">MemberConstraintSet</a>&lt;'tcx, <a class="struct" href="../../../rustc_type_ir/region_kind/struct.RegionVid.html" title="struct rustc_type_ir::region_kind::RegionVid">RegionVid</a>&gt;,
+    opaque_type_key: <a class="type" href="../../../rustc_middle/ty/opaque_types/type.OpaqueTypeKey.html" title="type rustc_middle::ty::opaque_types::OpaqueTypeKey">OpaqueTypeKey</a>&lt;'tcx&gt;,
+    _: <a class="struct" href="../../../rustc_middle/ty/struct.OpaqueHiddenType.html" title="struct rustc_middle::ty::OpaqueHiddenType">OpaqueHiddenType</a>&lt;'tcx&gt;,
+)</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Given the map <code>opaque_types</code> containing the opaque
+<code>impl Trait</code> types whose underlying, hidden types are being
+inferred, this method adds constraints to the regions
+appearing in those underlying hidden types to ensure that they
+at least do not refer to random scopes within the current
+function. These constraints are not (quite) sufficient to
+guarantee that the regions are actually legal values; that
+final condition is imposed after region inference is done.</p>
+<h2 id="the-problem"><a class="doc-anchor" href="#the-problem">§</a>The Problem</h2>
+<p>Let’s work through an example to explain how it works. Assume
+the current function is as follows:</p>
+<div class="example-wrap"><pre class="language-text"><code>fn foo&lt;&#39;a, &#39;b&gt;(..) -&gt; (impl Bar&lt;&#39;a&gt;, impl Bar&lt;&#39;b&gt;)</code></pre></div>
+<p>Here, we have two <code>impl Trait</code> types whose values are being
+inferred (the <code>impl Bar&lt;'a&gt;</code> and the <code>impl Bar&lt;'b&gt;</code>). Conceptually, this is sugar for a setup where we
+define underlying opaque types (<code>Foo1</code>, <code>Foo2</code>) and then, in
+the return type of <code>foo</code>, we <em>reference</em> those definitions:</p>
+<div class="example-wrap"><pre class="language-text"><code>type Foo1&lt;&#39;x&gt; = impl Bar&lt;&#39;x&gt;;
+type Foo2&lt;&#39;x&gt; = impl Bar&lt;&#39;x&gt;;
+fn foo&lt;&#39;a, &#39;b&gt;(..) -&gt; (Foo1&lt;&#39;a&gt;, Foo2&lt;&#39;b&gt;) { .. }
+                   //  ^^^^ ^^
+                   //  |    |
+                   //  |    args
+                   //  def_id</code></pre></div>
+<p>As indicating in the comments above, each of those references
+is (in the compiler) basically generic parameters (<code>args</code>)
+applied to the type of a suitable <code>def_id</code> (which identifies
+<code>Foo1</code> or <code>Foo2</code>).</p>
+<p>Now, at this point in compilation, what we have done is to
+replace each of the references (<code>Foo1&lt;'a&gt;</code>, <code>Foo2&lt;'b&gt;</code>) with
+fresh inference variables C1 and C2. We wish to use the values
+of these variables to infer the underlying types of <code>Foo1</code> and
+<code>Foo2</code>. That is, this gives rise to higher-order (pattern) unification
+constraints like:</p>
+<div class="example-wrap"><pre class="language-text"><code>for&lt;&#39;a&gt; (Foo1&lt;&#39;a&gt; = C1)
+for&lt;&#39;b&gt; (Foo1&lt;&#39;b&gt; = C2)</code></pre></div>
+<p>For these equation to be satisfiable, the types <code>C1</code> and <code>C2</code>
+can only refer to a limited set of regions. For example, <code>C1</code>
+can only refer to <code>'static</code> and <code>'a</code>, and <code>C2</code> can only refer
+to <code>'static</code> and <code>'b</code>. The job of this function is to impose that
+constraint.</p>
+<p>Up to this point, C1 and C2 are basically just random type
+inference variables, and hence they may contain arbitrary
+regions. In fact, it is fairly likely that they do! Consider
+this possible definition of <code>foo</code>:</p>
+<div class="example-wrap"><pre class="language-text"><code>fn foo&lt;&#39;a, &#39;b&gt;(x: &amp;&#39;a i32, y: &amp;&#39;b i32) -&gt; (impl Bar&lt;&#39;a&gt;, impl Bar&lt;&#39;b&gt;) {
+        (&amp;*x, &amp;*y)
+    }</code></pre></div>
+<p>Here, the values for the concrete types of the two impl
+traits will include inference variables:</p>
+<div class="example-wrap"><pre class="language-text"><code>&amp;&#39;0 i32
+&amp;&#39;1 i32</code></pre></div>
+<p>Ordinarily, the subtyping rules would ensure that these are
+sufficiently large. But since <code>impl Bar&lt;'a&gt;</code> isn’t a specific
+type per se, we don’t get such constraints by default. This
+is where this function comes into play. It adds extra
+constraints to ensure that all the regions which appear in the
+inferred type are regions that could validly appear.</p>
+<p>This is actually a bit of a tricky constraint in general. We
+want to say that each variable (e.g., <code>'0</code>) can only take on
+values that were supplied as arguments to the opaque type
+(e.g., <code>'a</code> for <code>Foo1&lt;'a&gt;</code>) or <code>'static</code>, which is always in
+scope. We don’t have a constraint quite of this kind in the current
+region checker.</p>
+<h2 id="the-solution"><a class="doc-anchor" href="#the-solution">§</a>The Solution</h2>
+<p>We generally prefer to make <code>&lt;=</code> constraints, since they
+integrate best into the region solver. To do that, we find the
+“minimum” of all the arguments that appear in the args: that
+is, some region which is less than all the others. In the case
+of <code>Foo1&lt;'a&gt;</code>, that would be <code>'a</code> (it’s the only choice, after
+all). Then we apply that as a least bound to the variables
+(e.g., <code>'a &lt;= '0</code>).</p>
+<p>In some cases, there is no minimum. Consider this example:</p>
+<div class="example-wrap"><pre class="language-text"><code>fn baz&lt;&#39;a, &#39;b&gt;() -&gt; impl Trait&lt;&#39;a, &#39;b&gt; { ... }</code></pre></div>
+<p>Here we would report a more complex “in constraint”, like <code>'r in ['a, 'b, 'static]</code> (where <code>'r</code> is some region appearing in
+the hidden type).</p>
+<h2 id="constrain-regions-not-the-hidden-concrete-type"><a class="doc-anchor" href="#constrain-regions-not-the-hidden-concrete-type">§</a>Constrain regions, not the hidden concrete type</h2>
+<p>Note that generating constraints on each region <code>Rc</code> is <em>not</em>
+the same as generating an outlives constraint on <code>Tc</code> itself.
+For example, if we had a function like this:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn </span>foo&lt;<span class="lifetime">'a</span>, T&gt;(x: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>u32, y: T) -&gt; <span class="kw">impl </span>Foo&lt;<span class="lifetime">'a</span>&gt; {
+  (x, y)
+}
+
+<span class="comment">// Equivalent to:
+</span><span class="kw">type </span>FooReturn&lt;<span class="lifetime">'a</span>, T&gt; = <span class="kw">impl </span>Foo&lt;<span class="lifetime">'a</span>&gt;;
+<span class="attr">#[define_opaque(FooReturn)]
+</span><span class="kw">fn </span>foo&lt;<span class="lifetime">'a</span>, T&gt;(x: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>u32, y: T) -&gt; FooReturn&lt;<span class="lifetime">'a</span>, T&gt; {
+  (x, y)
+}</code></pre></div>
+<p>then the hidden type <code>Tc</code> would be <code>(&amp;'0 u32, T)</code> (where <code>'0</code>
+is an inference variable). If we generated a constraint that
+<code>Tc: 'a</code>, then this would incorrectly require that <code>T: 'a</code> –
+but this is not necessary, because the opaque type we
+create will be allowed to reference <code>T</code>. So we only generate a
+constraint that <code>'0: 'a</code>.</p>
+</div></details></section></div></main></body></html>

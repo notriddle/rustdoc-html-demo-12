@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["InvalidOpaqueTypeArgs"],"fn":["check_opaque_type_parameter_valid"],"struct":["LazyOpaqueTyEnv"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EOF_CHAR"],"enum":["FrontmatterAllowed"],"struct":["Cursor"]};

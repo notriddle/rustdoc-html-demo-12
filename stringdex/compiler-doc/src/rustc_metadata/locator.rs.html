@@ -1,0 +1,1263 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_metadata/src/locator.rs`."><title>locator.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_metadata" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_metadata/</div>locator.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Finds crate binaries and loads their metadata
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! Might I be the first to welcome you to a world of platform differences,
+<a href=#4 id=4 data-nosnippet>4</a>//! version requirements, dependency graphs, conflicting desires, and fun! This
+<a href=#5 id=5 data-nosnippet>5</a>//! is the major guts (along with metadata::creader) of the compiler for loading
+<a href=#6 id=6 data-nosnippet>6</a>//! crates and resolving dependencies. Let's take a tour!
+<a href=#7 id=7 data-nosnippet>7</a>//!
+<a href=#8 id=8 data-nosnippet>8</a>//! # The problem
+<a href=#9 id=9 data-nosnippet>9</a>//!
+<a href=#10 id=10 data-nosnippet>10</a>//! Each invocation of the compiler is immediately concerned with one primary
+<a href=#11 id=11 data-nosnippet>11</a>//! problem, to connect a set of crates to resolved crates on the filesystem.
+<a href=#12 id=12 data-nosnippet>12</a>//! Concretely speaking, the compiler follows roughly these steps to get here:
+<a href=#13 id=13 data-nosnippet>13</a>//!
+<a href=#14 id=14 data-nosnippet>14</a>//! 1. Discover a set of `extern crate` statements.
+<a href=#15 id=15 data-nosnippet>15</a>//! 2. Transform these directives into crate names. If the directive does not
+<a href=#16 id=16 data-nosnippet>16</a>//!    have an explicit name, then the identifier is the name.
+<a href=#17 id=17 data-nosnippet>17</a>//! 3. For each of these crate names, find a corresponding crate on the
+<a href=#18 id=18 data-nosnippet>18</a>//!    filesystem.
+<a href=#19 id=19 data-nosnippet>19</a>//!
+<a href=#20 id=20 data-nosnippet>20</a>//! Sounds easy, right? Let's walk into some of the nuances.
+<a href=#21 id=21 data-nosnippet>21</a>//!
+<a href=#22 id=22 data-nosnippet>22</a>//! ## Transitive Dependencies
+<a href=#23 id=23 data-nosnippet>23</a>//!
+<a href=#24 id=24 data-nosnippet>24</a>//! Let's say we've got three crates: A, B, and C. A depends on B, and B depends
+<a href=#25 id=25 data-nosnippet>25</a>//! on C. When we're compiling A, we primarily need to find and locate B, but we
+<a href=#26 id=26 data-nosnippet>26</a>//! also end up needing to find and locate C as well.
+<a href=#27 id=27 data-nosnippet>27</a>//!
+<a href=#28 id=28 data-nosnippet>28</a>//! The reason for this is that any of B's types could be composed of C's types,
+<a href=#29 id=29 data-nosnippet>29</a>//! any function in B could return a type from C, etc. To be able to guarantee
+<a href=#30 id=30 data-nosnippet>30</a>//! that we can always type-check/translate any function, we have to have
+<a href=#31 id=31 data-nosnippet>31</a>//! complete knowledge of the whole ecosystem, not just our immediate
+<a href=#32 id=32 data-nosnippet>32</a>//! dependencies.
+<a href=#33 id=33 data-nosnippet>33</a>//!
+<a href=#34 id=34 data-nosnippet>34</a>//! So now as part of the "find a corresponding crate on the filesystem" step
+<a href=#35 id=35 data-nosnippet>35</a>//! above, this involves also finding all crates for *all upstream
+<a href=#36 id=36 data-nosnippet>36</a>//! dependencies*. This includes all dependencies transitively.
+<a href=#37 id=37 data-nosnippet>37</a>//!
+<a href=#38 id=38 data-nosnippet>38</a>//! ## Rlibs and Dylibs
+<a href=#39 id=39 data-nosnippet>39</a>//!
+<a href=#40 id=40 data-nosnippet>40</a>//! The compiler has two forms of intermediate dependencies. These are dubbed
+<a href=#41 id=41 data-nosnippet>41</a>//! rlibs and dylibs for the static and dynamic variants, respectively. An rlib
+<a href=#42 id=42 data-nosnippet>42</a>//! is a rustc-defined file format (currently just an ar archive) while a dylib
+<a href=#43 id=43 data-nosnippet>43</a>//! is a platform-defined dynamic library. Each library has a metadata somewhere
+<a href=#44 id=44 data-nosnippet>44</a>//! inside of it.
+<a href=#45 id=45 data-nosnippet>45</a>//!
+<a href=#46 id=46 data-nosnippet>46</a>//! A third kind of dependency is an rmeta file. These are metadata files and do
+<a href=#47 id=47 data-nosnippet>47</a>//! not contain any code, etc. To a first approximation, these are treated in the
+<a href=#48 id=48 data-nosnippet>48</a>//! same way as rlibs. Where there is both an rlib and an rmeta file, the rlib
+<a href=#49 id=49 data-nosnippet>49</a>//! gets priority (even if the rmeta file is newer). An rmeta file is only
+<a href=#50 id=50 data-nosnippet>50</a>//! useful for checking a downstream crate, attempting to link one will cause an
+<a href=#51 id=51 data-nosnippet>51</a>//! error.
+<a href=#52 id=52 data-nosnippet>52</a>//!
+<a href=#53 id=53 data-nosnippet>53</a>//! When translating a crate name to a crate on the filesystem, we all of a
+<a href=#54 id=54 data-nosnippet>54</a>//! sudden need to take into account both rlibs and dylibs! Linkage later on may
+<a href=#55 id=55 data-nosnippet>55</a>//! use either one of these files, as each has their pros/cons. The job of crate
+<a href=#56 id=56 data-nosnippet>56</a>//! loading is to discover what's possible by finding all candidates.
+<a href=#57 id=57 data-nosnippet>57</a>//!
+<a href=#58 id=58 data-nosnippet>58</a>//! Most parts of this loading systems keep the dylib/rlib as just separate
+<a href=#59 id=59 data-nosnippet>59</a>//! variables.
+<a href=#60 id=60 data-nosnippet>60</a>//!
+<a href=#61 id=61 data-nosnippet>61</a>//! ## Where to look?
+<a href=#62 id=62 data-nosnippet>62</a>//!
+<a href=#63 id=63 data-nosnippet>63</a>//! We can't exactly scan your whole hard drive when looking for dependencies,
+<a href=#64 id=64 data-nosnippet>64</a>//! so we need to places to look. Currently the compiler will implicitly add the
+<a href=#65 id=65 data-nosnippet>65</a>//! target lib search path ($prefix/lib/rustlib/$target/lib) to any compilation,
+<a href=#66 id=66 data-nosnippet>66</a>//! and otherwise all -L flags are added to the search paths.
+<a href=#67 id=67 data-nosnippet>67</a>//!
+<a href=#68 id=68 data-nosnippet>68</a>//! ## What criterion to select on?
+<a href=#69 id=69 data-nosnippet>69</a>//!
+<a href=#70 id=70 data-nosnippet>70</a>//! This is a pretty tricky area of loading crates. Given a file, how do we know
+<a href=#71 id=71 data-nosnippet>71</a>//! whether it's the right crate? Currently, the rules look along these lines:
+<a href=#72 id=72 data-nosnippet>72</a>//!
+<a href=#73 id=73 data-nosnippet>73</a>//! 1. Does the filename match an rlib/dylib pattern? That is to say, does the
+<a href=#74 id=74 data-nosnippet>74</a>//!    filename have the right prefix/suffix?
+<a href=#75 id=75 data-nosnippet>75</a>//! 2. Does the filename have the right prefix for the crate name being queried?
+<a href=#76 id=76 data-nosnippet>76</a>//!    This is filtering for files like `libfoo*.rlib` and such. If the crate
+<a href=#77 id=77 data-nosnippet>77</a>//!    we're looking for was originally compiled with -C extra-filename, the
+<a href=#78 id=78 data-nosnippet>78</a>//!    extra filename will be included in this prefix to reduce reading
+<a href=#79 id=79 data-nosnippet>79</a>//!    metadata from crates that would otherwise share our prefix.
+<a href=#80 id=80 data-nosnippet>80</a>//! 3. Is the file an actual rust library? This is done by loading the metadata
+<a href=#81 id=81 data-nosnippet>81</a>//!    from the library and making sure it's actually there.
+<a href=#82 id=82 data-nosnippet>82</a>//! 4. Does the name in the metadata agree with the name of the library?
+<a href=#83 id=83 data-nosnippet>83</a>//! 5. Does the target in the metadata agree with the current target?
+<a href=#84 id=84 data-nosnippet>84</a>//! 6. Does the SVH match? (more on this later)
+<a href=#85 id=85 data-nosnippet>85</a>//!
+<a href=#86 id=86 data-nosnippet>86</a>//! If the file answers `yes` to all these questions, then the file is
+<a href=#87 id=87 data-nosnippet>87</a>//! considered as being *candidate* for being accepted. It is illegal to have
+<a href=#88 id=88 data-nosnippet>88</a>//! more than two candidates as the compiler has no method by which to resolve
+<a href=#89 id=89 data-nosnippet>89</a>//! this conflict. Additionally, rlib/dylib candidates are considered
+<a href=#90 id=90 data-nosnippet>90</a>//! separately.
+<a href=#91 id=91 data-nosnippet>91</a>//!
+<a href=#92 id=92 data-nosnippet>92</a>//! After all this has happened, we have 1 or two files as candidates. These
+<a href=#93 id=93 data-nosnippet>93</a>//! represent the rlib/dylib file found for a library, and they're returned as
+<a href=#94 id=94 data-nosnippet>94</a>//! being found.
+<a href=#95 id=95 data-nosnippet>95</a>//!
+<a href=#96 id=96 data-nosnippet>96</a>//! ### What about versions?
+<a href=#97 id=97 data-nosnippet>97</a>//!
+<a href=#98 id=98 data-nosnippet>98</a>//! A lot of effort has been put forth to remove versioning from the compiler.
+<a href=#99 id=99 data-nosnippet>99</a>//! There have been forays in the past to have versioning baked in, but it was
+<a href=#100 id=100 data-nosnippet>100</a>//! largely always deemed insufficient to the point that it was recognized that
+<a href=#101 id=101 data-nosnippet>101</a>//! it's probably something the compiler shouldn't do anyway due to its
+<a href=#102 id=102 data-nosnippet>102</a>//! complicated nature and the state of the half-baked solutions.
+<a href=#103 id=103 data-nosnippet>103</a>//!
+<a href=#104 id=104 data-nosnippet>104</a>//! With a departure from versioning, the primary criterion for loading crates
+<a href=#105 id=105 data-nosnippet>105</a>//! is just the name of a crate. If we stopped here, it would imply that you
+<a href=#106 id=106 data-nosnippet>106</a>//! could never link two crates of the same name from different sources
+<a href=#107 id=107 data-nosnippet>107</a>//! together, which is clearly a bad state to be in.
+<a href=#108 id=108 data-nosnippet>108</a>//!
+<a href=#109 id=109 data-nosnippet>109</a>//! To resolve this problem, we come to the next section!
+<a href=#110 id=110 data-nosnippet>110</a>//!
+<a href=#111 id=111 data-nosnippet>111</a>//! # Expert Mode
+<a href=#112 id=112 data-nosnippet>112</a>//!
+<a href=#113 id=113 data-nosnippet>113</a>//! A number of flags have been added to the compiler to solve the "version
+<a href=#114 id=114 data-nosnippet>114</a>//! problem" in the previous section, as well as generally enabling more
+<a href=#115 id=115 data-nosnippet>115</a>//! powerful usage of the crate loading system of the compiler. The goal of
+<a href=#116 id=116 data-nosnippet>116</a>//! these flags and options are to enable third-party tools to drive the
+<a href=#117 id=117 data-nosnippet>117</a>//! compiler with prior knowledge about how the world should look.
+<a href=#118 id=118 data-nosnippet>118</a>//!
+<a href=#119 id=119 data-nosnippet>119</a>//! ## The `--extern` flag
+<a href=#120 id=120 data-nosnippet>120</a>//!
+<a href=#121 id=121 data-nosnippet>121</a>//! The compiler accepts a flag of this form a number of times:
+<a href=#122 id=122 data-nosnippet>122</a>//!
+<a href=#123 id=123 data-nosnippet>123</a>//! ```text
+<a href=#124 id=124 data-nosnippet>124</a>//! --extern crate-name=path/to/the/crate.rlib
+<a href=#125 id=125 data-nosnippet>125</a>//! ```
+<a href=#126 id=126 data-nosnippet>126</a>//!
+<a href=#127 id=127 data-nosnippet>127</a>//! This flag is basically the following letter to the compiler:
+<a href=#128 id=128 data-nosnippet>128</a>//!
+<a href=#129 id=129 data-nosnippet>129</a>//! &gt; Dear rustc,
+<a href=#130 id=130 data-nosnippet>130</a>//! &gt;
+<a href=#131 id=131 data-nosnippet>131</a>//! &gt; When you are attempting to load the immediate dependency `crate-name`, I
+<a href=#132 id=132 data-nosnippet>132</a>//! &gt; would like you to assume that the library is located at
+<a href=#133 id=133 data-nosnippet>133</a>//! &gt; `path/to/the/crate.rlib`, and look nowhere else. Also, please do not
+<a href=#134 id=134 data-nosnippet>134</a>//! &gt; assume that the path I specified has the name `crate-name`.
+<a href=#135 id=135 data-nosnippet>135</a>//!
+<a href=#136 id=136 data-nosnippet>136</a>//! This flag basically overrides most matching logic except for validating that
+<a href=#137 id=137 data-nosnippet>137</a>//! the file is indeed a rust library. The same `crate-name` can be specified
+<a href=#138 id=138 data-nosnippet>138</a>//! twice to specify the rlib/dylib pair.
+<a href=#139 id=139 data-nosnippet>139</a>//!
+<a href=#140 id=140 data-nosnippet>140</a>//! ## Enabling "multiple versions"
+<a href=#141 id=141 data-nosnippet>141</a>//!
+<a href=#142 id=142 data-nosnippet>142</a>//! This basically boils down to the ability to specify arbitrary packages to
+<a href=#143 id=143 data-nosnippet>143</a>//! the compiler. For example, if crate A wanted to use Bv1 and Bv2, then it
+<a href=#144 id=144 data-nosnippet>144</a>//! would look something like:
+<a href=#145 id=145 data-nosnippet>145</a>//!
+<a href=#146 id=146 data-nosnippet>146</a>//! ```compile_fail,E0463
+<a href=#147 id=147 data-nosnippet>147</a>//! extern crate b1;
+<a href=#148 id=148 data-nosnippet>148</a>//! extern crate b2;
+<a href=#149 id=149 data-nosnippet>149</a>//!
+<a href=#150 id=150 data-nosnippet>150</a>//! fn main() {}
+<a href=#151 id=151 data-nosnippet>151</a>//! ```
+<a href=#152 id=152 data-nosnippet>152</a>//!
+<a href=#153 id=153 data-nosnippet>153</a>//! and the compiler would be invoked as:
+<a href=#154 id=154 data-nosnippet>154</a>//!
+<a href=#155 id=155 data-nosnippet>155</a>//! ```text
+<a href=#156 id=156 data-nosnippet>156</a>//! rustc a.rs --extern b1=path/to/libb1.rlib --extern b2=path/to/libb2.rlib
+<a href=#157 id=157 data-nosnippet>157</a>//! ```
+<a href=#158 id=158 data-nosnippet>158</a>//!
+<a href=#159 id=159 data-nosnippet>159</a>//! In this scenario there are two crates named `b` and the compiler must be
+<a href=#160 id=160 data-nosnippet>160</a>//! manually driven to be informed where each crate is.
+<a href=#161 id=161 data-nosnippet>161</a>//!
+<a href=#162 id=162 data-nosnippet>162</a>//! ## Frobbing symbols
+<a href=#163 id=163 data-nosnippet>163</a>//!
+<a href=#164 id=164 data-nosnippet>164</a>//! One of the immediate problems with linking the same library together twice
+<a href=#165 id=165 data-nosnippet>165</a>//! in the same problem is dealing with duplicate symbols. The primary way to
+<a href=#166 id=166 data-nosnippet>166</a>//! deal with this in rustc is to add hashes to the end of each symbol.
+<a href=#167 id=167 data-nosnippet>167</a>//!
+<a href=#168 id=168 data-nosnippet>168</a>//! In order to force hashes to change between versions of a library, if
+<a href=#169 id=169 data-nosnippet>169</a>//! desired, the compiler exposes an option `-C metadata=foo`, which is used to
+<a href=#170 id=170 data-nosnippet>170</a>//! initially seed each symbol hash. The string `foo` is prepended to each
+<a href=#171 id=171 data-nosnippet>171</a>//! string-to-hash to ensure that symbols change over time.
+<a href=#172 id=172 data-nosnippet>172</a>//!
+<a href=#173 id=173 data-nosnippet>173</a>//! ## Loading transitive dependencies
+<a href=#174 id=174 data-nosnippet>174</a>//!
+<a href=#175 id=175 data-nosnippet>175</a>//! Dealing with same-named-but-distinct crates is not just a local problem, but
+<a href=#176 id=176 data-nosnippet>176</a>//! one that also needs to be dealt with for transitive dependencies. Note that
+<a href=#177 id=177 data-nosnippet>177</a>//! in the letter above `--extern` flags only apply to the *local* set of
+<a href=#178 id=178 data-nosnippet>178</a>//! dependencies, not the upstream transitive dependencies. Consider this
+<a href=#179 id=179 data-nosnippet>179</a>//! dependency graph:
+<a href=#180 id=180 data-nosnippet>180</a>//!
+<a href=#181 id=181 data-nosnippet>181</a>//! ```text
+<a href=#182 id=182 data-nosnippet>182</a>//! A.1   A.2
+<a href=#183 id=183 data-nosnippet>183</a>//! |     |
+<a href=#184 id=184 data-nosnippet>184</a>//! |     |
+<a href=#185 id=185 data-nosnippet>185</a>//! B     C
+<a href=#186 id=186 data-nosnippet>186</a>//!  \   /
+<a href=#187 id=187 data-nosnippet>187</a>//!   \ /
+<a href=#188 id=188 data-nosnippet>188</a>//!    D
+<a href=#189 id=189 data-nosnippet>189</a>//! ```
+<a href=#190 id=190 data-nosnippet>190</a>//!
+<a href=#191 id=191 data-nosnippet>191</a>//! In this scenario, when we compile `D`, we need to be able to distinctly
+<a href=#192 id=192 data-nosnippet>192</a>//! resolve `A.1` and `A.2`, but an `--extern` flag cannot apply to these
+<a href=#193 id=193 data-nosnippet>193</a>//! transitive dependencies.
+<a href=#194 id=194 data-nosnippet>194</a>//!
+<a href=#195 id=195 data-nosnippet>195</a>//! Note that the key idea here is that `B` and `C` are both *already compiled*.
+<a href=#196 id=196 data-nosnippet>196</a>//! That is, they have already resolved their dependencies. Due to unrelated
+<a href=#197 id=197 data-nosnippet>197</a>//! technical reasons, when a library is compiled, it is only compatible with
+<a href=#198 id=198 data-nosnippet>198</a>//! the *exact same* version of the upstream libraries it was compiled against.
+<a href=#199 id=199 data-nosnippet>199</a>//! We use the "Strict Version Hash" to identify the exact copy of an upstream
+<a href=#200 id=200 data-nosnippet>200</a>//! library.
+<a href=#201 id=201 data-nosnippet>201</a>//!
+<a href=#202 id=202 data-nosnippet>202</a>//! With this knowledge, we know that `B` and `C` will depend on `A` with
+<a href=#203 id=203 data-nosnippet>203</a>//! different SVH values, so we crawl the normal `-L` paths looking for
+<a href=#204 id=204 data-nosnippet>204</a>//! `liba*.rlib` and filter based on the contained SVH.
+<a href=#205 id=205 data-nosnippet>205</a>//!
+<a href=#206 id=206 data-nosnippet>206</a>//! In the end, this ends up not needing `--extern` to specify upstream
+<a href=#207 id=207 data-nosnippet>207</a>//! transitive dependencies.
+<a href=#208 id=208 data-nosnippet>208</a>//!
+<a href=#209 id=209 data-nosnippet>209</a>//! # Wrapping up
+<a href=#210 id=210 data-nosnippet>210</a>//!
+<a href=#211 id=211 data-nosnippet>211</a>//! That's the general overview of loading crates in the compiler, but it's by
+<a href=#212 id=212 data-nosnippet>212</a>//! no means all of the necessary details. Take a look at the rest of
+<a href=#213 id=213 data-nosnippet>213</a>//! metadata::locator or metadata::creader for all the juicy details!
+<a href=#214 id=214 data-nosnippet>214</a>
+<a href=#215 id=215 data-nosnippet>215</a></span><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html">std::borrow::Cow</a>;
+<a href=#216 id=216 data-nosnippet>216</a><span class="kw">use </span>std::io::{<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/std/io/error/type.Result.html">Result</a> <span class="kw">as </span>IoResult, <a href="https://doc.rust-lang.org/nightly/std/io/trait.Write.html">Write</a>};
+<a href=#217 id=217 data-nosnippet>217</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/ops/deref/trait.Deref.html">std::ops::Deref</a>;
+<a href=#218 id=218 data-nosnippet>218</a><span class="kw">use </span>std::path::{<a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>, <a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>};
+<a href=#219 id=219 data-nosnippet>219</a><span class="kw">use </span>std::{<a href="https://doc.rust-lang.org/nightly/core/cmp/index.html">cmp</a>, <a href="https://doc.rust-lang.org/nightly/alloc/fmt/index.html">fmt</a>};
+<a href=#220 id=220 data-nosnippet>220</a>
+<a href=#221 id=221 data-nosnippet>221</a><span class="kw">use </span>rustc_data_structures::fx::{<a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>, <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>};
+<a href=#222 id=222 data-nosnippet>222</a><span class="kw">use </span><a href="../../rustc_data_structures/memmap/struct.Mmap.html">rustc_data_structures::memmap::Mmap</a>;
+<a href=#223 id=223 data-nosnippet>223</a><span class="kw">use </span>rustc_data_structures::owned_slice::{<a href="../../rustc_data_structures/owned_slice/struct.OwnedSlice.html">OwnedSlice</a>, <a href="../../rustc_data_structures/owned_slice/fn.slice_owned.html">slice_owned</a>};
+<a href=#224 id=224 data-nosnippet>224</a><span class="kw">use </span><a href="../../rustc_data_structures/svh/struct.Svh.html">rustc_data_structures::svh::Svh</a>;
+<a href=#225 id=225 data-nosnippet>225</a><span class="kw">use </span>rustc_errors::{<a href="../../rustc_errors/diagnostic/enum.DiagArgValue.html">DiagArgValue</a>, <a href="../../rustc_errors/diagnostic/trait.IntoDiagArg.html">IntoDiagArg</a>};
+<a href=#226 id=226 data-nosnippet>226</a><span class="kw">use </span><a href="../../rustc_fs_util/fn.try_canonicalize.html">rustc_fs_util::try_canonicalize</a>;
+<a href=#227 id=227 data-nosnippet>227</a><span class="kw">use </span><a href="../../rustc_session/cstore/struct.CrateSource.html">rustc_session::cstore::CrateSource</a>;
+<a href=#228 id=228 data-nosnippet>228</a><span class="kw">use </span><a href="../../rustc_session/filesearch/struct.FileSearch.html">rustc_session::filesearch::FileSearch</a>;
+<a href=#229 id=229 data-nosnippet>229</a><span class="kw">use </span><a href="../../rustc_session/search_paths/enum.PathKind.html">rustc_session::search_paths::PathKind</a>;
+<a href=#230 id=230 data-nosnippet>230</a><span class="kw">use </span><a href="../../rustc_session/utils/struct.CanonicalizedPath.html">rustc_session::utils::CanonicalizedPath</a>;
+<a href=#231 id=231 data-nosnippet>231</a><span class="kw">use </span>rustc_session::{<a href="../../rustc_session/session/struct.Session.html">Session</a>, <a href="../../rustc_session/config/index.html">config</a>};
+<a href=#232 id=232 data-nosnippet>232</a><span class="kw">use </span>rustc_span::{<a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>, <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>};
+<a href=#233 id=233 data-nosnippet>233</a><span class="kw">use </span>rustc_target::spec::{<a href="../../rustc_target/spec/struct.Target.html">Target</a>, <a href="../../rustc_target/spec/enum.TargetTuple.html">TargetTuple</a>};
+<a href=#234 id=234 data-nosnippet>234</a><span class="kw">use </span><a href="https://docs.rs/tempfile/latest/tempfile/struct.Builder.html">tempfile::Builder</a> <span class="kw">as </span>TempFileBuilder;
+<a href=#235 id=235 data-nosnippet>235</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug</a>, <a href="https://docs.rs/tracing/0.1.37/tracing/macro.info.html">info</a>};
+<a href=#236 id=236 data-nosnippet>236</a>
+<a href=#237 id=237 data-nosnippet>237</a><span class="kw">use </span><span class="kw">crate</span>::creader::{<a href="creader.rs.html#99-102">Library</a>, <a href="creader.rs.html#50-53">MetadataLoader</a>};
+<a href=#238 id=238 data-nosnippet>238</a><span class="kw">use </span><a href="lib.rs.html#26"><span class="kw">crate</span>::errors</a>;
+<a href=#239 id=239 data-nosnippet>239</a><span class="kw">use </span><span class="kw">crate</span>::rmeta::{<a href="rmeta/mod.rs.html#66">METADATA_HEADER</a>, <a href="rmeta/decoder.rs.html#49">MetadataBlob</a>, <a href="rmeta/mod.rs.html#52-54">rustc_version</a>};
+<a href=#240 id=240 data-nosnippet>240</a>
+<a href=#241 id=241 data-nosnippet>241</a><span class="attr">#[derive(Clone)]
+<a href=#242 id=242 data-nosnippet>242</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span><a href="../../rustc_metadata/locator/struct.CrateLocator.html">CrateLocator</a>&lt;<span class="lifetime">'a</span>&gt; {
+<a href=#243 id=243 data-nosnippet>243</a>    <span class="comment">// Immutable per-session configuration.
+<a href=#244 id=244 data-nosnippet>244</a>    </span>only_needs_metadata: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
+<a href=#245 id=245 data-nosnippet>245</a>    sysroot: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>,
+<a href=#246 id=246 data-nosnippet>246</a>    metadata_loader: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw">dyn </span><a href="creader.rs.html#50-53">MetadataLoader</a>,
+<a href=#247 id=247 data-nosnippet>247</a>    cfg_version: <span class="kw-2">&amp;</span><span class="lifetime">'static </span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>,
+<a href=#248 id=248 data-nosnippet>248</a>
+<a href=#249 id=249 data-nosnippet>249</a>    <span class="comment">// Immutable per-search configuration.
+<a href=#250 id=250 data-nosnippet>250</a>    </span>crate_name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>,
+<a href=#251 id=251 data-nosnippet>251</a>    exact_paths: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_session/utils/struct.CanonicalizedPath.html">CanonicalizedPath</a>&gt;,
+<a href=#252 id=252 data-nosnippet>252</a>    <span class="kw">pub </span>hash: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_data_structures/svh/struct.Svh.html">Svh</a>&gt;,
+<a href=#253 id=253 data-nosnippet>253</a>    extra_filename: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt;,
+<a href=#254 id=254 data-nosnippet>254</a>    target: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_target/spec/struct.Target.html">Target</a>,
+<a href=#255 id=255 data-nosnippet>255</a>    tuple: <a href="../../rustc_target/spec/enum.TargetTuple.html">TargetTuple</a>,
+<a href=#256 id=256 data-nosnippet>256</a>    filesearch: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_session/filesearch/struct.FileSearch.html">FileSearch</a>,
+<a href=#257 id=257 data-nosnippet>257</a>    is_proc_macro: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
+<a href=#258 id=258 data-nosnippet>258</a>    path_kind: <a href="../../rustc_session/search_paths/enum.PathKind.html">PathKind</a>,
+<a href=#259 id=259 data-nosnippet>259</a>}
+<a href=#260 id=260 data-nosnippet>260</a>
+<a href=#261 id=261 data-nosnippet>261</a><span class="attr">#[derive(Clone, Debug)]
+<a href=#262 id=262 data-nosnippet>262</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span><a href="../../rustc_metadata/locator/struct.CratePaths.html">CratePaths</a> {
+<a href=#263 id=263 data-nosnippet>263</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>,
+<a href=#264 id=264 data-nosnippet>264</a>    source: <a href="../../rustc_session/cstore/struct.CrateSource.html">CrateSource</a>,
+<a href=#265 id=265 data-nosnippet>265</a>}
+<a href=#266 id=266 data-nosnippet>266</a>
+<a href=#267 id=267 data-nosnippet>267</a><span class="kw">impl </span><a href="#262-265">CratePaths</a> {
+<a href=#268 id=268 data-nosnippet>268</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>, source: <a href="../../rustc_session/cstore/struct.CrateSource.html">CrateSource</a>) -&gt; <a href="#262-265">CratePaths</a> {
+<a href=#269 id=269 data-nosnippet>269</a>        <a href="#262-265">CratePaths</a> { <a href="#268">name</a>, <a href="#268">source</a> }
+<a href=#270 id=270 data-nosnippet>270</a>    }
+<a href=#271 id=271 data-nosnippet>271</a>}
+<a href=#272 id=272 data-nosnippet>272</a>
+<a href=#273 id=273 data-nosnippet>273</a><span class="attr">#[derive(Copy, Clone, Debug, PartialEq)]
+<a href=#274 id=274 data-nosnippet>274</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum </span><a href="../../rustc_metadata/locator/enum.CrateFlavor.html">CrateFlavor</a> {
+<a href=#275 id=275 data-nosnippet>275</a>    Rlib,
+<a href=#276 id=276 data-nosnippet>276</a>    Rmeta,
+<a href=#277 id=277 data-nosnippet>277</a>    Dylib,
+<a href=#278 id=278 data-nosnippet>278</a>    SDylib,
+<a href=#279 id=279 data-nosnippet>279</a>}
+<a href=#280 id=280 data-nosnippet>280</a>
+<a href=#281 id=281 data-nosnippet>281</a><span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/fmt/trait.Display.html">fmt::Display</a> <span class="kw">for </span><a href="#274-279">CrateFlavor</a> {
+<a href=#282 id=282 data-nosnippet>282</a>    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span><a href="https://doc.rust-lang.org/nightly/core/fmt/struct.Formatter.html">fmt::Formatter</a>&lt;<span class="lifetime">'_</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/nightly/core/fmt/type.Result.html">fmt::Result</a> {
+<a href=#283 id=283 data-nosnippet>283</a>        <a href="#282">f</a>.<a href="https://doc.rust-lang.org/nightly/core/fmt/struct.Formatter.html#method.write_str">write_str</a>(<span class="kw">match </span><span class="kw-2">*</span><span class="self"><a href="#282">self</a> </span>{
+<a href=#284 id=284 data-nosnippet>284</a>            <a href="#275">CrateFlavor::Rlib</a> =&gt; <span class="string">"rlib"</span>,
+<a href=#285 id=285 data-nosnippet>285</a>            <a href="#276">CrateFlavor::Rmeta</a> =&gt; <span class="string">"rmeta"</span>,
+<a href=#286 id=286 data-nosnippet>286</a>            <a href="#277">CrateFlavor::Dylib</a> =&gt; <span class="string">"dylib"</span>,
+<a href=#287 id=287 data-nosnippet>287</a>            <a href="#278">CrateFlavor::SDylib</a> =&gt; <span class="string">"sdylib"</span>,
+<a href=#288 id=288 data-nosnippet>288</a>        })
+<a href=#289 id=289 data-nosnippet>289</a>    }
+<a href=#290 id=290 data-nosnippet>290</a>}
+<a href=#291 id=291 data-nosnippet>291</a>
+<a href=#292 id=292 data-nosnippet>292</a><span class="kw">impl </span><a href="../../rustc_errors/diagnostic/trait.IntoDiagArg.html">IntoDiagArg</a> <span class="kw">for </span><a href="#274-279">CrateFlavor</a> {
+<a href=#293 id=293 data-nosnippet>293</a>    <span class="kw">fn </span>into_diag_arg(<span class="self">self</span>, <span class="kw">_</span>: <span class="kw-2">&amp;mut </span><a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">std::path::PathBuf</a>&gt;) -&gt; <a href="../../rustc_errors/diagnostic/enum.DiagArgValue.html">rustc_errors::DiagArgValue</a> {
+<a href=#294 id=294 data-nosnippet>294</a>        <span class="kw">match </span><span class="self"><a href="#293">self</a> </span>{
+<a href=#295 id=295 data-nosnippet>295</a>            <a href="#275">CrateFlavor::Rlib</a> =&gt; <a href="../../rustc_errors/diagnostic/enum.DiagArgValue.html#variant.Str">DiagArgValue::Str</a>(<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#variant.Borrowed">Cow::Borrowed</a>(<span class="string">"rlib"</span>)),
+<a href=#296 id=296 data-nosnippet>296</a>            <a href="#276">CrateFlavor::Rmeta</a> =&gt; <a href="../../rustc_errors/diagnostic/enum.DiagArgValue.html#variant.Str">DiagArgValue::Str</a>(<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#variant.Borrowed">Cow::Borrowed</a>(<span class="string">"rmeta"</span>)),
+<a href=#297 id=297 data-nosnippet>297</a>            <a href="#277">CrateFlavor::Dylib</a> =&gt; <a href="../../rustc_errors/diagnostic/enum.DiagArgValue.html#variant.Str">DiagArgValue::Str</a>(<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#variant.Borrowed">Cow::Borrowed</a>(<span class="string">"dylib"</span>)),
+<a href=#298 id=298 data-nosnippet>298</a>            <a href="#278">CrateFlavor::SDylib</a> =&gt; <a href="../../rustc_errors/diagnostic/enum.DiagArgValue.html#variant.Str">DiagArgValue::Str</a>(<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#variant.Borrowed">Cow::Borrowed</a>(<span class="string">"sdylib"</span>)),
+<a href=#299 id=299 data-nosnippet>299</a>        }
+<a href=#300 id=300 data-nosnippet>300</a>    }
+<a href=#301 id=301 data-nosnippet>301</a>}
+<a href=#302 id=302 data-nosnippet>302</a>
+<a href=#303 id=303 data-nosnippet>303</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>&gt; <a href="#242-259">CrateLocator</a>&lt;<span class="lifetime">'a</span>&gt; {
+<a href=#304 id=304 data-nosnippet>304</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(
+<a href=#305 id=305 data-nosnippet>305</a>        sess: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_session/session/struct.Session.html">Session</a>,
+<a href=#306 id=306 data-nosnippet>306</a>        metadata_loader: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw">dyn </span><a href="creader.rs.html#50-53">MetadataLoader</a>,
+<a href=#307 id=307 data-nosnippet>307</a>        crate_name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>,
+<a href=#308 id=308 data-nosnippet>308</a>        is_rlib: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
+<a href=#309 id=309 data-nosnippet>309</a>        hash: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_data_structures/svh/struct.Svh.html">Svh</a>&gt;,
+<a href=#310 id=310 data-nosnippet>310</a>        extra_filename: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt;,
+<a href=#311 id=311 data-nosnippet>311</a>        path_kind: <a href="../../rustc_session/search_paths/enum.PathKind.html">PathKind</a>,
+<a href=#312 id=312 data-nosnippet>312</a>    ) -&gt; <a href="#242-259">CrateLocator</a>&lt;<span class="lifetime">'a</span>&gt; {
+<a href=#313 id=313 data-nosnippet>313</a>        <span class="kw">let </span>needs_object_code = <a href="#305">sess</a>.opts.output_types.<a href="../../rustc_session/config/struct.OutputTypes.html#method.should_codegen">should_codegen</a>();
+<a href=#314 id=314 data-nosnippet>314</a>        <span class="comment">// If we're producing an rlib, then we don't need object code.
+<a href=#315 id=315 data-nosnippet>315</a>        // Or, if we're not producing object code, then we don't need it either
+<a href=#316 id=316 data-nosnippet>316</a>        // (e.g., if we're a cdylib but emitting just metadata).
+<a href=#317 id=317 data-nosnippet>317</a>        </span><span class="kw">let </span>only_needs_metadata = <a href="#308">is_rlib</a> || !<a href="#313">needs_object_code</a>;
+<a href=#318 id=318 data-nosnippet>318</a>
+<a href=#319 id=319 data-nosnippet>319</a>        <a href="#242-259">CrateLocator</a> {
+<a href=#320 id=320 data-nosnippet>320</a>            <a href="#317">only_needs_metadata</a>,
+<a href=#321 id=321 data-nosnippet>321</a>            sysroot: <a href="#305">sess</a>.opts.sysroot.<a href="../../rustc_session/config/struct.Sysroot.html#method.path">path</a>(),
+<a href=#322 id=322 data-nosnippet>322</a>            <a href="#306">metadata_loader</a>,
+<a href=#323 id=323 data-nosnippet>323</a>            cfg_version: <a href="#305">sess</a>.cfg_version,
+<a href=#324 id=324 data-nosnippet>324</a>            <a href="#307">crate_name</a>,
+<a href=#325 id=325 data-nosnippet>325</a>            exact_paths: <span class="kw">if </span><a href="#309">hash</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_none">is_none</a>() {
+<a href=#326 id=326 data-nosnippet>326</a>                <a href="#305">sess</a>.opts
+<a href=#327 id=327 data-nosnippet>327</a>                    .externs
+<a href=#328 id=328 data-nosnippet>328</a>                    .<a href="../../rustc_session/config/struct.Externs.html#method.get">get</a>(<a href="#307">crate_name</a>.<a href="../../rustc_span/symbol/struct.Symbol.html#method.as_str">as_str</a>())
+<a href=#329 id=329 data-nosnippet>329</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>()
+<a href=#330 id=330 data-nosnippet>330</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter_map">filter_map</a>(|entry| <a href="#330">entry</a>.<a href="../../rustc_session/config/struct.ExternEntry.html#method.files">files</a>())
+<a href=#331 id=331 data-nosnippet>331</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.flatten">flatten</a>()
+<a href=#332 id=332 data-nosnippet>332</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.cloned">cloned</a>()
+<a href=#333 id=333 data-nosnippet>333</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>()
+<a href=#334 id=334 data-nosnippet>334</a>            } <span class="kw">else </span>{
+<a href=#335 id=335 data-nosnippet>335</a>                <span class="comment">// SVH being specified means this is a transitive dependency,
+<a href=#336 id=336 data-nosnippet>336</a>                // so `--extern` options do not apply.
+<a href=#337 id=337 data-nosnippet>337</a>                </span><a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>()
+<a href=#338 id=338 data-nosnippet>338</a>            },
+<a href=#339 id=339 data-nosnippet>339</a>            <a href="#309">hash</a>,
+<a href=#340 id=340 data-nosnippet>340</a>            <a href="#310">extra_filename</a>,
+<a href=#341 id=341 data-nosnippet>341</a>            target: <span class="kw-2">&amp;</span><a href="#305">sess</a>.target,
+<a href=#342 id=342 data-nosnippet>342</a>            tuple: <a href="#305">sess</a>.opts.target_triple.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>(),
+<a href=#343 id=343 data-nosnippet>343</a>            filesearch: <a href="#305">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.target_filesearch">target_filesearch</a>(),
+<a href=#344 id=344 data-nosnippet>344</a>            <a href="#311">path_kind</a>,
+<a href=#345 id=345 data-nosnippet>345</a>            is_proc_macro: <span class="bool-val">false</span>,
+<a href=#346 id=346 data-nosnippet>346</a>        }
+<a href=#347 id=347 data-nosnippet>347</a>    }
+<a href=#348 id=348 data-nosnippet>348</a>
+<a href=#349 id=349 data-nosnippet>349</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>for_proc_macro(<span class="kw-2">&amp;mut </span><span class="self">self</span>, sess: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_session/session/struct.Session.html">Session</a>, path_kind: <a href="../../rustc_session/search_paths/enum.PathKind.html">PathKind</a>) {
+<a href=#350 id=350 data-nosnippet>350</a>        <a class="self" href="#349">self</a>.is_proc_macro = <span class="bool-val">true</span>;
+<a href=#351 id=351 data-nosnippet>351</a>        <a class="self" href="#349">self</a>.target = <span class="kw-2">&amp;</span><a href="#349">sess</a>.host;
+<a href=#352 id=352 data-nosnippet>352</a>        <a class="self" href="#349">self</a>.tuple = <a href="../../rustc_target/spec/enum.TargetTuple.html#method.from_tuple">TargetTuple::from_tuple</a>(<a href="../../rustc_session/config/fn.host_tuple.html">config::host_tuple</a>());
+<a href=#353 id=353 data-nosnippet>353</a>        <a class="self" href="#349">self</a>.filesearch = <a href="#349">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.host_filesearch">host_filesearch</a>();
+<a href=#354 id=354 data-nosnippet>354</a>        <a class="self" href="#349">self</a>.path_kind = <a href="#349">path_kind</a>;
+<a href=#355 id=355 data-nosnippet>355</a>    }
+<a href=#356 id=356 data-nosnippet>356</a>
+<a href=#357 id=357 data-nosnippet>357</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>for_target_proc_macro(<span class="kw-2">&amp;mut </span><span class="self">self</span>, sess: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_session/session/struct.Session.html">Session</a>, path_kind: <a href="../../rustc_session/search_paths/enum.PathKind.html">PathKind</a>) {
+<a href=#358 id=358 data-nosnippet>358</a>        <a class="self" href="#357">self</a>.is_proc_macro = <span class="bool-val">true</span>;
+<a href=#359 id=359 data-nosnippet>359</a>        <a class="self" href="#357">self</a>.target = <span class="kw-2">&amp;</span><a href="#357">sess</a>.target;
+<a href=#360 id=360 data-nosnippet>360</a>        <a class="self" href="#357">self</a>.tuple = <a href="#357">sess</a>.opts.target_triple.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>();
+<a href=#361 id=361 data-nosnippet>361</a>        <a class="self" href="#357">self</a>.filesearch = <a href="#357">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.target_filesearch">target_filesearch</a>();
+<a href=#362 id=362 data-nosnippet>362</a>        <a class="self" href="#357">self</a>.path_kind = <a href="#357">path_kind</a>;
+<a href=#363 id=363 data-nosnippet>363</a>    }
+<a href=#364 id=364 data-nosnippet>364</a>
+<a href=#365 id=365 data-nosnippet>365</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>maybe_load_library_crate(
+<a href=#366 id=366 data-nosnippet>366</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#367 id=367 data-nosnippet>367</a>        crate_rejections: <span class="kw-2">&amp;mut </span><a href="#1019-1026">CrateRejections</a>,
+<a href=#368 id=368 data-nosnippet>368</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="creader.rs.html#99-102">Library</a>&gt;, <a href="#1042-1054">CrateError</a>&gt; {
+<a href=#369 id=369 data-nosnippet>369</a>        <span class="kw">if </span>!<a class="self" href="#366">self</a>.exact_paths.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.is_empty">is_empty</a>() {
+<a href=#370 id=370 data-nosnippet>370</a>            <span class="kw">return </span><a class="self" href="#366">self</a>.<a href="#770-826">find_commandline_library</a>(<a href="#367">crate_rejections</a>);
+<a href=#371 id=371 data-nosnippet>371</a>        }
+<a href=#372 id=372 data-nosnippet>372</a>        <span class="kw">let </span><span class="kw-2">mut </span>seen_paths = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxHashSet::default</a>();
+<a href=#373 id=373 data-nosnippet>373</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(extra_filename) = <a class="self" href="#366">self</a>.extra_filename
+<a href=#374 id=374 data-nosnippet>374</a>            &amp;&amp; <span class="kw">let </span>library @ <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<span class="kw">_</span>) =
+<a href=#375 id=375 data-nosnippet>375</a>                <a class="self" href="#366">self</a>.<a href="#382-522">find_library_crate</a>(<a href="#367">crate_rejections</a>, <a href="#373">extra_filename</a>, <span class="kw-2">&amp;mut </span><a href="#372">seen_paths</a>)<span class="question-mark">?
+<a href=#376 id=376 data-nosnippet>376</a>        </span>{
+<a href=#377 id=377 data-nosnippet>377</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="#374">library</a>);
+<a href=#378 id=378 data-nosnippet>378</a>        }
+<a href=#379 id=379 data-nosnippet>379</a>        <a class="self" href="#366">self</a>.<a href="#382-522">find_library_crate</a>(<a href="#367">crate_rejections</a>, <span class="string">""</span>, <span class="kw-2">&amp;mut </span><a href="#372">seen_paths</a>)
+<a href=#380 id=380 data-nosnippet>380</a>    }
+<a href=#381 id=381 data-nosnippet>381</a>
+<a href=#382 id=382 data-nosnippet>382</a>    <span class="kw">fn </span>find_library_crate(
+<a href=#383 id=383 data-nosnippet>383</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#384 id=384 data-nosnippet>384</a>        crate_rejections: <span class="kw-2">&amp;mut </span><a href="#1019-1026">CrateRejections</a>,
+<a href=#385 id=385 data-nosnippet>385</a>        extra_prefix: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>,
+<a href=#386 id=386 data-nosnippet>386</a>        seen_paths: <span class="kw-2">&amp;mut </span><a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>&lt;<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>&gt;,
+<a href=#387 id=387 data-nosnippet>387</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="creader.rs.html#99-102">Library</a>&gt;, <a href="#1042-1054">CrateError</a>&gt; {
+<a href=#388 id=388 data-nosnippet>388</a>        <span class="kw">let </span>rmeta_prefix = <span class="kw-2">&amp;</span><a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"lib{}{}"</span>, <span class="self">self</span>.crate_name, extra_prefix);
+<a href=#389 id=389 data-nosnippet>389</a>        <span class="kw">let </span>rlib_prefix = <a href="#388">rmeta_prefix</a>;
+<a href=#390 id=390 data-nosnippet>390</a>        <span class="kw">let </span>dylib_prefix =
+<a href=#391 id=391 data-nosnippet>391</a>            <span class="kw-2">&amp;</span><a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"{}{}{}"</span>, <span class="self">self</span>.target.dll_prefix, <span class="self">self</span>.crate_name, extra_prefix);
+<a href=#392 id=392 data-nosnippet>392</a>        <span class="kw">let </span>staticlib_prefix =
+<a href=#393 id=393 data-nosnippet>393</a>            <span class="kw-2">&amp;</span><a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"{}{}{}"</span>, <span class="self">self</span>.target.staticlib_prefix, <span class="self">self</span>.crate_name, extra_prefix);
+<a href=#394 id=394 data-nosnippet>394</a>        <span class="kw">let </span>interface_prefix = <a href="#388">rmeta_prefix</a>;
+<a href=#395 id=395 data-nosnippet>395</a>
+<a href=#396 id=396 data-nosnippet>396</a>        <span class="kw">let </span>rmeta_suffix = <span class="string">".rmeta"</span>;
+<a href=#397 id=397 data-nosnippet>397</a>        <span class="kw">let </span>rlib_suffix = <span class="string">".rlib"</span>;
+<a href=#398 id=398 data-nosnippet>398</a>        <span class="kw">let </span>dylib_suffix = <span class="kw-2">&amp;</span><a class="self" href="#383">self</a>.target.dll_suffix;
+<a href=#399 id=399 data-nosnippet>399</a>        <span class="kw">let </span>staticlib_suffix = <span class="kw-2">&amp;</span><a class="self" href="#383">self</a>.target.staticlib_suffix;
+<a href=#400 id=400 data-nosnippet>400</a>        <span class="kw">let </span>interface_suffix = <span class="string">".rs"</span>;
+<a href=#401 id=401 data-nosnippet>401</a>
+<a href=#402 id=402 data-nosnippet>402</a>        <span class="kw">let </span><span class="kw-2">mut </span>candidates: <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;
+<a href=#403 id=403 data-nosnippet>403</a>            <span class="kw">_</span>,
+<a href=#404 id=404 data-nosnippet>404</a>            (<a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<span class="kw">_</span>, <span class="kw">_</span>&gt;, <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<span class="kw">_</span>, <span class="kw">_</span>&gt;, <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<span class="kw">_</span>, <span class="kw">_</span>&gt;, <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<span class="kw">_</span>, <span class="kw">_</span>&gt;),
+<a href=#405 id=405 data-nosnippet>405</a>        &gt; = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">Default::default</a>();
+<a href=#406 id=406 data-nosnippet>406</a>
+<a href=#407 id=407 data-nosnippet>407</a>        <span class="comment">// First, find all possible candidate rlibs and dylibs purely based on
+<a href=#408 id=408 data-nosnippet>408</a>        // the name of the files themselves. We're trying to match against an
+<a href=#409 id=409 data-nosnippet>409</a>        // exact crate name and a possibly an exact hash.
+<a href=#410 id=410 data-nosnippet>410</a>        //
+<a href=#411 id=411 data-nosnippet>411</a>        // During this step, we can filter all found libraries based on the
+<a href=#412 id=412 data-nosnippet>412</a>        // name and id found in the crate id (we ignore the path portion for
+<a href=#413 id=413 data-nosnippet>413</a>        // filename matching), as well as the exact hash (if specified). If we
+<a href=#414 id=414 data-nosnippet>414</a>        // end up having many candidates, we must look at the metadata to
+<a href=#415 id=415 data-nosnippet>415</a>        // perform exact matches against hashes/crate ids. Note that opening up
+<a href=#416 id=416 data-nosnippet>416</a>        // the metadata is where we do an exact match against the full contents
+<a href=#417 id=417 data-nosnippet>417</a>        // of the crate id (path/name/id).
+<a href=#418 id=418 data-nosnippet>418</a>        //
+<a href=#419 id=419 data-nosnippet>419</a>        // The goal of this step is to look at as little metadata as possible.
+<a href=#420 id=420 data-nosnippet>420</a>        // Unfortunately, the prefix-based matching sometimes is over-eager.
+<a href=#421 id=421 data-nosnippet>421</a>        // E.g. if `rlib_suffix` is `libstd` it'll match the file
+<a href=#422 id=422 data-nosnippet>422</a>        // `libstd_detect-8d6701fb958915ad.rlib` (incorrect) as well as
+<a href=#423 id=423 data-nosnippet>423</a>        // `libstd-f3ab5b1dea981f17.rlib` (correct). But this is hard to avoid
+<a href=#424 id=424 data-nosnippet>424</a>        // given that `extra_filename` comes from the `-C extra-filename`
+<a href=#425 id=425 data-nosnippet>425</a>        // option and thus can be anything, and the incorrect match will be
+<a href=#426 id=426 data-nosnippet>426</a>        // handled safely in `extract_one`.
+<a href=#427 id=427 data-nosnippet>427</a>        </span><span class="kw">for </span>search_path <span class="kw">in </span><span class="self">self</span>.filesearch.search_paths(<span class="self">self</span>.path_kind) {
+<a href=#428 id=428 data-nosnippet>428</a>            <span class="macro">debug!</span>(<span class="string">"searching {}"</span>, search_path.dir.display());
+<a href=#429 id=429 data-nosnippet>429</a>            <span class="kw">let </span>spf = <span class="kw-2">&amp;</span>search_path.files;
+<a href=#430 id=430 data-nosnippet>430</a>
+<a href=#431 id=431 data-nosnippet>431</a>            <span class="kw">let </span><span class="kw-2">mut </span>should_check_staticlibs = <span class="bool-val">true</span>;
+<a href=#432 id=432 data-nosnippet>432</a>            <span class="kw">for </span>(prefix, suffix, kind) <span class="kw">in </span>[
+<a href=#433 id=433 data-nosnippet>433</a>                (rlib_prefix.as_str(), rlib_suffix, CrateFlavor::Rlib),
+<a href=#434 id=434 data-nosnippet>434</a>                (rmeta_prefix.as_str(), rmeta_suffix, CrateFlavor::Rmeta),
+<a href=#435 id=435 data-nosnippet>435</a>                (dylib_prefix, dylib_suffix, CrateFlavor::Dylib),
+<a href=#436 id=436 data-nosnippet>436</a>                (interface_prefix, interface_suffix, CrateFlavor::SDylib),
+<a href=#437 id=437 data-nosnippet>437</a>            ] {
+<a href=#438 id=438 data-nosnippet>438</a>                <span class="kw">if </span>prefix == staticlib_prefix &amp;&amp; suffix == staticlib_suffix {
+<a href=#439 id=439 data-nosnippet>439</a>                    should_check_staticlibs = <span class="bool-val">false</span>;
+<a href=#440 id=440 data-nosnippet>440</a>                }
+<a href=#441 id=441 data-nosnippet>441</a>                <span class="kw">if let </span><span class="prelude-val">Some</span>(matches) = spf.query(prefix, suffix) {
+<a href=#442 id=442 data-nosnippet>442</a>                    <span class="kw">for </span>(hash, spf) <span class="kw">in </span>matches {
+<a href=#443 id=443 data-nosnippet>443</a>                        <span class="macro">info!</span>(<span class="string">"lib candidate: {}"</span>, spf.path.display());
+<a href=#444 id=444 data-nosnippet>444</a>
+<a href=#445 id=445 data-nosnippet>445</a>                        <span class="kw">let </span>(rlibs, rmetas, dylibs, interfaces) =
+<a href=#446 id=446 data-nosnippet>446</a>                            candidates.entry(hash).or_default();
+<a href=#447 id=447 data-nosnippet>447</a>                        {
+<a href=#448 id=448 data-nosnippet>448</a>                            <span class="comment">// As a performance optimisation we canonicalize the path and skip
+<a href=#449 id=449 data-nosnippet>449</a>                            // ones we've already seen. This allows us to ignore crates
+<a href=#450 id=450 data-nosnippet>450</a>                            // we know are exactual equal to ones we've already found.
+<a href=#451 id=451 data-nosnippet>451</a>                            // Going to the same crate through different symlinks does not change the result.
+<a href=#452 id=452 data-nosnippet>452</a>                            </span><span class="kw">let </span>path = try_canonicalize(<span class="kw-2">&amp;</span>spf.path)
+<a href=#453 id=453 data-nosnippet>453</a>                                .unwrap_or_else(|<span class="kw">_</span>| spf.path.to_path_buf());
+<a href=#454 id=454 data-nosnippet>454</a>                            <span class="kw">if </span>seen_paths.contains(<span class="kw-2">&amp;</span>path) {
+<a href=#455 id=455 data-nosnippet>455</a>                                <span class="kw">continue</span>;
+<a href=#456 id=456 data-nosnippet>456</a>                            };
+<a href=#457 id=457 data-nosnippet>457</a>                            seen_paths.insert(path);
+<a href=#458 id=458 data-nosnippet>458</a>                        }
+<a href=#459 id=459 data-nosnippet>459</a>                        <span class="comment">// Use the original path (potentially with unresolved symlinks),
+<a href=#460 id=460 data-nosnippet>460</a>                        // filesystem code should not care, but this is nicer for diagnostics.
+<a href=#461 id=461 data-nosnippet>461</a>                        </span><span class="kw">let </span>path = spf.path.to_path_buf();
+<a href=#462 id=462 data-nosnippet>462</a>                        <span class="kw">match </span>kind {
+<a href=#463 id=463 data-nosnippet>463</a>                            CrateFlavor::Rlib =&gt; rlibs.insert(path, search_path.kind),
+<a href=#464 id=464 data-nosnippet>464</a>                            CrateFlavor::Rmeta =&gt; rmetas.insert(path, search_path.kind),
+<a href=#465 id=465 data-nosnippet>465</a>                            CrateFlavor::Dylib =&gt; dylibs.insert(path, search_path.kind),
+<a href=#466 id=466 data-nosnippet>466</a>                            CrateFlavor::SDylib =&gt; interfaces.insert(path, search_path.kind),
+<a href=#467 id=467 data-nosnippet>467</a>                        };
+<a href=#468 id=468 data-nosnippet>468</a>                    }
+<a href=#469 id=469 data-nosnippet>469</a>                }
+<a href=#470 id=470 data-nosnippet>470</a>            }
+<a href=#471 id=471 data-nosnippet>471</a>            <span class="kw">if let </span><span class="prelude-val">Some</span>(static_matches) = should_check_staticlibs
+<a href=#472 id=472 data-nosnippet>472</a>                .then(|| spf.query(staticlib_prefix, staticlib_suffix))
+<a href=#473 id=473 data-nosnippet>473</a>                .flatten()
+<a href=#474 id=474 data-nosnippet>474</a>            {
+<a href=#475 id=475 data-nosnippet>475</a>                <span class="kw">for </span>(<span class="kw">_</span>, spf) <span class="kw">in </span>static_matches {
+<a href=#476 id=476 data-nosnippet>476</a>                    crate_rejections.via_kind.push(CrateMismatch {
+<a href=#477 id=477 data-nosnippet>477</a>                        path: spf.path.to_path_buf(),
+<a href=#478 id=478 data-nosnippet>478</a>                        got: <span class="string">"static"</span>.to_string(),
+<a href=#479 id=479 data-nosnippet>479</a>                    });
+<a href=#480 id=480 data-nosnippet>480</a>                }
+<a href=#481 id=481 data-nosnippet>481</a>            }
+<a href=#482 id=482 data-nosnippet>482</a>        }
+<a href=#483 id=483 data-nosnippet>483</a>
+<a href=#484 id=484 data-nosnippet>484</a>        <span class="comment">// We have now collected all known libraries into a set of candidates
+<a href=#485 id=485 data-nosnippet>485</a>        // keyed of the filename hash listed. For each filename, we also have a
+<a href=#486 id=486 data-nosnippet>486</a>        // list of rlibs/dylibs that apply. Here, we map each of these lists
+<a href=#487 id=487 data-nosnippet>487</a>        // (per hash), to a Library candidate for returning.
+<a href=#488 id=488 data-nosnippet>488</a>        //
+<a href=#489 id=489 data-nosnippet>489</a>        // A Library candidate is created if the metadata for the set of
+<a href=#490 id=490 data-nosnippet>490</a>        // libraries corresponds to the crate id and hash criteria that this
+<a href=#491 id=491 data-nosnippet>491</a>        // search is being performed for.
+<a href=#492 id=492 data-nosnippet>492</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>libraries = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxIndexMap::default</a>();
+<a href=#493 id=493 data-nosnippet>493</a>        <span class="kw">for </span>(_hash, (rlibs, rmetas, dylibs, interfaces)) <span class="kw">in </span>candidates {
+<a href=#494 id=494 data-nosnippet>494</a>            <span class="kw">if let </span><span class="prelude-val">Some</span>((svh, lib)) =
+<a href=#495 id=495 data-nosnippet>495</a>                <span class="self">self</span>.extract_lib(crate_rejections, rlibs, rmetas, dylibs, interfaces)<span class="question-mark">?
+<a href=#496 id=496 data-nosnippet>496</a>            </span>{
+<a href=#497 id=497 data-nosnippet>497</a>                libraries.insert(svh, lib);
+<a href=#498 id=498 data-nosnippet>498</a>            }
+<a href=#499 id=499 data-nosnippet>499</a>        }
+<a href=#500 id=500 data-nosnippet>500</a>
+<a href=#501 id=501 data-nosnippet>501</a>        <span class="comment">// Having now translated all relevant found hashes into libraries, see
+<a href=#502 id=502 data-nosnippet>502</a>        // what we've got and figure out if we found multiple candidates for
+<a href=#503 id=503 data-nosnippet>503</a>        // libraries or not.
+<a href=#504 id=504 data-nosnippet>504</a>        </span><span class="kw">match </span><a href="#492">libraries</a>.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.len">len</a>() {
+<a href=#505 id=505 data-nosnippet>505</a>            <span class="number">0 </span>=&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>),
+<a href=#506 id=506 data-nosnippet>506</a>            <span class="number">1 </span>=&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#492">libraries</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.next">next</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>().<span class="number">1</span>)),
+<a href=#507 id=507 data-nosnippet>507</a>            <span class="kw">_ </span>=&gt; {
+<a href=#508 id=508 data-nosnippet>508</a>                <span class="kw">let </span><span class="kw-2">mut </span>candidates: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>&gt; = <a href="#492">libraries</a>
+<a href=#509 id=509 data-nosnippet>509</a>                    .<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.into_values">into_values</a>()
+<a href=#510 id=510 data-nosnippet>510</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|lib| <a href="#510">lib</a>.source.<a href="../../rustc_session/cstore/struct.CrateSource.html#method.paths">paths</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.next">next</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>())
+<a href=#511 id=511 data-nosnippet>511</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#512 id=512 data-nosnippet>512</a>                <a href="#508">candidates</a>.<a href="https://doc.rust-lang.org/nightly/alloc/foreigntype.slice.html#method.sort">sort</a>();
+<a href=#513 id=513 data-nosnippet>513</a>
+<a href=#514 id=514 data-nosnippet>514</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#1046">CrateError::MultipleCandidates</a>(
+<a href=#515 id=515 data-nosnippet>515</a>                    <a class="self" href="#383">self</a>.crate_name,
+<a href=#516 id=516 data-nosnippet>516</a>                    <span class="comment">// these are the same for all candidates
+<a href=#517 id=517 data-nosnippet>517</a>                    </span><a href="#998-1008">get_flavor_from_path</a>(<a href="#508">candidates</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.first">first</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>()),
+<a href=#518 id=518 data-nosnippet>518</a>                    <a href="#508">candidates</a>,
+<a href=#519 id=519 data-nosnippet>519</a>                ))
+<a href=#520 id=520 data-nosnippet>520</a>            }
+<a href=#521 id=521 data-nosnippet>521</a>        }
+<a href=#522 id=522 data-nosnippet>522</a>    }
+<a href=#523 id=523 data-nosnippet>523</a>
+<a href=#524 id=524 data-nosnippet>524</a>    <span class="kw">fn </span>extract_lib(
+<a href=#525 id=525 data-nosnippet>525</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#526 id=526 data-nosnippet>526</a>        crate_rejections: <span class="kw-2">&amp;mut </span><a href="#1019-1026">CrateRejections</a>,
+<a href=#527 id=527 data-nosnippet>527</a>        rlibs: <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>, <a href="../../rustc_session/search_paths/enum.PathKind.html">PathKind</a>&gt;,
+<a href=#528 id=528 data-nosnippet>528</a>        rmetas: <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>, <a href="../../rustc_session/search_paths/enum.PathKind.html">PathKind</a>&gt;,
+<a href=#529 id=529 data-nosnippet>529</a>        dylibs: <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>, <a href="../../rustc_session/search_paths/enum.PathKind.html">PathKind</a>&gt;,
+<a href=#530 id=530 data-nosnippet>530</a>        interfaces: <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>, <a href="../../rustc_session/search_paths/enum.PathKind.html">PathKind</a>&gt;,
+<a href=#531 id=531 data-nosnippet>531</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;(<a href="../../rustc_data_structures/svh/struct.Svh.html">Svh</a>, <a href="creader.rs.html#99-102">Library</a>)&gt;, <a href="#1042-1054">CrateError</a>&gt; {
+<a href=#532 id=532 data-nosnippet>532</a>        <span class="kw">let </span><span class="kw-2">mut </span>slot = <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>;
+<a href=#533 id=533 data-nosnippet>533</a>        <span class="comment">// Order here matters, rmeta should come first.
+<a href=#534 id=534 data-nosnippet>534</a>        //
+<a href=#535 id=535 data-nosnippet>535</a>        // Make sure there's at most one rlib and at most one dylib.
+<a href=#536 id=536 data-nosnippet>536</a>        //
+<a href=#537 id=537 data-nosnippet>537</a>        // See comment in `extract_one` below.
+<a href=#538 id=538 data-nosnippet>538</a>        </span><span class="kw">let </span>rmeta = <a class="self" href="#525">self</a>.<a href="#575-725">extract_one</a>(<a href="#526">crate_rejections</a>, <a href="#528">rmetas</a>, <a href="#276">CrateFlavor::Rmeta</a>, <span class="kw-2">&amp;mut </span><a href="#532">slot</a>)<span class="question-mark">?</span>;
+<a href=#539 id=539 data-nosnippet>539</a>        <span class="kw">let </span>rlib = <a class="self" href="#525">self</a>.<a href="#575-725">extract_one</a>(<a href="#526">crate_rejections</a>, <a href="#527">rlibs</a>, <a href="#275">CrateFlavor::Rlib</a>, <span class="kw-2">&amp;mut </span><a href="#532">slot</a>)<span class="question-mark">?</span>;
+<a href=#540 id=540 data-nosnippet>540</a>        <span class="kw">let </span>sdylib_interface =
+<a href=#541 id=541 data-nosnippet>541</a>            <a class="self" href="#525">self</a>.<a href="#575-725">extract_one</a>(<a href="#526">crate_rejections</a>, <a href="#530">interfaces</a>, <a href="#278">CrateFlavor::SDylib</a>, <span class="kw-2">&amp;mut </span><a href="#532">slot</a>)<span class="question-mark">?</span>;
+<a href=#542 id=542 data-nosnippet>542</a>        <span class="kw">let </span>dylib = <a class="self" href="#525">self</a>.<a href="#575-725">extract_one</a>(<a href="#526">crate_rejections</a>, <a href="#529">dylibs</a>, <a href="#277">CrateFlavor::Dylib</a>, <span class="kw-2">&amp;mut </span><a href="#532">slot</a>)<span class="question-mark">?</span>;
+<a href=#543 id=543 data-nosnippet>543</a>
+<a href=#544 id=544 data-nosnippet>544</a>        <span class="kw">if </span><a href="#540">sdylib_interface</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_some">is_some</a>() &amp;&amp; <a href="#542">dylib</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_none">is_none</a>() {
+<a href=#545 id=545 data-nosnippet>545</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#1047">CrateError::FullMetadataNotFound</a>(<a class="self" href="#525">self</a>.crate_name, <a href="#278">CrateFlavor::SDylib</a>));
+<a href=#546 id=546 data-nosnippet>546</a>        }
+<a href=#547 id=547 data-nosnippet>547</a>
+<a href=#548 id=548 data-nosnippet>548</a>        <span class="kw">let </span>source = <a href="../../rustc_session/cstore/struct.CrateSource.html">CrateSource</a> { <a href="#538">rmeta</a>, <a href="#539">rlib</a>, <a href="#542">dylib</a>, <a href="#540">sdylib_interface</a> };
+<a href=#549 id=549 data-nosnippet>549</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="#532">slot</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|(svh, metadata, <span class="kw">_</span>, <span class="kw">_</span>)| (<a href="#549">svh</a>, <a href="creader.rs.html#99-102">Library</a> { <a href="#548">source</a>, <a href="#549">metadata</a> })))
+<a href=#550 id=550 data-nosnippet>550</a>    }
+<a href=#551 id=551 data-nosnippet>551</a>
+<a href=#552 id=552 data-nosnippet>552</a>    <span class="kw">fn </span>needs_crate_flavor(<span class="kw-2">&amp;</span><span class="self">self</span>, flavor: <a href="#274-279">CrateFlavor</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#553 id=553 data-nosnippet>553</a>        <span class="kw">if </span><a href="#552">flavor</a> == <a href="#277">CrateFlavor::Dylib</a> &amp;&amp; <a class="self" href="#552">self</a>.is_proc_macro {
+<a href=#554 id=554 data-nosnippet>554</a>            <span class="kw">return </span><span class="bool-val">true</span>;
+<a href=#555 id=555 data-nosnippet>555</a>        }
+<a href=#556 id=556 data-nosnippet>556</a>
+<a href=#557 id=557 data-nosnippet>557</a>        <span class="kw">if </span><a class="self" href="#552">self</a>.only_needs_metadata {
+<a href=#558 id=558 data-nosnippet>558</a>            <a href="#552">flavor</a> == <a href="#276">CrateFlavor::Rmeta</a>
+<a href=#559 id=559 data-nosnippet>559</a>        } <span class="kw">else </span>{
+<a href=#560 id=560 data-nosnippet>560</a>            <span class="comment">// we need all flavors (perhaps not true, but what we do for now)
+<a href=#561 id=561 data-nosnippet>561</a>            </span><span class="bool-val">true
+<a href=#562 id=562 data-nosnippet>562</a>        </span>}
+<a href=#563 id=563 data-nosnippet>563</a>    }
+<a href=#564 id=564 data-nosnippet>564</a>
+<a href=#565 id=565 data-nosnippet>565</a>    <span class="comment">// Attempts to extract *one* library from the set `m`. If the set has no
+<a href=#566 id=566 data-nosnippet>566</a>    // elements, `None` is returned. If the set has more than one element, then
+<a href=#567 id=567 data-nosnippet>567</a>    // the errors and notes are emitted about the set of libraries.
+<a href=#568 id=568 data-nosnippet>568</a>    //
+<a href=#569 id=569 data-nosnippet>569</a>    // With only one library in the set, this function will extract it, and then
+<a href=#570 id=570 data-nosnippet>570</a>    // read the metadata from it if `*slot` is `None`. If the metadata couldn't
+<a href=#571 id=571 data-nosnippet>571</a>    // be read, it is assumed that the file isn't a valid rust library (no
+<a href=#572 id=572 data-nosnippet>572</a>    // errors are emitted).
+<a href=#573 id=573 data-nosnippet>573</a>    //
+<a href=#574 id=574 data-nosnippet>574</a>    // The `PathBuf` in `slot` will only be used for diagnostic purposes.
+<a href=#575 id=575 data-nosnippet>575</a>    </span><span class="kw">fn </span>extract_one(
+<a href=#576 id=576 data-nosnippet>576</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#577 id=577 data-nosnippet>577</a>        crate_rejections: <span class="kw-2">&amp;mut </span><a href="#1019-1026">CrateRejections</a>,
+<a href=#578 id=578 data-nosnippet>578</a>        m: <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>, <a href="../../rustc_session/search_paths/enum.PathKind.html">PathKind</a>&gt;,
+<a href=#579 id=579 data-nosnippet>579</a>        flavor: <a href="#274-279">CrateFlavor</a>,
+<a href=#580 id=580 data-nosnippet>580</a>        slot: <span class="kw-2">&amp;mut </span><a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;(<a href="../../rustc_data_structures/svh/struct.Svh.html">Svh</a>, <a href="rmeta/decoder.rs.html#49">MetadataBlob</a>, <a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>, <a href="#274-279">CrateFlavor</a>)&gt;,
+<a href=#581 id=581 data-nosnippet>581</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;(<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>, <a href="../../rustc_session/search_paths/enum.PathKind.html">PathKind</a>)&gt;, <a href="#1042-1054">CrateError</a>&gt; {
+<a href=#582 id=582 data-nosnippet>582</a>        <span class="comment">// If we are producing an rlib, and we've already loaded metadata, then
+<a href=#583 id=583 data-nosnippet>583</a>        // we should not attempt to discover further crate sources (unless we're
+<a href=#584 id=584 data-nosnippet>584</a>        // locating a proc macro; exact logic is in needs_crate_flavor). This means
+<a href=#585 id=585 data-nosnippet>585</a>        // that under -Zbinary-dep-depinfo we will not emit a dependency edge on
+<a href=#586 id=586 data-nosnippet>586</a>        // the *unused* rlib, and by returning `None` here immediately we
+<a href=#587 id=587 data-nosnippet>587</a>        // guarantee that we do indeed not use it.
+<a href=#588 id=588 data-nosnippet>588</a>        //
+<a href=#589 id=589 data-nosnippet>589</a>        // See also #68149 which provides more detail on why emitting the
+<a href=#590 id=590 data-nosnippet>590</a>        // dependency on the rlib is a bad thing.
+<a href=#591 id=591 data-nosnippet>591</a>        </span><span class="kw">if </span><a href="#580">slot</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_some">is_some</a>() {
+<a href=#592 id=592 data-nosnippet>592</a>            <span class="kw">if </span><a href="#578">m</a>.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.is_empty">is_empty</a>() || !<a class="self" href="#576">self</a>.<a href="#552-563">needs_crate_flavor</a>(<a href="#579">flavor</a>) {
+<a href=#593 id=593 data-nosnippet>593</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>);
+<a href=#594 id=594 data-nosnippet>594</a>            }
+<a href=#595 id=595 data-nosnippet>595</a>        }
+<a href=#596 id=596 data-nosnippet>596</a>
+<a href=#597 id=597 data-nosnippet>597</a>        <span class="kw">let </span><span class="kw-2">mut </span>ret: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;(<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>, <a href="../../rustc_session/search_paths/enum.PathKind.html">PathKind</a>)&gt; = <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>;
+<a href=#598 id=598 data-nosnippet>598</a>        <span class="kw">let </span><span class="kw-2">mut </span>err_data: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>&gt;&gt; = <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>;
+<a href=#599 id=599 data-nosnippet>599</a>        <span class="kw">for </span>(lib, kind) <span class="kw">in </span>m {
+<a href=#600 id=600 data-nosnippet>600</a>            <span class="macro">info!</span>(<span class="string">"{} reading metadata from: {}"</span>, flavor, lib.display());
+<a href=#601 id=601 data-nosnippet>601</a>            <span class="kw">if </span>flavor == CrateFlavor::Rmeta &amp;&amp; lib.metadata().is_ok_and(|m| m.len() == <span class="number">0</span>) {
+<a href=#602 id=602 data-nosnippet>602</a>                <span class="comment">// Empty files will cause get_metadata_section to fail. Rmeta
+<a href=#603 id=603 data-nosnippet>603</a>                // files can be empty, for example with binaries (which can
+<a href=#604 id=604 data-nosnippet>604</a>                // often appear with `cargo check` when checking a library as
+<a href=#605 id=605 data-nosnippet>605</a>                // a unittest). We don't want to emit a user-visible warning
+<a href=#606 id=606 data-nosnippet>606</a>                // in this case as it is not a real problem.
+<a href=#607 id=607 data-nosnippet>607</a>                </span><span class="macro">debug!</span>(<span class="string">"skipping empty file"</span>);
+<a href=#608 id=608 data-nosnippet>608</a>                <span class="kw">continue</span>;
+<a href=#609 id=609 data-nosnippet>609</a>            }
+<a href=#610 id=610 data-nosnippet>610</a>            <span class="kw">let </span>(hash, metadata) = <span class="kw">match </span>get_metadata_section(
+<a href=#611 id=611 data-nosnippet>611</a>                <span class="self">self</span>.target,
+<a href=#612 id=612 data-nosnippet>612</a>                flavor,
+<a href=#613 id=613 data-nosnippet>613</a>                <span class="kw-2">&amp;</span>lib,
+<a href=#614 id=614 data-nosnippet>614</a>                <span class="self">self</span>.metadata_loader,
+<a href=#615 id=615 data-nosnippet>615</a>                <span class="self">self</span>.cfg_version,
+<a href=#616 id=616 data-nosnippet>616</a>                <span class="prelude-val">Some</span>(<span class="self">self</span>.crate_name),
+<a href=#617 id=617 data-nosnippet>617</a>            ) {
+<a href=#618 id=618 data-nosnippet>618</a>                <span class="prelude-val">Ok</span>(blob) =&gt; {
+<a href=#619 id=619 data-nosnippet>619</a>                    <span class="kw">if let </span><span class="prelude-val">Some</span>(h) = <span class="self">self</span>.crate_matches(crate_rejections, <span class="kw-2">&amp;</span>blob, <span class="kw-2">&amp;</span>lib) {
+<a href=#620 id=620 data-nosnippet>620</a>                        (h, blob)
+<a href=#621 id=621 data-nosnippet>621</a>                    } <span class="kw">else </span>{
+<a href=#622 id=622 data-nosnippet>622</a>                        <span class="macro">info!</span>(<span class="string">"metadata mismatch"</span>);
+<a href=#623 id=623 data-nosnippet>623</a>                        <span class="kw">continue</span>;
+<a href=#624 id=624 data-nosnippet>624</a>                    }
+<a href=#625 id=625 data-nosnippet>625</a>                }
+<a href=#626 id=626 data-nosnippet>626</a>                <span class="prelude-val">Err</span>(MetadataError::VersionMismatch { expected_version, found_version }) =&gt; {
+<a href=#627 id=627 data-nosnippet>627</a>                    <span class="comment">// The file was present and created by the same compiler version, but we
+<a href=#628 id=628 data-nosnippet>628</a>                    // couldn't load it for some reason. Give a hard error instead of silently
+<a href=#629 id=629 data-nosnippet>629</a>                    // ignoring it, but only if we would have given an error anyway.
+<a href=#630 id=630 data-nosnippet>630</a>                    </span><span class="macro">info!</span>(
+<a href=#631 id=631 data-nosnippet>631</a>                        <span class="string">"Rejecting via version: expected {} got {}"</span>,
+<a href=#632 id=632 data-nosnippet>632</a>                        expected_version, found_version
+<a href=#633 id=633 data-nosnippet>633</a>                    );
+<a href=#634 id=634 data-nosnippet>634</a>                    crate_rejections
+<a href=#635 id=635 data-nosnippet>635</a>                        .via_version
+<a href=#636 id=636 data-nosnippet>636</a>                        .push(CrateMismatch { path: lib, got: found_version });
+<a href=#637 id=637 data-nosnippet>637</a>                    <span class="kw">continue</span>;
+<a href=#638 id=638 data-nosnippet>638</a>                }
+<a href=#639 id=639 data-nosnippet>639</a>                <span class="prelude-val">Err</span>(MetadataError::LoadFailure(err)) =&gt; {
+<a href=#640 id=640 data-nosnippet>640</a>                    <span class="macro">info!</span>(<span class="string">"no metadata found: {}"</span>, err);
+<a href=#641 id=641 data-nosnippet>641</a>                    <span class="comment">// Metadata was loaded from interface file earlier.
+<a href=#642 id=642 data-nosnippet>642</a>                    </span><span class="kw">if let </span><span class="prelude-val">Some</span>((.., CrateFlavor::SDylib)) = slot {
+<a href=#643 id=643 data-nosnippet>643</a>                        ret = <span class="prelude-val">Some</span>((lib, kind));
+<a href=#644 id=644 data-nosnippet>644</a>                        <span class="kw">continue</span>;
+<a href=#645 id=645 data-nosnippet>645</a>                    }
+<a href=#646 id=646 data-nosnippet>646</a>                    <span class="comment">// The file was present and created by the same compiler version, but we
+<a href=#647 id=647 data-nosnippet>647</a>                    // couldn't load it for some reason. Give a hard error instead of silently
+<a href=#648 id=648 data-nosnippet>648</a>                    // ignoring it, but only if we would have given an error anyway.
+<a href=#649 id=649 data-nosnippet>649</a>                    </span>crate_rejections.via_invalid.push(CrateMismatch { path: lib, got: err });
+<a href=#650 id=650 data-nosnippet>650</a>                    <span class="kw">continue</span>;
+<a href=#651 id=651 data-nosnippet>651</a>                }
+<a href=#652 id=652 data-nosnippet>652</a>                <span class="prelude-val">Err</span>(err @ MetadataError::NotPresent(<span class="kw">_</span>)) =&gt; {
+<a href=#653 id=653 data-nosnippet>653</a>                    <span class="macro">info!</span>(<span class="string">"no metadata found: {}"</span>, err);
+<a href=#654 id=654 data-nosnippet>654</a>                    <span class="kw">continue</span>;
+<a href=#655 id=655 data-nosnippet>655</a>                }
+<a href=#656 id=656 data-nosnippet>656</a>            };
+<a href=#657 id=657 data-nosnippet>657</a>            <span class="comment">// If we see multiple hashes, emit an error about duplicate candidates.
+<a href=#658 id=658 data-nosnippet>658</a>            </span><span class="kw">if </span>slot.as_ref().is_some_and(|s| s.<span class="number">0 </span>!= hash) {
+<a href=#659 id=659 data-nosnippet>659</a>                <span class="kw">if let </span><span class="prelude-val">Some</span>(candidates) = err_data {
+<a href=#660 id=660 data-nosnippet>660</a>                    <span class="kw">return </span><span class="prelude-val">Err</span>(CrateError::MultipleCandidates(
+<a href=#661 id=661 data-nosnippet>661</a>                        <span class="self">self</span>.crate_name,
+<a href=#662 id=662 data-nosnippet>662</a>                        flavor,
+<a href=#663 id=663 data-nosnippet>663</a>                        candidates,
+<a href=#664 id=664 data-nosnippet>664</a>                    ));
+<a href=#665 id=665 data-nosnippet>665</a>                }
+<a href=#666 id=666 data-nosnippet>666</a>                err_data = <span class="prelude-val">Some</span>(<span class="macro">vec!</span>[slot.take().unwrap().<span class="number">2</span>]);
+<a href=#667 id=667 data-nosnippet>667</a>            }
+<a href=#668 id=668 data-nosnippet>668</a>            <span class="kw">if let </span><span class="prelude-val">Some</span>(candidates) = <span class="kw-2">&amp;mut </span>err_data {
+<a href=#669 id=669 data-nosnippet>669</a>                candidates.push(lib);
+<a href=#670 id=670 data-nosnippet>670</a>                <span class="kw">continue</span>;
+<a href=#671 id=671 data-nosnippet>671</a>            }
+<a href=#672 id=672 data-nosnippet>672</a>
+<a href=#673 id=673 data-nosnippet>673</a>            <span class="comment">// Ok so at this point we've determined that `(lib, kind)` above is
+<a href=#674 id=674 data-nosnippet>674</a>            // a candidate crate to load, and that `slot` is either none (this
+<a href=#675 id=675 data-nosnippet>675</a>            // is the first crate of its kind) or if some the previous path has
+<a href=#676 id=676 data-nosnippet>676</a>            // the exact same hash (e.g., it's the exact same crate).
+<a href=#677 id=677 data-nosnippet>677</a>            //
+<a href=#678 id=678 data-nosnippet>678</a>            // In principle these two candidate crates are exactly the same so
+<a href=#679 id=679 data-nosnippet>679</a>            // we can choose either of them to link. As a stupidly gross hack,
+<a href=#680 id=680 data-nosnippet>680</a>            // however, we favor crate in the sysroot.
+<a href=#681 id=681 data-nosnippet>681</a>            //
+<a href=#682 id=682 data-nosnippet>682</a>            // You can find more info in rust-lang/rust#39518 and various linked
+<a href=#683 id=683 data-nosnippet>683</a>            // issues, but the general gist is that during testing libstd the
+<a href=#684 id=684 data-nosnippet>684</a>            // compilers has two candidates to choose from: one in the sysroot
+<a href=#685 id=685 data-nosnippet>685</a>            // and one in the deps folder. These two crates are the exact same
+<a href=#686 id=686 data-nosnippet>686</a>            // crate but if the compiler chooses the one in the deps folder
+<a href=#687 id=687 data-nosnippet>687</a>            // it'll cause spurious errors on Windows.
+<a href=#688 id=688 data-nosnippet>688</a>            //
+<a href=#689 id=689 data-nosnippet>689</a>            // As a result, we favor the sysroot crate here. Note that the
+<a href=#690 id=690 data-nosnippet>690</a>            // candidates are all canonicalized, so we canonicalize the sysroot
+<a href=#691 id=691 data-nosnippet>691</a>            // as well.
+<a href=#692 id=692 data-nosnippet>692</a>            </span><span class="kw">if let </span><span class="prelude-val">Some</span>((prev, <span class="kw">_</span>)) = <span class="kw-2">&amp;</span>ret {
+<a href=#693 id=693 data-nosnippet>693</a>                <span class="kw">let </span>sysroot = <span class="self">self</span>.sysroot;
+<a href=#694 id=694 data-nosnippet>694</a>                <span class="kw">let </span>sysroot = try_canonicalize(sysroot).unwrap_or_else(|<span class="kw">_</span>| sysroot.to_path_buf());
+<a href=#695 id=695 data-nosnippet>695</a>                <span class="kw">if </span>prev.starts_with(<span class="kw-2">&amp;</span>sysroot) {
+<a href=#696 id=696 data-nosnippet>696</a>                    <span class="kw">continue</span>;
+<a href=#697 id=697 data-nosnippet>697</a>                }
+<a href=#698 id=698 data-nosnippet>698</a>            }
+<a href=#699 id=699 data-nosnippet>699</a>
+<a href=#700 id=700 data-nosnippet>700</a>            <span class="comment">// We error eagerly here. If we're locating a rlib, then in theory the full metadata
+<a href=#701 id=701 data-nosnippet>701</a>            // could still be in a (later resolved) dylib. In practice, if the rlib and dylib
+<a href=#702 id=702 data-nosnippet>702</a>            // were produced in a way where one has full metadata and the other hasn't, it would
+<a href=#703 id=703 data-nosnippet>703</a>            // mean that they were compiled using different compiler flags and probably also have
+<a href=#704 id=704 data-nosnippet>704</a>            // a different SVH value.
+<a href=#705 id=705 data-nosnippet>705</a>            </span><span class="kw">if </span>metadata.get_header().is_stub {
+<a href=#706 id=706 data-nosnippet>706</a>                <span class="comment">// `is_stub` should never be true for .rmeta files.
+<a href=#707 id=707 data-nosnippet>707</a>                </span><span class="macro">assert_ne!</span>(flavor, CrateFlavor::Rmeta);
+<a href=#708 id=708 data-nosnippet>708</a>
+<a href=#709 id=709 data-nosnippet>709</a>                <span class="comment">// Because rmeta files are resolved before rlib/dylib files, if this is a stub and
+<a href=#710 id=710 data-nosnippet>710</a>                // we haven't found a slot already, it means that the full metadata is missing.
+<a href=#711 id=711 data-nosnippet>711</a>                </span><span class="kw">if </span>slot.is_none() {
+<a href=#712 id=712 data-nosnippet>712</a>                    <span class="kw">return </span><span class="prelude-val">Err</span>(CrateError::FullMetadataNotFound(<span class="self">self</span>.crate_name, flavor));
+<a href=#713 id=713 data-nosnippet>713</a>                }
+<a href=#714 id=714 data-nosnippet>714</a>            } <span class="kw">else </span>{
+<a href=#715 id=715 data-nosnippet>715</a>                <span class="kw-2">*</span>slot = <span class="prelude-val">Some</span>((hash, metadata, lib.clone(), flavor));
+<a href=#716 id=716 data-nosnippet>716</a>            }
+<a href=#717 id=717 data-nosnippet>717</a>            ret = <span class="prelude-val">Some</span>((lib, kind));
+<a href=#718 id=718 data-nosnippet>718</a>        }
+<a href=#719 id=719 data-nosnippet>719</a>
+<a href=#720 id=720 data-nosnippet>720</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(candidates) = <a href="#598">err_data</a> {
+<a href=#721 id=721 data-nosnippet>721</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#1046">CrateError::MultipleCandidates</a>(<a class="self" href="#576">self</a>.crate_name, <a href="#579">flavor</a>, <a href="#720">candidates</a>))
+<a href=#722 id=722 data-nosnippet>722</a>        } <span class="kw">else </span>{
+<a href=#723 id=723 data-nosnippet>723</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="#597">ret</a>)
+<a href=#724 id=724 data-nosnippet>724</a>        }
+<a href=#725 id=725 data-nosnippet>725</a>    }
+<a href=#726 id=726 data-nosnippet>726</a>
+<a href=#727 id=727 data-nosnippet>727</a>    <span class="kw">fn </span>crate_matches(
+<a href=#728 id=728 data-nosnippet>728</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#729 id=729 data-nosnippet>729</a>        crate_rejections: <span class="kw-2">&amp;mut </span><a href="#1019-1026">CrateRejections</a>,
+<a href=#730 id=730 data-nosnippet>730</a>        metadata: <span class="kw-2">&amp;</span><a href="rmeta/decoder.rs.html#49">MetadataBlob</a>,
+<a href=#731 id=731 data-nosnippet>731</a>        libpath: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>,
+<a href=#732 id=732 data-nosnippet>732</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_data_structures/svh/struct.Svh.html">Svh</a>&gt; {
+<a href=#733 id=733 data-nosnippet>733</a>        <span class="kw">let </span>header = <a href="#730">metadata</a>.<a href="rmeta/decoder.rs.html#752-755">get_header</a>();
+<a href=#734 id=734 data-nosnippet>734</a>        <span class="kw">if </span><a href="#733">header</a>.is_proc_macro_crate != <a class="self" href="#728">self</a>.is_proc_macro {
+<a href=#735 id=735 data-nosnippet>735</a>            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.info.html">info!</a>(
+<a href=#736 id=736 data-nosnippet>736</a>                <span class="string">"Rejecting via proc macro: expected {} got {}"</span>,
+<a href=#737 id=737 data-nosnippet>737</a>                <span class="self">self</span>.is_proc_macro, header.is_proc_macro_crate,
+<a href=#738 id=738 data-nosnippet>738</a>            );
+<a href=#739 id=739 data-nosnippet>739</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>;
+<a href=#740 id=740 data-nosnippet>740</a>        }
+<a href=#741 id=741 data-nosnippet>741</a>
+<a href=#742 id=742 data-nosnippet>742</a>        <span class="kw">if </span><a class="self" href="#728">self</a>.exact_paths.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.is_empty">is_empty</a>() &amp;&amp; <a class="self" href="#728">self</a>.crate_name != <a href="#733">header</a>.name {
+<a href=#743 id=743 data-nosnippet>743</a>            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.info.html">info!</a>(<span class="string">"Rejecting via crate name"</span>);
+<a href=#744 id=744 data-nosnippet>744</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>;
+<a href=#745 id=745 data-nosnippet>745</a>        }
+<a href=#746 id=746 data-nosnippet>746</a>
+<a href=#747 id=747 data-nosnippet>747</a>        <span class="kw">if </span><a href="#733">header</a>.triple != <a class="self" href="#728">self</a>.tuple {
+<a href=#748 id=748 data-nosnippet>748</a>            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.info.html">info!</a>(<span class="string">"Rejecting via crate triple: expected {} got {}"</span>, <span class="self">self</span>.tuple, header.triple);
+<a href=#749 id=749 data-nosnippet>749</a>            <a href="#729">crate_rejections</a>.via_triple.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#1013-1016">CrateMismatch</a> {
+<a href=#750 id=750 data-nosnippet>750</a>                path: <a href="#731">libpath</a>.<a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html#method.to_path_buf">to_path_buf</a>(),
+<a href=#751 id=751 data-nosnippet>751</a>                got: <a href="#733">header</a>.triple.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>(),
+<a href=#752 id=752 data-nosnippet>752</a>            });
+<a href=#753 id=753 data-nosnippet>753</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>;
+<a href=#754 id=754 data-nosnippet>754</a>        }
+<a href=#755 id=755 data-nosnippet>755</a>
+<a href=#756 id=756 data-nosnippet>756</a>        <span class="kw">let </span>hash = <a href="#733">header</a>.hash;
+<a href=#757 id=757 data-nosnippet>757</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(expected_hash) = <a class="self" href="#728">self</a>.hash {
+<a href=#758 id=758 data-nosnippet>758</a>            <span class="kw">if </span><a href="#756">hash</a> != <a href="#757">expected_hash</a> {
+<a href=#759 id=759 data-nosnippet>759</a>                <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.info.html">info!</a>(<span class="string">"Rejecting via hash: expected {} got {}"</span>, expected_hash, hash);
+<a href=#760 id=760 data-nosnippet>760</a>                <a href="#729">crate_rejections</a>
+<a href=#761 id=761 data-nosnippet>761</a>                    .via_hash
+<a href=#762 id=762 data-nosnippet>762</a>                    .<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#1013-1016">CrateMismatch</a> { path: <a href="#731">libpath</a>.<a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html#method.to_path_buf">to_path_buf</a>(), got: <a href="#756">hash</a>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>() });
+<a href=#763 id=763 data-nosnippet>763</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>;
+<a href=#764 id=764 data-nosnippet>764</a>            }
+<a href=#765 id=765 data-nosnippet>765</a>        }
+<a href=#766 id=766 data-nosnippet>766</a>
+<a href=#767 id=767 data-nosnippet>767</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#756">hash</a>)
+<a href=#768 id=768 data-nosnippet>768</a>    }
+<a href=#769 id=769 data-nosnippet>769</a>
+<a href=#770 id=770 data-nosnippet>770</a>    <span class="kw">fn </span>find_commandline_library(
+<a href=#771 id=771 data-nosnippet>771</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#772 id=772 data-nosnippet>772</a>        crate_rejections: <span class="kw-2">&amp;mut </span><a href="#1019-1026">CrateRejections</a>,
+<a href=#773 id=773 data-nosnippet>773</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="creader.rs.html#99-102">Library</a>&gt;, <a href="#1042-1054">CrateError</a>&gt; {
+<a href=#774 id=774 data-nosnippet>774</a>        <span class="comment">// First, filter out all libraries that look suspicious. We only accept
+<a href=#775 id=775 data-nosnippet>775</a>        // files which actually exist that have the correct naming scheme for
+<a href=#776 id=776 data-nosnippet>776</a>        // rlibs/dylibs.
+<a href=#777 id=777 data-nosnippet>777</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>rlibs = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxIndexMap::default</a>();
+<a href=#778 id=778 data-nosnippet>778</a>        <span class="kw">let </span><span class="kw-2">mut </span>rmetas = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxIndexMap::default</a>();
+<a href=#779 id=779 data-nosnippet>779</a>        <span class="kw">let </span><span class="kw-2">mut </span>dylibs = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxIndexMap::default</a>();
+<a href=#780 id=780 data-nosnippet>780</a>        <span class="kw">let </span><span class="kw-2">mut </span>sdylib_interfaces = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxIndexMap::default</a>();
+<a href=#781 id=781 data-nosnippet>781</a>        <span class="kw">for </span>loc <span class="kw">in </span><span class="kw-2">&amp;</span><span class="self">self</span>.exact_paths {
+<a href=#782 id=782 data-nosnippet>782</a>            <span class="kw">let </span>loc_canon = loc.canonicalized();
+<a href=#783 id=783 data-nosnippet>783</a>            <span class="kw">let </span>loc_orig = loc.original();
+<a href=#784 id=784 data-nosnippet>784</a>            <span class="kw">if </span>!loc_canon.exists() {
+<a href=#785 id=785 data-nosnippet>785</a>                <span class="kw">return </span><span class="prelude-val">Err</span>(CrateError::ExternLocationNotExist(<span class="self">self</span>.crate_name, loc_orig.clone()));
+<a href=#786 id=786 data-nosnippet>786</a>            }
+<a href=#787 id=787 data-nosnippet>787</a>            <span class="kw">if </span>!loc_orig.is_file() {
+<a href=#788 id=788 data-nosnippet>788</a>                <span class="kw">return </span><span class="prelude-val">Err</span>(CrateError::ExternLocationNotFile(<span class="self">self</span>.crate_name, loc_orig.clone()));
+<a href=#789 id=789 data-nosnippet>789</a>            }
+<a href=#790 id=790 data-nosnippet>790</a>            <span class="comment">// Note to take care and match against the non-canonicalized name:
+<a href=#791 id=791 data-nosnippet>791</a>            // some systems save build artifacts into content-addressed stores
+<a href=#792 id=792 data-nosnippet>792</a>            // that do not preserve extensions, and then link to them using
+<a href=#793 id=793 data-nosnippet>793</a>            // e.g. symbolic links. If we canonicalize too early, we resolve
+<a href=#794 id=794 data-nosnippet>794</a>            // the symlink, the file type is lost and we might treat rlibs and
+<a href=#795 id=795 data-nosnippet>795</a>            // rmetas as dylibs.
+<a href=#796 id=796 data-nosnippet>796</a>            </span><span class="kw">let </span><span class="prelude-val">Some</span>(file) = loc_orig.file_name().and_then(|s| s.to_str()) <span class="kw">else </span>{
+<a href=#797 id=797 data-nosnippet>797</a>                <span class="kw">return </span><span class="prelude-val">Err</span>(CrateError::ExternLocationNotFile(<span class="self">self</span>.crate_name, loc_orig.clone()));
+<a href=#798 id=798 data-nosnippet>798</a>            };
+<a href=#799 id=799 data-nosnippet>799</a>            <span class="kw">if </span>file.starts_with(<span class="string">"lib"</span>) {
+<a href=#800 id=800 data-nosnippet>800</a>                <span class="kw">if </span>file.ends_with(<span class="string">".rlib"</span>) {
+<a href=#801 id=801 data-nosnippet>801</a>                    rlibs.insert(loc_canon.clone(), PathKind::ExternFlag);
+<a href=#802 id=802 data-nosnippet>802</a>                    <span class="kw">continue</span>;
+<a href=#803 id=803 data-nosnippet>803</a>                }
+<a href=#804 id=804 data-nosnippet>804</a>                <span class="kw">if </span>file.ends_with(<span class="string">".rmeta"</span>) {
+<a href=#805 id=805 data-nosnippet>805</a>                    rmetas.insert(loc_canon.clone(), PathKind::ExternFlag);
+<a href=#806 id=806 data-nosnippet>806</a>                    <span class="kw">continue</span>;
+<a href=#807 id=807 data-nosnippet>807</a>                }
+<a href=#808 id=808 data-nosnippet>808</a>                <span class="kw">if </span>file.ends_with(<span class="string">".rs"</span>) {
+<a href=#809 id=809 data-nosnippet>809</a>                    sdylib_interfaces.insert(loc_canon.clone(), PathKind::ExternFlag);
+<a href=#810 id=810 data-nosnippet>810</a>                }
+<a href=#811 id=811 data-nosnippet>811</a>            }
+<a href=#812 id=812 data-nosnippet>812</a>            <span class="kw">let </span>dll_prefix = <span class="self">self</span>.target.dll_prefix.as_ref();
+<a href=#813 id=813 data-nosnippet>813</a>            <span class="kw">let </span>dll_suffix = <span class="self">self</span>.target.dll_suffix.as_ref();
+<a href=#814 id=814 data-nosnippet>814</a>            <span class="kw">if </span>file.starts_with(dll_prefix) &amp;&amp; file.ends_with(dll_suffix) {
+<a href=#815 id=815 data-nosnippet>815</a>                dylibs.insert(loc_canon.clone(), PathKind::ExternFlag);
+<a href=#816 id=816 data-nosnippet>816</a>                <span class="kw">continue</span>;
+<a href=#817 id=817 data-nosnippet>817</a>            }
+<a href=#818 id=818 data-nosnippet>818</a>            crate_rejections
+<a href=#819 id=819 data-nosnippet>819</a>                .via_filename
+<a href=#820 id=820 data-nosnippet>820</a>                .push(CrateMismatch { path: loc_orig.clone(), got: String::new() });
+<a href=#821 id=821 data-nosnippet>821</a>        }
+<a href=#822 id=822 data-nosnippet>822</a>
+<a href=#823 id=823 data-nosnippet>823</a>        <span class="comment">// Extract the dylib/rlib/rmeta triple.
+<a href=#824 id=824 data-nosnippet>824</a>        </span><a class="self" href="#771">self</a>.<a href="#524-550">extract_lib</a>(<a href="#772">crate_rejections</a>, <a href="#777">rlibs</a>, <a href="#778">rmetas</a>, <a href="#779">dylibs</a>, <a href="#780">sdylib_interfaces</a>)
+<a href=#825 id=825 data-nosnippet>825</a>            .<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.map">map</a>(|opt| <a href="#825">opt</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|(<span class="kw">_</span>, lib)| <a href="#825">lib</a>))
+<a href=#826 id=826 data-nosnippet>826</a>    }
+<a href=#827 id=827 data-nosnippet>827</a>
+<a href=#828 id=828 data-nosnippet>828</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>into_error(
+<a href=#829 id=829 data-nosnippet>829</a>        <span class="self">self</span>,
+<a href=#830 id=830 data-nosnippet>830</a>        crate_rejections: <a href="#1019-1026">CrateRejections</a>,
+<a href=#831 id=831 data-nosnippet>831</a>        dep_root: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="#262-265">CratePaths</a>&gt;,
+<a href=#832 id=832 data-nosnippet>832</a>    ) -&gt; <a href="#1042-1054">CrateError</a> {
+<a href=#833 id=833 data-nosnippet>833</a>        <a href="#1052">CrateError::LocatorCombined</a>(<a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html#method.new">Box::new</a>(<a href="#1032-1039">CombinedLocatorError</a> {
+<a href=#834 id=834 data-nosnippet>834</a>            crate_name: <a class="self" href="#829">self</a>.crate_name,
+<a href=#835 id=835 data-nosnippet>835</a>            <a href="#831">dep_root</a>,
+<a href=#836 id=836 data-nosnippet>836</a>            triple: <a class="self" href="#829">self</a>.tuple,
+<a href=#837 id=837 data-nosnippet>837</a>            dll_prefix: <a class="self" href="#829">self</a>.target.dll_prefix.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>(),
+<a href=#838 id=838 data-nosnippet>838</a>            dll_suffix: <a class="self" href="#829">self</a>.target.dll_suffix.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>(),
+<a href=#839 id=839 data-nosnippet>839</a>            <a href="#830">crate_rejections</a>,
+<a href=#840 id=840 data-nosnippet>840</a>        }))
+<a href=#841 id=841 data-nosnippet>841</a>    }
+<a href=#842 id=842 data-nosnippet>842</a>}
+<a href=#843 id=843 data-nosnippet>843</a>
+<a href=#844 id=844 data-nosnippet>844</a><span class="kw">fn </span><a href="../../rustc_metadata/locator/fn.get_metadata_section.html">get_metadata_section</a>&lt;<span class="lifetime">'p</span>&gt;(
+<a href=#845 id=845 data-nosnippet>845</a>    target: <span class="kw-2">&amp;</span><a href="../../rustc_target/spec/struct.Target.html">Target</a>,
+<a href=#846 id=846 data-nosnippet>846</a>    flavor: <a href="#274-279">CrateFlavor</a>,
+<a href=#847 id=847 data-nosnippet>847</a>    filename: <span class="kw-2">&amp;</span><span class="lifetime">'p </span><a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>,
+<a href=#848 id=848 data-nosnippet>848</a>    loader: <span class="kw-2">&amp;</span><span class="kw">dyn </span><a href="creader.rs.html#50-53">MetadataLoader</a>,
+<a href=#849 id=849 data-nosnippet>849</a>    cfg_version: <span class="kw-2">&amp;</span><span class="lifetime">'static </span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>,
+<a href=#850 id=850 data-nosnippet>850</a>    crate_name: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>&gt;,
+<a href=#851 id=851 data-nosnippet>851</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="rmeta/decoder.rs.html#49">MetadataBlob</a>, <a href="#1056-1063">MetadataError</a>&lt;<span class="lifetime">'p</span>&gt;&gt; {
+<a href=#852 id=852 data-nosnippet>852</a>    <span class="kw">if </span>!<a href="#847">filename</a>.<a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html#method.exists">exists</a>() {
+<a href=#853 id=853 data-nosnippet>853</a>        <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#1058">MetadataError::NotPresent</a>(<a href="#847">filename</a>));
+<a href=#854 id=854 data-nosnippet>854</a>    }
+<a href=#855 id=855 data-nosnippet>855</a>    <span class="kw">let </span>raw_bytes = <span class="kw">match </span><a href="#846">flavor</a> {
+<a href=#856 id=856 data-nosnippet>856</a>        <a href="#275">CrateFlavor::Rlib</a> =&gt; {
+<a href=#857 id=857 data-nosnippet>857</a>            <a href="#848">loader</a>.<a href="creader.rs.html#51">get_rlib_metadata</a>(<a href="#845">target</a>, <a href="#847">filename</a>).<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.map_err">map_err</a>(<a href="#1060">MetadataError::LoadFailure</a>)<span class="question-mark">?
+<a href=#858 id=858 data-nosnippet>858</a>        </span>}
+<a href=#859 id=859 data-nosnippet>859</a>        <a href="#278">CrateFlavor::SDylib</a> =&gt; {
+<a href=#860 id=860 data-nosnippet>860</a>            <span class="kw">let </span>compiler = <a href="https://doc.rust-lang.org/nightly/std/env/fn.current_exe.html">std::env::current_exe</a>().<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.map_err">map_err</a>(|_err| {
+<a href=#861 id=861 data-nosnippet>861</a>                <a href="#1060">MetadataError::LoadFailure</a>(
+<a href=#862 id=862 data-nosnippet>862</a>                    <span class="string">"couldn't obtain current compiler binary when loading sdylib interface"
+<a href=#863 id=863 data-nosnippet>863</a>                        </span>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>(),
+<a href=#864 id=864 data-nosnippet>864</a>                )
+<a href=#865 id=865 data-nosnippet>865</a>            })<span class="question-mark">?</span>;
+<a href=#866 id=866 data-nosnippet>866</a>
+<a href=#867 id=867 data-nosnippet>867</a>            <span class="kw">let </span>tmp_path = <span class="kw">match </span><a href="https://docs.rs/tempfile/latest/tempfile/struct.Builder.html#method.new">TempFileBuilder::new</a>().<a href="https://docs.rs/tempfile/latest/tempfile/struct.Builder.html#method.prefix">prefix</a>(<span class="string">"rustc"</span>).<a href="https://docs.rs/tempfile/latest/tempfile/struct.Builder.html#method.tempdir">tempdir</a>() {
+<a href=#868 id=868 data-nosnippet>868</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(tmp_path) =&gt; <a href="#868">tmp_path</a>,
+<a href=#869 id=869 data-nosnippet>869</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(error) =&gt; {
+<a href=#870 id=870 data-nosnippet>870</a>                    <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#1060">MetadataError::LoadFailure</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#871 id=871 data-nosnippet>871</a>                        <span class="string">"couldn't create a temp dir: {}"</span>,
+<a href=#872 id=872 data-nosnippet>872</a>                        error
+<a href=#873 id=873 data-nosnippet>873</a>                    )));
+<a href=#874 id=874 data-nosnippet>874</a>                }
+<a href=#875 id=875 data-nosnippet>875</a>            };
+<a href=#876 id=876 data-nosnippet>876</a>
+<a href=#877 id=877 data-nosnippet>877</a>            <span class="kw">let </span>crate_name = <a href="#850">crate_name</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>();
+<a href=#878 id=878 data-nosnippet>878</a>            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"compiling {}"</span>, filename.display());
+<a href=#879 id=879 data-nosnippet>879</a>            <span class="comment">// FIXME: This will need to be done either within the current compiler session or
+<a href=#880 id=880 data-nosnippet>880</a>            // as a separate compiler session in the same process.
+<a href=#881 id=881 data-nosnippet>881</a>            </span><span class="kw">let </span>res = <a href="https://doc.rust-lang.org/nightly/std/process/struct.Command.html#method.new">std::process::Command::new</a>(<a href="#860">compiler</a>)
+<a href=#882 id=882 data-nosnippet>882</a>                .<a href="https://doc.rust-lang.org/nightly/std/process/struct.Command.html#method.arg">arg</a>(<span class="kw-2">&amp;</span><a href="#847">filename</a>)
+<a href=#883 id=883 data-nosnippet>883</a>                .<a href="https://doc.rust-lang.org/nightly/std/process/struct.Command.html#method.arg">arg</a>(<span class="string">"--emit=metadata"</span>)
+<a href=#884 id=884 data-nosnippet>884</a>                .<a href="https://doc.rust-lang.org/nightly/std/process/struct.Command.html#method.arg">arg</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"--crate-name={}"</span>, crate_name))
+<a href=#885 id=885 data-nosnippet>885</a>                .<a href="https://doc.rust-lang.org/nightly/std/process/struct.Command.html#method.arg">arg</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"--out-dir={}"</span>, tmp_path.path().display()))
+<a href=#886 id=886 data-nosnippet>886</a>                .<a href="https://doc.rust-lang.org/nightly/std/process/struct.Command.html#method.arg">arg</a>(<span class="string">"-Zbuild-sdylib-interface"</span>)
+<a href=#887 id=887 data-nosnippet>887</a>                .<a href="https://doc.rust-lang.org/nightly/std/process/struct.Command.html#method.output">output</a>()
+<a href=#888 id=888 data-nosnippet>888</a>                .<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.map_err">map_err</a>(|err| {
+<a href=#889 id=889 data-nosnippet>889</a>                    <a href="#1060">MetadataError::LoadFailure</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"couldn't compile interface: {}"</span>, err))
+<a href=#890 id=890 data-nosnippet>890</a>                })<span class="question-mark">?</span>;
+<a href=#891 id=891 data-nosnippet>891</a>
+<a href=#892 id=892 data-nosnippet>892</a>            <span class="kw">if </span>!<a href="#881">res</a>.status.<a href="https://doc.rust-lang.org/nightly/std/process/struct.ExitStatus.html#method.success">success</a>() {
+<a href=#893 id=893 data-nosnippet>893</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#1060">MetadataError::LoadFailure</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#894 id=894 data-nosnippet>894</a>                    <span class="string">"couldn't compile interface: {}"</span>,
+<a href=#895 id=895 data-nosnippet>895</a>                    std::str::from_utf8(<span class="kw-2">&amp;</span>res.stderr).unwrap_or_default()
+<a href=#896 id=896 data-nosnippet>896</a>                )));
+<a href=#897 id=897 data-nosnippet>897</a>            }
+<a href=#898 id=898 data-nosnippet>898</a>
+<a href=#899 id=899 data-nosnippet>899</a>            <span class="comment">// Load interface metadata instead of crate metadata.
+<a href=#900 id=900 data-nosnippet>900</a>            </span><span class="kw">let </span>interface_metadata_name = <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"lib{}.rmeta"</span>, crate_name);
+<a href=#901 id=901 data-nosnippet>901</a>            <span class="kw">let </span>rmeta_file = <a href="#867">tmp_path</a>.<a href="https://docs.rs/tempfile/latest/tempfile/dir/struct.TempDir.html#method.path">path</a>().<a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html#method.join">join</a>(<a href="#900">interface_metadata_name</a>);
+<a href=#902 id=902 data-nosnippet>902</a>            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"loading interface metadata from {}"</span>, rmeta_file.display());
+<a href=#903 id=903 data-nosnippet>903</a>            <span class="kw">let </span>rmeta = <a href="#963-980">get_rmeta_metadata_section</a>(<span class="kw-2">&amp;</span><a href="#901">rmeta_file</a>)<span class="question-mark">?</span>;
+<a href=#904 id=904 data-nosnippet>904</a>            <span class="kw">let _ </span>= <a href="https://doc.rust-lang.org/nightly/std/fs/fn.remove_file.html">std::fs::remove_file</a>(<a href="#901">rmeta_file</a>);
+<a href=#905 id=905 data-nosnippet>905</a>
+<a href=#906 id=906 data-nosnippet>906</a>            <a href="#903">rmeta</a>
+<a href=#907 id=907 data-nosnippet>907</a>        }
+<a href=#908 id=908 data-nosnippet>908</a>        <a href="#277">CrateFlavor::Dylib</a> =&gt; {
+<a href=#909 id=909 data-nosnippet>909</a>            <span class="kw">let </span>buf =
+<a href=#910 id=910 data-nosnippet>910</a>                <a href="#848">loader</a>.<a href="creader.rs.html#52">get_dylib_metadata</a>(<a href="#845">target</a>, <a href="#847">filename</a>).<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.map_err">map_err</a>(<a href="#1060">MetadataError::LoadFailure</a>)<span class="question-mark">?</span>;
+<a href=#911 id=911 data-nosnippet>911</a>            <span class="kw">let </span>header_len = <a href="rmeta/mod.rs.html#66">METADATA_HEADER</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.len">len</a>();
+<a href=#912 id=912 data-nosnippet>912</a>            <span class="comment">// header + u64 length of data
+<a href=#913 id=913 data-nosnippet>913</a>            </span><span class="kw">let </span>data_start = <a href="#911">header_len</a> + <span class="number">8</span>;
+<a href=#914 id=914 data-nosnippet>914</a>
+<a href=#915 id=915 data-nosnippet>915</a>            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"checking {} bytes of metadata-version stamp"</span>, header_len);
+<a href=#916 id=916 data-nosnippet>916</a>            <span class="kw">let </span>header = <span class="kw-2">&amp;</span><a href="#909">buf</a>[..<a href="https://doc.rust-lang.org/nightly/core/cmp/fn.min.html">cmp::min</a>(<a href="#911">header_len</a>, <a href="#909">buf</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.len">len</a>())];
+<a href=#917 id=917 data-nosnippet>917</a>            <span class="kw">if </span><a href="#916">header</a> != <a href="rmeta/mod.rs.html#66">METADATA_HEADER</a> {
+<a href=#918 id=918 data-nosnippet>918</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#1060">MetadataError::LoadFailure</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#919 id=919 data-nosnippet>919</a>                    <span class="string">"invalid metadata version found: {}"</span>,
+<a href=#920 id=920 data-nosnippet>920</a>                    filename.display()
+<a href=#921 id=921 data-nosnippet>921</a>                )));
+<a href=#922 id=922 data-nosnippet>922</a>            }
+<a href=#923 id=923 data-nosnippet>923</a>
+<a href=#924 id=924 data-nosnippet>924</a>            <span class="comment">// Length of the metadata - this allows linkers to pad the section if they want
+<a href=#925 id=925 data-nosnippet>925</a>            </span><span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(len_bytes) =
+<a href=#926 id=926 data-nosnippet>926</a>                &lt;[<a href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>; <span class="number">8</span>]&gt;::try_from(<span class="kw-2">&amp;</span><a href="#909">buf</a>[<a href="#911">header_len</a>..<a href="https://doc.rust-lang.org/nightly/core/cmp/fn.min.html">cmp::min</a>(<a href="#913">data_start</a>, <a href="#909">buf</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.len">len</a>())])
+<a href=#927 id=927 data-nosnippet>927</a>            <span class="kw">else </span>{
+<a href=#928 id=928 data-nosnippet>928</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#1060">MetadataError::LoadFailure</a>(
+<a href=#929 id=929 data-nosnippet>929</a>                    <span class="string">"invalid metadata length found"</span>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>(),
+<a href=#930 id=930 data-nosnippet>930</a>                ));
+<a href=#931 id=931 data-nosnippet>931</a>            };
+<a href=#932 id=932 data-nosnippet>932</a>            <span class="kw">let </span>metadata_len = <a href="https://doc.rust-lang.org/nightly/core/foreigntype.num.html#method.from_le_bytes">u64::from_le_bytes</a>(<a href="#925">len_bytes</a>) <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>;
+<a href=#933 id=933 data-nosnippet>933</a>
+<a href=#934 id=934 data-nosnippet>934</a>            <span class="comment">// Header is okay -&gt; inflate the actual metadata
+<a href=#935 id=935 data-nosnippet>935</a>            </span><a href="#909">buf</a>.<a href="../../rustc_data_structures/owned_slice/struct.OwnedSlice.html#method.slice">slice</a>(|buf| <span class="kw-2">&amp;</span><a href="#935">buf</a>[<a href="#913">data_start</a>..(<a href="#913">data_start</a> + <a href="#932">metadata_len</a>)])
+<a href=#936 id=936 data-nosnippet>936</a>        }
+<a href=#937 id=937 data-nosnippet>937</a>        <a href="#276">CrateFlavor::Rmeta</a> =&gt; <a href="#963-980">get_rmeta_metadata_section</a>(<a href="#847">filename</a>)<span class="question-mark">?</span>,
+<a href=#938 id=938 data-nosnippet>938</a>    };
+<a href=#939 id=939 data-nosnippet>939</a>    <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(blob) = <a href="rmeta/decoder.rs.html#62-64">MetadataBlob::new</a>(<a href="#855">raw_bytes</a>) <span class="kw">else </span>{
+<a href=#940 id=940 data-nosnippet>940</a>        <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#1060">MetadataError::LoadFailure</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#941 id=941 data-nosnippet>941</a>            <span class="string">"corrupt metadata encountered in {}"</span>,
+<a href=#942 id=942 data-nosnippet>942</a>            filename.display()
+<a href=#943 id=943 data-nosnippet>943</a>        )));
+<a href=#944 id=944 data-nosnippet>944</a>    };
+<a href=#945 id=945 data-nosnippet>945</a>    <span class="kw">match </span><a href="#939">blob</a>.<a href="rmeta/decoder.rs.html#724-743">check_compatibility</a>(<a href="#849">cfg_version</a>) {
+<a href=#946 id=946 data-nosnippet>946</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(()) =&gt; {
+<a href=#947 id=947 data-nosnippet>947</a>            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"metadata blob read okay"</span>);
+<a href=#948 id=948 data-nosnippet>948</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="#939">blob</a>)
+<a href=#949 id=949 data-nosnippet>949</a>        }
+<a href=#950 id=950 data-nosnippet>950</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<span class="prelude-val">None</span>) =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#1060">MetadataError::LoadFailure</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#951 id=951 data-nosnippet>951</a>            <span class="string">"invalid metadata version found: {}"</span>,
+<a href=#952 id=952 data-nosnippet>952</a>            filename.display()
+<a href=#953 id=953 data-nosnippet>953</a>        ))),
+<a href=#954 id=954 data-nosnippet>954</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<span class="prelude-val">Some</span>(found_version)) =&gt; {
+<a href=#955 id=955 data-nosnippet>955</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#1062">MetadataError::VersionMismatch</a> {
+<a href=#956 id=956 data-nosnippet>956</a>                expected_version: <a href="rmeta/mod.rs.html#52-54">rustc_version</a>(<a href="#849">cfg_version</a>),
+<a href=#957 id=957 data-nosnippet>957</a>                <a href="#954">found_version</a>,
+<a href=#958 id=958 data-nosnippet>958</a>            });
+<a href=#959 id=959 data-nosnippet>959</a>        }
+<a href=#960 id=960 data-nosnippet>960</a>    }
+<a href=#961 id=961 data-nosnippet>961</a>}
+<a href=#962 id=962 data-nosnippet>962</a>
+<a href=#963 id=963 data-nosnippet>963</a><span class="kw">fn </span><a href="../../rustc_metadata/locator/fn.get_rmeta_metadata_section.html">get_rmeta_metadata_section</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'p</span>&gt;(filename: <span class="kw-2">&amp;</span><span class="lifetime">'p </span><a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="../../rustc_data_structures/owned_slice/struct.OwnedSlice.html">OwnedSlice</a>, <a href="#1056-1063">MetadataError</a>&lt;<span class="lifetime">'a</span>&gt;&gt; {
+<a href=#964 id=964 data-nosnippet>964</a>    <span class="comment">// mmap the file, because only a small fraction of it is read.
+<a href=#965 id=965 data-nosnippet>965</a>    </span><span class="kw">let </span>file = <a href="https://doc.rust-lang.org/nightly/std/fs/struct.File.html#method.open">std::fs::File::open</a>(<a href="#963">filename</a>).<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.map_err">map_err</a>(|<span class="kw">_</span>| {
+<a href=#966 id=966 data-nosnippet>966</a>        <a href="#1060">MetadataError::LoadFailure</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#967 id=967 data-nosnippet>967</a>            <span class="string">"failed to open rmeta metadata: '{}'"</span>,
+<a href=#968 id=968 data-nosnippet>968</a>            filename.display()
+<a href=#969 id=969 data-nosnippet>969</a>        ))
+<a href=#970 id=970 data-nosnippet>970</a>    })<span class="question-mark">?</span>;
+<a href=#971 id=971 data-nosnippet>971</a>    <span class="kw">let </span>mmap = <span class="kw">unsafe </span>{ <a href="../../rustc_data_structures/memmap/struct.Mmap.html#method.map">Mmap::map</a>(<a href="#965">file</a>) };
+<a href=#972 id=972 data-nosnippet>972</a>    <span class="kw">let </span>mmap = <a href="#971">mmap</a>.<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.map_err">map_err</a>(|<span class="kw">_</span>| {
+<a href=#973 id=973 data-nosnippet>973</a>        <a href="#1060">MetadataError::LoadFailure</a>(<a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#974 id=974 data-nosnippet>974</a>            <span class="string">"failed to mmap rmeta metadata: '{}'"</span>,
+<a href=#975 id=975 data-nosnippet>975</a>            filename.display()
+<a href=#976 id=976 data-nosnippet>976</a>        ))
+<a href=#977 id=977 data-nosnippet>977</a>    })<span class="question-mark">?</span>;
+<a href=#978 id=978 data-nosnippet>978</a>
+<a href=#979 id=979 data-nosnippet>979</a>    <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="../../rustc_data_structures/owned_slice/fn.slice_owned.html">slice_owned</a>(<a href="#972">mmap</a>, <a href="https://doc.rust-lang.org/nightly/core/ops/deref/trait.Deref.html#tymethod.deref">Deref::deref</a>))
+<a href=#980 id=980 data-nosnippet>980</a>}
+<a href=#981 id=981 data-nosnippet>981</a>
+<a href=#982 id=982 data-nosnippet>982</a><span class="doccomment">/// A diagnostic function for dumping crate metadata to an output stream.
+<a href=#983 id=983 data-nosnippet>983</a></span><span class="kw">pub fn </span><a href="../../rustc_metadata/locator/fn.list_file_metadata.html">list_file_metadata</a>(
+<a href=#984 id=984 data-nosnippet>984</a>    target: <span class="kw-2">&amp;</span><a href="../../rustc_target/spec/struct.Target.html">Target</a>,
+<a href=#985 id=985 data-nosnippet>985</a>    path: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>,
+<a href=#986 id=986 data-nosnippet>986</a>    metadata_loader: <span class="kw-2">&amp;</span><span class="kw">dyn </span><a href="creader.rs.html#50-53">MetadataLoader</a>,
+<a href=#987 id=987 data-nosnippet>987</a>    out: <span class="kw-2">&amp;mut </span><span class="kw">dyn </span><a href="https://doc.rust-lang.org/nightly/std/io/trait.Write.html">Write</a>,
+<a href=#988 id=988 data-nosnippet>988</a>    ls_kinds: <span class="kw-2">&amp;</span>[<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>],
+<a href=#989 id=989 data-nosnippet>989</a>    cfg_version: <span class="kw-2">&amp;</span><span class="lifetime">'static </span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>,
+<a href=#990 id=990 data-nosnippet>990</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/io/error/type.Result.html">IoResult</a>&lt;()&gt; {
+<a href=#991 id=991 data-nosnippet>991</a>    <span class="kw">let </span>flavor = <a href="#998-1008">get_flavor_from_path</a>(<a href="#985">path</a>);
+<a href=#992 id=992 data-nosnippet>992</a>    <span class="kw">match </span><a href="#844-961">get_metadata_section</a>(<a href="#984">target</a>, <a href="#991">flavor</a>, <a href="#985">path</a>, <a href="#986">metadata_loader</a>, <a href="#989">cfg_version</a>, <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>) {
+<a href=#993 id=993 data-nosnippet>993</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(metadata) =&gt; <a href="#993">metadata</a>.<a href="rmeta/decoder.rs.html#762-954">list_crate_metadata</a>(<a href="#987">out</a>, <a href="#988">ls_kinds</a>),
+<a href=#994 id=994 data-nosnippet>994</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(msg) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.write.html">write!</a>(<a href="#987">out</a>, <span class="string">"{msg}\n"</span>),
+<a href=#995 id=995 data-nosnippet>995</a>    }
+<a href=#996 id=996 data-nosnippet>996</a>}
+<a href=#997 id=997 data-nosnippet>997</a>
+<a href=#998 id=998 data-nosnippet>998</a><span class="kw">fn </span><a href="../../rustc_metadata/locator/fn.get_flavor_from_path.html">get_flavor_from_path</a>(path: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>) -&gt; <a href="#274-279">CrateFlavor</a> {
+<a href=#999 id=999 data-nosnippet>999</a>    <span class="kw">let </span>filename = <a href="#998">path</a>.<a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html#method.file_name">file_name</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="https://doc.rust-lang.org/nightly/std/ffi/os_str/struct.OsStr.html#method.to_str">to_str</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>();
+<a href=#1000 id=1000 data-nosnippet>1000</a>
+<a href=#1001 id=1001 data-nosnippet>1001</a>    <span class="kw">if </span><a href="#999">filename</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.ends_with">ends_with</a>(<span class="string">".rlib"</span>) {
+<a href=#1002 id=1002 data-nosnippet>1002</a>        <a href="#275">CrateFlavor::Rlib</a>
+<a href=#1003 id=1003 data-nosnippet>1003</a>    } <span class="kw">else if </span><a href="#999">filename</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.ends_with">ends_with</a>(<span class="string">".rmeta"</span>) {
+<a href=#1004 id=1004 data-nosnippet>1004</a>        <a href="#276">CrateFlavor::Rmeta</a>
+<a href=#1005 id=1005 data-nosnippet>1005</a>    } <span class="kw">else </span>{
+<a href=#1006 id=1006 data-nosnippet>1006</a>        <a href="#277">CrateFlavor::Dylib</a>
+<a href=#1007 id=1007 data-nosnippet>1007</a>    }
+<a href=#1008 id=1008 data-nosnippet>1008</a>}
+<a href=#1009 id=1009 data-nosnippet>1009</a>
+<a href=#1010 id=1010 data-nosnippet>1010</a><span class="comment">// ------------------------------------------ Error reporting -------------------------------------
+<a href=#1011 id=1011 data-nosnippet>1011</a>
+<a href=#1012 id=1012 data-nosnippet>1012</a></span><span class="attr">#[derive(Clone, Debug)]
+<a href=#1013 id=1013 data-nosnippet>1013</a></span><span class="kw">struct </span><a href="../../rustc_metadata/locator/struct.CrateMismatch.html">CrateMismatch</a> {
+<a href=#1014 id=1014 data-nosnippet>1014</a>    path: <a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>,
+<a href=#1015 id=1015 data-nosnippet>1015</a>    got: <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>,
+<a href=#1016 id=1016 data-nosnippet>1016</a>}
+<a href=#1017 id=1017 data-nosnippet>1017</a>
+<a href=#1018 id=1018 data-nosnippet>1018</a><span class="attr">#[derive(Clone, Debug, Default)]
+<a href=#1019 id=1019 data-nosnippet>1019</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span><a href="../../rustc_metadata/locator/struct.CrateRejections.html">CrateRejections</a> {
+<a href=#1020 id=1020 data-nosnippet>1020</a>    via_hash: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="#1013-1016">CrateMismatch</a>&gt;,
+<a href=#1021 id=1021 data-nosnippet>1021</a>    via_triple: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="#1013-1016">CrateMismatch</a>&gt;,
+<a href=#1022 id=1022 data-nosnippet>1022</a>    via_kind: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="#1013-1016">CrateMismatch</a>&gt;,
+<a href=#1023 id=1023 data-nosnippet>1023</a>    via_version: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="#1013-1016">CrateMismatch</a>&gt;,
+<a href=#1024 id=1024 data-nosnippet>1024</a>    via_filename: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="#1013-1016">CrateMismatch</a>&gt;,
+<a href=#1025 id=1025 data-nosnippet>1025</a>    via_invalid: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="#1013-1016">CrateMismatch</a>&gt;,
+<a href=#1026 id=1026 data-nosnippet>1026</a>}
+<a href=#1027 id=1027 data-nosnippet>1027</a>
+<a href=#1028 id=1028 data-nosnippet>1028</a><span class="doccomment">/// Candidate rejection reasons collected during crate search.
+<a href=#1029 id=1029 data-nosnippet>1029</a>/// If no candidate is accepted, then these reasons are presented to the user,
+<a href=#1030 id=1030 data-nosnippet>1030</a>/// otherwise they are ignored.
+<a href=#1031 id=1031 data-nosnippet>1031</a></span><span class="attr">#[derive(Debug)]
+<a href=#1032 id=1032 data-nosnippet>1032</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span><a href="../../rustc_metadata/locator/struct.CombinedLocatorError.html">CombinedLocatorError</a> {
+<a href=#1033 id=1033 data-nosnippet>1033</a>    crate_name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>,
+<a href=#1034 id=1034 data-nosnippet>1034</a>    dep_root: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="#262-265">CratePaths</a>&gt;,
+<a href=#1035 id=1035 data-nosnippet>1035</a>    triple: <a href="../../rustc_target/spec/enum.TargetTuple.html">TargetTuple</a>,
+<a href=#1036 id=1036 data-nosnippet>1036</a>    dll_prefix: <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>,
+<a href=#1037 id=1037 data-nosnippet>1037</a>    dll_suffix: <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>,
+<a href=#1038 id=1038 data-nosnippet>1038</a>    crate_rejections: <a href="#1019-1026">CrateRejections</a>,
+<a href=#1039 id=1039 data-nosnippet>1039</a>}
+<a href=#1040 id=1040 data-nosnippet>1040</a>
+<a href=#1041 id=1041 data-nosnippet>1041</a><span class="attr">#[derive(Debug)]
+<a href=#1042 id=1042 data-nosnippet>1042</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum </span><a href="../../rustc_metadata/locator/enum.CrateError.html">CrateError</a> {
+<a href=#1043 id=1043 data-nosnippet>1043</a>    NonAsciiName(<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>),
+<a href=#1044 id=1044 data-nosnippet>1044</a>    ExternLocationNotExist(<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>, <a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>),
+<a href=#1045 id=1045 data-nosnippet>1045</a>    ExternLocationNotFile(<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>, <a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>),
+<a href=#1046 id=1046 data-nosnippet>1046</a>    MultipleCandidates(<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>, <a href="#274-279">CrateFlavor</a>, <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>&gt;),
+<a href=#1047 id=1047 data-nosnippet>1047</a>    FullMetadataNotFound(<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>, <a href="#274-279">CrateFlavor</a>),
+<a href=#1048 id=1048 data-nosnippet>1048</a>    SymbolConflictsCurrent(<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>),
+<a href=#1049 id=1049 data-nosnippet>1049</a>    StableCrateIdCollision(<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>, <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>),
+<a href=#1050 id=1050 data-nosnippet>1050</a>    DlOpen(<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>, <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>),
+<a href=#1051 id=1051 data-nosnippet>1051</a>    DlSym(<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>, <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>),
+<a href=#1052 id=1052 data-nosnippet>1052</a>    LocatorCombined(<a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html">Box</a>&lt;<a href="#1032-1039">CombinedLocatorError</a>&gt;),
+<a href=#1053 id=1053 data-nosnippet>1053</a>    NotFound(<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>),
+<a href=#1054 id=1054 data-nosnippet>1054</a>}
+<a href=#1055 id=1055 data-nosnippet>1055</a>
+<a href=#1056 id=1056 data-nosnippet>1056</a><span class="kw">enum </span><a href="../../rustc_metadata/locator/enum.MetadataError.html">MetadataError</a>&lt;<span class="lifetime">'a</span>&gt; {
+<a href=#1057 id=1057 data-nosnippet>1057</a>    <span class="doccomment">/// The file was missing.
+<a href=#1058 id=1058 data-nosnippet>1058</a>    </span>NotPresent(<span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>),
+<a href=#1059 id=1059 data-nosnippet>1059</a>    <span class="doccomment">/// The file was present and invalid.
+<a href=#1060 id=1060 data-nosnippet>1060</a>    </span>LoadFailure(<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>),
+<a href=#1061 id=1061 data-nosnippet>1061</a>    <span class="doccomment">/// The file was present, but compiled with a different rustc version.
+<a href=#1062 id=1062 data-nosnippet>1062</a>    </span>VersionMismatch { expected_version: <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>, found_version: <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a> },
+<a href=#1063 id=1063 data-nosnippet>1063</a>}
+<a href=#1064 id=1064 data-nosnippet>1064</a>
+<a href=#1065 id=1065 data-nosnippet>1065</a><span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/fmt/trait.Display.html">fmt::Display</a> <span class="kw">for </span><a href="#1056-1063">MetadataError</a>&lt;<span class="lifetime">'_</span>&gt; {
+<a href=#1066 id=1066 data-nosnippet>1066</a>    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, f: <span class="kw-2">&amp;mut </span><a href="https://doc.rust-lang.org/nightly/core/fmt/struct.Formatter.html">fmt::Formatter</a>&lt;<span class="lifetime">'_</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/nightly/core/fmt/type.Result.html">fmt::Result</a> {
+<a href=#1067 id=1067 data-nosnippet>1067</a>        <span class="kw">match </span><span class="self"><a href="#1066">self</a> </span>{
+<a href=#1068 id=1068 data-nosnippet>1068</a>            <a href="#1058">MetadataError::NotPresent</a>(filename) =&gt; {
+<a href=#1069 id=1069 data-nosnippet>1069</a>                <a href="#1066">f</a>.<a href="https://doc.rust-lang.org/nightly/core/fmt/struct.Formatter.html#method.write_str">write_str</a>(<span class="kw-2">&amp;</span><a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"no such file: '{}'"</span>, filename.display()))
+<a href=#1070 id=1070 data-nosnippet>1070</a>            }
+<a href=#1071 id=1071 data-nosnippet>1071</a>            <a href="#1060">MetadataError::LoadFailure</a>(msg) =&gt; <a href="#1066">f</a>.<a href="https://doc.rust-lang.org/nightly/core/fmt/struct.Formatter.html#method.write_str">write_str</a>(<a href="#1071">msg</a>),
+<a href=#1072 id=1072 data-nosnippet>1072</a>            <a href="#1062">MetadataError::VersionMismatch</a> { expected_version, found_version } =&gt; {
+<a href=#1073 id=1073 data-nosnippet>1073</a>                <a href="#1066">f</a>.<a href="https://doc.rust-lang.org/nightly/core/fmt/struct.Formatter.html#method.write_str">write_str</a>(<span class="kw-2">&amp;</span><a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(
+<a href=#1074 id=1074 data-nosnippet>1074</a>                    <span class="string">"rustc version mismatch. expected {}, found {}"</span>,
+<a href=#1075 id=1075 data-nosnippet>1075</a>                    expected_version, found_version,
+<a href=#1076 id=1076 data-nosnippet>1076</a>                ))
+<a href=#1077 id=1077 data-nosnippet>1077</a>            }
+<a href=#1078 id=1078 data-nosnippet>1078</a>        }
+<a href=#1079 id=1079 data-nosnippet>1079</a>    }
+<a href=#1080 id=1080 data-nosnippet>1080</a>}
+<a href=#1081 id=1081 data-nosnippet>1081</a>
+<a href=#1082 id=1082 data-nosnippet>1082</a><span class="kw">impl </span><a href="#1042-1054">CrateError</a> {
+<a href=#1083 id=1083 data-nosnippet>1083</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>report(<span class="self">self</span>, sess: <span class="kw-2">&amp;</span><a href="../../rustc_session/session/struct.Session.html">Session</a>, span: <a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>, missing_core: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>) {
+<a href=#1084 id=1084 data-nosnippet>1084</a>        <span class="kw">let </span>dcx = <a href="#1083">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.dcx">dcx</a>();
+<a href=#1085 id=1085 data-nosnippet>1085</a>        <span class="kw">match </span><span class="self"><a href="#1083">self</a> </span>{
+<a href=#1086 id=1086 data-nosnippet>1086</a>            <a href="#1043">CrateError::NonAsciiName</a>(crate_name) =&gt; {
+<a href=#1087 id=1087 data-nosnippet>1087</a>                <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#475-479">errors::NonAsciiName</a> { <a href="#1083">span</a>, <a href="#1086">crate_name</a> });
+<a href=#1088 id=1088 data-nosnippet>1088</a>            }
+<a href=#1089 id=1089 data-nosnippet>1089</a>            <a href="#1044">CrateError::ExternLocationNotExist</a>(crate_name, loc) =&gt; {
+<a href=#1090 id=1090 data-nosnippet>1090</a>                <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#483-488">errors::ExternLocationNotExist</a> { <a href="#1083">span</a>, <a href="#1089">crate_name</a>, location: <span class="kw-2">&amp;</span><a href="#1089">loc</a> });
+<a href=#1091 id=1091 data-nosnippet>1091</a>            }
+<a href=#1092 id=1092 data-nosnippet>1092</a>            <a href="#1045">CrateError::ExternLocationNotFile</a>(crate_name, loc) =&gt; {
+<a href=#1093 id=1093 data-nosnippet>1093</a>                <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#492-497">errors::ExternLocationNotFile</a> { <a href="#1083">span</a>, <a href="#1092">crate_name</a>, location: <span class="kw-2">&amp;</span><a href="#1092">loc</a> });
+<a href=#1094 id=1094 data-nosnippet>1094</a>            }
+<a href=#1095 id=1095 data-nosnippet>1095</a>            <a href="#1046">CrateError::MultipleCandidates</a>(crate_name, flavor, candidates) =&gt; {
+<a href=#1096 id=1096 data-nosnippet>1096</a>                <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#499-504">errors::MultipleCandidates</a> { <a href="#1083">span</a>, <a href="#1095">crate_name</a>, <a href="#1095">flavor</a>, <a href="#1095">candidates</a> });
+<a href=#1097 id=1097 data-nosnippet>1097</a>            }
+<a href=#1098 id=1098 data-nosnippet>1098</a>            <a href="#1047">CrateError::FullMetadataNotFound</a>(crate_name, flavor) =&gt; {
+<a href=#1099 id=1099 data-nosnippet>1099</a>                <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#524-529">errors::FullMetadataNotFound</a> { <a href="#1083">span</a>, <a href="#1098">crate_name</a>, <a href="#1098">flavor</a> });
+<a href=#1100 id=1100 data-nosnippet>1100</a>            }
+<a href=#1101 id=1101 data-nosnippet>1101</a>            <a href="#1048">CrateError::SymbolConflictsCurrent</a>(root_name) =&gt; {
+<a href=#1102 id=1102 data-nosnippet>1102</a>                <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#533-537">errors::SymbolConflictsCurrent</a> { <a href="#1083">span</a>, crate_name: <a href="#1101">root_name</a> });
+<a href=#1103 id=1103 data-nosnippet>1103</a>            }
+<a href=#1104 id=1104 data-nosnippet>1104</a>            <a href="#1049">CrateError::StableCrateIdCollision</a>(crate_name0, crate_name1) =&gt; {
+<a href=#1105 id=1105 data-nosnippet>1105</a>                <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#541-546">errors::StableCrateIdCollision</a> { <a href="#1083">span</a>, <a href="#1104">crate_name0</a>, <a href="#1104">crate_name1</a> });
+<a href=#1106 id=1106 data-nosnippet>1106</a>            }
+<a href=#1107 id=1107 data-nosnippet>1107</a>            <a href="#1050">CrateError::DlOpen</a>(path, err) | <a href="#1051">CrateError::DlSym</a>(path, err) =&gt; {
+<a href=#1108 id=1108 data-nosnippet>1108</a>                <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#550-555">errors::DlError</a> { <a href="#1083">span</a>, <a href="#1107">path</a>, <a href="#1107">err</a> });
+<a href=#1109 id=1109 data-nosnippet>1109</a>            }
+<a href=#1110 id=1110 data-nosnippet>1110</a>            <a href="#1052">CrateError::LocatorCombined</a>(locator) =&gt; {
+<a href=#1111 id=1111 data-nosnippet>1111</a>                <span class="kw">let </span>crate_name = <a href="#1110">locator</a>.crate_name;
+<a href=#1112 id=1112 data-nosnippet>1112</a>                <span class="kw">let </span>add_info = <span class="kw">match </span><span class="kw-2">&amp;</span><a href="#1110">locator</a>.dep_root {
+<a href=#1113 id=1113 data-nosnippet>1113</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a> </a>=&gt; <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html#method.new">String::new</a>(),
+<a href=#1114 id=1114 data-nosnippet>1114</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(r) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">" which `{}` depends on"</span>, r.name),
+<a href=#1115 id=1115 data-nosnippet>1115</a>                };
+<a href=#1116 id=1116 data-nosnippet>1116</a>                <span class="kw">if </span>!<a href="#1110">locator</a>.crate_rejections.via_filename.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.is_empty">is_empty</a>() {
+<a href=#1117 id=1117 data-nosnippet>1117</a>                    <span class="kw">let </span>mismatches = <a href="#1110">locator</a>.crate_rejections.via_filename.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>();
+<a href=#1118 id=1118 data-nosnippet>1118</a>                    <span class="kw">for </span>CrateMismatch { path, .. } <span class="kw">in </span>mismatches {
+<a href=#1119 id=1119 data-nosnippet>1119</a>                        dcx.emit_err(errors::CrateLocationUnknownType { span, path, crate_name });
+<a href=#1120 id=1120 data-nosnippet>1120</a>                        dcx.emit_err(errors::LibFilenameForm {
+<a href=#1121 id=1121 data-nosnippet>1121</a>                            span,
+<a href=#1122 id=1122 data-nosnippet>1122</a>                            dll_prefix: <span class="kw-2">&amp;</span>locator.dll_prefix,
+<a href=#1123 id=1123 data-nosnippet>1123</a>                            dll_suffix: <span class="kw-2">&amp;</span>locator.dll_suffix,
+<a href=#1124 id=1124 data-nosnippet>1124</a>                        });
+<a href=#1125 id=1125 data-nosnippet>1125</a>                    }
+<a href=#1126 id=1126 data-nosnippet>1126</a>                }
+<a href=#1127 id=1127 data-nosnippet>1127</a>                <span class="kw">let </span><span class="kw-2">mut </span>found_crates = <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html#method.new">String::new</a>();
+<a href=#1128 id=1128 data-nosnippet>1128</a>                <span class="kw">if </span>!<a href="#1110">locator</a>.crate_rejections.via_hash.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.is_empty">is_empty</a>() {
+<a href=#1129 id=1129 data-nosnippet>1129</a>                    <span class="kw">let </span>mismatches = <a href="#1110">locator</a>.crate_rejections.via_hash.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>();
+<a href=#1130 id=1130 data-nosnippet>1130</a>                    <span class="kw">for </span>CrateMismatch { path, .. } <span class="kw">in </span>mismatches {
+<a href=#1131 id=1131 data-nosnippet>1131</a>                        found_crates.push_str(<span class="kw-2">&amp;</span><span class="macro">format!</span>(
+<a href=#1132 id=1132 data-nosnippet>1132</a>                            <span class="string">"\ncrate `{}`: {}"</span>,
+<a href=#1133 id=1133 data-nosnippet>1133</a>                            crate_name,
+<a href=#1134 id=1134 data-nosnippet>1134</a>                            path.display()
+<a href=#1135 id=1135 data-nosnippet>1135</a>                        ));
+<a href=#1136 id=1136 data-nosnippet>1136</a>                    }
+<a href=#1137 id=1137 data-nosnippet>1137</a>                    <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(r) = <a href="#1110">locator</a>.dep_root {
+<a href=#1138 id=1138 data-nosnippet>1138</a>                        <span class="kw">for </span>path <span class="kw">in </span>r.source.paths() {
+<a href=#1139 id=1139 data-nosnippet>1139</a>                            found_crates.push_str(<span class="kw-2">&amp;</span><span class="macro">format!</span>(
+<a href=#1140 id=1140 data-nosnippet>1140</a>                                <span class="string">"\ncrate `{}`: {}"</span>,
+<a href=#1141 id=1141 data-nosnippet>1141</a>                                r.name,
+<a href=#1142 id=1142 data-nosnippet>1142</a>                                path.display()
+<a href=#1143 id=1143 data-nosnippet>1143</a>                            ));
+<a href=#1144 id=1144 data-nosnippet>1144</a>                        }
+<a href=#1145 id=1145 data-nosnippet>1145</a>                    }
+<a href=#1146 id=1146 data-nosnippet>1146</a>                    <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#561-567">errors::NewerCrateVersion</a> {
+<a href=#1147 id=1147 data-nosnippet>1147</a>                        <a href="#1083">span</a>,
+<a href=#1148 id=1148 data-nosnippet>1148</a>                        <a href="#1111">crate_name</a>,
+<a href=#1149 id=1149 data-nosnippet>1149</a>                        <a href="#1112">add_info</a>,
+<a href=#1150 id=1150 data-nosnippet>1150</a>                        <a href="#1127">found_crates</a>,
+<a href=#1151 id=1151 data-nosnippet>1151</a>                    });
+<a href=#1152 id=1152 data-nosnippet>1152</a>                } <span class="kw">else if </span>!<a href="#1110">locator</a>.crate_rejections.via_triple.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.is_empty">is_empty</a>() {
+<a href=#1153 id=1153 data-nosnippet>1153</a>                    <span class="kw">let </span>mismatches = <a href="#1110">locator</a>.crate_rejections.via_triple.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>();
+<a href=#1154 id=1154 data-nosnippet>1154</a>                    <span class="kw">for </span>CrateMismatch { path, got } <span class="kw">in </span>mismatches {
+<a href=#1155 id=1155 data-nosnippet>1155</a>                        found_crates.push_str(<span class="kw-2">&amp;</span><span class="macro">format!</span>(
+<a href=#1156 id=1156 data-nosnippet>1156</a>                            <span class="string">"\ncrate `{}`, target triple {}: {}"</span>,
+<a href=#1157 id=1157 data-nosnippet>1157</a>                            crate_name,
+<a href=#1158 id=1158 data-nosnippet>1158</a>                            got,
+<a href=#1159 id=1159 data-nosnippet>1159</a>                            path.display(),
+<a href=#1160 id=1160 data-nosnippet>1160</a>                        ));
+<a href=#1161 id=1161 data-nosnippet>1161</a>                    }
+<a href=#1162 id=1162 data-nosnippet>1162</a>                    <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#572-579">errors::NoCrateWithTriple</a> {
+<a href=#1163 id=1163 data-nosnippet>1163</a>                        <a href="#1083">span</a>,
+<a href=#1164 id=1164 data-nosnippet>1164</a>                        <a href="#1111">crate_name</a>,
+<a href=#1165 id=1165 data-nosnippet>1165</a>                        locator_triple: <a href="#1110">locator</a>.triple.<a href="../../rustc_target/spec/enum.TargetTuple.html#method.tuple">tuple</a>(),
+<a href=#1166 id=1166 data-nosnippet>1166</a>                        <a href="#1112">add_info</a>,
+<a href=#1167 id=1167 data-nosnippet>1167</a>                        <a href="#1127">found_crates</a>,
+<a href=#1168 id=1168 data-nosnippet>1168</a>                    });
+<a href=#1169 id=1169 data-nosnippet>1169</a>                } <span class="kw">else if </span>!<a href="#1110">locator</a>.crate_rejections.via_kind.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.is_empty">is_empty</a>() {
+<a href=#1170 id=1170 data-nosnippet>1170</a>                    <span class="kw">let </span>mismatches = <a href="#1110">locator</a>.crate_rejections.via_kind.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>();
+<a href=#1171 id=1171 data-nosnippet>1171</a>                    <span class="kw">for </span>CrateMismatch { path, .. } <span class="kw">in </span>mismatches {
+<a href=#1172 id=1172 data-nosnippet>1172</a>                        found_crates.push_str(<span class="kw-2">&amp;</span><span class="macro">format!</span>(
+<a href=#1173 id=1173 data-nosnippet>1173</a>                            <span class="string">"\ncrate `{}`: {}"</span>,
+<a href=#1174 id=1174 data-nosnippet>1174</a>                            crate_name,
+<a href=#1175 id=1175 data-nosnippet>1175</a>                            path.display()
+<a href=#1176 id=1176 data-nosnippet>1176</a>                        ));
+<a href=#1177 id=1177 data-nosnippet>1177</a>                    }
+<a href=#1178 id=1178 data-nosnippet>1178</a>                    <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#585-591">errors::FoundStaticlib</a> {
+<a href=#1179 id=1179 data-nosnippet>1179</a>                        <a href="#1083">span</a>,
+<a href=#1180 id=1180 data-nosnippet>1180</a>                        <a href="#1111">crate_name</a>,
+<a href=#1181 id=1181 data-nosnippet>1181</a>                        <a href="#1112">add_info</a>,
+<a href=#1182 id=1182 data-nosnippet>1182</a>                        <a href="#1127">found_crates</a>,
+<a href=#1183 id=1183 data-nosnippet>1183</a>                    });
+<a href=#1184 id=1184 data-nosnippet>1184</a>                } <span class="kw">else if </span>!<a href="#1110">locator</a>.crate_rejections.via_version.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.is_empty">is_empty</a>() {
+<a href=#1185 id=1185 data-nosnippet>1185</a>                    <span class="kw">let </span>mismatches = <a href="#1110">locator</a>.crate_rejections.via_version.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>();
+<a href=#1186 id=1186 data-nosnippet>1186</a>                    <span class="kw">for </span>CrateMismatch { path, got } <span class="kw">in </span>mismatches {
+<a href=#1187 id=1187 data-nosnippet>1187</a>                        found_crates.push_str(<span class="kw-2">&amp;</span><span class="macro">format!</span>(
+<a href=#1188 id=1188 data-nosnippet>1188</a>                            <span class="string">"\ncrate `{}` compiled by {}: {}"</span>,
+<a href=#1189 id=1189 data-nosnippet>1189</a>                            crate_name,
+<a href=#1190 id=1190 data-nosnippet>1190</a>                            got,
+<a href=#1191 id=1191 data-nosnippet>1191</a>                            path.display(),
+<a href=#1192 id=1192 data-nosnippet>1192</a>                        ));
+<a href=#1193 id=1193 data-nosnippet>1193</a>                    }
+<a href=#1194 id=1194 data-nosnippet>1194</a>                    <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#597-604">errors::IncompatibleRustc</a> {
+<a href=#1195 id=1195 data-nosnippet>1195</a>                        <a href="#1083">span</a>,
+<a href=#1196 id=1196 data-nosnippet>1196</a>                        <a href="#1111">crate_name</a>,
+<a href=#1197 id=1197 data-nosnippet>1197</a>                        <a href="#1112">add_info</a>,
+<a href=#1198 id=1198 data-nosnippet>1198</a>                        <a href="#1127">found_crates</a>,
+<a href=#1199 id=1199 data-nosnippet>1199</a>                        rustc_version: <a href="rmeta/mod.rs.html#52-54">rustc_version</a>(<a href="#1083">sess</a>.cfg_version),
+<a href=#1200 id=1200 data-nosnippet>1200</a>                    });
+<a href=#1201 id=1201 data-nosnippet>1201</a>                } <span class="kw">else if </span>!<a href="#1110">locator</a>.crate_rejections.via_invalid.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.is_empty">is_empty</a>() {
+<a href=#1202 id=1202 data-nosnippet>1202</a>                    <span class="kw">let </span><span class="kw-2">mut </span>crate_rejections = <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>();
+<a href=#1203 id=1203 data-nosnippet>1203</a>                    <span class="kw">for </span>CrateMismatch { path: <span class="kw">_</span>, got } <span class="kw">in </span>locator.crate_rejections.via_invalid {
+<a href=#1204 id=1204 data-nosnippet>1204</a>                        crate_rejections.push(got);
+<a href=#1205 id=1205 data-nosnippet>1205</a>                    }
+<a href=#1206 id=1206 data-nosnippet>1206</a>                    <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#606-611">errors::InvalidMetadataFiles</a> {
+<a href=#1207 id=1207 data-nosnippet>1207</a>                        <a href="#1083">span</a>,
+<a href=#1208 id=1208 data-nosnippet>1208</a>                        <a href="#1111">crate_name</a>,
+<a href=#1209 id=1209 data-nosnippet>1209</a>                        <a href="#1112">add_info</a>,
+<a href=#1210 id=1210 data-nosnippet>1210</a>                        <a href="#1202">crate_rejections</a>,
+<a href=#1211 id=1211 data-nosnippet>1211</a>                    });
+<a href=#1212 id=1212 data-nosnippet>1212</a>                } <span class="kw">else </span>{
+<a href=#1213 id=1213 data-nosnippet>1213</a>                    <span class="kw">let </span>error = <a href="errors.rs.html#630-640">errors::CannotFindCrate</a> {
+<a href=#1214 id=1214 data-nosnippet>1214</a>                        <a href="#1083">span</a>,
+<a href=#1215 id=1215 data-nosnippet>1215</a>                        <a href="#1111">crate_name</a>,
+<a href=#1216 id=1216 data-nosnippet>1216</a>                        <a href="#1112">add_info</a>,
+<a href=#1217 id=1217 data-nosnippet>1217</a>                        <a href="#1083">missing_core</a>,
+<a href=#1218 id=1218 data-nosnippet>1218</a>                        current_crate: <a href="#1083">sess</a>
+<a href=#1219 id=1219 data-nosnippet>1219</a>                            .opts
+<a href=#1220 id=1220 data-nosnippet>1220</a>                            .crate_name
+<a href=#1221 id=1221 data-nosnippet>1221</a>                            .<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>()
+<a href=#1222 id=1222 data-nosnippet>1222</a>                            .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or_else">unwrap_or_else</a>(|| <span class="string">"&lt;unknown&gt;"</span>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>()),
+<a href=#1223 id=1223 data-nosnippet>1223</a>                        is_nightly_build: <a href="#1083">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.is_nightly_build">is_nightly_build</a>(),
+<a href=#1224 id=1224 data-nosnippet>1224</a>                        profiler_runtime: <a href="../../rustc_span/symbol/struct.Symbol.html#method.intern">Symbol::intern</a>(<span class="kw-2">&amp;</span><a href="#1083">sess</a>.opts.unstable_opts.profiler_runtime),
+<a href=#1225 id=1225 data-nosnippet>1225</a>                        locator_triple: <a href="#1110">locator</a>.triple,
+<a href=#1226 id=1226 data-nosnippet>1226</a>                        is_ui_testing: <a href="#1083">sess</a>.opts.unstable_opts.ui_testing,
+<a href=#1227 id=1227 data-nosnippet>1227</a>                    };
+<a href=#1228 id=1228 data-nosnippet>1228</a>                    <span class="comment">// The diagnostic for missing core is very good, but it is followed by a lot of
+<a href=#1229 id=1229 data-nosnippet>1229</a>                    // other diagnostics that do not add information.
+<a href=#1230 id=1230 data-nosnippet>1230</a>                    </span><span class="kw">if </span><a href="#1083">missing_core</a> {
+<a href=#1231 id=1231 data-nosnippet>1231</a>                        <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_fatal">emit_fatal</a>(<a href="#1213">error</a>);
+<a href=#1232 id=1232 data-nosnippet>1232</a>                    } <span class="kw">else </span>{
+<a href=#1233 id=1233 data-nosnippet>1233</a>                        <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="#1213">error</a>);
+<a href=#1234 id=1234 data-nosnippet>1234</a>                    }
+<a href=#1235 id=1235 data-nosnippet>1235</a>                }
+<a href=#1236 id=1236 data-nosnippet>1236</a>            }
+<a href=#1237 id=1237 data-nosnippet>1237</a>            <a href="#1053">CrateError::NotFound</a>(crate_name) =&gt; {
+<a href=#1238 id=1238 data-nosnippet>1238</a>                <span class="kw">let </span>error = <a href="errors.rs.html#630-640">errors::CannotFindCrate</a> {
+<a href=#1239 id=1239 data-nosnippet>1239</a>                    <a href="#1083">span</a>,
+<a href=#1240 id=1240 data-nosnippet>1240</a>                    <a href="#1237">crate_name</a>,
+<a href=#1241 id=1241 data-nosnippet>1241</a>                    add_info: <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html#method.new">String::new</a>(),
+<a href=#1242 id=1242 data-nosnippet>1242</a>                    <a href="#1083">missing_core</a>,
+<a href=#1243 id=1243 data-nosnippet>1243</a>                    current_crate: <a href="#1083">sess</a>
+<a href=#1244 id=1244 data-nosnippet>1244</a>                        .opts
+<a href=#1245 id=1245 data-nosnippet>1245</a>                        .crate_name
+<a href=#1246 id=1246 data-nosnippet>1246</a>                        .<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>()
+<a href=#1247 id=1247 data-nosnippet>1247</a>                        .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or_else">unwrap_or_else</a>(|| <span class="string">"&lt;unknown&gt;"</span>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>()),
+<a href=#1248 id=1248 data-nosnippet>1248</a>                    is_nightly_build: <a href="#1083">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.is_nightly_build">is_nightly_build</a>(),
+<a href=#1249 id=1249 data-nosnippet>1249</a>                    profiler_runtime: <a href="../../rustc_span/symbol/struct.Symbol.html#method.intern">Symbol::intern</a>(<span class="kw-2">&amp;</span><a href="#1083">sess</a>.opts.unstable_opts.profiler_runtime),
+<a href=#1250 id=1250 data-nosnippet>1250</a>                    locator_triple: <a href="#1083">sess</a>.opts.target_triple.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>(),
+<a href=#1251 id=1251 data-nosnippet>1251</a>                    is_ui_testing: <a href="#1083">sess</a>.opts.unstable_opts.ui_testing,
+<a href=#1252 id=1252 data-nosnippet>1252</a>                };
+<a href=#1253 id=1253 data-nosnippet>1253</a>                <span class="comment">// The diagnostic for missing core is very good, but it is followed by a lot of
+<a href=#1254 id=1254 data-nosnippet>1254</a>                // other diagnostics that do not add information.
+<a href=#1255 id=1255 data-nosnippet>1255</a>                </span><span class="kw">if </span><a href="#1083">missing_core</a> {
+<a href=#1256 id=1256 data-nosnippet>1256</a>                    <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_fatal">emit_fatal</a>(<a href="#1238">error</a>);
+<a href=#1257 id=1257 data-nosnippet>1257</a>                } <span class="kw">else </span>{
+<a href=#1258 id=1258 data-nosnippet>1258</a>                    <a href="#1084">dcx</a>.<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="#1238">error</a>);
+<a href=#1259 id=1259 data-nosnippet>1259</a>                }
+<a href=#1260 id=1260 data-nosnippet>1260</a>            }
+<a href=#1261 id=1261 data-nosnippet>1261</a>        }
+<a href=#1262 id=1262 data-nosnippet>1262</a>    }
+<a href=#1263 id=1263 data-nosnippet>1263</a>}</code></pre></div></section></main></body></html>

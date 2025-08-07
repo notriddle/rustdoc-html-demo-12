@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["elems_to_string","unreachable_to_string","update_attr_macro_stats","update_bang_macro_stats","update_derive_macro_stats","update_macro_stats"],"struct":["MacroStat"]};

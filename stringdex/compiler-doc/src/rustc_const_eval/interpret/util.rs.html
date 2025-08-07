@@ -1,0 +1,151 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/util.rs`."><title>util.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_const_eval/interpret/</div>util.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="../../../rustc_span/def_id/struct.LocalDefId.html">rustc_hir::def_id::LocalDefId</a>;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span><a href="../../../rustc_middle/mir/index.html">rustc_middle::mir</a>;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>rustc_middle::mir::interpret::{<a href="../../../rustc_middle/mir/interpret/allocation/enum.AllocInit.html">AllocInit</a>, <a href="../../../rustc_middle/mir/interpret/allocation/struct.Allocation.html">Allocation</a>, <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>, <a href="../../../rustc_middle/mir/interpret/pointer/struct.Pointer.html">Pointer</a>};
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">rustc_middle::ty::layout::TyAndLayout</a>;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>rustc_middle::ty::{<a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>, <a href="../../../rustc_type_ir/visit/trait.TypeVisitable.html">TypeVisitable</a>, <a href="../../../rustc_type_ir/visit/trait.TypeVisitableExt.html">TypeVisitableExt</a>};
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">tracing::debug</a>;
+<a href=#7 id=7 data-nosnippet>7</a>
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use super</span>::{<a href="eval_context.rs.html#27-47">InterpCx</a>, <a href="place.rs.html#100-103">MPlaceTy</a>, <a href="memory.rs.html#33-40">MemoryKind</a>, <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>, <a href="../../../rustc_middle/macro.throw_inval.html">throw_inval</a>};
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><span class="kw">crate</span>::const_eval::{<a href="../const_eval/machine.rs.html#168">CompileTimeInterpCx</a>, <a href="../const_eval/machine.rs.html#45-70">CompileTimeMachine</a>, <a href="../const_eval/eval_queries.rs.html#303-311">InterpretationResult</a>};
+<a href=#10 id=10 data-nosnippet>10</a>
+<a href=#11 id=11 data-nosnippet>11</a><span class="doccomment">/// Checks whether a type contains generic parameters which must be instantiated.
+<a href=#12 id=12 data-nosnippet>12</a>///
+<a href=#13 id=13 data-nosnippet>13</a>/// In case it does, returns a `TooGeneric` const eval error.
+<a href=#14 id=14 data-nosnippet>14</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span><a href="../../../rustc_const_eval/interpret/util/fn.ensure_monomorphic_enough.html">ensure_monomorphic_enough</a>&lt;<span class="lifetime">'tcx</span>, T&gt;(_tcx: <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;, ty: T) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt;
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">where
+<a href=#16 id=16 data-nosnippet>16</a>    </span>T: <a href="../../../rustc_type_ir/visit/trait.TypeVisitable.html">TypeVisitable</a>&lt;<a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#17 id=17 data-nosnippet>17</a>{
+<a href=#18 id=18 data-nosnippet>18</a>    <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"ensure_monomorphic_enough: ty={:?}"</span>, ty);
+<a href=#19 id=19 data-nosnippet>19</a>    <span class="kw">if </span><a href="#14">ty</a>.<a href="../../../rustc_type_ir/visit/trait.TypeVisitableExt.html#tymethod.has_param">has_param</a>() {
+<a href=#20 id=20 data-nosnippet>20</a>        <a class="macro" href="../../../rustc_middle/macro.throw_inval.html">throw_inval!</a>(TooGeneric);
+<a href=#21 id=21 data-nosnippet>21</a>    }
+<a href=#22 id=22 data-nosnippet>22</a>    <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#23 id=23 data-nosnippet>23</a>}
+<a href=#24 id=24 data-nosnippet>24</a>
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="../const_eval/eval_queries.rs.html#303-311">InterpretationResult</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="../../../rustc_middle/mir/interpret/allocation/struct.ConstAllocation.html">mir::interpret::ConstAllocation</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#26 id=26 data-nosnippet>26</a>    <span class="kw">fn </span>make_result(
+<a href=#27 id=27 data-nosnippet>27</a>        mplace: <a href="place.rs.html#100-103">MPlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#28 id=28 data-nosnippet>28</a>        ecx: <span class="kw-2">&amp;mut </span><a href="eval_context.rs.html#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, <a href="../const_eval/machine.rs.html#45-70">CompileTimeMachine</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#29 id=29 data-nosnippet>29</a>    ) -&gt; <span class="self">Self </span>{
+<a href=#30 id=30 data-nosnippet>30</a>        <span class="kw">let </span>alloc_id = <a href="#27">mplace</a>.<a href="place.rs.html#138-140">ptr</a>().provenance.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="../../../rustc_middle/mir/interpret/pointer/struct.CtfeProvenance.html#method.alloc_id">alloc_id</a>();
+<a href=#31 id=31 data-nosnippet>31</a>        <span class="kw">let </span>alloc = <a href="#28">ecx</a>.memory.alloc_map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.swap_remove">swap_remove</a>(<span class="kw-2">&amp;</span><a href="#30">alloc_id</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>().<span class="number">1</span>;
+<a href=#32 id=32 data-nosnippet>32</a>        <a href="#28">ecx</a>.tcx.<a href="../../../rustc_middle/ty/context/struct.TyCtxt.html#method.mk_const_alloc">mk_const_alloc</a>(<a href="#31">alloc</a>)
+<a href=#33 id=33 data-nosnippet>33</a>    }
+<a href=#34 id=34 data-nosnippet>34</a>}
+<a href=#35 id=35 data-nosnippet>35</a>
+<a href=#36 id=36 data-nosnippet>36</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span><a href="../../../rustc_const_eval/interpret/util/fn.create_static_alloc.html">create_static_alloc</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#37 id=37 data-nosnippet>37</a>    ecx: <span class="kw-2">&amp;mut </span><a href="../const_eval/machine.rs.html#168">CompileTimeInterpCx</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#38 id=38 data-nosnippet>38</a>    static_def_id: <a href="../../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
+<a href=#39 id=39 data-nosnippet>39</a>    layout: <a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#40 id=40 data-nosnippet>40</a>) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="place.rs.html#100-103">MPlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#41 id=41 data-nosnippet>41</a>    <span class="kw">let </span>alloc = <a href="../../../rustc_middle/mir/interpret/allocation/struct.Allocation.html#method.try_new">Allocation::try_new</a>(<a href="#39">layout</a>.size, <a href="#39">layout</a>.align.abi, <a href="../../../rustc_middle/mir/interpret/allocation/enum.AllocInit.html#variant.Uninit">AllocInit::Uninit</a>, ())<span class="question-mark">?</span>;
+<a href=#42 id=42 data-nosnippet>42</a>    <span class="kw">let </span>alloc_id = <a href="#37">ecx</a>.tcx.<a href="../../../rustc_middle/ty/context/struct.TyCtxt.html#method.reserve_and_set_static_alloc">reserve_and_set_static_alloc</a>(<a href="#38">static_def_id</a>.<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>());
+<a href=#43 id=43 data-nosnippet>43</a>    <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(ecx.machine.static_root_ids, <span class="prelude-val">None</span>);
+<a href=#44 id=44 data-nosnippet>44</a>    <a href="#37">ecx</a>.machine.static_root_ids = <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>((<a href="#42">alloc_id</a>, <a href="#38">static_def_id</a>));
+<a href=#45 id=45 data-nosnippet>45</a>    <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert.html">assert!</a>(ecx.memory.alloc_map.insert(alloc_id, (MemoryKind::Stack, alloc)).is_none());
+<a href=#46 id=46 data-nosnippet>46</a>    <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a href="#37">ecx</a>.<a href="place.rs.html#396-403">ptr_to_mplace</a>(<a href="https://doc.rust-lang.org/nightly/core/convert/trait.From.html#tymethod.from">Pointer::from</a>(<a href="#42">alloc_id</a>).<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>(), <a href="#39">layout</a>))
+<a href=#47 id=47 data-nosnippet>47</a>}
+<a href=#48 id=48 data-nosnippet>48</a>
+<a href=#49 id=49 data-nosnippet>49</a><span class="doccomment">/// A marker trait returned by [crate::interpret::Machine::enter_trace_span], identifying either a
+<a href=#50 id=50 data-nosnippet>50</a>/// real [tracing::span::EnteredSpan] in case tracing is enabled, or the dummy type `()` when
+<a href=#51 id=51 data-nosnippet>51</a>/// tracing is disabled. Also see [crate::enter_trace_span!] below.
+<a href=#52 id=52 data-nosnippet>52</a></span><span class="kw">pub trait </span><a href="../../../rustc_const_eval/interpret/trait.EnteredTraceSpan.html">EnteredTraceSpan</a> {
+<a href=#53 id=53 data-nosnippet>53</a>    <span class="doccomment">/// Allows executing an alternative function when tracing is disabled. Useful for example if you
+<a href=#54 id=54 data-nosnippet>54</a>    /// want to open a trace span when tracing is enabled, and alternatively just log a line when
+<a href=#55 id=55 data-nosnippet>55</a>    /// tracing is disabled.
+<a href=#56 id=56 data-nosnippet>56</a>    </span><span class="kw">fn </span>or_if_tracing_disabled(<span class="self">self</span>, f: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>()) -&gt; <span class="self">Self</span>;
+<a href=#57 id=57 data-nosnippet>57</a>}
+<a href=#58 id=58 data-nosnippet>58</a><span class="kw">impl </span><a href="#52-57">EnteredTraceSpan</a> <span class="kw">for </span>() {
+<a href=#59 id=59 data-nosnippet>59</a>    <span class="kw">fn </span>or_if_tracing_disabled(<span class="self">self</span>, f: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>()) -&gt; <span class="self">Self </span>{
+<a href=#60 id=60 data-nosnippet>60</a>        <a href="#59">f</a>(); <span class="comment">// tracing is disabled, execute the function
+<a href=#61 id=61 data-nosnippet>61</a>        </span><span class="self"><a href="#59">self</a>
+<a href=#62 id=62 data-nosnippet>62</a>    </span>}
+<a href=#63 id=63 data-nosnippet>63</a>}
+<a href=#64 id=64 data-nosnippet>64</a><span class="kw">impl </span><a href="#52-57">EnteredTraceSpan</a> <span class="kw">for </span><a href="https://docs.rs/tracing/0.1.37/tracing/span/struct.EnteredSpan.html">tracing::span::EnteredSpan</a> {
+<a href=#65 id=65 data-nosnippet>65</a>    <span class="kw">fn </span>or_if_tracing_disabled(<span class="self">self</span>, _f: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>()) -&gt; <span class="self">Self </span>{
+<a href=#66 id=66 data-nosnippet>66</a>        <span class="self"><a href="#65">self</a> </span><span class="comment">// tracing is enabled, don't execute anything
+<a href=#67 id=67 data-nosnippet>67</a>    </span>}
+<a href=#68 id=68 data-nosnippet>68</a>}
+<a href=#69 id=69 data-nosnippet>69</a>
+<a href=#70 id=70 data-nosnippet>70</a><span class="doccomment">/// Shortand for calling [crate::interpret::Machine::enter_trace_span] on a [tracing::info_span!].
+<a href=#71 id=71 data-nosnippet>71</a>/// This is supposed to be compiled out when [crate::interpret::Machine::enter_trace_span] has the
+<a href=#72 id=72 data-nosnippet>72</a>/// default implementation (i.e. when it does not actually enter the span but instead returns `()`).
+<a href=#73 id=73 data-nosnippet>73</a>/// This macro takes a type implementing the [crate::interpret::Machine] trait as its first argument
+<a href=#74 id=74 data-nosnippet>74</a>/// and otherwise accepts the same syntax as [tracing::span!] (see some tips below).
+<a href=#75 id=75 data-nosnippet>75</a>/// Note: the result of this macro **must be used** because the span is exited when it's dropped.
+<a href=#76 id=76 data-nosnippet>76</a>///
+<a href=#77 id=77 data-nosnippet>77</a>/// ### Syntax accepted by this macro
+<a href=#78 id=78 data-nosnippet>78</a>///
+<a href=#79 id=79 data-nosnippet>79</a>/// The full documentation for the [tracing::span!] syntax can be found at [tracing] under "Using the
+<a href=#80 id=80 data-nosnippet>80</a>/// Macros". A few possibly confusing syntaxes are listed here:
+<a href=#81 id=81 data-nosnippet>81</a>/// ```rust
+<a href=#82 id=82 data-nosnippet>82</a>/// # use rustc_const_eval::enter_trace_span;
+<a href=#83 id=83 data-nosnippet>83</a>/// # type M = rustc_const_eval::const_eval::CompileTimeMachine&lt;'static&gt;;
+<a href=#84 id=84 data-nosnippet>84</a>/// # let my_display_var = String::new();
+<a href=#85 id=85 data-nosnippet>85</a>/// # let my_debug_var = String::new();
+<a href=#86 id=86 data-nosnippet>86</a>/// // logs a span named "hello" with a field named "arg" of value 42 (works only because
+<a href=#87 id=87 data-nosnippet>87</a>/// // 42 implements the tracing::Value trait, otherwise use one of the options below)
+<a href=#88 id=88 data-nosnippet>88</a>/// let _span = enter_trace_span!(M, "hello", arg = 42);
+<a href=#89 id=89 data-nosnippet>89</a>/// // logs a field called "my_display_var" using the Display implementation
+<a href=#90 id=90 data-nosnippet>90</a>/// let _span = enter_trace_span!(M, "hello", %my_display_var);
+<a href=#91 id=91 data-nosnippet>91</a>/// // logs a field called "my_debug_var" using the Debug implementation
+<a href=#92 id=92 data-nosnippet>92</a>/// let _span = enter_trace_span!(M, "hello", ?my_debug_var);
+<a href=#93 id=93 data-nosnippet>93</a>///  ```
+<a href=#94 id=94 data-nosnippet>94</a>///
+<a href=#95 id=95 data-nosnippet>95</a>/// ### `NAME::SUBNAME` syntax
+<a href=#96 id=96 data-nosnippet>96</a>///
+<a href=#97 id=97 data-nosnippet>97</a>/// In addition to the syntax accepted by [tracing::span!], this macro optionally allows passing
+<a href=#98 id=98 data-nosnippet>98</a>/// the span name (i.e. the first macro argument) in the form `NAME::SUBNAME` (without quotes) to
+<a href=#99 id=99 data-nosnippet>99</a>/// indicate that the span has name "NAME" (usually the name of the component) and has an additional
+<a href=#100 id=100 data-nosnippet>100</a>/// more specific name "SUBNAME" (usually the function name). The latter is passed to the [tracing]
+<a href=#101 id=101 data-nosnippet>101</a>/// infrastructure as a span field with the name "NAME". This allows not being distracted by
+<a href=#102 id=102 data-nosnippet>102</a>/// subnames when looking at the trace in &lt;https://ui.perfetto.dev&gt;, but when deeper introspection
+<a href=#103 id=103 data-nosnippet>103</a>/// is needed within a component, it's still possible to view the subnames directly in the UI by
+<a href=#104 id=104 data-nosnippet>104</a>/// selecting a span, clicking on the "NAME" argument on the right, and clicking on "Visualize
+<a href=#105 id=105 data-nosnippet>105</a>/// argument values".
+<a href=#106 id=106 data-nosnippet>106</a>/// ```rust
+<a href=#107 id=107 data-nosnippet>107</a>/// # use rustc_const_eval::enter_trace_span;
+<a href=#108 id=108 data-nosnippet>108</a>/// # type M = rustc_const_eval::const_eval::CompileTimeMachine&lt;'static&gt;;
+<a href=#109 id=109 data-nosnippet>109</a>/// // for example, the first will expand to the second
+<a href=#110 id=110 data-nosnippet>110</a>/// let _span = enter_trace_span!(M, borrow_tracker::on_stack_pop, /* ... */);
+<a href=#111 id=111 data-nosnippet>111</a>/// let _span = enter_trace_span!(M, "borrow_tracker", borrow_tracker = "on_stack_pop", /* ... */);
+<a href=#112 id=112 data-nosnippet>112</a>/// ```
+<a href=#113 id=113 data-nosnippet>113</a>///
+<a href=#114 id=114 data-nosnippet>114</a>/// ### `tracing_separate_thread` parameter
+<a href=#115 id=115 data-nosnippet>115</a>///
+<a href=#116 id=116 data-nosnippet>116</a>/// This macro was introduced to obtain better traces of Miri without impacting release performance.
+<a href=#117 id=117 data-nosnippet>117</a>/// Miri saves traces using the the `tracing_chrome` `tracing::Layer` so that they can be visualized
+<a href=#118 id=118 data-nosnippet>118</a>/// in &lt;https://ui.perfetto.dev&gt;. To instruct `tracing_chrome` to put some spans on a separate trace
+<a href=#119 id=119 data-nosnippet>119</a>/// thread/line than other spans when viewed in &lt;https://ui.perfetto.dev&gt;, you can pass
+<a href=#120 id=120 data-nosnippet>120</a>/// `tracing_separate_thread = tracing::field::Empty` to the tracing macros. This is useful to
+<a href=#121 id=121 data-nosnippet>121</a>/// separate out spans which just indicate the current step or program frame being processed by the
+<a href=#122 id=122 data-nosnippet>122</a>/// interpreter. You should use a value of [tracing::field::Empty] so that other tracing layers
+<a href=#123 id=123 data-nosnippet>123</a>/// (e.g. the logger) will ignore the `tracing_separate_thread` field. For example:
+<a href=#124 id=124 data-nosnippet>124</a>/// ```rust
+<a href=#125 id=125 data-nosnippet>125</a>/// # use rustc_const_eval::enter_trace_span;
+<a href=#126 id=126 data-nosnippet>126</a>/// # type M = rustc_const_eval::const_eval::CompileTimeMachine&lt;'static&gt;;
+<a href=#127 id=127 data-nosnippet>127</a>/// let _span = enter_trace_span!(M, step::eval_statement, tracing_separate_thread = tracing::field::Empty);
+<a href=#128 id=128 data-nosnippet>128</a>/// ```
+<a href=#129 id=129 data-nosnippet>129</a>///
+<a href=#130 id=130 data-nosnippet>130</a>/// ### Executing something else when tracing is disabled
+<a href=#131 id=131 data-nosnippet>131</a>///
+<a href=#132 id=132 data-nosnippet>132</a>/// [crate::interpret::Machine::enter_trace_span] returns [EnteredTraceSpan], on which you can call
+<a href=#133 id=133 data-nosnippet>133</a>/// [EnteredTraceSpan::or_if_tracing_disabled], to e.g. log a line as an alternative to the tracing
+<a href=#134 id=134 data-nosnippet>134</a>/// span for when tracing is disabled. For example:
+<a href=#135 id=135 data-nosnippet>135</a>/// ```rust
+<a href=#136 id=136 data-nosnippet>136</a>/// # use rustc_const_eval::enter_trace_span;
+<a href=#137 id=137 data-nosnippet>137</a>/// # use rustc_const_eval::interpret::EnteredTraceSpan;
+<a href=#138 id=138 data-nosnippet>138</a>/// # type M = rustc_const_eval::const_eval::CompileTimeMachine&lt;'static&gt;;
+<a href=#139 id=139 data-nosnippet>139</a>/// let _span = enter_trace_span!(M, step::eval_statement)
+<a href=#140 id=140 data-nosnippet>140</a>///     .or_if_tracing_disabled(|| tracing::info!("eval_statement"));
+<a href=#141 id=141 data-nosnippet>141</a>/// ```
+<a href=#142 id=142 data-nosnippet>142</a></span><span class="attr">#[macro_export]
+<a href=#143 id=143 data-nosnippet>143</a></span><span class="macro">macro_rules!</span> <a href="../../../rustc_const_eval/macro.enter_trace_span.html">enter_trace_span</a> {
+<a href=#144 id=144 data-nosnippet>144</a>    (<span class="macro-nonterminal">$machine</span>:ty, <span class="macro-nonterminal">$name</span>:ident :: <span class="macro-nonterminal">$subname</span>:ident $(<span class="macro-nonterminal">$tt</span>:tt)<span class="kw-2">*</span>) =&gt; {
+<a href=#145 id=145 data-nosnippet>145</a>        <span class="macro-nonterminal">$</span><span class="macro">crate::enter_trace_span!</span>(<span class="macro-nonterminal">$machine</span>, <span class="macro">stringify!</span>(<span class="macro-nonterminal">$name</span>), <span class="macro-nonterminal">$name </span>= %<span class="macro">stringify!</span>(<span class="macro-nonterminal">$subname</span>) $(<span class="macro-nonterminal">$tt</span>)<span class="kw-2">*</span>)
+<a href=#146 id=146 data-nosnippet>146</a>    };
+<a href=#147 id=147 data-nosnippet>147</a>
+<a href=#148 id=148 data-nosnippet>148</a>    (<span class="macro-nonterminal">$machine</span>:ty, $(<span class="macro-nonterminal">$tt</span>:tt)<span class="kw-2">*</span>) =&gt; {
+<a href=#149 id=149 data-nosnippet>149</a>        &lt;<span class="macro-nonterminal">$machine </span><span class="kw">as </span><span class="macro-nonterminal">$crate::interpret::Machine</span>&gt;::enter_trace_span(|| <span class="macro">tracing::info_span!</span>($(<span class="macro-nonterminal">$tt</span>)<span class="kw-2">*</span>))
+<a href=#150 id=150 data-nosnippet>150</a>    };
+<a href=#151 id=151 data-nosnippet>151</a>}</code></pre></div></section></main></body></html>

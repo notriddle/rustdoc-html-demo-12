@@ -1,0 +1,196 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/deduce_param_attrs.rs`."><title>deduce_param_attrs.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>deduce_param_attrs.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Deduces supplementary parameter attributes from MIR.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! Deduced parameter attributes are those that can only be soundly determined by examining the
+<a href=#4 id=4 data-nosnippet>4</a>//! body of the function instead of just the signature. These can be useful for optimization
+<a href=#5 id=5 data-nosnippet>5</a>//! purposes on a best-effort basis. We compute them here and store them into the crate metadata so
+<a href=#6 id=6 data-nosnippet>6</a>//! dependent crates can use them.
+<a href=#7 id=7 data-nosnippet>7</a>
+<a href=#8 id=8 data-nosnippet>8</a></span><span class="kw">use </span><a href="../../rustc_span/def_id/struct.LocalDefId.html">rustc_hir::def_id::LocalDefId</a>;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="../../rustc_index/bit_set/struct.DenseBitSet.html">rustc_index::bit_set::DenseBitSet</a>;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>rustc_middle::mir::visit::{<a href="../../rustc_middle/mir/visit/enum.NonMutatingUseContext.html">NonMutatingUseContext</a>, <a href="../../rustc_middle/mir/visit/enum.PlaceContext.html">PlaceContext</a>, <a href="../../rustc_middle/mir/visit/trait.Visitor.html">Visitor</a>};
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>rustc_middle::mir::{<a href="../../rustc_middle/mir/struct.Body.html">Body</a>, <a href="../../rustc_middle/mir/struct.Location.html">Location</a>, <a href="../../rustc_middle/mir/syntax/enum.Operand.html">Operand</a>, <a href="../../rustc_middle/mir/syntax/struct.Place.html">Place</a>, <a href="../../rustc_middle/mir/constant.RETURN_PLACE.html">RETURN_PLACE</a>, <a href="../../rustc_middle/mir/terminator/struct.Terminator.html">Terminator</a>, <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html">TerminatorKind</a>};
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>rustc_middle::ty::{<a class="self" href="../../rustc_middle/ty/index.html">self</a>, <a href="../../rustc_middle/ty/context/struct.DeducedParamAttrs.html">DeducedParamAttrs</a>, <a href="../../rustc_middle/ty/struct.Ty.html">Ty</a>, <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>};
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span><a href="../../rustc_session/config/enum.OptLevel.html">rustc_session::config::OptLevel</a>;
+<a href=#14 id=14 data-nosnippet>14</a>
+<a href=#15 id=15 data-nosnippet>15</a><span class="doccomment">/// A visitor that determines which arguments have been mutated. We can't use the mutability field
+<a href=#16 id=16 data-nosnippet>16</a>/// on LocalDecl for this because it has no meaning post-optimization.
+<a href=#17 id=17 data-nosnippet>17</a></span><span class="kw">struct </span><a href="../../rustc_mir_transform/deduce_param_attrs/struct.DeduceReadOnly.html">DeduceReadOnly</a> {
+<a href=#18 id=18 data-nosnippet>18</a>    <span class="doccomment">/// Each bit is indexed by argument number, starting at zero (so 0 corresponds to local decl
+<a href=#19 id=19 data-nosnippet>19</a>    /// 1). The bit is true if the argument may have been mutated or false if we know it hasn't
+<a href=#20 id=20 data-nosnippet>20</a>    /// been up to the point we're at.
+<a href=#21 id=21 data-nosnippet>21</a>    </span>mutable_args: <a href="../../rustc_index/bit_set/struct.DenseBitSet.html">DenseBitSet</a>&lt;<a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>&gt;,
+<a href=#22 id=22 data-nosnippet>22</a>}
+<a href=#23 id=23 data-nosnippet>23</a>
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">impl </span><a href="#17-22">DeduceReadOnly</a> {
+<a href=#25 id=25 data-nosnippet>25</a>    <span class="doccomment">/// Returns a new DeduceReadOnly instance.
+<a href=#26 id=26 data-nosnippet>26</a>    </span><span class="kw">fn </span>new(arg_count: <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>) -&gt; <span class="self">Self </span>{
+<a href=#27 id=27 data-nosnippet>27</a>        <span class="self">Self </span>{ mutable_args: <a href="../../rustc_index/bit_set/struct.DenseBitSet.html#method.new_empty">DenseBitSet::new_empty</a>(<a href="#26">arg_count</a>) }
+<a href=#28 id=28 data-nosnippet>28</a>    }
+<a href=#29 id=29 data-nosnippet>29</a>}
+<a href=#30 id=30 data-nosnippet>30</a>
+<a href=#31 id=31 data-nosnippet>31</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="../../rustc_middle/mir/visit/trait.Visitor.html">Visitor</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#17-22">DeduceReadOnly</a> {
+<a href=#32 id=32 data-nosnippet>32</a>    <span class="kw">fn </span>visit_place(<span class="kw-2">&amp;mut </span><span class="self">self</span>, place: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/syntax/struct.Place.html">Place</a>&lt;<span class="lifetime">'tcx</span>&gt;, context: <a href="../../rustc_middle/mir/visit/enum.PlaceContext.html">PlaceContext</a>, _location: <a href="../../rustc_middle/mir/struct.Location.html">Location</a>) {
+<a href=#33 id=33 data-nosnippet>33</a>        <span class="comment">// We're only interested in arguments.
+<a href=#34 id=34 data-nosnippet>34</a>        </span><span class="kw">if </span><a href="#32">place</a>.local == <a href="../../rustc_middle/mir/constant.RETURN_PLACE.html">RETURN_PLACE</a> || <a href="#32">place</a>.local.<a href="../../rustc_middle/mir/struct.Local.html#method.index">index</a>() &gt; <a class="self" href="#32">self</a>.mutable_args.<a href="../../rustc_index/bit_set/struct.DenseBitSet.html#method.domain_size">domain_size</a>() {
+<a href=#35 id=35 data-nosnippet>35</a>            <span class="kw">return</span>;
+<a href=#36 id=36 data-nosnippet>36</a>        }
+<a href=#37 id=37 data-nosnippet>37</a>
+<a href=#38 id=38 data-nosnippet>38</a>        <span class="kw">let </span>mark_as_mutable = <span class="kw">match </span><a href="#32">context</a> {
+<a href=#39 id=39 data-nosnippet>39</a>            <a href="../../rustc_middle/mir/visit/enum.PlaceContext.html#variant.MutatingUse">PlaceContext::MutatingUse</a>(..) =&gt; {
+<a href=#40 id=40 data-nosnippet>40</a>                <span class="comment">// This is a mutation, so mark it as such.
+<a href=#41 id=41 data-nosnippet>41</a>                </span><span class="bool-val">true
+<a href=#42 id=42 data-nosnippet>42</a>            </span>}
+<a href=#43 id=43 data-nosnippet>43</a>            <a href="../../rustc_middle/mir/visit/enum.PlaceContext.html#variant.NonMutatingUse">PlaceContext::NonMutatingUse</a>(NonMutatingUseContext::RawBorrow) =&gt; {
+<a href=#44 id=44 data-nosnippet>44</a>                <span class="comment">// Whether mutating though a `&amp;raw const` is allowed is still undecided, so we
+<a href=#45 id=45 data-nosnippet>45</a>                // disable any sketchy `readonly` optimizations for now. But we only need to do
+<a href=#46 id=46 data-nosnippet>46</a>                // this if the pointer would point into the argument. IOW: for indirect places,
+<a href=#47 id=47 data-nosnippet>47</a>                // like `&amp;raw (*local).field`, this surely cannot mutate `local`.
+<a href=#48 id=48 data-nosnippet>48</a>                </span>!<a href="#32">place</a>.<a href="../../rustc_middle/mir/syntax/struct.Place.html#method.is_indirect">is_indirect</a>()
+<a href=#49 id=49 data-nosnippet>49</a>            }
+<a href=#50 id=50 data-nosnippet>50</a>            <a href="../../rustc_middle/mir/visit/enum.PlaceContext.html#variant.NonMutatingUse">PlaceContext::NonMutatingUse</a>(..) | <a href="../../rustc_middle/mir/visit/enum.PlaceContext.html#variant.NonUse">PlaceContext::NonUse</a>(..) =&gt; {
+<a href=#51 id=51 data-nosnippet>51</a>                <span class="comment">// Not mutating, so it's fine.
+<a href=#52 id=52 data-nosnippet>52</a>                </span><span class="bool-val">false
+<a href=#53 id=53 data-nosnippet>53</a>            </span>}
+<a href=#54 id=54 data-nosnippet>54</a>        };
+<a href=#55 id=55 data-nosnippet>55</a>
+<a href=#56 id=56 data-nosnippet>56</a>        <span class="kw">if </span><a href="#38">mark_as_mutable</a> {
+<a href=#57 id=57 data-nosnippet>57</a>            <a class="self" href="#32">self</a>.mutable_args.<a href="../../rustc_index/bit_set/struct.DenseBitSet.html#method.insert">insert</a>(<a href="#32">place</a>.local.<a href="../../rustc_middle/mir/struct.Local.html#method.index">index</a>() - <span class="number">1</span>);
+<a href=#58 id=58 data-nosnippet>58</a>        }
+<a href=#59 id=59 data-nosnippet>59</a>    }
+<a href=#60 id=60 data-nosnippet>60</a>
+<a href=#61 id=61 data-nosnippet>61</a>    <span class="kw">fn </span>visit_terminator(<span class="kw-2">&amp;mut </span><span class="self">self</span>, terminator: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/terminator/struct.Terminator.html">Terminator</a>&lt;<span class="lifetime">'tcx</span>&gt;, location: <a href="../../rustc_middle/mir/struct.Location.html">Location</a>) {
+<a href=#62 id=62 data-nosnippet>62</a>        <span class="comment">// OK, this is subtle. Suppose that we're trying to deduce whether `x` in `f` is read-only
+<a href=#63 id=63 data-nosnippet>63</a>        // and we have the following:
+<a href=#64 id=64 data-nosnippet>64</a>        //
+<a href=#65 id=65 data-nosnippet>65</a>        //     fn f(x: BigStruct) { g(x) }
+<a href=#66 id=66 data-nosnippet>66</a>        //     fn g(mut y: BigStruct) { y.foo = 1 }
+<a href=#67 id=67 data-nosnippet>67</a>        //
+<a href=#68 id=68 data-nosnippet>68</a>        // If, at the generated MIR level, `f` turned into something like:
+<a href=#69 id=69 data-nosnippet>69</a>        //
+<a href=#70 id=70 data-nosnippet>70</a>        //      fn f(_1: BigStruct) -&gt; () {
+<a href=#71 id=71 data-nosnippet>71</a>        //          let mut _0: ();
+<a href=#72 id=72 data-nosnippet>72</a>        //          bb0: {
+<a href=#73 id=73 data-nosnippet>73</a>        //              _0 = g(move _1) -&gt; bb1;
+<a href=#74 id=74 data-nosnippet>74</a>        //          }
+<a href=#75 id=75 data-nosnippet>75</a>        //          ...
+<a href=#76 id=76 data-nosnippet>76</a>        //      }
+<a href=#77 id=77 data-nosnippet>77</a>        //
+<a href=#78 id=78 data-nosnippet>78</a>        // then it would be incorrect to mark `x` (i.e. `_1`) as `readonly`, because `g`'s write to
+<a href=#79 id=79 data-nosnippet>79</a>        // its copy of the indirect parameter would actually be a write directly to the pointer that
+<a href=#80 id=80 data-nosnippet>80</a>        // `f` passes. Note that function arguments are the only situation in which this problem can
+<a href=#81 id=81 data-nosnippet>81</a>        // arise: every other use of `move` in MIR doesn't actually write to the value it moves
+<a href=#82 id=82 data-nosnippet>82</a>        // from.
+<a href=#83 id=83 data-nosnippet>83</a>        </span><span class="kw">if let </span><a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.Call">TerminatorKind::Call</a> { <span class="kw-2">ref </span>args, .. } = <a href="#61">terminator</a>.kind {
+<a href=#84 id=84 data-nosnippet>84</a>            <span class="kw">for </span>arg <span class="kw">in </span>args {
+<a href=#85 id=85 data-nosnippet>85</a>                <span class="kw">if let </span>Operand::Move(place) = arg.node {
+<a href=#86 id=86 data-nosnippet>86</a>                    <span class="kw">let </span>local = place.local;
+<a href=#87 id=87 data-nosnippet>87</a>                    <span class="kw">if </span>place.is_indirect()
+<a href=#88 id=88 data-nosnippet>88</a>                        || local == RETURN_PLACE
+<a href=#89 id=89 data-nosnippet>89</a>                        || local.index() &gt; <span class="self">self</span>.mutable_args.domain_size()
+<a href=#90 id=90 data-nosnippet>90</a>                    {
+<a href=#91 id=91 data-nosnippet>91</a>                        <span class="kw">continue</span>;
+<a href=#92 id=92 data-nosnippet>92</a>                    }
+<a href=#93 id=93 data-nosnippet>93</a>
+<a href=#94 id=94 data-nosnippet>94</a>                    <span class="self">self</span>.mutable_args.insert(local.index() - <span class="number">1</span>);
+<a href=#95 id=95 data-nosnippet>95</a>                }
+<a href=#96 id=96 data-nosnippet>96</a>            }
+<a href=#97 id=97 data-nosnippet>97</a>        };
+<a href=#98 id=98 data-nosnippet>98</a>
+<a href=#99 id=99 data-nosnippet>99</a>        <a class="self" href="#61">self</a>.<a href="../../rustc_middle/mir/visit/trait.Visitor.html#tymethod.super_terminator">super_terminator</a>(<a href="#61">terminator</a>, <a href="#61">location</a>);
+<a href=#100 id=100 data-nosnippet>100</a>    }
+<a href=#101 id=101 data-nosnippet>101</a>}
+<a href=#102 id=102 data-nosnippet>102</a>
+<a href=#103 id=103 data-nosnippet>103</a><span class="doccomment">/// Returns true if values of a given type will never be passed indirectly, regardless of ABI.
+<a href=#104 id=104 data-nosnippet>104</a></span><span class="kw">fn </span><a href="../../rustc_mir_transform/deduce_param_attrs/fn.type_will_always_be_passed_directly.html">type_will_always_be_passed_directly</a>(ty: <a href="../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'_</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#105 id=105 data-nosnippet>105</a>    <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.matches.html">matches!</a>(
+<a href=#106 id=106 data-nosnippet>106</a>        ty.kind(),
+<a href=#107 id=107 data-nosnippet>107</a>        ty::Bool
+<a href=#108 id=108 data-nosnippet>108</a>            | ty::Char
+<a href=#109 id=109 data-nosnippet>109</a>            | ty::Float(..)
+<a href=#110 id=110 data-nosnippet>110</a>            | ty::Int(..)
+<a href=#111 id=111 data-nosnippet>111</a>            | ty::RawPtr(..)
+<a href=#112 id=112 data-nosnippet>112</a>            | ty::Ref(..)
+<a href=#113 id=113 data-nosnippet>113</a>            | ty::Slice(..)
+<a href=#114 id=114 data-nosnippet>114</a>            | ty::Uint(..)
+<a href=#115 id=115 data-nosnippet>115</a>    )
+<a href=#116 id=116 data-nosnippet>116</a>}
+<a href=#117 id=117 data-nosnippet>117</a>
+<a href=#118 id=118 data-nosnippet>118</a><span class="doccomment">/// Returns the deduced parameter attributes for a function.
+<a href=#119 id=119 data-nosnippet>119</a>///
+<a href=#120 id=120 data-nosnippet>120</a>/// Deduced parameter attributes are those that can only be soundly determined by examining the
+<a href=#121 id=121 data-nosnippet>121</a>/// body of the function instead of just the signature. These can be useful for optimization
+<a href=#122 id=122 data-nosnippet>122</a>/// purposes on a best-effort basis. We compute them here and store them into the crate metadata so
+<a href=#123 id=123 data-nosnippet>123</a>/// dependent crates can use them.
+<a href=#124 id=124 data-nosnippet>124</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../rustc_mir_transform/deduce_param_attrs/fn.deduced_param_attrs.html">deduced_param_attrs</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#125 id=125 data-nosnippet>125</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#126 id=126 data-nosnippet>126</a>    def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
+<a href=#127 id=127 data-nosnippet>127</a>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>[<a href="../../rustc_middle/ty/context/struct.DeducedParamAttrs.html">DeducedParamAttrs</a>] {
+<a href=#128 id=128 data-nosnippet>128</a>    <span class="comment">// This computation is unfortunately rather expensive, so don't do it unless we're optimizing.
+<a href=#129 id=129 data-nosnippet>129</a>    // Also skip it in incremental mode.
+<a href=#130 id=130 data-nosnippet>130</a>    </span><span class="kw">if </span><a href="#125">tcx</a>.sess.opts.optimize == <a href="../../rustc_session/config/enum.OptLevel.html#variant.No">OptLevel::No</a> || <a href="#125">tcx</a>.sess.opts.incremental.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_some">is_some</a>() {
+<a href=#131 id=131 data-nosnippet>131</a>        <span class="kw">return </span><span class="kw-2">&amp;</span>[];
+<a href=#132 id=132 data-nosnippet>132</a>    }
+<a href=#133 id=133 data-nosnippet>133</a>
+<a href=#134 id=134 data-nosnippet>134</a>    <span class="comment">// If the Freeze lang item isn't present, then don't bother.
+<a href=#135 id=135 data-nosnippet>135</a>    </span><span class="kw">if </span><a href="#125">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.lang_items">lang_items</a>().<a href="../../rustc_hir/lang_items/struct.LanguageItems.html#method.freeze_trait">freeze_trait</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_none">is_none</a>() {
+<a href=#136 id=136 data-nosnippet>136</a>        <span class="kw">return </span><span class="kw-2">&amp;</span>[];
+<a href=#137 id=137 data-nosnippet>137</a>    }
+<a href=#138 id=138 data-nosnippet>138</a>
+<a href=#139 id=139 data-nosnippet>139</a>    <span class="comment">// Codegen won't use this information for anything if all the function parameters are passed
+<a href=#140 id=140 data-nosnippet>140</a>    // directly. Detect that and bail, for compilation speed.
+<a href=#141 id=141 data-nosnippet>141</a>    </span><span class="kw">let </span>fn_ty = <a href="#125">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.type_of">type_of</a>(<a href="#126">def_id</a>).<a href="../../rustc_type_ir/binder/struct.EarlyBinder.html#method.instantiate_identity">instantiate_identity</a>();
+<a href=#142 id=142 data-nosnippet>142</a>    <span class="kw">if </span><a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.matches.html">matches!</a>(fn_ty.kind(), ty::FnDef(..))
+<a href=#143 id=143 data-nosnippet>143</a>        &amp;&amp; <a href="#141">fn_ty</a>
+<a href=#144 id=144 data-nosnippet>144</a>            .<a href="../../rustc_middle/ty/struct.Ty.html#method.fn_sig">fn_sig</a>(<a href="#125">tcx</a>)
+<a href=#145 id=145 data-nosnippet>145</a>            .<a href="../../rustc_type_ir/binder/struct.Binder.html#method.inputs">inputs</a>()
+<a href=#146 id=146 data-nosnippet>146</a>            .<a href="../../rustc_type_ir/binder/struct.Binder.html#method.skip_binder">skip_binder</a>()
+<a href=#147 id=147 data-nosnippet>147</a>            .<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>()
+<a href=#148 id=148 data-nosnippet>148</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.cloned">cloned</a>()
+<a href=#149 id=149 data-nosnippet>149</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.all">all</a>(<a href="#104-116">type_will_always_be_passed_directly</a>)
+<a href=#150 id=150 data-nosnippet>150</a>    {
+<a href=#151 id=151 data-nosnippet>151</a>        <span class="kw">return </span><span class="kw-2">&amp;</span>[];
+<a href=#152 id=152 data-nosnippet>152</a>    }
+<a href=#153 id=153 data-nosnippet>153</a>
+<a href=#154 id=154 data-nosnippet>154</a>    <span class="comment">// Don't deduce any attributes for functions that have no MIR.
+<a href=#155 id=155 data-nosnippet>155</a>    </span><span class="kw">if </span>!<a href="#125">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.is_mir_available">is_mir_available</a>(<a href="#126">def_id</a>) {
+<a href=#156 id=156 data-nosnippet>156</a>        <span class="kw">return </span><span class="kw-2">&amp;</span>[];
+<a href=#157 id=157 data-nosnippet>157</a>    }
+<a href=#158 id=158 data-nosnippet>158</a>
+<a href=#159 id=159 data-nosnippet>159</a>    <span class="comment">// Grab the optimized MIR. Analyze it to determine which arguments have been mutated.
+<a href=#160 id=160 data-nosnippet>160</a>    </span><span class="kw">let </span>body: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt; = <a href="#125">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.optimized_mir">optimized_mir</a>(<a href="#126">def_id</a>);
+<a href=#161 id=161 data-nosnippet>161</a>    <span class="kw">let </span><span class="kw-2">mut </span>deduce_read_only = <a href="#26-28">DeduceReadOnly::new</a>(<a href="#160">body</a>.arg_count);
+<a href=#162 id=162 data-nosnippet>162</a>    <a href="#161">deduce_read_only</a>.<a href="../../rustc_middle/mir/visit/trait.Visitor.html#tymethod.visit_body">visit_body</a>(<a href="#160">body</a>);
+<a href=#163 id=163 data-nosnippet>163</a>
+<a href=#164 id=164 data-nosnippet>164</a>    <span class="comment">// Set the `readonly` attribute for every argument that we concluded is immutable and that
+<a href=#165 id=165 data-nosnippet>165</a>    // contains no UnsafeCells.
+<a href=#166 id=166 data-nosnippet>166</a>    //
+<a href=#167 id=167 data-nosnippet>167</a>    // FIXME: This is overly conservative around generic parameters: `is_freeze()` will always
+<a href=#168 id=168 data-nosnippet>168</a>    // return false for them. For a description of alternatives that could do a better job here,
+<a href=#169 id=169 data-nosnippet>169</a>    // see [1].
+<a href=#170 id=170 data-nosnippet>170</a>    //
+<a href=#171 id=171 data-nosnippet>171</a>    // [1]: https://github.com/rust-lang/rust/pull/103172#discussion_r999139997
+<a href=#172 id=172 data-nosnippet>172</a>    </span><span class="kw">let </span>typing_env = <a href="#160">body</a>.<a href="../../rustc_middle/mir/struct.Body.html#method.typing_env">typing_env</a>(<a href="#125">tcx</a>);
+<a href=#173 id=173 data-nosnippet>173</a>    <span class="kw">let </span><span class="kw-2">mut </span>deduced_param_attrs = <a href="#125">tcx</a>.arena.<a href="../../rustc_middle/arena/struct.Arena.html#method.alloc_from_iter">alloc_from_iter</a>(
+<a href=#174 id=174 data-nosnippet>174</a>        <a href="#160">body</a>.local_decls.<a href="../../rustc_index/slice/struct.IndexSlice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.skip">skip</a>(<span class="number">1</span>).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.take">take</a>(<a href="#160">body</a>.arg_count).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.enumerate">enumerate</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(
+<a href=#175 id=175 data-nosnippet>175</a>            |(arg_index, local_decl)| <a href="../../rustc_middle/ty/context/struct.DeducedParamAttrs.html">DeducedParamAttrs</a> {
+<a href=#176 id=176 data-nosnippet>176</a>                read_only: !<a href="#161">deduce_read_only</a>.mutable_args.<a href="../../rustc_index/bit_set/struct.DenseBitSet.html#method.contains">contains</a>(<a href="#175">arg_index</a>)
+<a href=#177 id=177 data-nosnippet>177</a>                    <span class="comment">// We must normalize here to reveal opaques and normalize
+<a href=#178 id=178 data-nosnippet>178</a>                    // their generic parameters, otherwise we'll see exponential
+<a href=#179 id=179 data-nosnippet>179</a>                    // blow-up in compile times: #113372
+<a href=#180 id=180 data-nosnippet>180</a>                    </span>&amp;&amp; <a href="#125">tcx</a>
+<a href=#181 id=181 data-nosnippet>181</a>                        .<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.normalize_erasing_regions">normalize_erasing_regions</a>(<a href="#172">typing_env</a>, <a href="#175">local_decl</a>.ty)
+<a href=#182 id=182 data-nosnippet>182</a>                        .<a href="../../rustc_middle/ty/struct.Ty.html#method.is_freeze">is_freeze</a>(<a href="#125">tcx</a>, <a href="#172">typing_env</a>),
+<a href=#183 id=183 data-nosnippet>183</a>            },
+<a href=#184 id=184 data-nosnippet>184</a>        ),
+<a href=#185 id=185 data-nosnippet>185</a>    );
+<a href=#186 id=186 data-nosnippet>186</a>
+<a href=#187 id=187 data-nosnippet>187</a>    <span class="comment">// Trailing parameters past the size of the `deduced_param_attrs` array are assumed to have the
+<a href=#188 id=188 data-nosnippet>188</a>    // default set of attributes, so we don't have to store them explicitly. Pop them off to save a
+<a href=#189 id=189 data-nosnippet>189</a>    // few bytes in metadata.
+<a href=#190 id=190 data-nosnippet>190</a>    </span><span class="kw">while </span>deduced_param_attrs.last() == <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>DeducedParamAttrs::default()) {
+<a href=#191 id=191 data-nosnippet>191</a>        <span class="kw">let </span>last_index = deduced_param_attrs.len() - <span class="number">1</span>;
+<a href=#192 id=192 data-nosnippet>192</a>        deduced_param_attrs = <span class="kw-2">&amp;mut </span>deduced_param_attrs[<span class="number">0</span>..last_index];
+<a href=#193 id=193 data-nosnippet>193</a>    }
+<a href=#194 id=194 data-nosnippet>194</a>
+<a href=#195 id=195 data-nosnippet>195</a>    <a href="#173">deduced_param_attrs</a>
+<a href=#196 id=196 data-nosnippet>196</a>}</code></pre></div></section></main></body></html>

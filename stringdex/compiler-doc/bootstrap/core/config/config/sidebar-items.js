@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["RUSTC_IF_UNCHANGED_ALLOWED_PATHS"],"struct":["Config"]};

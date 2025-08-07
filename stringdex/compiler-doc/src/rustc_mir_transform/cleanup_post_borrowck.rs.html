@@ -1,0 +1,80 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/cleanup_post_borrowck.rs`."><title>cleanup_post_borrowck.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>cleanup_post_borrowck.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-2"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! This module provides a pass that removes parts of MIR that are no longer relevant after
+<a href=#2 id=2 data-nosnippet>2</a>//! analysis phase and borrowck. In particular, it removes false edges, user type annotations and
+<a href=#3 id=3 data-nosnippet>3</a>//! replaces following statements with [`Nop`]s:
+<a href=#4 id=4 data-nosnippet>4</a>//!
+<a href=#5 id=5 data-nosnippet>5</a>//!   - [`AscribeUserType`]
+<a href=#6 id=6 data-nosnippet>6</a>//!   - [`FakeRead`]
+<a href=#7 id=7 data-nosnippet>7</a>//!   - [`Assign`] statements with a [`Fake`] borrow
+<a href=#8 id=8 data-nosnippet>8</a>//!   - [`Coverage`] statements of kind [`BlockMarker`] or [`SpanMarker`]
+<a href=#9 id=9 data-nosnippet>9</a>//!
+<a href=#10 id=10 data-nosnippet>10</a>//! [`AscribeUserType`]: rustc_middle::mir::StatementKind::AscribeUserType
+<a href=#11 id=11 data-nosnippet>11</a>//! [`Assign`]: rustc_middle::mir::StatementKind::Assign
+<a href=#12 id=12 data-nosnippet>12</a>//! [`FakeRead`]: rustc_middle::mir::StatementKind::FakeRead
+<a href=#13 id=13 data-nosnippet>13</a>//! [`Nop`]: rustc_middle::mir::StatementKind::Nop
+<a href=#14 id=14 data-nosnippet>14</a>//! [`Fake`]: rustc_middle::mir::BorrowKind::Fake
+<a href=#15 id=15 data-nosnippet>15</a>//! [`Coverage`]: rustc_middle::mir::StatementKind::Coverage
+<a href=#16 id=16 data-nosnippet>16</a>//! [`BlockMarker`]: rustc_middle::mir::coverage::CoverageKind::BlockMarker
+<a href=#17 id=17 data-nosnippet>17</a>//! [`SpanMarker`]: rustc_middle::mir::coverage::CoverageKind::SpanMarker
+<a href=#18 id=18 data-nosnippet>18</a>
+<a href=#19 id=19 data-nosnippet>19</a></span><span class="kw">use </span><a href="../../rustc_middle/mir/coverage/enum.CoverageKind.html">rustc_middle::mir::coverage::CoverageKind</a>;
+<a href=#20 id=20 data-nosnippet>20</a><span class="kw">use </span>rustc_middle::mir::{<a href="../../rustc_middle/mir/struct.Body.html">Body</a>, <a href="../../rustc_middle/mir/syntax/enum.BorrowKind.html">BorrowKind</a>, <a href="../../rustc_middle/mir/syntax/enum.CastKind.html">CastKind</a>, <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html">Rvalue</a>, <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html">StatementKind</a>, <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html">TerminatorKind</a>};
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">use </span><a href="../../rustc_middle/ty/context/struct.TyCtxt.html">rustc_middle::ty::TyCtxt</a>;
+<a href=#22 id=22 data-nosnippet>22</a><span class="kw">use </span><a href="../../rustc_middle/ty/adjustment/enum.PointerCoercion.html">rustc_middle::ty::adjustment::PointerCoercion</a>;
+<a href=#23 id=23 data-nosnippet>23</a>
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span><a href="../../rustc_mir_transform/cleanup_post_borrowck/struct.CleanupPostBorrowck.html">CleanupPostBorrowck</a>;
+<a href=#25 id=25 data-nosnippet>25</a>
+<a href=#26 id=26 data-nosnippet>26</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="pass_manager.rs.html#63-98"><span class="kw">crate</span>::MirPass</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#24">CleanupPostBorrowck</a> {
+<a href=#27 id=27 data-nosnippet>27</a>    <span class="kw">fn </span>run_pass(<span class="kw-2">&amp;</span><span class="self">self</span>, _tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;mut </span><a href="../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;) {
+<a href=#28 id=28 data-nosnippet>28</a>        <span class="kw">for </span>basic_block <span class="kw">in </span>body.basic_blocks.as_mut() {
+<a href=#29 id=29 data-nosnippet>29</a>            <span class="kw">for </span>statement <span class="kw">in </span>basic_block.statements.iter_mut() {
+<a href=#30 id=30 data-nosnippet>30</a>                <span class="kw">match </span>statement.kind {
+<a href=#31 id=31 data-nosnippet>31</a>                    StatementKind::AscribeUserType(..)
+<a href=#32 id=32 data-nosnippet>32</a>                    | StatementKind::Assign(<span class="kw">box </span>(<span class="kw">_</span>, Rvalue::Ref(<span class="kw">_</span>, BorrowKind::Fake(<span class="kw">_</span>), <span class="kw">_</span>)))
+<a href=#33 id=33 data-nosnippet>33</a>                    | StatementKind::Coverage(
+<a href=#34 id=34 data-nosnippet>34</a>                        <span class="comment">// These kinds of coverage statements are markers inserted during
+<a href=#35 id=35 data-nosnippet>35</a>                        // MIR building, and are not needed after InstrumentCoverage.
+<a href=#36 id=36 data-nosnippet>36</a>                        </span>CoverageKind::BlockMarker { .. } | CoverageKind::SpanMarker { .. },
+<a href=#37 id=37 data-nosnippet>37</a>                    )
+<a href=#38 id=38 data-nosnippet>38</a>                    | StatementKind::FakeRead(..)
+<a href=#39 id=39 data-nosnippet>39</a>                    | StatementKind::BackwardIncompatibleDropHint { .. } =&gt; statement.make_nop(),
+<a href=#40 id=40 data-nosnippet>40</a>                    StatementKind::Assign(<span class="kw">box </span>(
+<a href=#41 id=41 data-nosnippet>41</a>                        <span class="kw">_</span>,
+<a href=#42 id=42 data-nosnippet>42</a>                        Rvalue::Cast(
+<a href=#43 id=43 data-nosnippet>43</a>                            <span class="kw-2">ref mut </span>cast_kind @ CastKind::PointerCoercion(
+<a href=#44 id=44 data-nosnippet>44</a>                                PointerCoercion::ArrayToPointer
+<a href=#45 id=45 data-nosnippet>45</a>                                | PointerCoercion::MutToConstPointer,
+<a href=#46 id=46 data-nosnippet>46</a>                                <span class="kw">_</span>,
+<a href=#47 id=47 data-nosnippet>47</a>                            ),
+<a href=#48 id=48 data-nosnippet>48</a>                            ..,
+<a href=#49 id=49 data-nosnippet>49</a>                        ),
+<a href=#50 id=50 data-nosnippet>50</a>                    )) =&gt; {
+<a href=#51 id=51 data-nosnippet>51</a>                        <span class="comment">// BorrowCk needed to track whether these cases were coercions or casts,
+<a href=#52 id=52 data-nosnippet>52</a>                        // to know whether to check lifetimes in their pointees,
+<a href=#53 id=53 data-nosnippet>53</a>                        // but from now on that distinction doesn't matter,
+<a href=#54 id=54 data-nosnippet>54</a>                        // so just make them ordinary pointer casts instead.
+<a href=#55 id=55 data-nosnippet>55</a>                        </span><span class="kw-2">*</span>cast_kind = CastKind::PtrToPtr;
+<a href=#56 id=56 data-nosnippet>56</a>                    }
+<a href=#57 id=57 data-nosnippet>57</a>                    <span class="kw">_ </span>=&gt; (),
+<a href=#58 id=58 data-nosnippet>58</a>                }
+<a href=#59 id=59 data-nosnippet>59</a>            }
+<a href=#60 id=60 data-nosnippet>60</a>            <span class="kw">let </span>terminator = basic_block.terminator_mut();
+<a href=#61 id=61 data-nosnippet>61</a>            <span class="kw">match </span>terminator.kind {
+<a href=#62 id=62 data-nosnippet>62</a>                TerminatorKind::FalseEdge { real_target, .. }
+<a href=#63 id=63 data-nosnippet>63</a>                | TerminatorKind::FalseUnwind { real_target, .. } =&gt; {
+<a href=#64 id=64 data-nosnippet>64</a>                    terminator.kind = TerminatorKind::Goto { target: real_target };
+<a href=#65 id=65 data-nosnippet>65</a>                }
+<a href=#66 id=66 data-nosnippet>66</a>                <span class="kw">_ </span>=&gt; {}
+<a href=#67 id=67 data-nosnippet>67</a>            }
+<a href=#68 id=68 data-nosnippet>68</a>        }
+<a href=#69 id=69 data-nosnippet>69</a>
+<a href=#70 id=70 data-nosnippet>70</a>        <a href="#27">body</a>.user_type_annotations.raw.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.clear">clear</a>();
+<a href=#71 id=71 data-nosnippet>71</a>
+<a href=#72 id=72 data-nosnippet>72</a>        <span class="kw">for </span>decl <span class="kw">in </span><span class="kw-2">&amp;mut </span>body.local_decls {
+<a href=#73 id=73 data-nosnippet>73</a>            decl.user_ty = <span class="prelude-val">None</span>;
+<a href=#74 id=74 data-nosnippet>74</a>        }
+<a href=#75 id=75 data-nosnippet>75</a>    }
+<a href=#76 id=76 data-nosnippet>76</a>
+<a href=#77 id=77 data-nosnippet>77</a>    <span class="kw">fn </span>is_required(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#78 id=78 data-nosnippet>78</a>        <span class="bool-val">true
+<a href=#79 id=79 data-nosnippet>79</a>    </span>}
+<a href=#80 id=80 data-nosnippet>80</a>}</code></pre></div></section></main></body></html>

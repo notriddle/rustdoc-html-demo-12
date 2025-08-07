@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["cargo_profile_var"],"struct":["Cargo","HostFlags","Rustflags"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["CURRENT_OVERRIDABLE"],"struct":["RustcVersion"]};

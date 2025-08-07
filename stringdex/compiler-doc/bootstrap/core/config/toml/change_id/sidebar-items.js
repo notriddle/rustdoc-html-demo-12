@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ChangeId"],"fn":["deserialize_change_id"],"struct":["ChangeIdWrapper"]};

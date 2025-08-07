@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["InstanceKind","ReifyReason"],"fn":["fmt_instance","needs_fn_once_adapter_shim","resolve_async_drop_poll","type_length"],"struct":["Instance","ShortInstance","UnusedGenericParams"]};

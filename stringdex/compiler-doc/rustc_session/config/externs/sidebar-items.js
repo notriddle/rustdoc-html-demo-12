@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_ascii_ident","split_extern_opt","valid_crate_name"],"struct":["ExternOpt"]};

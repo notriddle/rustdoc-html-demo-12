@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PathFreshness"],"fn":["check_path_modifications","get_closest_upstream_commit","get_git_modified_files","get_git_untracked_files","get_latest_upstream_commit_that_modified_files","has_changed_since","output_result","resolve_commit_sha"],"struct":["GitConfig"]};

@@ -1,0 +1,179 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/lib.rs`."><title>lib.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/</div>lib.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="attr">#![feature(abort_unwind)]
+<a href=#2 id=2 data-nosnippet>2</a>#![feature(cfg_select)]
+<a href=#3 id=3 data-nosnippet>3</a>#![feature(rustc_private)]
+<a href=#4 id=4 data-nosnippet>4</a>#![feature(float_gamma)]
+<a href=#5 id=5 data-nosnippet>5</a>#![feature(float_erf)]
+<a href=#6 id=6 data-nosnippet>6</a>#![feature(map_try_insert)]
+<a href=#7 id=7 data-nosnippet>7</a>#![feature(never_type)]
+<a href=#8 id=8 data-nosnippet>8</a>#![feature(try_blocks)]
+<a href=#9 id=9 data-nosnippet>9</a>#![feature(io_error_more)]
+<a href=#10 id=10 data-nosnippet>10</a>#![feature(if_let_guard)]
+<a href=#11 id=11 data-nosnippet>11</a>#![feature(variant_count)]
+<a href=#12 id=12 data-nosnippet>12</a>#![feature(yeet_expr)]
+<a href=#13 id=13 data-nosnippet>13</a>#![feature(nonzero_ops)]
+<a href=#14 id=14 data-nosnippet>14</a>#![feature(strict_overflow_ops)]
+<a href=#15 id=15 data-nosnippet>15</a>#![feature(pointer_is_aligned_to)]
+<a href=#16 id=16 data-nosnippet>16</a>#![feature(ptr_metadata)]
+<a href=#17 id=17 data-nosnippet>17</a>#![feature(unqualified_local_imports)]
+<a href=#18 id=18 data-nosnippet>18</a>#![feature(derive_coerce_pointee)]
+<a href=#19 id=19 data-nosnippet>19</a>#![feature(arbitrary_self_types)]
+<a href=#20 id=20 data-nosnippet>20</a>#![feature(iter_advance_by)]
+<a href=#21 id=21 data-nosnippet>21</a></span><span class="comment">// Configure clippy and other lints
+<a href=#22 id=22 data-nosnippet>22</a></span><span class="attr">#![allow(
+<a href=#23 id=23 data-nosnippet>23</a>    clippy::collapsible_else_if,
+<a href=#24 id=24 data-nosnippet>24</a>    clippy::collapsible_if,
+<a href=#25 id=25 data-nosnippet>25</a>    clippy::if_same_then_else,
+<a href=#26 id=26 data-nosnippet>26</a>    clippy::comparison_chain,
+<a href=#27 id=27 data-nosnippet>27</a>    clippy::enum_variant_names,
+<a href=#28 id=28 data-nosnippet>28</a>    clippy::field_reassign_with_default,
+<a href=#29 id=29 data-nosnippet>29</a>    clippy::manual_map,
+<a href=#30 id=30 data-nosnippet>30</a>    clippy::neg_cmp_op_on_partial_ord,
+<a href=#31 id=31 data-nosnippet>31</a>    clippy::new_without_default,
+<a href=#32 id=32 data-nosnippet>32</a>    clippy::single_match,
+<a href=#33 id=33 data-nosnippet>33</a>    clippy::useless_format,
+<a href=#34 id=34 data-nosnippet>34</a>    clippy::derive_partial_eq_without_eq,
+<a href=#35 id=35 data-nosnippet>35</a>    clippy::derived_hash_with_manual_eq,
+<a href=#36 id=36 data-nosnippet>36</a>    clippy::too_many_arguments,
+<a href=#37 id=37 data-nosnippet>37</a>    clippy::type_complexity,
+<a href=#38 id=38 data-nosnippet>38</a>    clippy::bool_to_int_with_if,
+<a href=#39 id=39 data-nosnippet>39</a>    clippy::needless_question_mark,
+<a href=#40 id=40 data-nosnippet>40</a>    clippy::needless_lifetimes,
+<a href=#41 id=41 data-nosnippet>41</a>    clippy::too_long_first_doc_paragraph,
+<a href=#42 id=42 data-nosnippet>42</a>    <span class="comment">// We don't use translatable diagnostics
+<a href=#43 id=43 data-nosnippet>43</a>    </span>rustc::diagnostic_outside_of_impl,
+<a href=#44 id=44 data-nosnippet>44</a>    <span class="comment">// We are not implementing queries here so it's fine
+<a href=#45 id=45 data-nosnippet>45</a>    </span>rustc::potential_query_instability,
+<a href=#46 id=46 data-nosnippet>46</a>    rustc::untranslatable_diagnostic,
+<a href=#47 id=47 data-nosnippet>47</a>)]
+<a href=#48 id=48 data-nosnippet>48</a>#![warn(rust_2018_idioms, unqualified_local_imports, clippy::as_conversions)]
+<a href=#49 id=49 data-nosnippet>49</a></span><span class="comment">// Needed for rustdoc from bootstrap (with `-Znormalize-docs`).
+<a href=#50 id=50 data-nosnippet>50</a></span><span class="attr">#![recursion_limit = <span class="string">"256"</span>]
+<a href=#51 id=51 data-nosnippet>51</a>
+<a href=#52 id=52 data-nosnippet>52</a></span><span class="comment">// Some "regular" crates we want to share with rustc
+<a href=#53 id=53 data-nosnippet>53</a></span><span class="kw">extern crate </span>either;
+<a href=#54 id=54 data-nosnippet>54</a><span class="kw">extern crate </span>tracing;
+<a href=#55 id=55 data-nosnippet>55</a>
+<a href=#56 id=56 data-nosnippet>56</a><span class="comment">// The rustc crates we need
+<a href=#57 id=57 data-nosnippet>57</a></span><span class="kw">extern crate </span>rustc_abi;
+<a href=#58 id=58 data-nosnippet>58</a><span class="kw">extern crate </span>rustc_apfloat;
+<a href=#59 id=59 data-nosnippet>59</a><span class="kw">extern crate </span>rustc_ast;
+<a href=#60 id=60 data-nosnippet>60</a><span class="kw">extern crate </span>rustc_const_eval;
+<a href=#61 id=61 data-nosnippet>61</a><span class="kw">extern crate </span>rustc_data_structures;
+<a href=#62 id=62 data-nosnippet>62</a><span class="kw">extern crate </span>rustc_errors;
+<a href=#63 id=63 data-nosnippet>63</a><span class="kw">extern crate </span>rustc_hir;
+<a href=#64 id=64 data-nosnippet>64</a><span class="kw">extern crate </span>rustc_index;
+<a href=#65 id=65 data-nosnippet>65</a><span class="kw">extern crate </span>rustc_middle;
+<a href=#66 id=66 data-nosnippet>66</a><span class="kw">extern crate </span>rustc_session;
+<a href=#67 id=67 data-nosnippet>67</a><span class="kw">extern crate </span>rustc_span;
+<a href=#68 id=68 data-nosnippet>68</a><span class="kw">extern crate </span>rustc_symbol_mangling;
+<a href=#69 id=69 data-nosnippet>69</a><span class="kw">extern crate </span>rustc_target;
+<a href=#70 id=70 data-nosnippet>70</a><span class="comment">// Linking `rustc_driver` pulls in the required  object code as the rest of the rustc crates are
+<a href=#71 id=71 data-nosnippet>71</a>// shipped only as rmeta files.
+<a href=#72 id=72 data-nosnippet>72</a></span><span class="attr">#[allow(unused_extern_crates)]
+<a href=#73 id=73 data-nosnippet>73</a></span><span class="kw">extern crate </span>rustc_driver;
+<a href=#74 id=74 data-nosnippet>74</a>
+<a href=#75 id=75 data-nosnippet>75</a><span class="kw">mod </span><a href="alloc/mod.rs.html#1-31">alloc</a>;
+<a href=#76 id=76 data-nosnippet>76</a><span class="kw">mod </span><a href="alloc_addresses/mod.rs.html#1-532">alloc_addresses</a>;
+<a href=#77 id=77 data-nosnippet>77</a><span class="kw">mod </span><a href="borrow_tracker/mod.rs.html#1-532">borrow_tracker</a>;
+<a href=#78 id=78 data-nosnippet>78</a><span class="kw">mod </span><a href="clock.rs.html#1-138">clock</a>;
+<a href=#79 id=79 data-nosnippet>79</a><span class="kw">mod </span><a href="concurrency/mod.rs.html#1-26">concurrency</a>;
+<a href=#80 id=80 data-nosnippet>80</a><span class="kw">mod </span><a href="data_structures/mod.rs.html#1-3">data_structures</a>;
+<a href=#81 id=81 data-nosnippet>81</a><span class="kw">mod </span><a href="diagnostics.rs.html#1-808">diagnostics</a>;
+<a href=#82 id=82 data-nosnippet>82</a><span class="kw">mod </span><a href="eval.rs.html#1-669">eval</a>;
+<a href=#83 id=83 data-nosnippet>83</a><span class="kw">mod </span><a href="helpers.rs.html#1-1258">helpers</a>;
+<a href=#84 id=84 data-nosnippet>84</a><span class="kw">mod </span><a href="intrinsics/mod.rs.html#1-617">intrinsics</a>;
+<a href=#85 id=85 data-nosnippet>85</a><span class="kw">mod </span><a href="machine.rs.html#1-1856">machine</a>;
+<a href=#86 id=86 data-nosnippet>86</a><span class="kw">mod </span><a href="math.rs.html#1-230">math</a>;
+<a href=#87 id=87 data-nosnippet>87</a><span class="kw">mod </span><a href="operator.rs.html#1-132">operator</a>;
+<a href=#88 id=88 data-nosnippet>88</a><span class="kw">mod </span><a href="provenance_gc.rs.html#1-240">provenance_gc</a>;
+<a href=#89 id=89 data-nosnippet>89</a><span class="kw">mod </span><a href="shims/mod.rs.html#1-41">shims</a>;
+<a href=#90 id=90 data-nosnippet>90</a>
+<a href=#91 id=91 data-nosnippet>91</a><span class="comment">// Establish a "crate-wide prelude": we often import `crate::*`.
+<a href=#92 id=92 data-nosnippet>92</a>// Make all those symbols available in the same place as our own.
+<a href=#93 id=93 data-nosnippet>93</a></span><span class="attr">#[doc(no_inline)]
+<a href=#94 id=94 data-nosnippet>94</a></span><span class="kw">pub use </span><a href="../../rustc_const_eval/interpret/index.html">rustc_const_eval::interpret</a>::<span class="kw-2">*</span>;
+<a href=#95 id=95 data-nosnippet>95</a><span class="comment">// Resolve ambiguity.
+<a href=#96 id=96 data-nosnippet>96</a></span><span class="attr">#[doc(no_inline)]
+<a href=#97 id=97 data-nosnippet>97</a></span><span class="kw">pub use </span>rustc_const_eval::interpret::{<a class="self" href="../../rustc_const_eval/interpret/index.html">self</a>, <a href="../../rustc_const_eval/interpret/machine/trait.AllocMap.html">AllocMap</a>, <a href="../../rustc_middle/mir/interpret/pointer/trait.Provenance.html">Provenance</a> <span class="kw">as _</span>};
+<a href=#98 id=98 data-nosnippet>98</a><span class="kw">use </span>rustc_middle::{<a href="../../rustc_middle/macro.bug.html">bug</a>, <a href="../../rustc_middle/macro.span_bug.html">span_bug</a>};
+<a href=#99 id=99 data-nosnippet>99</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.info.html">info</a>, <a href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace</a>};
+<a href=#100 id=100 data-nosnippet>100</a>
+<a href=#101 id=101 data-nosnippet>101</a><span class="attr">#[cfg(all(unix, feature = <span class="string">"native-lib"</span>))]
+<a href=#102 id=102 data-nosnippet>102</a></span><span class="kw">pub mod </span><a href="../../miri/native_lib/index.html">native_lib</a> {
+<a href=#103 id=103 data-nosnippet>103</a>    <span class="kw">pub use </span><span class="kw">crate</span>::shims::{<a href="shims/native_lib/trace/child.rs.html#168-256">init_sv</a>, <a href="shims/native_lib/trace/child.rs.html#260-266">register_retcode_sv</a>};
+<a href=#104 id=104 data-nosnippet>104</a>}
+<a href=#105 id=105 data-nosnippet>105</a>
+<a href=#106 id=106 data-nosnippet>106</a><span class="comment">// Type aliases that set the provenance parameter.
+<a href=#107 id=107 data-nosnippet>107</a></span><span class="kw">pub type </span><a href="../../miri/type.Pointer.html">Pointer</a> = <a href="../../rustc_middle/mir/interpret/pointer/struct.Pointer.html">interpret::Pointer</a>&lt;<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="machine.rs.html#195-220">machine::Provenance</a>&gt;&gt;;
+<a href=#108 id=108 data-nosnippet>108</a><span class="kw">pub type </span><a href="../../miri/type.StrictPointer.html">StrictPointer</a> = <a href="../../rustc_middle/mir/interpret/pointer/struct.Pointer.html">interpret::Pointer</a>&lt;<a href="machine.rs.html#195-220">machine::Provenance</a>&gt;;
+<a href=#109 id=109 data-nosnippet>109</a><span class="kw">pub type </span><a href="../../miri/type.Scalar.html">Scalar</a> = <a href="../../rustc_middle/mir/interpret/value/enum.Scalar.html">interpret::Scalar</a>&lt;<a href="machine.rs.html#195-220">machine::Provenance</a>&gt;;
+<a href=#110 id=110 data-nosnippet>110</a><span class="kw">pub type </span><a href="../../miri/type.ImmTy.html">ImmTy</a>&lt;<span class="lifetime">'tcx</span>&gt; = <a href="../../rustc_const_eval/interpret/operand/struct.ImmTy.html">interpret::ImmTy</a>&lt;<span class="lifetime">'tcx</span>, <a href="machine.rs.html#195-220">machine::Provenance</a>&gt;;
+<a href=#111 id=111 data-nosnippet>111</a><span class="kw">pub type </span><a href="../../miri/type.OpTy.html">OpTy</a>&lt;<span class="lifetime">'tcx</span>&gt; = <a href="../../rustc_const_eval/interpret/operand/struct.OpTy.html">interpret::OpTy</a>&lt;<span class="lifetime">'tcx</span>, <a href="machine.rs.html#195-220">machine::Provenance</a>&gt;;
+<a href=#112 id=112 data-nosnippet>112</a><span class="kw">pub type </span><a href="../../miri/type.PlaceTy.html">PlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt; = <a href="../../rustc_const_eval/interpret/place/struct.PlaceTy.html">interpret::PlaceTy</a>&lt;<span class="lifetime">'tcx</span>, <a href="machine.rs.html#195-220">machine::Provenance</a>&gt;;
+<a href=#113 id=113 data-nosnippet>113</a><span class="kw">pub type </span><a href="../../miri/type.MPlaceTy.html">MPlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt; = <a href="../../rustc_const_eval/interpret/place/struct.MPlaceTy.html">interpret::MPlaceTy</a>&lt;<span class="lifetime">'tcx</span>, <a href="machine.rs.html#195-220">machine::Provenance</a>&gt;;
+<a href=#114 id=114 data-nosnippet>114</a>
+<a href=#115 id=115 data-nosnippet>115</a><span class="kw">pub use </span><a href="alloc/alloc_bytes.rs.html#22-33"><span class="kw">crate</span>::alloc::MiriAllocBytes</a>;
+<a href=#116 id=116 data-nosnippet>116</a><span class="kw">pub use </span><span class="kw">crate</span>::alloc_addresses::{<a href="alloc_addresses/mod.rs.html#230-484">EvalContextExt</a> <span class="kw">as _</span>, <a href="alloc_addresses/mod.rs.html#18-26">ProvenanceMode</a>};
+<a href=#117 id=117 data-nosnippet>117</a><span class="kw">pub use </span><span class="kw">crate</span>::borrow_tracker::stacked_borrows::{
+<a href=#118 id=118 data-nosnippet>118</a>    <a href="borrow_tracker/stacked_borrows/mod.rs.html#859-1048">EvalContextExt</a> <span class="kw">as _</span>, <a href="borrow_tracker/stacked_borrows/item.rs.html#7">Item</a>, <a href="borrow_tracker/stacked_borrows/item.rs.html#71-81">Permission</a>, <a href="borrow_tracker/stacked_borrows/stack.rs.html#21-42">Stack</a>, <a href="borrow_tracker/stacked_borrows/mod.rs.html#31-38">Stacks</a>,
+<a href=#119 id=119 data-nosnippet>119</a>};
+<a href=#120 id=120 data-nosnippet>120</a><span class="kw">pub use </span><span class="kw">crate</span>::borrow_tracker::tree_borrows::{<a href="borrow_tracker/tree_borrows/mod.rs.html#506-713">EvalContextExt</a> <span class="kw">as _</span>, <a href="borrow_tracker/tree_borrows/tree.rs.html#231-253">Tree</a>};
+<a href=#121 id=121 data-nosnippet>121</a><span class="kw">pub use </span><span class="kw">crate</span>::borrow_tracker::{
+<a href=#122 id=122 data-nosnippet>122</a>    <a href="borrow_tracker/mod.rs.html#16">BorTag</a>, <a href="borrow_tracker/mod.rs.html#225-230">BorrowTrackerMethod</a>, <a href="borrow_tracker/mod.rs.html#278-396">EvalContextExt</a> <span class="kw">as _</span>, <a href="borrow_tracker/mod.rs.html#129-137">RetagFields</a>, <a href="borrow_tracker/mod.rs.html#234-236">TreeBorrowsParams</a>,
+<a href=#123 id=123 data-nosnippet>123</a>};
+<a href=#124 id=124 data-nosnippet>124</a><span class="kw">pub use </span><span class="kw">crate</span>::clock::{<a href="clock.rs.html#12-14">Instant</a>, <a href="clock.rs.html#65-67">MonotonicClock</a>};
+<a href=#125 id=125 data-nosnippet>125</a><span class="kw">pub use </span><a href="concurrency/cpu_affinity.rs.html#13"><span class="kw">crate</span>::concurrency::cpu_affinity::MAX_CPUS</a>;
+<a href=#126 id=126 data-nosnippet>126</a><span class="kw">pub use </span><span class="kw">crate</span>::concurrency::data_race::{
+<a href=#127 id=127 data-nosnippet>127</a>    <a href="concurrency/data_race.rs.html#91-96">AtomicFenceOrd</a>, <a href="concurrency/data_race.rs.html#75-79">AtomicReadOrd</a>, <a href="concurrency/data_race.rs.html#65-71">AtomicRwOrd</a>, <a href="concurrency/data_race.rs.html#83-87">AtomicWriteOrd</a>, <a href="concurrency/data_race.rs.html#706-994">EvalContextExt</a> <span class="kw">as _</span>,
+<a href=#128 id=128 data-nosnippet>128</a>};
+<a href=#129 id=129 data-nosnippet>129</a><span class="kw">pub use </span><span class="kw">crate</span>::concurrency::init_once::{<a href="concurrency/init_once.rs.html#68-157">EvalContextExt</a> <span class="kw">as _</span>, <a href="concurrency/init_once.rs.html#46">InitOnceRef</a>};
+<a href=#130 id=130 data-nosnippet>130</a><span class="kw">pub use </span><span class="kw">crate</span>::concurrency::sync::{<a href="concurrency/sync.rs.html#136">CondvarRef</a>, <a href="concurrency/sync.rs.html#230-787">EvalContextExt</a> <span class="kw">as _</span>, <a href="concurrency/sync.rs.html#29">MutexRef</a>, <a href="concurrency/sync.rs.html#102">RwLockRef</a>};
+<a href=#131 id=131 data-nosnippet>131</a><span class="kw">pub use </span><span class="kw">crate</span>::concurrency::thread::{
+<a href=#132 id=132 data-nosnippet>132</a>    <a href="concurrency/thread.rs.html#91-113">BlockReason</a>, <a href="concurrency/thread.rs.html#54">DynUnblockCallback</a>, <a href="concurrency/thread.rs.html#795-1245">EvalContextExt</a> <span class="kw">as _</span>, <a href="concurrency/thread.rs.html#203-204">StackEmptyCallback</a>, <a href="concurrency/thread.rs.html#58">ThreadId</a>,
+<a href=#133 id=133 data-nosnippet>133</a>    <a href="concurrency/thread.rs.html#397-410">ThreadManager</a>, <a href="concurrency/thread.rs.html#386-389">TimeoutAnchor</a>, <a href="concurrency/thread.rs.html#379-382">TimeoutClock</a>, <a href="concurrency/thread.rs.html#45-50">UnblockKind</a>,
+<a href=#134 id=134 data-nosnippet>134</a>};
+<a href=#135 id=135 data-nosnippet>135</a><span class="kw">pub use </span><span class="kw">crate</span>::concurrency::{<a href="concurrency/genmc/dummy.rs.html#16">GenmcConfig</a>, <a href="concurrency/genmc/dummy.rs.html#13">GenmcCtx</a>};
+<a href=#136 id=136 data-nosnippet>136</a><span class="kw">pub use </span><a href="data_structures/dedup_range_map.rs.html#20-22"><span class="kw">crate</span>::data_structures::dedup_range_map::DedupRangeMap</a>;
+<a href=#137 id=137 data-nosnippet>137</a><span class="kw">pub use </span><a href="data_structures/mono_hash_map.rs.html#18"><span class="kw">crate</span>::data_structures::mono_hash_map::MonoHashMap</a>;
+<a href=#138 id=138 data-nosnippet>138</a><span class="kw">pub use </span><span class="kw">crate</span>::diagnostics::{
+<a href=#139 id=139 data-nosnippet>139</a>    <a href="diagnostics.rs.html#783-808">EvalContextExt</a> <span class="kw">as _</span>, <a href="diagnostics.rs.html#118-142">NonHaltingDiagnostic</a>, <a href="diagnostics.rs.html#13-56">TerminationInfo</a>, <a href="diagnostics.rs.html#222-496">report_error</a>,
+<a href=#140 id=140 data-nosnippet>140</a>};
+<a href=#141 id=141 data-nosnippet>141</a><span class="kw">pub use </span><span class="kw">crate</span>::eval::{
+<a href=#142 id=142 data-nosnippet>142</a>    <a href="eval.rs.html#36-43">AlignmentCheck</a>, <a href="eval.rs.html#75-82">BacktraceStyle</a>, <a href="eval.rs.html#63-72">IsolatedOp</a>, <a href="eval.rs.html#96-175">MiriConfig</a>, <a href="eval.rs.html#25-28">MiriEntryFnType</a>, <a href="eval.rs.html#46-60">RejectOpWith</a>,
+<a href=#143 id=143 data-nosnippet>143</a>    <a href="eval.rs.html#85-92">ValidationMode</a>, <a href="eval.rs.html#316-422">create_ecx</a>, <a href="eval.rs.html#498-566">eval_entry</a>,
+<a href=#144 id=144 data-nosnippet>144</a>};
+<a href=#145 id=145 data-nosnippet>145</a><span class="kw">pub use </span><span class="kw">crate</span>::helpers::{<a href="helpers.rs.html#26-29">AccessKind</a>, <a href="helpers.rs.html#218-1123">EvalContextExt</a> <span class="kw">as _</span>, <a href="helpers.rs.html#1238-1240">ToU64</a> <span class="kw">as _</span>, <a href="helpers.rs.html#1226-1228">ToUsize</a> <span class="kw">as _</span>};
+<a href=#146 id=146 data-nosnippet>146</a><span class="kw">pub use </span><a href="intrinsics/mod.rs.html#40-487"><span class="kw">crate</span>::intrinsics::EvalContextExt</a> <span class="kw">as _</span>;
+<a href=#147 id=147 data-nosnippet>147</a><span class="kw">pub use </span><span class="kw">crate</span>::machine::{
+<a href=#148 id=148 data-nosnippet>148</a>    <a href="machine.rs.html#319-336">AllocExtra</a>, <a href="machine.rs.html#1803">DynMachineCallback</a>, <a href="machine.rs.html#52-74">FrameExtra</a>, <a href="machine.rs.html#1793-1800">MachineCallback</a>, <a href="machine.rs.html#187">MemoryKind</a>, <a href="machine.rs.html#960">MiriInterpCx</a>,
+<a href=#149 id=149 data-nosnippet>149</a>    <a href="machine.rs.html#963-966">MiriInterpCxExt</a>, <a href="machine.rs.html#427-602">MiriMachine</a>, <a href="machine.rs.html#107-135">MiriMemoryKind</a>, <a href="machine.rs.html#356-373">PrimitiveLayouts</a>, <a href="machine.rs.html#195-220">Provenance</a>, <a href="machine.rs.html#224-227">ProvenanceExtra</a>,
+<a href=#150 id=150 data-nosnippet>150</a>};
+<a href=#151 id=151 data-nosnippet>151</a><span class="kw">pub use </span><a href="operator.rs.html#12-132"><span class="kw">crate</span>::operator::EvalContextExt</a> <span class="kw">as _</span>;
+<a href=#152 id=152 data-nosnippet>152</a><span class="kw">pub use </span><span class="kw">crate</span>::provenance_gc::{<a href="provenance_gc.rs.html#220-240">EvalContextExt</a> <span class="kw">as _</span>, <a href="provenance_gc.rs.html#185-188">LiveAllocs</a>, <a href="provenance_gc.rs.html#8-10">VisitProvenance</a>, <a href="provenance_gc.rs.html#6">VisitWith</a>};
+<a href=#153 id=153 data-nosnippet>153</a><span class="kw">pub use </span><a href="shims/mod.rs.html#32-41"><span class="kw">crate</span>::shims::EmulateItemResult</a>;
+<a href=#154 id=154 data-nosnippet>154</a><span class="kw">pub use </span><span class="kw">crate</span>::shims::env::{<a href="shims/env.rs.html#10-15">EnvVars</a>, <a href="shims/env.rs.html#92-130">EvalContextExt</a> <span class="kw">as _</span>};
+<a href=#155 id=155 data-nosnippet>155</a><span class="kw">pub use </span><span class="kw">crate</span>::shims::foreign_items::{<a href="shims/foreign_items.rs.html#24">DynSym</a>, <a href="shims/foreign_items.rs.html#34-199">EvalContextExt</a> <span class="kw">as _</span>};
+<a href=#156 id=156 data-nosnippet>156</a><span class="kw">pub use </span><span class="kw">crate</span>::shims::io_error::{<a href="shims/io_error.rs.html#179-325">EvalContextExt</a> <span class="kw">as _</span>, <a href="shims/io_error.rs.html#9-14">IoError</a>, <a href="shims/io_error.rs.html#10">LibcError</a>};
+<a href=#157 id=157 data-nosnippet>157</a><span class="kw">pub use </span><a href="shims/os_str.rs.html#32-366"><span class="kw">crate</span>::shims::os_str::EvalContextExt</a> <span class="kw">as _</span>;
+<a href=#158 id=158 data-nosnippet>158</a><span class="kw">pub use </span><a href="shims/panic.rs.html#9-113"><span class="kw">crate</span>::shims::panic::EvalContextExt</a> <span class="kw">as _</span>;
+<a href=#159 id=159 data-nosnippet>159</a><span class="kw">pub use </span><a href="shims/sig.rs.html#143-250"><span class="kw">crate</span>::shims::sig::EvalContextExt</a> <span class="kw">as _</span>;
+<a href=#160 id=160 data-nosnippet>160</a><span class="kw">pub use </span><a href="shims/time.rs.html#19-440"><span class="kw">crate</span>::shims::time::EvalContextExt</a> <span class="kw">as _</span>;
+<a href=#161 id=161 data-nosnippet>161</a><span class="kw">pub use </span><a href="shims/tls.rs.html#31-41"><span class="kw">crate</span>::shims::tls::TlsData</a>;
+<a href=#162 id=162 data-nosnippet>162</a><span class="kw">pub use </span><span class="kw">crate</span>::shims::unwind::{<a href="shims/unwind.rs.html#23-32">CatchUnwindData</a>, <a href="shims/unwind.rs.html#44-160">EvalContextExt</a> <span class="kw">as _</span>};
+<a href=#163 id=163 data-nosnippet>163</a>
+<a href=#164 id=164 data-nosnippet>164</a><span class="doccomment">/// Insert rustc arguments at the beginning of the argument list that Miri wants to be
+<a href=#165 id=165 data-nosnippet>165</a>/// set per default, for maximal validation power.
+<a href=#166 id=166 data-nosnippet>166</a>/// Also disable the MIR pass that inserts an alignment check on every pointer dereference. Miri
+<a href=#167 id=167 data-nosnippet>167</a>/// does that too, and with a better error message.
+<a href=#168 id=168 data-nosnippet>168</a></span><span class="kw">pub const </span><a href="../../miri/constant.MIRI_DEFAULT_ARGS.html">MIRI_DEFAULT_ARGS</a>: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>] = <span class="kw-2">&amp;</span>[
+<a href=#169 id=169 data-nosnippet>169</a>    <span class="string">"--cfg=miri"</span>,
+<a href=#170 id=170 data-nosnippet>170</a>    <span class="string">"-Zalways-encode-mir"</span>,
+<a href=#171 id=171 data-nosnippet>171</a>    <span class="string">"-Zextra-const-ub-checks"</span>,
+<a href=#172 id=172 data-nosnippet>172</a>    <span class="string">"-Zmir-emit-retag"</span>,
+<a href=#173 id=173 data-nosnippet>173</a>    <span class="string">"-Zmir-preserve-ub"</span>,
+<a href=#174 id=174 data-nosnippet>174</a>    <span class="string">"-Zmir-opt-level=0"</span>,
+<a href=#175 id=175 data-nosnippet>175</a>    <span class="string">"-Zmir-enable-passes=-CheckAlignment,-CheckNull,-CheckEnums"</span>,
+<a href=#176 id=176 data-nosnippet>176</a>    <span class="comment">// Deduplicating diagnostics means we miss events when tracking what happens during an
+<a href=#177 id=177 data-nosnippet>177</a>    // execution. Let's not do that.
+<a href=#178 id=178 data-nosnippet>178</a>    </span><span class="string">"-Zdeduplicate-diagnostics=no"</span>,
+<a href=#179 id=179 data-nosnippet>179</a>];</code></pre></div></section></main></body></html>

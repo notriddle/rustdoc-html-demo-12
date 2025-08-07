@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Flag","FlagOrNv","LitOrArg","Name","Predicate"],"struct":["ConditionOptions","FilterFormatString","NameValue","OnUnimplementedCondition"]};

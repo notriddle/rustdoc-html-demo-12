@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["core","index","manifest","messages","restricted_names"]};

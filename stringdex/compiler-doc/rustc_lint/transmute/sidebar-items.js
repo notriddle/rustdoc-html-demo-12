@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_ptr_transmute_in_const","check_unnecessary_transmute"],"static":["PTR_TO_INTEGER_TRANSMUTE_IN_CONSTS","UNNECESSARY_TRANSMUTES"],"struct":["CheckTransmutes","UndefinedTransmuteLint"]};

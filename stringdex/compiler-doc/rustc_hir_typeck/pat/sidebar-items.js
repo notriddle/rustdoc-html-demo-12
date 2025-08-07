@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CANNOT_IMPLICITLY_DEREF_POINTER_TRAIT_OBJ"],"enum":["AdjustMode","InheritedRefMatchRule","MutblCap","PeelKind","ResolvedPatKind"],"fn":["is_number"],"struct":["PatInfo","ResolvedPat","TopInfo"]};

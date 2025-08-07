@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Error"],"fn":["init_logger","init_logger_with_additional_layer","stderr_isatty","stdout_isatty"],"struct":["BacktraceFormatter","LoggerConfig"],"trait":["BuildSubscriberRet"]};

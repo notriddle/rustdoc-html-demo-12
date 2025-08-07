@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["TargetFamiliesJson"],"struct":["EndianWrapper","ExternAbiWrapper","LinkSelfContainedComponentsWrapper","TargetSpecJson","TargetSpecJsonMetadata"]};

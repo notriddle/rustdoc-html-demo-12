@@ -1,0 +1,336 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/clippy/clippy_utils/src/paths.rs`."><title>paths.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="clippy_utils" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">clippy_utils/</div>paths.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! This module contains paths to types and functions Clippy needs to know
+<a href=#2 id=2 data-nosnippet>2</a>//! about.
+<a href=#3 id=3 data-nosnippet>3</a>//!
+<a href=#4 id=4 data-nosnippet>4</a>//! Whenever possible, please consider diagnostic items over hardcoded paths.
+<a href=#5 id=5 data-nosnippet>5</a>//! See &lt;https://github.com/rust-lang/rust-clippy/issues/5393&gt; for more information.
+<a href=#6 id=6 data-nosnippet>6</a>
+<a href=#7 id=7 data-nosnippet>7</a></span><span class="kw">use crate</span>::{<a href="lib.rs.html#464-467">MaybePath</a>, <a href="lib.rs.html#510-512">path_def_id</a>, <a href="lib.rs.html#71">sym</a>};
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="../../rustc_ast_ir/enum.Mutability.html">rustc_ast::Mutability</a>;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span>rustc_data_structures::fx::FxHashMap;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>rustc_hir::def::Namespace::{<a href="../../rustc_hir/def/Namespace/variant.MacroNS.html">MacroNS</a>, <a href="../../rustc_hir/def/Namespace/variant.TypeNS.html">TypeNS</a>, <a href="../../rustc_hir/def/Namespace/variant.ValueNS.html">ValueNS</a>};
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>rustc_hir::def::{<a href="../../rustc_hir/def/enum.DefKind.html">DefKind</a>, <a href="../../rustc_hir/def/enum.Namespace.html">Namespace</a>, <a href="../../rustc_hir/def/enum.Res.html">Res</a>};
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>rustc_hir::def_id::{<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>, <a href="../../rustc_span/def_id/constant.LOCAL_CRATE.html">LOCAL_CRATE</a>, <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>};
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span>rustc_hir::{<a href="../../rustc_hir/hir/enum.ItemKind.html">ItemKind</a>, <a href="../../rustc_hir/hir/enum.Node.html">Node</a>, <a href="../../rustc_hir/hir/enum.UseKind.html">UseKind</a>};
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span><a href="../../rustc_lint/context/struct.LateContext.html">rustc_lint::LateContext</a>;
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span><a href="../../rustc_middle/ty/fast_reject/type.SimplifiedType.html">rustc_middle::ty::fast_reject::SimplifiedType</a>;
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span>rustc_middle::ty::{<a href="../../rustc_ast_ir/enum.FloatTy.html">FloatTy</a>, <a href="../../rustc_ast_ir/enum.IntTy.html">IntTy</a>, <a href="../../rustc_middle/ty/struct.Ty.html">Ty</a>, <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>, <a href="../../rustc_ast_ir/enum.UintTy.html">UintTy</a>};
+<a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span>rustc_span::{<a href="../../rustc_span/symbol/struct.Ident.html">Ident</a>, <a href="../../rustc_span/symbol/constant.STDLIB_STABLE_CRATES.html">STDLIB_STABLE_CRATES</a>, <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>};
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/std/sync/once_lock/struct.OnceLock.html">std::sync::OnceLock</a>;
+<a href=#19 id=19 data-nosnippet>19</a>
+<a href=#20 id=20 data-nosnippet>20</a><span class="doccomment">/// Specifies whether to resolve a path in the [`TypeNS`], [`ValueNS`], [`MacroNS`] or in an
+<a href=#21 id=21 data-nosnippet>21</a>/// arbitrary namespace
+<a href=#22 id=22 data-nosnippet>22</a></span><span class="attr">#[derive(Clone, Copy, PartialEq, Debug)]
+<a href=#23 id=23 data-nosnippet>23</a></span><span class="kw">pub enum </span><a href="../../clippy_utils/paths/enum.PathNS.html">PathNS</a> {
+<a href=#24 id=24 data-nosnippet>24</a>    Type,
+<a href=#25 id=25 data-nosnippet>25</a>    Value,
+<a href=#26 id=26 data-nosnippet>26</a>    Macro,
+<a href=#27 id=27 data-nosnippet>27</a>
+<a href=#28 id=28 data-nosnippet>28</a>    <span class="doccomment">/// Resolves to the name in the first available namespace, e.g. for `std::vec` this would return
+<a href=#29 id=29 data-nosnippet>29</a>    /// either the macro or the module but **not** both
+<a href=#30 id=30 data-nosnippet>30</a>    ///
+<a href=#31 id=31 data-nosnippet>31</a>    /// Must only be used when the specific resolution is unimportant such as in
+<a href=#32 id=32 data-nosnippet>32</a>    /// `missing_enforced_import_renames`
+<a href=#33 id=33 data-nosnippet>33</a>    </span>Arbitrary,
+<a href=#34 id=34 data-nosnippet>34</a>}
+<a href=#35 id=35 data-nosnippet>35</a>
+<a href=#36 id=36 data-nosnippet>36</a><span class="kw">impl </span><a href="#23-34">PathNS</a> {
+<a href=#37 id=37 data-nosnippet>37</a>    <span class="kw">fn </span>matches(<span class="self">self</span>, ns: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_hir/def/enum.Namespace.html">Namespace</a>&gt;) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#38 id=38 data-nosnippet>38</a>        <span class="kw">let </span>required = <span class="kw">match </span><span class="self"><a href="#37">self</a> </span>{
+<a href=#39 id=39 data-nosnippet>39</a>            <a href="#24">PathNS::Type</a> =&gt; <a href="../../rustc_hir/def/Namespace/variant.TypeNS.html">TypeNS</a>,
+<a href=#40 id=40 data-nosnippet>40</a>            <a href="#25">PathNS::Value</a> =&gt; <a href="../../rustc_hir/def/Namespace/variant.ValueNS.html">ValueNS</a>,
+<a href=#41 id=41 data-nosnippet>41</a>            <a href="#26">PathNS::Macro</a> =&gt; <a href="../../rustc_hir/def/Namespace/variant.MacroNS.html">MacroNS</a>,
+<a href=#42 id=42 data-nosnippet>42</a>            <a href="#33">PathNS::Arbitrary</a> =&gt; <span class="kw">return </span><span class="bool-val">true</span>,
+<a href=#43 id=43 data-nosnippet>43</a>        };
+<a href=#44 id=44 data-nosnippet>44</a>
+<a href=#45 id=45 data-nosnippet>45</a>        <a href="#37">ns</a> == <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#38">required</a>)
+<a href=#46 id=46 data-nosnippet>46</a>    }
+<a href=#47 id=47 data-nosnippet>47</a>}
+<a href=#48 id=48 data-nosnippet>48</a>
+<a href=#49 id=49 data-nosnippet>49</a><span class="doccomment">/// Lazily resolves a path into a list of [`DefId`]s using [`lookup_path`].
+<a href=#50 id=50 data-nosnippet>50</a>///
+<a href=#51 id=51 data-nosnippet>51</a>/// Typically it will contain one [`DefId`] or none, but in some situations there can be multiple:
+<a href=#52 id=52 data-nosnippet>52</a>/// - `memchr::memchr` could return the functions from both memchr 1.0 and memchr 2.0
+<a href=#53 id=53 data-nosnippet>53</a>/// - `alloc::boxed::Box::downcast` would return a function for each of the different inherent impls
+<a href=#54 id=54 data-nosnippet>54</a>///   ([1], [2], [3])
+<a href=#55 id=55 data-nosnippet>55</a>///
+<a href=#56 id=56 data-nosnippet>56</a>/// [1]: https://doc.rust-lang.org/std/boxed/struct.Box.html#method.downcast
+<a href=#57 id=57 data-nosnippet>57</a>/// [2]: https://doc.rust-lang.org/std/boxed/struct.Box.html#method.downcast-1
+<a href=#58 id=58 data-nosnippet>58</a>/// [3]: https://doc.rust-lang.org/std/boxed/struct.Box.html#method.downcast-2
+<a href=#59 id=59 data-nosnippet>59</a></span><span class="kw">pub struct </span><a href="../../clippy_utils/paths/struct.PathLookup.html">PathLookup</a> {
+<a href=#60 id=60 data-nosnippet>60</a>    ns: <a href="#23-34">PathNS</a>,
+<a href=#61 id=61 data-nosnippet>61</a>    path: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>[<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>],
+<a href=#62 id=62 data-nosnippet>62</a>    once: <a href="https://doc.rust-lang.org/nightly/std/sync/once_lock/struct.OnceLock.html">OnceLock</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt;&gt;,
+<a href=#63 id=63 data-nosnippet>63</a>}
+<a href=#64 id=64 data-nosnippet>64</a>
+<a href=#65 id=65 data-nosnippet>65</a><span class="kw">impl </span><a href="#59-63">PathLookup</a> {
+<a href=#66 id=66 data-nosnippet>66</a>    <span class="doccomment">/// Only exported for tests and `clippy_lints_internal`
+<a href=#67 id=67 data-nosnippet>67</a>    </span><span class="attr">#[doc(hidden)]
+<a href=#68 id=68 data-nosnippet>68</a>    </span><span class="kw">pub const fn </span>new(ns: <a href="#23-34">PathNS</a>, path: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>[<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>]) -&gt; <span class="self">Self </span>{
+<a href=#69 id=69 data-nosnippet>69</a>        <span class="self">Self </span>{
+<a href=#70 id=70 data-nosnippet>70</a>            <a href="#68">ns</a>,
+<a href=#71 id=71 data-nosnippet>71</a>            <a href="#68">path</a>,
+<a href=#72 id=72 data-nosnippet>72</a>            once: <a href="https://doc.rust-lang.org/nightly/std/sync/once_lock/struct.OnceLock.html#method.new">OnceLock::new</a>(),
+<a href=#73 id=73 data-nosnippet>73</a>        }
+<a href=#74 id=74 data-nosnippet>74</a>    }
+<a href=#75 id=75 data-nosnippet>75</a>
+<a href=#76 id=76 data-nosnippet>76</a>    <span class="doccomment">/// Returns the list of [`DefId`]s that the path resolves to
+<a href=#77 id=77 data-nosnippet>77</a>    </span><span class="kw">pub fn </span>get(<span class="kw-2">&amp;</span><span class="self">self</span>, cx: <span class="kw-2">&amp;</span><a href="../../rustc_lint/context/struct.LateContext.html">LateContext</a>&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="kw-2">&amp;</span>[<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>] {
+<a href=#78 id=78 data-nosnippet>78</a>        <a class="self" href="#77">self</a>.once.<a href="https://doc.rust-lang.org/nightly/std/sync/once_lock/struct.OnceLock.html#method.get_or_init">get_or_init</a>(|| <a href="#177-188">lookup_path</a>(<a href="#77">cx</a>.tcx, <a class="self" href="#77">self</a>.ns, <a class="self" href="#77">self</a>.path))
+<a href=#79 id=79 data-nosnippet>79</a>    }
+<a href=#80 id=80 data-nosnippet>80</a>
+<a href=#81 id=81 data-nosnippet>81</a>    <span class="doccomment">/// Returns the single [`DefId`] that the path resolves to, this can only be used for paths into
+<a href=#82 id=82 data-nosnippet>82</a>    /// stdlib crates to avoid the issue of multiple [`DefId`]s being returned
+<a href=#83 id=83 data-nosnippet>83</a>    ///
+<a href=#84 id=84 data-nosnippet>84</a>    /// May return [`None`] in `no_std`/`no_core` environments
+<a href=#85 id=85 data-nosnippet>85</a>    </span><span class="kw">pub fn </span>only(<span class="kw-2">&amp;</span><span class="self">self</span>, cx: <span class="kw-2">&amp;</span><a href="../../rustc_lint/context/struct.LateContext.html">LateContext</a>&lt;<span class="lifetime">'_</span>&gt;) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt; {
+<a href=#86 id=86 data-nosnippet>86</a>        <span class="kw">let </span>ids = <a class="self" href="#85">self</a>.<a href="#77-79">get</a>(<a href="#85">cx</a>);
+<a href=#87 id=87 data-nosnippet>87</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.debug_assert.html">debug_assert!</a>(STDLIB_STABLE_CRATES.contains(<span class="kw-2">&amp;</span><span class="self">self</span>.path[<span class="number">0</span>]));
+<a href=#88 id=88 data-nosnippet>88</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.debug_assert.html">debug_assert!</a>(ids.len() &lt;= <span class="number">1</span>, <span class="string">"{ids:?}"</span>);
+<a href=#89 id=89 data-nosnippet>89</a>        <a href="#86">ids</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.first">first</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.copied">copied</a>()
+<a href=#90 id=90 data-nosnippet>90</a>    }
+<a href=#91 id=91 data-nosnippet>91</a>
+<a href=#92 id=92 data-nosnippet>92</a>    <span class="doccomment">/// Checks if the path resolves to the given `def_id`
+<a href=#93 id=93 data-nosnippet>93</a>    </span><span class="kw">pub fn </span>matches(<span class="kw-2">&amp;</span><span class="self">self</span>, cx: <span class="kw-2">&amp;</span><a href="../../rustc_lint/context/struct.LateContext.html">LateContext</a>&lt;<span class="lifetime">'_</span>&gt;, def_id: <a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#94 id=94 data-nosnippet>94</a>        <a class="self" href="#93">self</a>.<a href="#77-79">get</a>(<a href="#93">cx</a>).<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.contains">contains</a>(<span class="kw-2">&amp;</span><a href="#93">def_id</a>)
+<a href=#95 id=95 data-nosnippet>95</a>    }
+<a href=#96 id=96 data-nosnippet>96</a>
+<a href=#97 id=97 data-nosnippet>97</a>    <span class="doccomment">/// Resolves `maybe_path` to a [`DefId`] and checks if the [`PathLookup`] matches it
+<a href=#98 id=98 data-nosnippet>98</a>    </span><span class="kw">pub fn </span>matches_path&lt;<span class="lifetime">'tcx</span>&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, cx: <span class="kw-2">&amp;</span><a href="../../rustc_lint/context/struct.LateContext.html">LateContext</a>&lt;<span class="lifetime">'_</span>&gt;, maybe_path: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="lib.rs.html#464-467">MaybePath</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#99 id=99 data-nosnippet>99</a>        <a href="lib.rs.html#510-512">path_def_id</a>(<a href="#98">cx</a>, <a href="#98">maybe_path</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_some_and">is_some_and</a>(|def_id| <a class="self" href="#98">self</a>.<a href="#93-95">matches</a>(<a href="#98">cx</a>, <a href="#99">def_id</a>))
+<a href=#100 id=100 data-nosnippet>100</a>    }
+<a href=#101 id=101 data-nosnippet>101</a>
+<a href=#102 id=102 data-nosnippet>102</a>    <span class="doccomment">/// Checks if the path resolves to `ty`'s definition, must be an `Adt`
+<a href=#103 id=103 data-nosnippet>103</a>    </span><span class="kw">pub fn </span>matches_ty(<span class="kw-2">&amp;</span><span class="self">self</span>, cx: <span class="kw-2">&amp;</span><a href="../../rustc_lint/context/struct.LateContext.html">LateContext</a>&lt;<span class="lifetime">'_</span>&gt;, ty: <a href="../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'_</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#104 id=104 data-nosnippet>104</a>        <a href="#103">ty</a>.<a href="../../rustc_middle/ty/struct.Ty.html#method.ty_adt_def">ty_adt_def</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_some_and">is_some_and</a>(|adt| <a class="self" href="#103">self</a>.<a href="#93-95">matches</a>(<a href="#103">cx</a>, <a href="#104">adt</a>.<a href="../../rustc_middle/ty/adt/struct.AdtDef.html#method.did">did</a>()))
+<a href=#105 id=105 data-nosnippet>105</a>    }
+<a href=#106 id=106 data-nosnippet>106</a>}
+<a href=#107 id=107 data-nosnippet>107</a>
+<a href=#108 id=108 data-nosnippet>108</a><span class="macro">macro_rules!</span> <a href="../../clippy_utils/paths/macro.path_macros.html">path_macros</a> {
+<a href=#109 id=109 data-nosnippet>109</a>    ($(<span class="macro-nonterminal">$name</span>:ident: <span class="macro-nonterminal">$ns</span>:expr,)<span class="kw-2">*</span>) =&gt; {
+<a href=#110 id=110 data-nosnippet>110</a>        $(
+<a href=#111 id=111 data-nosnippet>111</a>            <span class="doccomment">/// Only exported for tests and `clippy_lints_internal`
+<a href=#112 id=112 data-nosnippet>112</a>            </span><span class="attr">#[doc(hidden)]
+<a href=#113 id=113 data-nosnippet>113</a>            #[macro_export]
+<a href=#114 id=114 data-nosnippet>114</a>            </span><span class="macro">macro_rules!</span> <span class="macro-nonterminal">$name </span>{
+<a href=#115 id=115 data-nosnippet>115</a>                ($$($<span class="macro-nonterminal">$seg</span>:ident $$(::)<span class="question-mark">?</span>)<span class="kw-2">*</span>) =&gt; {
+<a href=#116 id=116 data-nosnippet>116</a>                    PathLookup::new(<span class="macro-nonterminal">$ns</span>, <span class="kw-2">&amp;</span>[$$(sym::$<span class="macro-nonterminal">$seg</span>,)<span class="kw-2">*</span>])
+<a href=#117 id=117 data-nosnippet>117</a>                };
+<a href=#118 id=118 data-nosnippet>118</a>            }
+<a href=#119 id=119 data-nosnippet>119</a>        )*
+<a href=#120 id=120 data-nosnippet>120</a>    };
+<a href=#121 id=121 data-nosnippet>121</a>}
+<a href=#122 id=122 data-nosnippet>122</a>
+<a href=#123 id=123 data-nosnippet>123</a><span class="macro">path_macros!</span> {
+<a href=#124 id=124 data-nosnippet>124</a>    type_path: PathNS::Type,
+<a href=#125 id=125 data-nosnippet>125</a>    value_path: PathNS::Value,
+<a href=#126 id=126 data-nosnippet>126</a>    macro_path: PathNS::Macro,
+<a href=#127 id=127 data-nosnippet>127</a>}
+<a href=#128 id=128 data-nosnippet>128</a>
+<a href=#129 id=129 data-nosnippet>129</a><span class="comment">// Paths in external crates
+<a href=#130 id=130 data-nosnippet>130</a></span><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.FUTURES_IO_ASYNCREADEXT.html">FUTURES_IO_ASYNCREADEXT</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">type_path!</a>(futures_util::AsyncReadExt);
+<a href=#131 id=131 data-nosnippet>131</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.FUTURES_IO_ASYNCWRITEEXT.html">FUTURES_IO_ASYNCWRITEEXT</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">type_path!</a>(futures_util::AsyncWriteExt);
+<a href=#132 id=132 data-nosnippet>132</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.ITERTOOLS_NEXT_TUPLE.html">ITERTOOLS_NEXT_TUPLE</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">value_path!</a>(itertools::Itertools::next_tuple);
+<a href=#133 id=133 data-nosnippet>133</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.PARKING_LOT_GUARDS.html">PARKING_LOT_GUARDS</a>: [<a href="#59-63">PathLookup</a>; <span class="number">3</span>] = [
+<a href=#134 id=134 data-nosnippet>134</a>    <a class="macro" href="#123-127">type_path!</a>(lock_api::mutex::MutexGuard),
+<a href=#135 id=135 data-nosnippet>135</a>    <a class="macro" href="#123-127">type_path!</a>(lock_api::rwlock::RwLockReadGuard),
+<a href=#136 id=136 data-nosnippet>136</a>    <a class="macro" href="#123-127">type_path!</a>(lock_api::rwlock::RwLockWriteGuard),
+<a href=#137 id=137 data-nosnippet>137</a>];
+<a href=#138 id=138 data-nosnippet>138</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.REGEX_BUILDER_NEW.html">REGEX_BUILDER_NEW</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">value_path!</a>(regex::RegexBuilder::new);
+<a href=#139 id=139 data-nosnippet>139</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.REGEX_BYTES_BUILDER_NEW.html">REGEX_BYTES_BUILDER_NEW</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">value_path!</a>(regex::bytes::RegexBuilder::new);
+<a href=#140 id=140 data-nosnippet>140</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.REGEX_BYTES_NEW.html">REGEX_BYTES_NEW</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">value_path!</a>(regex::bytes::Regex::new);
+<a href=#141 id=141 data-nosnippet>141</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.REGEX_BYTES_SET_NEW.html">REGEX_BYTES_SET_NEW</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">value_path!</a>(regex::bytes::RegexSet::new);
+<a href=#142 id=142 data-nosnippet>142</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.REGEX_NEW.html">REGEX_NEW</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">value_path!</a>(regex::Regex::new);
+<a href=#143 id=143 data-nosnippet>143</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.REGEX_SET_NEW.html">REGEX_SET_NEW</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">value_path!</a>(regex::RegexSet::new);
+<a href=#144 id=144 data-nosnippet>144</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.SERDE_DESERIALIZE.html">SERDE_DESERIALIZE</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">type_path!</a>(serde::de::Deserialize);
+<a href=#145 id=145 data-nosnippet>145</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.SERDE_DE_VISITOR.html">SERDE_DE_VISITOR</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">type_path!</a>(serde::de::Visitor);
+<a href=#146 id=146 data-nosnippet>146</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.TOKIO_FILE_OPTIONS.html">TOKIO_FILE_OPTIONS</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">value_path!</a>(tokio::fs::File::options);
+<a href=#147 id=147 data-nosnippet>147</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.TOKIO_IO_ASYNCREADEXT.html">TOKIO_IO_ASYNCREADEXT</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">type_path!</a>(tokio::io::AsyncReadExt);
+<a href=#148 id=148 data-nosnippet>148</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.TOKIO_IO_ASYNCWRITEEXT.html">TOKIO_IO_ASYNCWRITEEXT</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">type_path!</a>(tokio::io::AsyncWriteExt);
+<a href=#149 id=149 data-nosnippet>149</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.TOKIO_IO_OPEN_OPTIONS.html">TOKIO_IO_OPEN_OPTIONS</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">type_path!</a>(tokio::fs::OpenOptions);
+<a href=#150 id=150 data-nosnippet>150</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.TOKIO_IO_OPEN_OPTIONS_NEW.html">TOKIO_IO_OPEN_OPTIONS_NEW</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">value_path!</a>(tokio::fs::OpenOptions::new);
+<a href=#151 id=151 data-nosnippet>151</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.LAZY_STATIC.html">LAZY_STATIC</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">macro_path!</a>(lazy_static::lazy_static);
+<a href=#152 id=152 data-nosnippet>152</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.ONCE_CELL_SYNC_LAZY.html">ONCE_CELL_SYNC_LAZY</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">type_path!</a>(once_cell::sync::Lazy);
+<a href=#153 id=153 data-nosnippet>153</a><span class="kw">pub static </span><a href="../../clippy_utils/paths/static.ONCE_CELL_SYNC_LAZY_NEW.html">ONCE_CELL_SYNC_LAZY_NEW</a>: <a href="#59-63">PathLookup</a> = <a class="macro" href="#123-127">value_path!</a>(once_cell::sync::Lazy::new);
+<a href=#154 id=154 data-nosnippet>154</a>
+<a href=#155 id=155 data-nosnippet>155</a><span class="comment">// Paths for internal lints go in `clippy_lints_internal/src/internal_paths.rs`
+<a href=#156 id=156 data-nosnippet>156</a>
+<a href=#157 id=157 data-nosnippet>157</a></span><span class="doccomment">/// Equivalent to a [`lookup_path`] after splitting the input string on `::`
+<a href=#158 id=158 data-nosnippet>158</a>///
+<a href=#159 id=159 data-nosnippet>159</a>/// This function is expensive and should be used sparingly.
+<a href=#160 id=160 data-nosnippet>160</a></span><span class="kw">pub fn </span><a href="../../clippy_utils/paths/fn.lookup_path_str.html">lookup_path_str</a>(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;, ns: <a href="#23-34">PathNS</a>, path: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt; {
+<a href=#161 id=161 data-nosnippet>161</a>    <span class="kw">let </span>path: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>&gt; = <a href="#160">path</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.split">split</a>(<span class="string">"::"</span>).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(Symbol::intern).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#162 id=162 data-nosnippet>162</a>    <a href="#177-188">lookup_path</a>(<a href="#160">tcx</a>, <a href="#160">ns</a>, <span class="kw-2">&amp;</span><a href="#161">path</a>)
+<a href=#163 id=163 data-nosnippet>163</a>}
+<a href=#164 id=164 data-nosnippet>164</a>
+<a href=#165 id=165 data-nosnippet>165</a><span class="doccomment">/// Resolves a def path like `std::vec::Vec`.
+<a href=#166 id=166 data-nosnippet>166</a>///
+<a href=#167 id=167 data-nosnippet>167</a>/// Typically it will return one [`DefId`] or none, but in some situations there can be multiple:
+<a href=#168 id=168 data-nosnippet>168</a>/// - `memchr::memchr` could return the functions from both memchr 1.0 and memchr 2.0
+<a href=#169 id=169 data-nosnippet>169</a>/// - `alloc::boxed::Box::downcast` would return a function for each of the different inherent impls
+<a href=#170 id=170 data-nosnippet>170</a>///   ([1], [2], [3])
+<a href=#171 id=171 data-nosnippet>171</a>///
+<a href=#172 id=172 data-nosnippet>172</a>/// This function is expensive and should be used sparingly.
+<a href=#173 id=173 data-nosnippet>173</a>///
+<a href=#174 id=174 data-nosnippet>174</a>/// [1]: https://doc.rust-lang.org/std/boxed/struct.Box.html#method.downcast
+<a href=#175 id=175 data-nosnippet>175</a>/// [2]: https://doc.rust-lang.org/std/boxed/struct.Box.html#method.downcast-1
+<a href=#176 id=176 data-nosnippet>176</a>/// [3]: https://doc.rust-lang.org/std/boxed/struct.Box.html#method.downcast-2
+<a href=#177 id=177 data-nosnippet>177</a></span><span class="kw">pub fn </span><a href="../../clippy_utils/paths/fn.lookup_path.html">lookup_path</a>(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;, ns: <a href="#23-34">PathNS</a>, path: <span class="kw-2">&amp;</span>[<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>]) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt; {
+<a href=#178 id=178 data-nosnippet>178</a>    <span class="kw">let </span>(root, rest) = <span class="kw">match </span><span class="kw-2">*</span><a href="#177">path</a> {
+<a href=#179 id=179 data-nosnippet>179</a>        [] | [<span class="kw">_</span>] =&gt; <span class="kw">return </span><a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>(),
+<a href=#180 id=180 data-nosnippet>180</a>        [root, <span class="kw-2">ref </span>rest @ ..] =&gt; (<a href="#180">root</a>, <a href="#180">rest</a>),
+<a href=#181 id=181 data-nosnippet>181</a>    };
+<a href=#182 id=182 data-nosnippet>182</a>
+<a href=#183 id=183 data-nosnippet>183</a>    <span class="kw">let </span><span class="kw-2">mut </span>out = <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>();
+<a href=#184 id=184 data-nosnippet>184</a>    <span class="kw">for </span><span class="kw-2">&amp;</span>base <span class="kw">in </span>find_crates(tcx, root).iter().chain(find_primitive_impls(tcx, root)) {
+<a href=#185 id=185 data-nosnippet>185</a>        lookup_with_base(tcx, base, ns, rest, <span class="kw-2">&amp;mut </span>out);
+<a href=#186 id=186 data-nosnippet>186</a>    }
+<a href=#187 id=187 data-nosnippet>187</a>    <a href="#183">out</a>
+<a href=#188 id=188 data-nosnippet>188</a>}
+<a href=#189 id=189 data-nosnippet>189</a>
+<a href=#190 id=190 data-nosnippet>190</a><span class="doccomment">/// Finds the crates called `name`, may be multiple due to multiple major versions.
+<a href=#191 id=191 data-nosnippet>191</a></span><span class="kw">pub fn </span><a href="../../clippy_utils/paths/fn.find_crates.html">find_crates</a>(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;, name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span>[<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>] {
+<a href=#192 id=192 data-nosnippet>192</a>    <span class="kw">static </span>BY_NAME: <a href="https://doc.rust-lang.org/nightly/std/sync/once_lock/struct.OnceLock.html">OnceLock</a>&lt;FxHashMap&lt;<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>, <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt;&gt;&gt; = <a href="https://doc.rust-lang.org/nightly/std/sync/once_lock/struct.OnceLock.html#method.new">OnceLock::new</a>();
+<a href=#193 id=193 data-nosnippet>193</a>    <span class="kw">let </span>map = <a href="#192">BY_NAME</a>.<a href="https://doc.rust-lang.org/nightly/std/sync/once_lock/struct.OnceLock.html#method.get_or_init">get_or_init</a>(|| {
+<a href=#194 id=194 data-nosnippet>194</a>        <span class="kw">let </span><span class="kw-2">mut </span>map = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxHashMap::default</a>();
+<a href=#195 id=195 data-nosnippet>195</a>        <a href="#194">map</a>.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.insert">insert</a>(<a href="#191">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.crate_name">crate_name</a>(<a href="../../rustc_span/def_id/constant.LOCAL_CRATE.html">LOCAL_CRATE</a>), <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[LOCAL_CRATE.as_def_id()]);
+<a href=#196 id=196 data-nosnippet>196</a>        <span class="kw">for </span><span class="kw-2">&amp;</span>num <span class="kw">in </span>tcx.crates(()) {
+<a href=#197 id=197 data-nosnippet>197</a>            map.entry(tcx.crate_name(num)).or_default().push(num.as_def_id());
+<a href=#198 id=198 data-nosnippet>198</a>        }
+<a href=#199 id=199 data-nosnippet>199</a>        <a href="#194">map</a>
+<a href=#200 id=200 data-nosnippet>200</a>    });
+<a href=#201 id=201 data-nosnippet>201</a>    <span class="kw">match </span><a href="#193">map</a>.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#191">name</a>) {
+<a href=#202 id=202 data-nosnippet>202</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(def_ids) =&gt; <a href="#202">def_ids</a>,
+<a href=#203 id=203 data-nosnippet>203</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a> </a>=&gt; <span class="kw-2">&amp;</span>[],
+<a href=#204 id=204 data-nosnippet>204</a>    }
+<a href=#205 id=205 data-nosnippet>205</a>}
+<a href=#206 id=206 data-nosnippet>206</a>
+<a href=#207 id=207 data-nosnippet>207</a><span class="kw">fn </span><a href="../../clippy_utils/paths/fn.find_primitive_impls.html">find_primitive_impls</a>(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;, name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>) -&gt; <span class="kw-2">&amp;</span>[<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>] {
+<a href=#208 id=208 data-nosnippet>208</a>    <span class="kw">let </span>ty = <span class="kw">match </span><a href="#207">name</a> {
+<a href=#209 id=209 data-nosnippet>209</a>        <a href="../../rustc_span/symbol/sym_generated/constant.bool.html">sym::bool</a> =&gt; SimplifiedType::Bool,
+<a href=#210 id=210 data-nosnippet>210</a>        <a href="../../rustc_span/symbol/sym_generated/constant.char.html">sym::char</a> =&gt; SimplifiedType::Char,
+<a href=#211 id=211 data-nosnippet>211</a>        <a href="../../rustc_span/symbol/sym_generated/constant.str.html">sym::str</a> =&gt; SimplifiedType::Str,
+<a href=#212 id=212 data-nosnippet>212</a>        <a href="../../rustc_span/symbol/sym_generated/constant.array.html">sym::array</a> =&gt; SimplifiedType::Array,
+<a href=#213 id=213 data-nosnippet>213</a>        <a href="../../rustc_span/symbol/sym_generated/constant.slice.html">sym::slice</a> =&gt; SimplifiedType::Slice,
+<a href=#214 id=214 data-nosnippet>214</a>        <span class="comment">// FIXME: rustdoc documents these two using just `pointer`.
+<a href=#215 id=215 data-nosnippet>215</a>        //
+<a href=#216 id=216 data-nosnippet>216</a>        // Maybe this is something we should do here too.
+<a href=#217 id=217 data-nosnippet>217</a>        </span><a href="sym.rs.html#36-376">sym::const_ptr</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Ptr">SimplifiedType::Ptr</a>(<a href="../../rustc_ast_ir/enum.Mutability.html#variant.Not">Mutability::Not</a>),
+<a href=#218 id=218 data-nosnippet>218</a>        <a href="sym.rs.html#36-376">sym::mut_ptr</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Ptr">SimplifiedType::Ptr</a>(<a href="../../rustc_ast_ir/enum.Mutability.html#variant.Mut">Mutability::Mut</a>),
+<a href=#219 id=219 data-nosnippet>219</a>        <a href="../../rustc_span/symbol/sym_generated/constant.isize.html">sym::isize</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Int">SimplifiedType::Int</a>(<a href="../../rustc_ast_ir/enum.IntTy.html#variant.Isize">IntTy::Isize</a>),
+<a href=#220 id=220 data-nosnippet>220</a>        <a href="../../rustc_span/symbol/sym_generated/constant.i8.html">sym::i8</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Int">SimplifiedType::Int</a>(<a href="../../rustc_ast_ir/enum.IntTy.html#variant.I8">IntTy::I8</a>),
+<a href=#221 id=221 data-nosnippet>221</a>        <a href="../../rustc_span/symbol/sym_generated/constant.i16.html">sym::i16</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Int">SimplifiedType::Int</a>(<a href="../../rustc_ast_ir/enum.IntTy.html#variant.I16">IntTy::I16</a>),
+<a href=#222 id=222 data-nosnippet>222</a>        <a href="../../rustc_span/symbol/sym_generated/constant.i32.html">sym::i32</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Int">SimplifiedType::Int</a>(<a href="../../rustc_ast_ir/enum.IntTy.html#variant.I32">IntTy::I32</a>),
+<a href=#223 id=223 data-nosnippet>223</a>        <a href="../../rustc_span/symbol/sym_generated/constant.i64.html">sym::i64</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Int">SimplifiedType::Int</a>(<a href="../../rustc_ast_ir/enum.IntTy.html#variant.I64">IntTy::I64</a>),
+<a href=#224 id=224 data-nosnippet>224</a>        <a href="../../rustc_span/symbol/sym_generated/constant.i128.html">sym::i128</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Int">SimplifiedType::Int</a>(<a href="../../rustc_ast_ir/enum.IntTy.html#variant.I128">IntTy::I128</a>),
+<a href=#225 id=225 data-nosnippet>225</a>        <a href="../../rustc_span/symbol/sym_generated/constant.usize.html">sym::usize</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Uint">SimplifiedType::Uint</a>(<a href="../../rustc_ast_ir/enum.UintTy.html#variant.Usize">UintTy::Usize</a>),
+<a href=#226 id=226 data-nosnippet>226</a>        <a href="../../rustc_span/symbol/sym_generated/constant.u8.html">sym::u8</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Uint">SimplifiedType::Uint</a>(<a href="../../rustc_ast_ir/enum.UintTy.html#variant.U8">UintTy::U8</a>),
+<a href=#227 id=227 data-nosnippet>227</a>        <a href="../../rustc_span/symbol/sym_generated/constant.u16.html">sym::u16</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Uint">SimplifiedType::Uint</a>(<a href="../../rustc_ast_ir/enum.UintTy.html#variant.U16">UintTy::U16</a>),
+<a href=#228 id=228 data-nosnippet>228</a>        <a href="../../rustc_span/symbol/sym_generated/constant.u32.html">sym::u32</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Uint">SimplifiedType::Uint</a>(<a href="../../rustc_ast_ir/enum.UintTy.html#variant.U32">UintTy::U32</a>),
+<a href=#229 id=229 data-nosnippet>229</a>        <a href="../../rustc_span/symbol/sym_generated/constant.u64.html">sym::u64</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Uint">SimplifiedType::Uint</a>(<a href="../../rustc_ast_ir/enum.UintTy.html#variant.U64">UintTy::U64</a>),
+<a href=#230 id=230 data-nosnippet>230</a>        <a href="../../rustc_span/symbol/sym_generated/constant.u128.html">sym::u128</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Uint">SimplifiedType::Uint</a>(<a href="../../rustc_ast_ir/enum.UintTy.html#variant.U128">UintTy::U128</a>),
+<a href=#231 id=231 data-nosnippet>231</a>        <a href="../../rustc_span/symbol/sym_generated/constant.f32.html">sym::f32</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Float">SimplifiedType::Float</a>(<a href="../../rustc_ast_ir/enum.FloatTy.html#variant.F32">FloatTy::F32</a>),
+<a href=#232 id=232 data-nosnippet>232</a>        <a href="../../rustc_span/symbol/sym_generated/constant.f64.html">sym::f64</a> =&gt; <a href="../../rustc_type_ir/fast_reject/enum.SimplifiedType.html#variant.Float">SimplifiedType::Float</a>(<a href="../../rustc_ast_ir/enum.FloatTy.html#variant.F64">FloatTy::F64</a>),
+<a href=#233 id=233 data-nosnippet>233</a>        <span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="kw-2">&amp;</span>[],
+<a href=#234 id=234 data-nosnippet>234</a>    };
+<a href=#235 id=235 data-nosnippet>235</a>
+<a href=#236 id=236 data-nosnippet>236</a>    <a href="#207">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.incoherent_impls">incoherent_impls</a>(<a href="#208">ty</a>)
+<a href=#237 id=237 data-nosnippet>237</a>}
+<a href=#238 id=238 data-nosnippet>238</a>
+<a href=#239 id=239 data-nosnippet>239</a><span class="doccomment">/// Resolves a def path like `vec::Vec` with the base `std`.
+<a href=#240 id=240 data-nosnippet>240</a></span><span class="kw">fn </span><a href="../../clippy_utils/paths/fn.lookup_with_base.html">lookup_with_base</a>(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;, <span class="kw-2">mut </span>base: <a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>, ns: <a href="#23-34">PathNS</a>, <span class="kw-2">mut </span>path: <span class="kw-2">&amp;</span>[<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>], out: <span class="kw-2">&amp;mut </span><a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt;) {
+<a href=#241 id=241 data-nosnippet>241</a>    <span class="kw">loop </span>{
+<a href=#242 id=242 data-nosnippet>242</a>        <span class="kw">match </span><span class="kw-2">*</span><a href="#240">path</a> {
+<a href=#243 id=243 data-nosnippet>243</a>            [segment] =&gt; {
+<a href=#244 id=244 data-nosnippet>244</a>                <a href="#240">out</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.Extend.html#tymethod.extend">extend</a>(<a href="#268-274">item_child_by_name</a>(<a href="#240">tcx</a>, <a href="#240">base</a>, <a href="#240">ns</a>, <a href="#243">segment</a>));
+<a href=#245 id=245 data-nosnippet>245</a>
+<a href=#246 id=246 data-nosnippet>246</a>                <span class="comment">// When the current def_id is e.g. `struct S`, check the impl items in
+<a href=#247 id=247 data-nosnippet>247</a>                // `impl S { ... }`
+<a href=#248 id=248 data-nosnippet>248</a>                </span><span class="kw">let </span>inherent_impl_children = <a href="#240">tcx</a>
+<a href=#249 id=249 data-nosnippet>249</a>                    .<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.inherent_impls">inherent_impls</a>(<a href="#240">base</a>)
+<a href=#250 id=250 data-nosnippet>250</a>                    .<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>()
+<a href=#251 id=251 data-nosnippet>251</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter_map">filter_map</a>(|<span class="kw-2">&amp;</span>impl_def_id| <a href="#268-274">item_child_by_name</a>(<a href="#240">tcx</a>, <a href="#251">impl_def_id</a>, <a href="#240">ns</a>, <a href="#243">segment</a>));
+<a href=#252 id=252 data-nosnippet>252</a>                <a href="#240">out</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.Extend.html#tymethod.extend">extend</a>(<a href="#248">inherent_impl_children</a>);
+<a href=#253 id=253 data-nosnippet>253</a>
+<a href=#254 id=254 data-nosnippet>254</a>                <span class="kw">return</span>;
+<a href=#255 id=255 data-nosnippet>255</a>            },
+<a href=#256 id=256 data-nosnippet>256</a>            [segment, <span class="kw-2">ref </span>rest @ ..] =&gt; {
+<a href=#257 id=257 data-nosnippet>257</a>                <a href="#240">path</a> = <a href="#256">rest</a>;
+<a href=#258 id=258 data-nosnippet>258</a>                <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(child) = <a href="#268-274">item_child_by_name</a>(<a href="#240">tcx</a>, <a href="#240">base</a>, <a href="#24">PathNS::Type</a>, <a href="#256">segment</a>) <span class="kw">else </span>{
+<a href=#259 id=259 data-nosnippet>259</a>                    <span class="kw">return</span>;
+<a href=#260 id=260 data-nosnippet>260</a>                };
+<a href=#261 id=261 data-nosnippet>261</a>                <a href="#240">base</a> = <a href="#258">child</a>;
+<a href=#262 id=262 data-nosnippet>262</a>            },
+<a href=#263 id=263 data-nosnippet>263</a>            [] =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#264 id=264 data-nosnippet>264</a>        }
+<a href=#265 id=265 data-nosnippet>265</a>    }
+<a href=#266 id=266 data-nosnippet>266</a>}
+<a href=#267 id=267 data-nosnippet>267</a>
+<a href=#268 id=268 data-nosnippet>268</a><span class="kw">fn </span><a href="../../clippy_utils/paths/fn.item_child_by_name.html">item_child_by_name</a>(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;, def_id: <a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>, ns: <a href="#23-34">PathNS</a>, name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt; {
+<a href=#269 id=269 data-nosnippet>269</a>    <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(local_id) = <a href="#268">def_id</a>.<a href="../../rustc_span/def_id/struct.DefId.html#method.as_local">as_local</a>() {
+<a href=#270 id=270 data-nosnippet>270</a>        <a href="#276-318">local_item_child_by_name</a>(<a href="#268">tcx</a>, <a href="#269">local_id</a>, <a href="#268">ns</a>, <a href="#268">name</a>)
+<a href=#271 id=271 data-nosnippet>271</a>    } <span class="kw">else </span>{
+<a href=#272 id=272 data-nosnippet>272</a>        <a href="#320-336">non_local_item_child_by_name</a>(<a href="#268">tcx</a>, <a href="#268">def_id</a>, <a href="#268">ns</a>, <a href="#268">name</a>)
+<a href=#273 id=273 data-nosnippet>273</a>    }
+<a href=#274 id=274 data-nosnippet>274</a>}
+<a href=#275 id=275 data-nosnippet>275</a>
+<a href=#276 id=276 data-nosnippet>276</a><span class="kw">fn </span><a href="../../clippy_utils/paths/fn.local_item_child_by_name.html">local_item_child_by_name</a>(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;, local_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>, ns: <a href="#23-34">PathNS</a>, name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt; {
+<a href=#277 id=277 data-nosnippet>277</a>    <span class="kw">let </span>root_mod;
+<a href=#278 id=278 data-nosnippet>278</a>    <span class="kw">let </span>item_kind = <span class="kw">match </span><a href="#276">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node_by_def_id">hir_node_by_def_id</a>(<a href="#276">local_id</a>) {
+<a href=#279 id=279 data-nosnippet>279</a>        <a href="../../rustc_hir/hir/enum.Node.html#variant.Crate">Node::Crate</a>(r#mod) =&gt; {
+<a href=#280 id=280 data-nosnippet>280</a>            <a href="#277">root_mod</a> = <a href="../../rustc_hir/hir/enum.ItemKind.html#variant.Mod">ItemKind::Mod</a>(<a href="../../rustc_span/symbol/struct.Ident.html#method.dummy">Ident::dummy</a>(), <a href="#279">r#mod</a>);
+<a href=#281 id=281 data-nosnippet>281</a>            <span class="kw-2">&amp;</span><a href="#277">root_mod</a>
+<a href=#282 id=282 data-nosnippet>282</a>        },
+<a href=#283 id=283 data-nosnippet>283</a>        <a href="../../rustc_hir/hir/enum.Node.html#variant.Item">Node::Item</a>(item) =&gt; <span class="kw-2">&amp;</span><a href="#283">item</a>.kind,
+<a href=#284 id=284 data-nosnippet>284</a>        <span class="kw">_ </span>=&gt; <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#285 id=285 data-nosnippet>285</a>    };
+<a href=#286 id=286 data-nosnippet>286</a>
+<a href=#287 id=287 data-nosnippet>287</a>    <span class="kw">match </span><a href="#278">item_kind</a> {
+<a href=#288 id=288 data-nosnippet>288</a>        <a href="../../rustc_hir/hir/enum.ItemKind.html#variant.Mod">ItemKind::Mod</a>(<span class="kw">_</span>, r#mod) =&gt; <a href="#288">r#mod</a>.item_ids.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.find_map">find_map</a>(|<span class="kw-2">&amp;</span>item_id| {
+<a href=#289 id=289 data-nosnippet>289</a>            <span class="kw">let </span>item = <a href="#276">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_item">hir_item</a>(<a href="#288">item_id</a>);
+<a href=#290 id=290 data-nosnippet>290</a>            <span class="kw">if let </span><a href="../../rustc_hir/hir/enum.ItemKind.html#variant.Use">ItemKind::Use</a>(path, UseKind::Single(ident)) = <a href="#289">item</a>.kind {
+<a href=#291 id=291 data-nosnippet>291</a>                <span class="kw">if </span><a href="#290">ident</a>.name == <a href="#276">name</a> {
+<a href=#292 id=292 data-nosnippet>292</a>                    <span class="kw">let </span>opt_def_id = |ns: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_hir/def/enum.Res.html">Res</a>&gt;| <a href="#292">ns</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.and_then">and_then</a>(|res| <a href="#292">res</a>.<a href="../../rustc_hir/def/enum.Res.html#method.opt_def_id">opt_def_id</a>());
+<a href=#293 id=293 data-nosnippet>293</a>                    <span class="kw">match </span><a href="#276">ns</a> {
+<a href=#294 id=294 data-nosnippet>294</a>                        <a href="#24">PathNS::Type</a> =&gt; <a href="#292">opt_def_id</a>(<a href="#290">path</a>.res.type_ns),
+<a href=#295 id=295 data-nosnippet>295</a>                        <a href="#25">PathNS::Value</a> =&gt; <a href="#292">opt_def_id</a>(<a href="#290">path</a>.res.value_ns),
+<a href=#296 id=296 data-nosnippet>296</a>                        <a href="#26">PathNS::Macro</a> =&gt; <a href="#292">opt_def_id</a>(<a href="#290">path</a>.res.macro_ns),
+<a href=#297 id=297 data-nosnippet>297</a>                        <a href="#33">PathNS::Arbitrary</a> =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#298 id=298 data-nosnippet>298</a>                    }
+<a href=#299 id=299 data-nosnippet>299</a>                } <span class="kw">else </span>{
+<a href=#300 id=300 data-nosnippet>300</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
+<a href=#301 id=301 data-nosnippet>301</a>                </a>}
+<a href=#302 id=302 data-nosnippet>302</a>            } <span class="kw">else if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(ident) = <a href="#289">item</a>.kind.<a href="../../rustc_hir/hir/enum.ItemKind.html#method.ident">ident</a>()
+<a href=#303 id=303 data-nosnippet>303</a>                &amp;&amp; <a href="#302">ident</a>.name == <a href="#276">name</a>
+<a href=#304 id=304 data-nosnippet>304</a>                &amp;&amp; <a href="#276">ns</a>.<a href="#37-46">matches</a>(<a href="#276">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.def_kind">def_kind</a>(<a href="#289">item</a>.owner_id).<a href="../../rustc_hir/def/enum.DefKind.html#method.ns">ns</a>())
+<a href=#305 id=305 data-nosnippet>305</a>            {
+<a href=#306 id=306 data-nosnippet>306</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#289">item</a>.owner_id.<a href="../../rustc_hir/hir_id/struct.OwnerId.html#method.to_def_id">to_def_id</a>())
+<a href=#307 id=307 data-nosnippet>307</a>            } <span class="kw">else </span>{
+<a href=#308 id=308 data-nosnippet>308</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
+<a href=#309 id=309 data-nosnippet>309</a>            </a>}
+<a href=#310 id=310 data-nosnippet>310</a>        }),
+<a href=#311 id=311 data-nosnippet>311</a>        <a href="../../rustc_hir/hir/enum.ItemKind.html#variant.Impl">ItemKind::Impl</a>(..) | <a href="../../rustc_hir/hir/enum.ItemKind.html#variant.Trait">ItemKind::Trait</a>(..) =&gt; <a href="#276">tcx</a>
+<a href=#312 id=312 data-nosnippet>312</a>            .<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.associated_items">associated_items</a>(<a href="#276">local_id</a>)
+<a href=#313 id=313 data-nosnippet>313</a>            .<a href="../../rustc_middle/ty/assoc/struct.AssocItems.html#method.filter_by_name_unhygienic">filter_by_name_unhygienic</a>(<a href="#276">name</a>)
+<a href=#314 id=314 data-nosnippet>314</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.find">find</a>(|assoc_item| <a href="#276">ns</a>.<a href="#37-46">matches</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#314">assoc_item</a>.<a href="../../rustc_middle/ty/assoc/struct.AssocItem.html#method.namespace">namespace</a>())))
+<a href=#315 id=315 data-nosnippet>315</a>            .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|assoc_item| <a href="#315">assoc_item</a>.def_id),
+<a href=#316 id=316 data-nosnippet>316</a>        <span class="kw">_ </span>=&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#317 id=317 data-nosnippet>317</a>    }
+<a href=#318 id=318 data-nosnippet>318</a>}
+<a href=#319 id=319 data-nosnippet>319</a>
+<a href=#320 id=320 data-nosnippet>320</a><span class="kw">fn </span><a href="../../clippy_utils/paths/fn.non_local_item_child_by_name.html">non_local_item_child_by_name</a>(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;, def_id: <a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>, ns: <a href="#23-34">PathNS</a>, name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt; {
+<a href=#321 id=321 data-nosnippet>321</a>    <span class="kw">match </span><a href="#320">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.def_kind">def_kind</a>(<a href="#320">def_id</a>) {
+<a href=#322 id=322 data-nosnippet>322</a>        <a href="../../rustc_hir/def/enum.DefKind.html#variant.Mod">DefKind::Mod</a> | <a href="../../rustc_hir/def/enum.DefKind.html#variant.Enum">DefKind::Enum</a> | <a href="../../rustc_hir/def/enum.DefKind.html#variant.Trait">DefKind::Trait</a> =&gt; <a href="#320">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.module_children">module_children</a>(<a href="#320">def_id</a>).<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.find_map">find_map</a>(|child| {
+<a href=#323 id=323 data-nosnippet>323</a>            <span class="kw">if </span><a href="#322">child</a>.ident.name == <a href="#320">name</a> &amp;&amp; <a href="#320">ns</a>.<a href="#37-46">matches</a>(<a href="#322">child</a>.res.<a href="../../rustc_hir/def/enum.Res.html#method.ns">ns</a>()) {
+<a href=#324 id=324 data-nosnippet>324</a>                <a href="#322">child</a>.res.<a href="../../rustc_hir/def/enum.Res.html#method.opt_def_id">opt_def_id</a>()
+<a href=#325 id=325 data-nosnippet>325</a>            } <span class="kw">else </span>{
+<a href=#326 id=326 data-nosnippet>326</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
+<a href=#327 id=327 data-nosnippet>327</a>            </a>}
+<a href=#328 id=328 data-nosnippet>328</a>        }),
+<a href=#329 id=329 data-nosnippet>329</a>        <a href="../../rustc_hir/def/enum.DefKind.html#variant.Impl">DefKind::Impl</a> { .. } =&gt; <a href="#320">tcx</a>
+<a href=#330 id=330 data-nosnippet>330</a>            .<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.associated_item_def_ids">associated_item_def_ids</a>(<a href="#320">def_id</a>)
+<a href=#331 id=331 data-nosnippet>331</a>            .<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>()
+<a href=#332 id=332 data-nosnippet>332</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.copied">copied</a>()
+<a href=#333 id=333 data-nosnippet>333</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.find">find</a>(|assoc_def_id| <a href="#320">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.item_name">item_name</a>(<span class="kw-2">*</span><a href="#333">assoc_def_id</a>) == <a href="#320">name</a> &amp;&amp; <a href="#320">ns</a>.<a href="#37-46">matches</a>(<a href="#320">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.def_kind">def_kind</a>(<a href="#333">assoc_def_id</a>).<a href="../../rustc_hir/def/enum.DefKind.html#method.ns">ns</a>())),
+<a href=#334 id=334 data-nosnippet>334</a>        <span class="kw">_ </span>=&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#335 id=335 data-nosnippet>335</a>    }
+<a href=#336 id=336 data-nosnippet>336</a>}</code></pre></div></section></main></body></html>

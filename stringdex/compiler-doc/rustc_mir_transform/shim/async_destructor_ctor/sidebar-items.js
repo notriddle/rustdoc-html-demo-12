@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["build_adrop_for_adrop_shim","build_adrop_for_coroutine_shim","build_async_destructor_ctor_shim","build_async_drop_shim","build_future_drop_poll_shim"]};

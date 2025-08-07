@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["detect_mixed_deref_pat_ctors","detect_mixed_deref_pat_ctors_inner"]};

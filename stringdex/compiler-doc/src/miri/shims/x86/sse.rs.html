@@ -1,0 +1,210 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/shims/x86/sse.rs`."><title>sse.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-1b37d467.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/shims/x86/</div>sse.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="../../../../rustc_abi/canon_abi/enum.CanonAbi.html">rustc_abi::CanonAbi</a>;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span>rustc_apfloat::ieee::Single;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span><a href="../../../../rustc_middle/ty/struct.Ty.html">rustc_middle::ty::Ty</a>;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><a href="../../../../rustc_span/symbol/struct.Symbol.html">rustc_span::Symbol</a>;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="../../../../rustc_target/callconv/struct.FnAbi.html">rustc_target::callconv::FnAbi</a>;
+<a href=#6 id=6 data-nosnippet>6</a>
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use super</span>::{
+<a href=#8 id=8 data-nosnippet>8</a>    <a href="mod.rs.html#184-221">FloatBinOp</a>, <a href="mod.rs.html#384-395">FloatUnaryOp</a>, <a href="mod.rs.html#357-381">bin_op_simd_float_all</a>, <a href="mod.rs.html#327-353">bin_op_simd_float_first</a>, <a href="mod.rs.html#448-468">unary_op_ps</a>,
+<a href=#9 id=9 data-nosnippet>9</a>    <a href="mod.rs.html#425-444">unary_op_ss</a>,
+<a href=#10 id=10 data-nosnippet>10</a>};
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use crate</span>::<span class="kw-2">*</span>;
+<a href=#12 id=12 data-nosnippet>12</a>
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="#14-210">EvalContextExt</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="../../machine.rs.html#960"><span class="kw">crate</span>::MiriInterpCx</a>&lt;<span class="lifetime">'tcx</span>&gt; {}
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">trait </span><a href="../../../../miri/shims/x86/sse/trait.EvalContextExt.html">EvalContextExt</a>&lt;<span class="lifetime">'tcx</span>&gt;: <a href="../../machine.rs.html#963-966"><span class="kw">crate</span>::MiriInterpCxExt</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#15 id=15 data-nosnippet>15</a>    <span class="kw">fn </span>emulate_x86_sse_intrinsic(
+<a href=#16 id=16 data-nosnippet>16</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#17 id=17 data-nosnippet>17</a>        link_name: <a href="../../../../rustc_span/symbol/struct.Symbol.html">Symbol</a>,
+<a href=#18 id=18 data-nosnippet>18</a>        abi: <span class="kw-2">&amp;</span><a href="../../../../rustc_target/callconv/struct.FnAbi.html">FnAbi</a>&lt;<span class="lifetime">'tcx</span>, <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#19 id=19 data-nosnippet>19</a>        args: <span class="kw-2">&amp;</span>[<a href="../../lib.rs.html#111">OpTy</a>&lt;<span class="lifetime">'tcx</span>&gt;],
+<a href=#20 id=20 data-nosnippet>20</a>        dest: <span class="kw-2">&amp;</span><a href="../../lib.rs.html#113">MPlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#21 id=21 data-nosnippet>21</a>    ) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="../mod.rs.html#32-41">EmulateItemResult</a>&gt; {
+<a href=#22 id=22 data-nosnippet>22</a>        <span class="kw">let </span>this = <a class="self" href="#16">self</a>.<a href="../../machine.rs.html#965">eval_context_mut</a>();
+<a href=#23 id=23 data-nosnippet>23</a>        <a href="#22">this</a>.<a href="../../helpers.rs.html#1054-1066">expect_target_feature_for_intrinsic</a>(<a href="#17">link_name</a>, <span class="string">"sse"</span>)<span class="question-mark">?</span>;
+<a href=#24 id=24 data-nosnippet>24</a>        <span class="comment">// Prefix should have already been checked.
+<a href=#25 id=25 data-nosnippet>25</a>        </span><span class="kw">let </span>unprefixed_name = <a href="#17">link_name</a>.<a href="../../../../rustc_span/symbol/struct.Symbol.html#method.as_str">as_str</a>().<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.strip_prefix">strip_prefix</a>(<span class="string">"llvm.x86.sse."</span>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>();
+<a href=#26 id=26 data-nosnippet>26</a>        <span class="comment">// All these intrinsics operate on 128-bit (f32x4) SIMD vectors unless stated otherwise.
+<a href=#27 id=27 data-nosnippet>27</a>        // Many intrinsic names are sufixed with "ps" (packed single) or "ss" (scalar single),
+<a href=#28 id=28 data-nosnippet>28</a>        // where single means single precision floating point (f32). "ps" means thet the operation
+<a href=#29 id=29 data-nosnippet>29</a>        // is performed on each element of the vector, while "ss" means that the operation is
+<a href=#30 id=30 data-nosnippet>30</a>        // performed only on the first element, copying the remaining elements from the input
+<a href=#31 id=31 data-nosnippet>31</a>        // vector (for binary operations, from the left-hand side).
+<a href=#32 id=32 data-nosnippet>32</a>        </span><span class="kw">match </span><a href="#25">unprefixed_name</a> {
+<a href=#33 id=33 data-nosnippet>33</a>            <span class="comment">// Used to implement _mm_{min,max}_ss functions.
+<a href=#34 id=34 data-nosnippet>34</a>            // Performs the operations on the first component of `left` and
+<a href=#35 id=35 data-nosnippet>35</a>            // `right` and copies the remaining components from `left`.
+<a href=#36 id=36 data-nosnippet>36</a>            </span><span class="string">"min.ss" </span>| <span class="string">"max.ss" </span>=&gt; {
+<a href=#37 id=37 data-nosnippet>37</a>                <span class="kw">let </span>[left, right] =
+<a href=#38 id=38 data-nosnippet>38</a>                    <a href="#22">this</a>.<a href="../sig.rs.html#144-174">check_shim_sig_lenient</a>(<a href="#18">abi</a>, <a href="../../../../rustc_abi/canon_abi/enum.CanonAbi.html#variant.C">CanonAbi::C</a>, <a href="#17">link_name</a>, <a href="#19">args</a>)<span class="question-mark">?</span>;
+<a href=#39 id=39 data-nosnippet>39</a>
+<a href=#40 id=40 data-nosnippet>40</a>                <span class="kw">let </span>which = <span class="kw">match </span><a href="#25">unprefixed_name</a> {
+<a href=#41 id=41 data-nosnippet>41</a>                    <span class="string">"min.ss" </span>=&gt; <a href="mod.rs.html#213">FloatBinOp::Min</a>,
+<a href=#42 id=42 data-nosnippet>42</a>                    <span class="string">"max.ss" </span>=&gt; <a href="mod.rs.html#220">FloatBinOp::Max</a>,
+<a href=#43 id=43 data-nosnippet>43</a>                    <span class="kw">_ </span>=&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#44 id=44 data-nosnippet>44</a>                };
+<a href=#45 id=45 data-nosnippet>45</a>
+<a href=#46 id=46 data-nosnippet>46</a>                <a href="mod.rs.html#327-353">bin_op_simd_float_first</a>::&lt;Single&gt;(<a href="#22">this</a>, <a href="#40">which</a>, <a href="#37">left</a>, <a href="#37">right</a>, <a href="#20">dest</a>)<span class="question-mark">?</span>;
+<a href=#47 id=47 data-nosnippet>47</a>            }
+<a href=#48 id=48 data-nosnippet>48</a>            <span class="comment">// Used to implement _mm_min_ps and _mm_max_ps functions.
+<a href=#49 id=49 data-nosnippet>49</a>            // Note that the semantics are a bit different from Rust simd_min
+<a href=#50 id=50 data-nosnippet>50</a>            // and simd_max intrinsics regarding handling of NaN and -0.0: Rust
+<a href=#51 id=51 data-nosnippet>51</a>            // matches the IEEE min/max operations, while x86 has different
+<a href=#52 id=52 data-nosnippet>52</a>            // semantics.
+<a href=#53 id=53 data-nosnippet>53</a>            </span><span class="string">"min.ps" </span>| <span class="string">"max.ps" </span>=&gt; {
+<a href=#54 id=54 data-nosnippet>54</a>                <span class="kw">let </span>[left, right] =
+<a href=#55 id=55 data-nosnippet>55</a>                    <a href="#22">this</a>.<a href="../sig.rs.html#144-174">check_shim_sig_lenient</a>(<a href="#18">abi</a>, <a href="../../../../rustc_abi/canon_abi/enum.CanonAbi.html#variant.C">CanonAbi::C</a>, <a href="#17">link_name</a>, <a href="#19">args</a>)<span class="question-mark">?</span>;
+<a href=#56 id=56 data-nosnippet>56</a>
+<a href=#57 id=57 data-nosnippet>57</a>                <span class="kw">let </span>which = <span class="kw">match </span><a href="#25">unprefixed_name</a> {
+<a href=#58 id=58 data-nosnippet>58</a>                    <span class="string">"min.ps" </span>=&gt; <a href="mod.rs.html#213">FloatBinOp::Min</a>,
+<a href=#59 id=59 data-nosnippet>59</a>                    <span class="string">"max.ps" </span>=&gt; <a href="mod.rs.html#220">FloatBinOp::Max</a>,
+<a href=#60 id=60 data-nosnippet>60</a>                    <span class="kw">_ </span>=&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#61 id=61 data-nosnippet>61</a>                };
+<a href=#62 id=62 data-nosnippet>62</a>
+<a href=#63 id=63 data-nosnippet>63</a>                <a href="mod.rs.html#357-381">bin_op_simd_float_all</a>::&lt;Single&gt;(<a href="#22">this</a>, <a href="#57">which</a>, <a href="#54">left</a>, <a href="#54">right</a>, <a href="#20">dest</a>)<span class="question-mark">?</span>;
+<a href=#64 id=64 data-nosnippet>64</a>            }
+<a href=#65 id=65 data-nosnippet>65</a>            <span class="comment">// Used to implement _mm_{rcp,rsqrt}_ss functions.
+<a href=#66 id=66 data-nosnippet>66</a>            // Performs the operations on the first component of `op` and
+<a href=#67 id=67 data-nosnippet>67</a>            // copies the remaining components from `op`.
+<a href=#68 id=68 data-nosnippet>68</a>            </span><span class="string">"rcp.ss" </span>| <span class="string">"rsqrt.ss" </span>=&gt; {
+<a href=#69 id=69 data-nosnippet>69</a>                <span class="kw">let </span>[op] = <a href="#22">this</a>.<a href="../sig.rs.html#144-174">check_shim_sig_lenient</a>(<a href="#18">abi</a>, <a href="../../../../rustc_abi/canon_abi/enum.CanonAbi.html#variant.C">CanonAbi::C</a>, <a href="#17">link_name</a>, <a href="#19">args</a>)<span class="question-mark">?</span>;
+<a href=#70 id=70 data-nosnippet>70</a>
+<a href=#71 id=71 data-nosnippet>71</a>                <span class="kw">let </span>which = <span class="kw">match </span><a href="#25">unprefixed_name</a> {
+<a href=#72 id=72 data-nosnippet>72</a>                    <span class="string">"rcp.ss" </span>=&gt; <a href="mod.rs.html#389">FloatUnaryOp::Rcp</a>,
+<a href=#73 id=73 data-nosnippet>73</a>                    <span class="string">"rsqrt.ss" </span>=&gt; <a href="mod.rs.html#394">FloatUnaryOp::Rsqrt</a>,
+<a href=#74 id=74 data-nosnippet>74</a>                    <span class="kw">_ </span>=&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#75 id=75 data-nosnippet>75</a>                };
+<a href=#76 id=76 data-nosnippet>76</a>
+<a href=#77 id=77 data-nosnippet>77</a>                <a href="mod.rs.html#425-444">unary_op_ss</a>(<a href="#22">this</a>, <a href="#71">which</a>, <a href="#69">op</a>, <a href="#20">dest</a>)<span class="question-mark">?</span>;
+<a href=#78 id=78 data-nosnippet>78</a>            }
+<a href=#79 id=79 data-nosnippet>79</a>            <span class="comment">// Used to implement _mm_{sqrt,rcp,rsqrt}_ps functions.
+<a href=#80 id=80 data-nosnippet>80</a>            // Performs the operations on all components of `op`.
+<a href=#81 id=81 data-nosnippet>81</a>            </span><span class="string">"rcp.ps" </span>| <span class="string">"rsqrt.ps" </span>=&gt; {
+<a href=#82 id=82 data-nosnippet>82</a>                <span class="kw">let </span>[op] = <a href="#22">this</a>.<a href="../sig.rs.html#144-174">check_shim_sig_lenient</a>(<a href="#18">abi</a>, <a href="../../../../rustc_abi/canon_abi/enum.CanonAbi.html#variant.C">CanonAbi::C</a>, <a href="#17">link_name</a>, <a href="#19">args</a>)<span class="question-mark">?</span>;
+<a href=#83 id=83 data-nosnippet>83</a>
+<a href=#84 id=84 data-nosnippet>84</a>                <span class="kw">let </span>which = <span class="kw">match </span><a href="#25">unprefixed_name</a> {
+<a href=#85 id=85 data-nosnippet>85</a>                    <span class="string">"rcp.ps" </span>=&gt; <a href="mod.rs.html#389">FloatUnaryOp::Rcp</a>,
+<a href=#86 id=86 data-nosnippet>86</a>                    <span class="string">"rsqrt.ps" </span>=&gt; <a href="mod.rs.html#394">FloatUnaryOp::Rsqrt</a>,
+<a href=#87 id=87 data-nosnippet>87</a>                    <span class="kw">_ </span>=&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#88 id=88 data-nosnippet>88</a>                };
+<a href=#89 id=89 data-nosnippet>89</a>
+<a href=#90 id=90 data-nosnippet>90</a>                <a href="mod.rs.html#448-468">unary_op_ps</a>(<a href="#22">this</a>, <a href="#84">which</a>, <a href="#82">op</a>, <a href="#20">dest</a>)<span class="question-mark">?</span>;
+<a href=#91 id=91 data-nosnippet>91</a>            }
+<a href=#92 id=92 data-nosnippet>92</a>            <span class="comment">// Used to implement the _mm_cmp*_ss functions.
+<a href=#93 id=93 data-nosnippet>93</a>            // Performs a comparison operation on the first component of `left`
+<a href=#94 id=94 data-nosnippet>94</a>            // and `right`, returning 0 if false or `u32::MAX` if true. The remaining
+<a href=#95 id=95 data-nosnippet>95</a>            // components are copied from `left`.
+<a href=#96 id=96 data-nosnippet>96</a>            // _mm_cmp_ss is actually an AVX function where the operation is specified
+<a href=#97 id=97 data-nosnippet>97</a>            // by a const parameter.
+<a href=#98 id=98 data-nosnippet>98</a>            // _mm_cmp{eq,lt,le,gt,ge,neq,nlt,nle,ngt,nge,ord,unord}_ss are SSE functions
+<a href=#99 id=99 data-nosnippet>99</a>            // with hard-coded operations.
+<a href=#100 id=100 data-nosnippet>100</a>            </span><span class="string">"cmp.ss" </span>=&gt; {
+<a href=#101 id=101 data-nosnippet>101</a>                <span class="kw">let </span>[left, right, imm] =
+<a href=#102 id=102 data-nosnippet>102</a>                    <a href="#22">this</a>.<a href="../sig.rs.html#144-174">check_shim_sig_lenient</a>(<a href="#18">abi</a>, <a href="../../../../rustc_abi/canon_abi/enum.CanonAbi.html#variant.C">CanonAbi::C</a>, <a href="#17">link_name</a>, <a href="#19">args</a>)<span class="question-mark">?</span>;
+<a href=#103 id=103 data-nosnippet>103</a>
+<a href=#104 id=104 data-nosnippet>104</a>                <span class="kw">let </span>which =
+<a href=#105 id=105 data-nosnippet>105</a>                    <a href="mod.rs.html#226-265">FloatBinOp::cmp_from_imm</a>(<a href="#22">this</a>, <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.read_scalar">read_scalar</a>(<a href="#101">imm</a>)<span class="question-mark">?</span>.<a href="../../../../rustc_middle/mir/interpret/value/enum.Scalar.html#method.to_i8">to_i8</a>()<span class="question-mark">?</span>, <a href="#17">link_name</a>)<span class="question-mark">?</span>;
+<a href=#106 id=106 data-nosnippet>106</a>
+<a href=#107 id=107 data-nosnippet>107</a>                <a href="mod.rs.html#327-353">bin_op_simd_float_first</a>::&lt;Single&gt;(<a href="#22">this</a>, <a href="#104">which</a>, <a href="#101">left</a>, <a href="#101">right</a>, <a href="#20">dest</a>)<span class="question-mark">?</span>;
+<a href=#108 id=108 data-nosnippet>108</a>            }
+<a href=#109 id=109 data-nosnippet>109</a>            <span class="comment">// Used to implement the _mm_cmp*_ps functions.
+<a href=#110 id=110 data-nosnippet>110</a>            // Performs a comparison operation on each component of `left`
+<a href=#111 id=111 data-nosnippet>111</a>            // and `right`. For each component, returns 0 if false or u32::MAX
+<a href=#112 id=112 data-nosnippet>112</a>            // if true.
+<a href=#113 id=113 data-nosnippet>113</a>            // _mm_cmp_ps is actually an AVX function where the operation is specified
+<a href=#114 id=114 data-nosnippet>114</a>            // by a const parameter.
+<a href=#115 id=115 data-nosnippet>115</a>            // _mm_cmp{eq,lt,le,gt,ge,neq,nlt,nle,ngt,nge,ord,unord}_ps are SSE functions
+<a href=#116 id=116 data-nosnippet>116</a>            // with hard-coded operations.
+<a href=#117 id=117 data-nosnippet>117</a>            </span><span class="string">"cmp.ps" </span>=&gt; {
+<a href=#118 id=118 data-nosnippet>118</a>                <span class="kw">let </span>[left, right, imm] =
+<a href=#119 id=119 data-nosnippet>119</a>                    <a href="#22">this</a>.<a href="../sig.rs.html#144-174">check_shim_sig_lenient</a>(<a href="#18">abi</a>, <a href="../../../../rustc_abi/canon_abi/enum.CanonAbi.html#variant.C">CanonAbi::C</a>, <a href="#17">link_name</a>, <a href="#19">args</a>)<span class="question-mark">?</span>;
+<a href=#120 id=120 data-nosnippet>120</a>
+<a href=#121 id=121 data-nosnippet>121</a>                <span class="kw">let </span>which =
+<a href=#122 id=122 data-nosnippet>122</a>                    <a href="mod.rs.html#226-265">FloatBinOp::cmp_from_imm</a>(<a href="#22">this</a>, <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.read_scalar">read_scalar</a>(<a href="#118">imm</a>)<span class="question-mark">?</span>.<a href="../../../../rustc_middle/mir/interpret/value/enum.Scalar.html#method.to_i8">to_i8</a>()<span class="question-mark">?</span>, <a href="#17">link_name</a>)<span class="question-mark">?</span>;
+<a href=#123 id=123 data-nosnippet>123</a>
+<a href=#124 id=124 data-nosnippet>124</a>                <a href="mod.rs.html#357-381">bin_op_simd_float_all</a>::&lt;Single&gt;(<a href="#22">this</a>, <a href="#121">which</a>, <a href="#118">left</a>, <a href="#118">right</a>, <a href="#20">dest</a>)<span class="question-mark">?</span>;
+<a href=#125 id=125 data-nosnippet>125</a>            }
+<a href=#126 id=126 data-nosnippet>126</a>            <span class="comment">// Used to implement _mm_{,u}comi{eq,lt,le,gt,ge,neq}_ss functions.
+<a href=#127 id=127 data-nosnippet>127</a>            // Compares the first component of `left` and `right` and returns
+<a href=#128 id=128 data-nosnippet>128</a>            // a scalar value (0 or 1).
+<a href=#129 id=129 data-nosnippet>129</a>            </span><span class="string">"comieq.ss" </span>| <span class="string">"comilt.ss" </span>| <span class="string">"comile.ss" </span>| <span class="string">"comigt.ss" </span>| <span class="string">"comige.ss" </span>| <span class="string">"comineq.ss"
+<a href=#130 id=130 data-nosnippet>130</a>            </span>| <span class="string">"ucomieq.ss" </span>| <span class="string">"ucomilt.ss" </span>| <span class="string">"ucomile.ss" </span>| <span class="string">"ucomigt.ss" </span>| <span class="string">"ucomige.ss"
+<a href=#131 id=131 data-nosnippet>131</a>            </span>| <span class="string">"ucomineq.ss" </span>=&gt; {
+<a href=#132 id=132 data-nosnippet>132</a>                <span class="kw">let </span>[left, right] =
+<a href=#133 id=133 data-nosnippet>133</a>                    <a href="#22">this</a>.<a href="../sig.rs.html#144-174">check_shim_sig_lenient</a>(<a href="#18">abi</a>, <a href="../../../../rustc_abi/canon_abi/enum.CanonAbi.html#variant.C">CanonAbi::C</a>, <a href="#17">link_name</a>, <a href="#19">args</a>)<span class="question-mark">?</span>;
+<a href=#134 id=134 data-nosnippet>134</a>
+<a href=#135 id=135 data-nosnippet>135</a>                <span class="kw">let </span>(left, left_len) = <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.project_to_simd">project_to_simd</a>(<a href="#132">left</a>)<span class="question-mark">?</span>;
+<a href=#136 id=136 data-nosnippet>136</a>                <span class="kw">let </span>(right, right_len) = <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.project_to_simd">project_to_simd</a>(<a href="#132">right</a>)<span class="question-mark">?</span>;
+<a href=#137 id=137 data-nosnippet>137</a>
+<a href=#138 id=138 data-nosnippet>138</a>                <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(left_len, right_len);
+<a href=#139 id=139 data-nosnippet>139</a>
+<a href=#140 id=140 data-nosnippet>140</a>                <span class="kw">let </span>left = <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.read_scalar">read_scalar</a>(<span class="kw-2">&amp;</span><a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.project_index">project_index</a>(<span class="kw-2">&amp;</span><a href="#135">left</a>, <span class="number">0</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>.<a href="../../../../rustc_middle/mir/interpret/value/enum.Scalar.html#method.to_f32">to_f32</a>()<span class="question-mark">?</span>;
+<a href=#141 id=141 data-nosnippet>141</a>                <span class="kw">let </span>right = <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.read_scalar">read_scalar</a>(<span class="kw-2">&amp;</span><a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.project_index">project_index</a>(<span class="kw-2">&amp;</span><a href="#136">right</a>, <span class="number">0</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>.<a href="../../../../rustc_middle/mir/interpret/value/enum.Scalar.html#method.to_f32">to_f32</a>()<span class="question-mark">?</span>;
+<a href=#142 id=142 data-nosnippet>142</a>                <span class="comment">// The difference between the com* and ucom* variants is signaling
+<a href=#143 id=143 data-nosnippet>143</a>                // of exceptions when either argument is a quiet NaN. We do not
+<a href=#144 id=144 data-nosnippet>144</a>                // support accessing the SSE status register from miri (or from Rust,
+<a href=#145 id=145 data-nosnippet>145</a>                // for that matter), so we treat both variants equally.
+<a href=#146 id=146 data-nosnippet>146</a>                </span><span class="kw">let </span>res = <span class="kw">match </span><a href="#25">unprefixed_name</a> {
+<a href=#147 id=147 data-nosnippet>147</a>                    <span class="string">"comieq.ss" </span>| <span class="string">"ucomieq.ss" </span>=&gt; <a href="#140">left</a> == <a href="#141">right</a>,
+<a href=#148 id=148 data-nosnippet>148</a>                    <span class="string">"comilt.ss" </span>| <span class="string">"ucomilt.ss" </span>=&gt; <a href="#140">left</a> &lt; <a href="#141">right</a>,
+<a href=#149 id=149 data-nosnippet>149</a>                    <span class="string">"comile.ss" </span>| <span class="string">"ucomile.ss" </span>=&gt; <a href="#140">left</a> &lt;= <a href="#141">right</a>,
+<a href=#150 id=150 data-nosnippet>150</a>                    <span class="string">"comigt.ss" </span>| <span class="string">"ucomigt.ss" </span>=&gt; <a href="#140">left</a> &gt; <a href="#141">right</a>,
+<a href=#151 id=151 data-nosnippet>151</a>                    <span class="string">"comige.ss" </span>| <span class="string">"ucomige.ss" </span>=&gt; <a href="#140">left</a> &gt;= <a href="#141">right</a>,
+<a href=#152 id=152 data-nosnippet>152</a>                    <span class="string">"comineq.ss" </span>| <span class="string">"ucomineq.ss" </span>=&gt; <a href="#140">left</a> != <a href="#141">right</a>,
+<a href=#153 id=153 data-nosnippet>153</a>                    <span class="kw">_ </span>=&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#154 id=154 data-nosnippet>154</a>                };
+<a href=#155 id=155 data-nosnippet>155</a>                <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.write_scalar">write_scalar</a>(<a href="../../../../rustc_middle/mir/interpret/value/enum.Scalar.html#method.from_i32">Scalar::from_i32</a>(<a href="https://doc.rust-lang.org/nightly/core/convert/trait.From.html#tymethod.from">i32::from</a>(<a href="#146">res</a>)), <a href="#20">dest</a>)<span class="question-mark">?</span>;
+<a href=#156 id=156 data-nosnippet>156</a>            }
+<a href=#157 id=157 data-nosnippet>157</a>            <span class="comment">// Use to implement the _mm_cvtss_si32, _mm_cvttss_si32,
+<a href=#158 id=158 data-nosnippet>158</a>            // _mm_cvtss_si64 and _mm_cvttss_si64 functions.
+<a href=#159 id=159 data-nosnippet>159</a>            // Converts the first component of `op` from f32 to i32/i64.
+<a href=#160 id=160 data-nosnippet>160</a>            </span><span class="string">"cvtss2si" </span>| <span class="string">"cvttss2si" </span>| <span class="string">"cvtss2si64" </span>| <span class="string">"cvttss2si64" </span>=&gt; {
+<a href=#161 id=161 data-nosnippet>161</a>                <span class="kw">let </span>[op] = <a href="#22">this</a>.<a href="../sig.rs.html#144-174">check_shim_sig_lenient</a>(<a href="#18">abi</a>, <a href="../../../../rustc_abi/canon_abi/enum.CanonAbi.html#variant.C">CanonAbi::C</a>, <a href="#17">link_name</a>, <a href="#19">args</a>)<span class="question-mark">?</span>;
+<a href=#162 id=162 data-nosnippet>162</a>                <span class="kw">let </span>(op, <span class="kw">_</span>) = <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.project_to_simd">project_to_simd</a>(<a href="#161">op</a>)<span class="question-mark">?</span>;
+<a href=#163 id=163 data-nosnippet>163</a>
+<a href=#164 id=164 data-nosnippet>164</a>                <span class="kw">let </span>op = <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.read_immediate">read_immediate</a>(<span class="kw-2">&amp;</span><a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.project_index">project_index</a>(<span class="kw-2">&amp;</span><a href="#162">op</a>, <span class="number">0</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+<a href=#165 id=165 data-nosnippet>165</a>
+<a href=#166 id=166 data-nosnippet>166</a>                <span class="kw">let </span>rnd = <span class="kw">match </span><a href="#25">unprefixed_name</a> {
+<a href=#167 id=167 data-nosnippet>167</a>                    <span class="comment">// "current SSE rounding mode", assume nearest
+<a href=#168 id=168 data-nosnippet>168</a>                    // https://www.felixcloutier.com/x86/cvtss2si
+<a href=#169 id=169 data-nosnippet>169</a>                    </span><span class="string">"cvtss2si" </span>| <span class="string">"cvtss2si64" </span>=&gt; rustc_apfloat::Round::NearestTiesToEven,
+<a href=#170 id=170 data-nosnippet>170</a>                    <span class="comment">// always truncate
+<a href=#171 id=171 data-nosnippet>171</a>                    // https://www.felixcloutier.com/x86/cvttss2si
+<a href=#172 id=172 data-nosnippet>172</a>                    </span><span class="string">"cvttss2si" </span>| <span class="string">"cvttss2si64" </span>=&gt; rustc_apfloat::Round::TowardZero,
+<a href=#173 id=173 data-nosnippet>173</a>                    <span class="kw">_ </span>=&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#174 id=174 data-nosnippet>174</a>                };
+<a href=#175 id=175 data-nosnippet>175</a>
+<a href=#176 id=176 data-nosnippet>176</a>                <span class="kw">let </span>res = <a href="#22">this</a>.<a href="../../helpers.rs.html#966-1030">float_to_int_checked</a>(<span class="kw-2">&amp;</span><a href="#164">op</a>, <a href="#20">dest</a>.layout, <a href="#166">rnd</a>)<span class="question-mark">?</span>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or_else">unwrap_or_else</a>(|| {
+<a href=#177 id=177 data-nosnippet>177</a>                    <span class="comment">// Fallback to minimum according to SSE semantics.
+<a href=#178 id=178 data-nosnippet>178</a>                    </span><a href="../../../../rustc_const_eval/interpret/operand/struct.ImmTy.html#method.from_int">ImmTy::from_int</a>(<a href="#20">dest</a>.layout.size.<a href="../../../../rustc_abi/struct.Size.html#method.signed_int_min">signed_int_min</a>(), <a href="#20">dest</a>.layout)
+<a href=#179 id=179 data-nosnippet>179</a>                });
+<a href=#180 id=180 data-nosnippet>180</a>
+<a href=#181 id=181 data-nosnippet>181</a>                <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.write_immediate">write_immediate</a>(<span class="kw-2">*</span><a href="#176">res</a>, <a href="#20">dest</a>)<span class="question-mark">?</span>;
+<a href=#182 id=182 data-nosnippet>182</a>            }
+<a href=#183 id=183 data-nosnippet>183</a>            <span class="comment">// Used to implement the _mm_cvtsi32_ss and _mm_cvtsi64_ss functions.
+<a href=#184 id=184 data-nosnippet>184</a>            // Converts `right` from i32/i64 to f32. Returns a SIMD vector with
+<a href=#185 id=185 data-nosnippet>185</a>            // the result in the first component and the remaining components
+<a href=#186 id=186 data-nosnippet>186</a>            // are copied from `left`.
+<a href=#187 id=187 data-nosnippet>187</a>            // https://www.felixcloutier.com/x86/cvtsi2ss
+<a href=#188 id=188 data-nosnippet>188</a>            </span><span class="string">"cvtsi2ss" </span>| <span class="string">"cvtsi642ss" </span>=&gt; {
+<a href=#189 id=189 data-nosnippet>189</a>                <span class="kw">let </span>[left, right] =
+<a href=#190 id=190 data-nosnippet>190</a>                    <a href="#22">this</a>.<a href="../sig.rs.html#144-174">check_shim_sig_lenient</a>(<a href="#18">abi</a>, <a href="../../../../rustc_abi/canon_abi/enum.CanonAbi.html#variant.C">CanonAbi::C</a>, <a href="#17">link_name</a>, <a href="#19">args</a>)<span class="question-mark">?</span>;
+<a href=#191 id=191 data-nosnippet>191</a>
+<a href=#192 id=192 data-nosnippet>192</a>                <span class="kw">let </span>(left, left_len) = <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.project_to_simd">project_to_simd</a>(<a href="#189">left</a>)<span class="question-mark">?</span>;
+<a href=#193 id=193 data-nosnippet>193</a>                <span class="kw">let </span>(dest, dest_len) = <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.project_to_simd">project_to_simd</a>(<a href="#20">dest</a>)<span class="question-mark">?</span>;
+<a href=#194 id=194 data-nosnippet>194</a>
+<a href=#195 id=195 data-nosnippet>195</a>                <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(dest_len, left_len);
+<a href=#196 id=196 data-nosnippet>196</a>
+<a href=#197 id=197 data-nosnippet>197</a>                <span class="kw">let </span>right = <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.read_immediate">read_immediate</a>(<a href="#189">right</a>)<span class="question-mark">?</span>;
+<a href=#198 id=198 data-nosnippet>198</a>                <span class="kw">let </span>dest0 = <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.project_index">project_index</a>(<span class="kw-2">&amp;</span><a href="#193">dest</a>, <span class="number">0</span>)<span class="question-mark">?</span>;
+<a href=#199 id=199 data-nosnippet>199</a>                <span class="kw">let </span>res0 = <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.int_to_int_or_float">int_to_int_or_float</a>(<span class="kw-2">&amp;</span><a href="#197">right</a>, <a href="#198">dest0</a>.layout)<span class="question-mark">?</span>;
+<a href=#200 id=200 data-nosnippet>200</a>                <a href="#22">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.write_immediate">write_immediate</a>(<span class="kw-2">*</span><a href="#199">res0</a>, <span class="kw-2">&amp;</span><a href="#198">dest0</a>)<span class="question-mark">?</span>;
+<a href=#201 id=201 data-nosnippet>201</a>
+<a href=#202 id=202 data-nosnippet>202</a>                <span class="kw">for </span>i <span class="kw">in </span><span class="number">1</span>..dest_len {
+<a href=#203 id=203 data-nosnippet>203</a>                    this.copy_op(<span class="kw-2">&amp;</span>this.project_index(<span class="kw-2">&amp;</span>left, i)<span class="question-mark">?</span>, <span class="kw-2">&amp;</span>this.project_index(<span class="kw-2">&amp;</span>dest, i)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+<a href=#204 id=204 data-nosnippet>204</a>                }
+<a href=#205 id=205 data-nosnippet>205</a>            }
+<a href=#206 id=206 data-nosnippet>206</a>            <span class="kw">_ </span>=&gt; <span class="kw">return </span><a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a href="../mod.rs.html#40">EmulateItemResult::NotSupported</a>),
+<a href=#207 id=207 data-nosnippet>207</a>        }
+<a href=#208 id=208 data-nosnippet>208</a>        <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a href="../mod.rs.html#34">EmulateItemResult::NeedsReturn</a>)
+<a href=#209 id=209 data-nosnippet>209</a>    }
+<a href=#210 id=210 data-nosnippet>210</a>}</code></pre></div></section></main></body></html>

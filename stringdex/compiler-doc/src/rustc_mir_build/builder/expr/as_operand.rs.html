@@ -1,0 +1,202 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_build/src/builder/expr/as_operand.rs`."><title>as_operand.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_mir_build" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-1b37d467.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_build/builder/expr/</div>as_operand.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! See docs in build/expr/mod.rs
+<a href=#2 id=2 data-nosnippet>2</a>
+<a href=#3 id=3 data-nosnippet>3</a></span><span class="kw">use </span><a href="../../../../rustc_middle/mir/index.html">rustc_middle::mir</a>::<span class="kw-2">*</span>;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><a href="../../../../rustc_middle/thir/index.html">rustc_middle::thir</a>::<span class="kw-2">*</span>;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug</a>, <a href="https://docs.rs/tracing-attributes/0.1.30/tracing_attributes/attr.instrument.html">instrument</a>};
+<a href=#6 id=6 data-nosnippet>6</a>
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span><a href="category.rs.html#4-17"><span class="kw">crate</span>::builder::expr::category::Category</a>;
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><span class="kw">crate</span>::builder::{<a href="../mod.rs.html#404">BlockAnd</a>, <a href="../mod.rs.html#415-418">BlockAndExtension</a>, <a href="../mod.rs.html#145-221">Builder</a>, <a href="../mod.rs.html#386-395">NeedsTemporary</a>};
+<a href=#9 id=9 data-nosnippet>9</a>
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; <a href="../mod.rs.html#145-221">Builder</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#11 id=11 data-nosnippet>11</a>    <span class="doccomment">/// Construct a temporary lifetime restricted to just the local scope
+<a href=#12 id=12 data-nosnippet>12</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>local_temp_lifetime(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="../../../../rustc_middle/thir/struct.TempLifetime.html">TempLifetime</a> {
+<a href=#13 id=13 data-nosnippet>13</a>        <span class="kw">let </span>local_scope = <a class="self" href="#12">self</a>.<a href="../scope.rs.html#1355-1357">local_scope</a>();
+<a href=#14 id=14 data-nosnippet>14</a>        <a href="../../../../rustc_middle/thir/struct.TempLifetime.html">TempLifetime</a> { temp_lifetime: <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#13">local_scope</a>), backwards_incompatible: <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a> </a>}
+<a href=#15 id=15 data-nosnippet>15</a>    }
+<a href=#16 id=16 data-nosnippet>16</a>
+<a href=#17 id=17 data-nosnippet>17</a>    <span class="doccomment">/// Returns an operand suitable for use until the end of the current
+<a href=#18 id=18 data-nosnippet>18</a>    /// scope expression.
+<a href=#19 id=19 data-nosnippet>19</a>    ///
+<a href=#20 id=20 data-nosnippet>20</a>    /// The operand returned from this function will *not be valid*
+<a href=#21 id=21 data-nosnippet>21</a>    /// after the current enclosing `ExprKind::Scope` has ended, so
+<a href=#22 id=22 data-nosnippet>22</a>    /// please do *not* return it from functions to avoid bad
+<a href=#23 id=23 data-nosnippet>23</a>    /// miscompiles.
+<a href=#24 id=24 data-nosnippet>24</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>as_local_operand(
+<a href=#25 id=25 data-nosnippet>25</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#26 id=26 data-nosnippet>26</a>        block: <a href="../../../../rustc_middle/mir/struct.BasicBlock.html">BasicBlock</a>,
+<a href=#27 id=27 data-nosnippet>27</a>        expr_id: <a href="../../../../rustc_middle/thir/struct.ExprId.html">ExprId</a>,
+<a href=#28 id=28 data-nosnippet>28</a>    ) -&gt; <a href="../mod.rs.html#404">BlockAnd</a>&lt;<a href="../../../../rustc_middle/mir/syntax/enum.Operand.html">Operand</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#29 id=29 data-nosnippet>29</a>        <a class="self" href="#25">self</a>.<a href="#113-155">as_operand</a>(
+<a href=#30 id=30 data-nosnippet>30</a>            <a href="#26">block</a>,
+<a href=#31 id=31 data-nosnippet>31</a>            <a class="self" href="#25">self</a>.<a href="#12-15">local_temp_lifetime</a>(),
+<a href=#32 id=32 data-nosnippet>32</a>            <a href="#27">expr_id</a>,
+<a href=#33 id=33 data-nosnippet>33</a>            <a href="../../../../rustc_middle/mir/enum.LocalInfo.html#variant.Boring">LocalInfo::Boring</a>,
+<a href=#34 id=34 data-nosnippet>34</a>            <a href="../mod.rs.html#394">NeedsTemporary::Maybe</a>,
+<a href=#35 id=35 data-nosnippet>35</a>        )
+<a href=#36 id=36 data-nosnippet>36</a>    }
+<a href=#37 id=37 data-nosnippet>37</a>
+<a href=#38 id=38 data-nosnippet>38</a>    <span class="doccomment">/// Returns an operand suitable for use until the end of the current scope expression and
+<a href=#39 id=39 data-nosnippet>39</a>    /// suitable also to be passed as function arguments.
+<a href=#40 id=40 data-nosnippet>40</a>    ///
+<a href=#41 id=41 data-nosnippet>41</a>    /// The operand returned from this function will *not be valid* after an ExprKind::Scope is
+<a href=#42 id=42 data-nosnippet>42</a>    /// passed, so please do *not* return it from functions to avoid bad miscompiles. Returns an
+<a href=#43 id=43 data-nosnippet>43</a>    /// operand suitable for use as a call argument. This is almost always equivalent to
+<a href=#44 id=44 data-nosnippet>44</a>    /// `as_operand`, except for the particular case of passing values of (potentially) unsized
+<a href=#45 id=45 data-nosnippet>45</a>    /// types "by value" (see details below).
+<a href=#46 id=46 data-nosnippet>46</a>    ///
+<a href=#47 id=47 data-nosnippet>47</a>    /// The operand returned from this function will *not be valid*
+<a href=#48 id=48 data-nosnippet>48</a>    /// after the current enclosing `ExprKind::Scope` has ended, so
+<a href=#49 id=49 data-nosnippet>49</a>    /// please do *not* return it from functions to avoid bad
+<a href=#50 id=50 data-nosnippet>50</a>    /// miscompiles.
+<a href=#51 id=51 data-nosnippet>51</a>    ///
+<a href=#52 id=52 data-nosnippet>52</a>    /// # Parameters of unsized types
+<a href=#53 id=53 data-nosnippet>53</a>    ///
+<a href=#54 id=54 data-nosnippet>54</a>    /// We tweak the handling of parameters of unsized type slightly to avoid the need to create a
+<a href=#55 id=55 data-nosnippet>55</a>    /// local variable of unsized type. For example, consider this program:
+<a href=#56 id=56 data-nosnippet>56</a>    ///
+<a href=#57 id=57 data-nosnippet>57</a>    /// ```
+<a href=#58 id=58 data-nosnippet>58</a>    /// #![feature(unsized_fn_params)]
+<a href=#59 id=59 data-nosnippet>59</a>    /// # use core::fmt::Debug;
+<a href=#60 id=60 data-nosnippet>60</a>    /// fn foo(_p: dyn Debug) {
+<a href=#61 id=61 data-nosnippet>61</a>    ///     /* ... */
+<a href=#62 id=62 data-nosnippet>62</a>    /// }
+<a href=#63 id=63 data-nosnippet>63</a>    ///
+<a href=#64 id=64 data-nosnippet>64</a>    /// fn bar(box_p: Box&lt;dyn Debug&gt;) { foo(*box_p); }
+<a href=#65 id=65 data-nosnippet>65</a>    /// ```
+<a href=#66 id=66 data-nosnippet>66</a>    ///
+<a href=#67 id=67 data-nosnippet>67</a>    /// Ordinarily, for sized types, we would compile the call `foo(*p)` like so:
+<a href=#68 id=68 data-nosnippet>68</a>    ///
+<a href=#69 id=69 data-nosnippet>69</a>    /// ```ignore (illustrative)
+<a href=#70 id=70 data-nosnippet>70</a>    /// let tmp0 = *box_p; // tmp0 would be the operand returned by this function call
+<a href=#71 id=71 data-nosnippet>71</a>    /// foo(tmp0)
+<a href=#72 id=72 data-nosnippet>72</a>    /// ```
+<a href=#73 id=73 data-nosnippet>73</a>    ///
+<a href=#74 id=74 data-nosnippet>74</a>    /// But because the parameter to `foo` is of the unsized type `dyn Debug`, and because it is
+<a href=#75 id=75 data-nosnippet>75</a>    /// being moved the deref of a box, we compile it slightly differently. The temporary `tmp0`
+<a href=#76 id=76 data-nosnippet>76</a>    /// that we create *stores the entire box*, and the parameter to the call itself will be
+<a href=#77 id=77 data-nosnippet>77</a>    /// `*tmp0`:
+<a href=#78 id=78 data-nosnippet>78</a>    ///
+<a href=#79 id=79 data-nosnippet>79</a>    /// ```ignore (illustrative)
+<a href=#80 id=80 data-nosnippet>80</a>    /// let tmp0 = box_p; call foo(*tmp0)
+<a href=#81 id=81 data-nosnippet>81</a>    /// ```
+<a href=#82 id=82 data-nosnippet>82</a>    ///
+<a href=#83 id=83 data-nosnippet>83</a>    /// This way, the temporary `tmp0` that we create has type `Box&lt;dyn Debug&gt;`, which is sized.
+<a href=#84 id=84 data-nosnippet>84</a>    /// The value passed to the call (`*tmp0`) still has the `dyn Debug` type -- but the way that
+<a href=#85 id=85 data-nosnippet>85</a>    /// calls are compiled means that this parameter will be passed "by reference", meaning that we
+<a href=#86 id=86 data-nosnippet>86</a>    /// will actually provide a pointer to the interior of the box, and not move the `dyn Debug`
+<a href=#87 id=87 data-nosnippet>87</a>    /// value to the stack.
+<a href=#88 id=88 data-nosnippet>88</a>    ///
+<a href=#89 id=89 data-nosnippet>89</a>    /// See &lt;https://github.com/rust-lang/rust/issues/68304&gt; for more details.
+<a href=#90 id=90 data-nosnippet>90</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>as_local_call_operand(
+<a href=#91 id=91 data-nosnippet>91</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#92 id=92 data-nosnippet>92</a>        block: <a href="../../../../rustc_middle/mir/struct.BasicBlock.html">BasicBlock</a>,
+<a href=#93 id=93 data-nosnippet>93</a>        expr: <a href="../../../../rustc_middle/thir/struct.ExprId.html">ExprId</a>,
+<a href=#94 id=94 data-nosnippet>94</a>    ) -&gt; <a href="../mod.rs.html#404">BlockAnd</a>&lt;<a href="../../../../rustc_middle/mir/syntax/enum.Operand.html">Operand</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#95 id=95 data-nosnippet>95</a>        <a class="self" href="#91">self</a>.<a href="#157-201">as_call_operand</a>(<a href="#92">block</a>, <a class="self" href="#91">self</a>.<a href="#12-15">local_temp_lifetime</a>(), <a href="#93">expr</a>)
+<a href=#96 id=96 data-nosnippet>96</a>    }
+<a href=#97 id=97 data-nosnippet>97</a>
+<a href=#98 id=98 data-nosnippet>98</a>    <span class="doccomment">/// Compile `expr` into a value that can be used as an operand.
+<a href=#99 id=99 data-nosnippet>99</a>    /// If `expr` is a place like `x`, this will introduce a
+<a href=#100 id=100 data-nosnippet>100</a>    /// temporary `tmp = x`, so that we capture the value of `x` at
+<a href=#101 id=101 data-nosnippet>101</a>    /// this time.
+<a href=#102 id=102 data-nosnippet>102</a>    ///
+<a href=#103 id=103 data-nosnippet>103</a>    /// If we end up needing to create a temporary, then we will use
+<a href=#104 id=104 data-nosnippet>104</a>    /// `local_info` as its `LocalInfo`, unless `as_temporary`
+<a href=#105 id=105 data-nosnippet>105</a>    /// has already assigned it a non-`None` `LocalInfo`.
+<a href=#106 id=106 data-nosnippet>106</a>    /// Normally, you should use `None` for `local_info`
+<a href=#107 id=107 data-nosnippet>107</a>    ///
+<a href=#108 id=108 data-nosnippet>108</a>    /// The operand is known to be live until the end of `scope`.
+<a href=#109 id=109 data-nosnippet>109</a>    ///
+<a href=#110 id=110 data-nosnippet>110</a>    /// Like `as_local_call_operand`, except that the argument will
+<a href=#111 id=111 data-nosnippet>111</a>    /// not be valid once `scope` ends.
+<a href=#112 id=112 data-nosnippet>112</a>    </span><span class="attr">#[instrument(level = <span class="string">"debug"</span>, skip(<span class="self">self</span>, scope))]
+<a href=#113 id=113 data-nosnippet>113</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>as_operand(
+<a href=#114 id=114 data-nosnippet>114</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#115 id=115 data-nosnippet>115</a>        <span class="kw-2">mut </span>block: <a href="../../../../rustc_middle/mir/struct.BasicBlock.html">BasicBlock</a>,
+<a href=#116 id=116 data-nosnippet>116</a>        scope: <a href="../../../../rustc_middle/thir/struct.TempLifetime.html">TempLifetime</a>,
+<a href=#117 id=117 data-nosnippet>117</a>        expr_id: <a href="../../../../rustc_middle/thir/struct.ExprId.html">ExprId</a>,
+<a href=#118 id=118 data-nosnippet>118</a>        local_info: <a href="../../../../rustc_middle/mir/enum.LocalInfo.html">LocalInfo</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#119 id=119 data-nosnippet>119</a>        needs_temporary: <a href="../mod.rs.html#386-395">NeedsTemporary</a>,
+<a href=#120 id=120 data-nosnippet>120</a>    ) -&gt; <a href="../mod.rs.html#404">BlockAnd</a>&lt;<a href="../../../../rustc_middle/mir/syntax/enum.Operand.html">Operand</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#121 id=121 data-nosnippet>121</a>        <span class="kw">let </span>this = <span class="self">self</span>;
+<a href=#122 id=122 data-nosnippet>122</a>
+<a href=#123 id=123 data-nosnippet>123</a>        <span class="kw">let </span>expr = <span class="kw-2">&amp;</span>this.thir[expr_id];
+<a href=#124 id=124 data-nosnippet>124</a>        <span class="kw">if let </span>ExprKind::Scope { region_scope, lint_level, value } = expr.kind {
+<a href=#125 id=125 data-nosnippet>125</a>            <span class="kw">let </span>source_info = this.source_info(expr.span);
+<a href=#126 id=126 data-nosnippet>126</a>            <span class="kw">let </span>region_scope = (region_scope, source_info);
+<a href=#127 id=127 data-nosnippet>127</a>            <span class="kw">return </span>this.in_scope(region_scope, lint_level, |this| {
+<a href=#128 id=128 data-nosnippet>128</a>                this.as_operand(block, scope, value, local_info, needs_temporary)
+<a href=#129 id=129 data-nosnippet>129</a>            });
+<a href=#130 id=130 data-nosnippet>130</a>        }
+<a href=#131 id=131 data-nosnippet>131</a>
+<a href=#132 id=132 data-nosnippet>132</a>        <span class="kw">let </span>category = Category::of(<span class="kw-2">&amp;</span>expr.kind).unwrap();
+<a href=#133 id=133 data-nosnippet>133</a>        <span class="macro">debug!</span>(<span class="question-mark">?</span>category, <span class="question-mark">?</span>expr.kind);
+<a href=#134 id=134 data-nosnippet>134</a>        <span class="kw">match </span>category {
+<a href=#135 id=135 data-nosnippet>135</a>            Category::Constant
+<a href=#136 id=136 data-nosnippet>136</a>                <span class="kw">if </span><span class="macro">matches!</span>(needs_temporary, NeedsTemporary::No)
+<a href=#137 id=137 data-nosnippet>137</a>                    || !expr.ty.needs_drop(this.tcx, this.typing_env()) =&gt;
+<a href=#138 id=138 data-nosnippet>138</a>            {
+<a href=#139 id=139 data-nosnippet>139</a>                <span class="kw">let </span>constant = this.as_constant(expr);
+<a href=#140 id=140 data-nosnippet>140</a>                block.and(Operand::Constant(Box::new(constant)))
+<a href=#141 id=141 data-nosnippet>141</a>            }
+<a href=#142 id=142 data-nosnippet>142</a>            Category::Constant | Category::Place | Category::Rvalue(..) =&gt; {
+<a href=#143 id=143 data-nosnippet>143</a>                <span class="kw">let </span>operand = <span class="macro">unpack!</span>(block = this.as_temp(block, scope, expr_id, Mutability::Mut));
+<a href=#144 id=144 data-nosnippet>144</a>                <span class="comment">// Overwrite temp local info if we have something more interesting to record.
+<a href=#145 id=145 data-nosnippet>145</a>                </span><span class="kw">if </span>!<span class="macro">matches!</span>(local_info, LocalInfo::Boring) {
+<a href=#146 id=146 data-nosnippet>146</a>                    <span class="kw">let </span>decl_info =
+<a href=#147 id=147 data-nosnippet>147</a>                        this.local_decls[operand].local_info.as_mut().unwrap_crate_local();
+<a href=#148 id=148 data-nosnippet>148</a>                    <span class="kw">if let </span>LocalInfo::Boring | LocalInfo::BlockTailTemp(<span class="kw">_</span>) = <span class="kw-2">**</span>decl_info {
+<a href=#149 id=149 data-nosnippet>149</a>                        <span class="kw-2">**</span>decl_info = local_info;
+<a href=#150 id=150 data-nosnippet>150</a>                    }
+<a href=#151 id=151 data-nosnippet>151</a>                }
+<a href=#152 id=152 data-nosnippet>152</a>                block.and(Operand::Move(Place::from(operand)))
+<a href=#153 id=153 data-nosnippet>153</a>            }
+<a href=#154 id=154 data-nosnippet>154</a>        }
+<a href=#155 id=155 data-nosnippet>155</a>    }
+<a href=#156 id=156 data-nosnippet>156</a>
+<a href=#157 id=157 data-nosnippet>157</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>as_call_operand(
+<a href=#158 id=158 data-nosnippet>158</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#159 id=159 data-nosnippet>159</a>        <span class="kw-2">mut </span>block: <a href="../../../../rustc_middle/mir/struct.BasicBlock.html">BasicBlock</a>,
+<a href=#160 id=160 data-nosnippet>160</a>        scope: <a href="../../../../rustc_middle/thir/struct.TempLifetime.html">TempLifetime</a>,
+<a href=#161 id=161 data-nosnippet>161</a>        expr_id: <a href="../../../../rustc_middle/thir/struct.ExprId.html">ExprId</a>,
+<a href=#162 id=162 data-nosnippet>162</a>    ) -&gt; <a href="../mod.rs.html#404">BlockAnd</a>&lt;<a href="../../../../rustc_middle/mir/syntax/enum.Operand.html">Operand</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#163 id=163 data-nosnippet>163</a>        <span class="kw">let </span>this = <a class="self" href="#158">self</a>;
+<a href=#164 id=164 data-nosnippet>164</a>        <span class="kw">let </span>expr = <span class="kw-2">&amp;</span><a href="#163">this</a>.thir[<a href="#161">expr_id</a>];
+<a href=#165 id=165 data-nosnippet>165</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"as_call_operand(block={:?}, expr={:?})"</span>, block, expr);
+<a href=#166 id=166 data-nosnippet>166</a>
+<a href=#167 id=167 data-nosnippet>167</a>        <span class="kw">if let </span><a href="../../../../rustc_middle/thir/enum.ExprKind.html#variant.Scope">ExprKind::Scope</a> { region_scope, lint_level, value } = <a href="#164">expr</a>.kind {
+<a href=#168 id=168 data-nosnippet>168</a>            <span class="kw">let </span>source_info = <a href="#163">this</a>.<a href="../scope.rs.html#1329-1331">source_info</a>(<a href="#164">expr</a>.span);
+<a href=#169 id=169 data-nosnippet>169</a>            <span class="kw">let </span>region_scope = (<a href="#167">region_scope</a>, <a href="#168">source_info</a>);
+<a href=#170 id=170 data-nosnippet>170</a>            <span class="kw">return </span><a href="#163">this</a>.<a href="../scope.rs.html#676-698">in_scope</a>(<a href="#169">region_scope</a>, <a href="#167">lint_level</a>, |this| {
+<a href=#171 id=171 data-nosnippet>171</a>                <a href="#170">this</a>.<a href="#157-201">as_call_operand</a>(<a href="#159">block</a>, <a href="#160">scope</a>, <a href="#167">value</a>)
+<a href=#172 id=172 data-nosnippet>172</a>            });
+<a href=#173 id=173 data-nosnippet>173</a>        }
+<a href=#174 id=174 data-nosnippet>174</a>
+<a href=#175 id=175 data-nosnippet>175</a>        <span class="kw">let </span>tcx = <a href="#163">this</a>.tcx;
+<a href=#176 id=176 data-nosnippet>176</a>
+<a href=#177 id=177 data-nosnippet>177</a>        <span class="kw">if </span><a href="#175">tcx</a>.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.features">features</a>().<a href="../../../../rustc_feature/unstable/struct.Features.html#method.unsized_fn_params">unsized_fn_params</a>() {
+<a href=#178 id=178 data-nosnippet>178</a>            <span class="kw">let </span>ty = <a href="#164">expr</a>.ty;
+<a href=#179 id=179 data-nosnippet>179</a>            <span class="kw">if </span>!<a href="#178">ty</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.is_sized">is_sized</a>(<a href="#175">tcx</a>, <a href="#163">this</a>.<a href="../mod.rs.html#233-235">typing_env</a>()) {
+<a href=#180 id=180 data-nosnippet>180</a>                <span class="comment">// !sized means !copy, so this is an unsized move
+<a href=#181 id=181 data-nosnippet>181</a>                </span><a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert.html">assert!</a>(!tcx.type_is_copy_modulo_regions(this.typing_env(), ty));
+<a href=#182 id=182 data-nosnippet>182</a>
+<a href=#183 id=183 data-nosnippet>183</a>                <span class="comment">// As described above, detect the case where we are passing a value of unsized
+<a href=#184 id=184 data-nosnippet>184</a>                // type, and that value is coming from the deref of a box.
+<a href=#185 id=185 data-nosnippet>185</a>                </span><span class="kw">if let </span><a href="../../../../rustc_middle/thir/enum.ExprKind.html#variant.Deref">ExprKind::Deref</a> { arg } = <a href="#164">expr</a>.kind {
+<a href=#186 id=186 data-nosnippet>186</a>                    <span class="comment">// Generate let tmp0 = arg0
+<a href=#187 id=187 data-nosnippet>187</a>                    </span><span class="kw">let </span>operand = <a class="macro" href="../mod.rs.html#432-438">unpack!</a>(block = this.as_temp(block, scope, arg, Mutability::Mut));
+<a href=#188 id=188 data-nosnippet>188</a>
+<a href=#189 id=189 data-nosnippet>189</a>                    <span class="comment">// Return the operand *tmp0 to be used as the call argument
+<a href=#190 id=190 data-nosnippet>190</a>                    </span><span class="kw">let </span>place = <a href="../../../../rustc_middle/mir/syntax/struct.Place.html">Place</a> {
+<a href=#191 id=191 data-nosnippet>191</a>                        local: <a href="#187">operand</a>,
+<a href=#192 id=192 data-nosnippet>192</a>                        projection: <a href="#175">tcx</a>.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.mk_place_elems">mk_place_elems</a>(<span class="kw-2">&amp;</span>[PlaceElem::Deref]),
+<a href=#193 id=193 data-nosnippet>193</a>                    };
+<a href=#194 id=194 data-nosnippet>194</a>
+<a href=#195 id=195 data-nosnippet>195</a>                    <span class="kw">return </span><a href="#159">block</a>.<a href="../mod.rs.html#416">and</a>(<a href="../../../../rustc_middle/mir/syntax/enum.Operand.html#variant.Move">Operand::Move</a>(<a href="#190">place</a>));
+<a href=#196 id=196 data-nosnippet>196</a>                }
+<a href=#197 id=197 data-nosnippet>197</a>            }
+<a href=#198 id=198 data-nosnippet>198</a>        }
+<a href=#199 id=199 data-nosnippet>199</a>
+<a href=#200 id=200 data-nosnippet>200</a>        <a href="#163">this</a>.<a href="#113-155">as_operand</a>(<a href="#159">block</a>, <a href="#160">scope</a>, <a href="#161">expr_id</a>, <a href="../../../../rustc_middle/mir/enum.LocalInfo.html#variant.Boring">LocalInfo::Boring</a>, <a href="../mod.rs.html#394">NeedsTemporary::Maybe</a>)
+<a href=#201 id=201 data-nosnippet>201</a>    }
+<a href=#202 id=202 data-nosnippet>202</a>}</code></pre></div></section></main></body></html>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["expand_deriving_partial_eq","get_field_equality_expr","get_substructure_equality_expr","peel_refs","wrap_block_expr"]};
