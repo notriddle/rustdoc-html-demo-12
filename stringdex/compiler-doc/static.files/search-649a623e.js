@@ -4252,7 +4252,7 @@ class DocSearch {
                             if ((checkCounter & 0x7F) === 0) {
                                 await yieldToBrowser();
                             }
-                            resultPromises.push(this.getFunctionData(id).then(async (fnData) => {
+                            resultPromises.push(this.getFunctionData(id).then(async fnData => {
                                 if (!fnData || !fnData.functionSignature) {
                                     return null;
                                 }
@@ -5075,6 +5075,11 @@ const database = await Stringdex.loadDatabase(hooks);
 if (typeof window !== "undefined") {
     docSearch = new DocSearch(ROOT_PATH, database);
     await docSearch.buildIndex();
+    onEachLazy(document.querySelectorAll(
+        ".search-form.loading",
+    ), form => {
+        removeClass(form, "loading");
+    });
     registerSearchEvents();
     // If there's a search term in the URL, execute the search now.
     if (window.searchState.getQueryStringParams().search !== undefined) {
