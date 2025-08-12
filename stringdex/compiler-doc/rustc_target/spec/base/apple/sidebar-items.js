@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["Arch","TargetAbi"],"fn":["base","deployment_target_env_var","link_env_remove","unversioned_llvm_target"],"struct":["OSVersion"]};
+window.SIDEBAR_ITEMS = {"enum":["Arch","TargetEnv"],"fn":["base","deployment_target_env_var","link_env_remove","unversioned_llvm_target"],"struct":["OSVersion"]};

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_lint/src/unused.rs`."><title>unused.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_lint" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_lint/</div>unused.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/iter/index.html">std::iter</a>;
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_lint/src/unused.rs`."><title>unused.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_lint" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_lint/</div>unused.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/iter/index.html">std::iter</a>;
 <a href=#2 id=2 data-nosnippet>2</a>
 <a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>rustc_ast::util::{<a href="../../rustc_ast/util/classify/index.html">classify</a>, <a href="../../rustc_ast/util/parser/index.html">parser</a>};
 <a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>rustc_ast::{<span class="self"><a href="../../rustc_ast/index.html">self</a> </span><span class="kw">as </span>ast, <a href="../../rustc_ast/ast/enum.ExprKind.html">ExprKind</a>, <a href="../../rustc_ast/ast/enum.FnRetTy.html">FnRetTy</a>, <a href="../../rustc_ast/ast_traits/trait.HasAttrs.html">HasAttrs</a> <span class="kw">as _</span>, <a href="../../rustc_ast/ast/enum.StmtKind.html">StmtKind</a>};
@@ -16,10 +16,10 @@
 <a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span><a href="https://docs.rs/tracing-attributes/0.1.30/tracing_attributes/attr.instrument.html">tracing::instrument</a>;
 <a href=#17 id=17 data-nosnippet>17</a>
 <a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span><span class="kw">crate</span>::lints::{
-<a href=#19 id=19 data-nosnippet>19</a>    <a href="lints.rs.html#2147-2150">PathStatementDrop</a>, <a href="lints.rs.html#2153-2165">PathStatementDropSub</a>, <a href="lints.rs.html#2169">PathStatementNoEffect</a>, <a href="lints.rs.html#2199">UnusedAllocationDiag</a>,
-<a href=#20 id=20 data-nosnippet>20</a>    <a href="lints.rs.html#2203">UnusedAllocationMutDiag</a>, <a href="lints.rs.html#2078-2082">UnusedClosure</a>, <a href="lints.rs.html#2089-2093">UnusedCoroutine</a>, <a href="lints.rs.html#2097-2104">UnusedDef</a>, <a href="lints.rs.html#2108-2126">UnusedDefSuggestion</a>,
-<a href=#21 id=21 data-nosnippet>21</a>    <a href="lints.rs.html#2173-2178">UnusedDelim</a>, <a href="lints.rs.html#2182-2189">UnusedDelimSuggestion</a>, <a href="lints.rs.html#2193-2195">UnusedImportBracesDiag</a>, <a href="lints.rs.html#2038-2044">UnusedOp</a>, <a href="lints.rs.html#2047-2065">UnusedOpSuggestion</a>,
-<a href=#22 id=22 data-nosnippet>22</a>    <a href="lints.rs.html#2069-2071">UnusedResult</a>,
+<a href=#19 id=19 data-nosnippet>19</a>    <a href="lints.rs.html#2146-2149">PathStatementDrop</a>, <a href="lints.rs.html#2152-2164">PathStatementDropSub</a>, <a href="lints.rs.html#2168">PathStatementNoEffect</a>, <a href="lints.rs.html#2198">UnusedAllocationDiag</a>,
+<a href=#20 id=20 data-nosnippet>20</a>    <a href="lints.rs.html#2202">UnusedAllocationMutDiag</a>, <a href="lints.rs.html#2077-2081">UnusedClosure</a>, <a href="lints.rs.html#2088-2092">UnusedCoroutine</a>, <a href="lints.rs.html#2096-2103">UnusedDef</a>, <a href="lints.rs.html#2107-2125">UnusedDefSuggestion</a>,
+<a href=#21 id=21 data-nosnippet>21</a>    <a href="lints.rs.html#2172-2177">UnusedDelim</a>, <a href="lints.rs.html#2181-2188">UnusedDelimSuggestion</a>, <a href="lints.rs.html#2192-2194">UnusedImportBracesDiag</a>, <a href="lints.rs.html#2037-2043">UnusedOp</a>, <a href="lints.rs.html#2046-2064">UnusedOpSuggestion</a>,
+<a href=#22 id=22 data-nosnippet>22</a>    <a href="lints.rs.html#2068-2070">UnusedResult</a>,
 <a href=#23 id=23 data-nosnippet>23</a>};
 <a href=#24 id=24 data-nosnippet>24</a><span class="kw">use crate</span>::{<a href="context.rs.html#493-496">EarlyContext</a>, <a href="passes.rs.html#191">EarlyLintPass</a>, <a href="context.rs.html#464-490">LateContext</a>, <a href="passes.rs.html#72">LateLintPass</a>, <a href="../../rustc_lint/struct.Lint.html">Lint</a>, <a href="context.rs.html#498-597">LintContext</a>};
 <a href=#25 id=25 data-nosnippet>25</a>
@@ -189,16 +189,16 @@
 <a href=#189 id=189 data-nosnippet>189</a>            <a href="#98">cx</a>.<a href="context.rs.html#517-526">emit_span_lint</a>(
 <a href=#190 id=190 data-nosnippet>190</a>                <a href="#26-54">UNUSED_MUST_USE</a>,
 <a href=#191 id=191 data-nosnippet>191</a>                <a href="#99">expr</a>.span,
-<a href=#192 id=192 data-nosnippet>192</a>                <a href="lints.rs.html#2038-2044">UnusedOp</a> {
+<a href=#192 id=192 data-nosnippet>192</a>                <a href="lints.rs.html#2037-2043">UnusedOp</a> {
 <a href=#193 id=193 data-nosnippet>193</a>                    op: <a href="#187">must_use_op</a>,
 <a href=#194 id=194 data-nosnippet>194</a>                    label: <a href="#99">expr</a>.span,
 <a href=#195 id=195 data-nosnippet>195</a>                    suggestion: <span class="kw">if </span><a href="#103">expr_is_from_block</a> {
-<a href=#196 id=196 data-nosnippet>196</a>                        <a href="lints.rs.html#2059-2064">UnusedOpSuggestion::BlockTailExpr</a> {
+<a href=#196 id=196 data-nosnippet>196</a>                        <a href="lints.rs.html#2058-2063">UnusedOpSuggestion::BlockTailExpr</a> {
 <a href=#197 id=197 data-nosnippet>197</a>                            before_span: <a href="#188">span</a>.<a href="../../rustc_span/span_encoding/struct.Span.html#method.shrink_to_lo">shrink_to_lo</a>(),
 <a href=#198 id=198 data-nosnippet>198</a>                            after_span: <a href="#188">span</a>.<a href="../../rustc_span/span_encoding/struct.Span.html#method.shrink_to_hi">shrink_to_hi</a>(),
 <a href=#199 id=199 data-nosnippet>199</a>                        }
 <a href=#200 id=200 data-nosnippet>200</a>                    } <span class="kw">else </span>{
-<a href=#201 id=201 data-nosnippet>201</a>                        <a href="lints.rs.html#2054-2057">UnusedOpSuggestion::NormalExpr</a> { span: <a href="#188">span</a>.<a href="../../rustc_span/span_encoding/struct.Span.html#method.shrink_to_lo">shrink_to_lo</a>() }
+<a href=#201 id=201 data-nosnippet>201</a>                        <a href="lints.rs.html#2053-2056">UnusedOpSuggestion::NormalExpr</a> { span: <a href="#188">span</a>.<a href="../../rustc_span/span_encoding/struct.Span.html#method.shrink_to_lo">shrink_to_lo</a>() }
 <a href=#202 id=202 data-nosnippet>202</a>                    },
 <a href=#203 id=203 data-nosnippet>203</a>                },
 <a href=#204 id=204 data-nosnippet>204</a>            );
@@ -206,7 +206,7 @@
 <a href=#206 id=206 data-nosnippet>206</a>        }
 <a href=#207 id=207 data-nosnippet>207</a>
 <a href=#208 id=208 data-nosnippet>208</a>        <span class="kw">if </span>!(<a href="#140">type_lint_emitted_or_suppressed</a> || <a href="#148">fn_warned</a> || <a href="#185">op_warned</a>) {
-<a href=#209 id=209 data-nosnippet>209</a>            <a href="#98">cx</a>.<a href="context.rs.html#517-526">emit_span_lint</a>(<a href="#56-93">UNUSED_RESULTS</a>, <a href="#98">s</a>.span, <a href="lints.rs.html#2069-2071">UnusedResult</a> { <a href="#137">ty</a> });
+<a href=#209 id=209 data-nosnippet>209</a>            <a href="#98">cx</a>.<a href="context.rs.html#517-526">emit_span_lint</a>(<a href="#56-93">UNUSED_RESULTS</a>, <a href="#98">s</a>.span, <a href="lints.rs.html#2068-2070">UnusedResult</a> { <a href="#137">ty</a> });
 <a href=#210 id=210 data-nosnippet>210</a>        }
 <a href=#211 id=211 data-nosnippet>211</a>
 <a href=#212 id=212 data-nosnippet>212</a>        <span class="kw">fn </span>check_fn_must_use(
@@ -568,13 +568,13 @@
 <a href=#568 id=568 data-nosnippet>568</a>            <span class="kw">let </span>ty = <a href="#564">cx</a>.<a href="context.rs.html#705-707">typeck_results</a>().<a href="../../rustc_middle/ty/typeck_results/struct.TypeckResults.html#method.expr_ty">expr_ty</a>(<a href="#565">expr</a>);
 <a href=#569 id=569 data-nosnippet>569</a>            <span class="kw">if </span><a href="#568">ty</a>.<a href="../../rustc_middle/ty/struct.Ty.html#method.needs_drop">needs_drop</a>(<a href="#564">cx</a>.tcx, <a href="#564">cx</a>.<a href="context.rs.html#677-679">typing_env</a>()) {
 <a href=#570 id=570 data-nosnippet>570</a>                <span class="kw">let </span>sub = <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(snippet) = <a href="#564">cx</a>.<a href="context.rs.html#499">sess</a>().<a href="../../rustc_session/session/struct.Session.html#method.source_map">source_map</a>().<a href="../../rustc_span/source_map/struct.SourceMap.html#method.span_to_snippet">span_to_snippet</a>(<a href="#565">expr</a>.span) {
-<a href=#571 id=571 data-nosnippet>571</a>                    <a href="lints.rs.html#2155-2159">PathStatementDropSub::Suggestion</a> { span: <a href="#564">s</a>.span, <a href="#570">snippet</a> }
+<a href=#571 id=571 data-nosnippet>571</a>                    <a href="lints.rs.html#2154-2158">PathStatementDropSub::Suggestion</a> { span: <a href="#564">s</a>.span, <a href="#570">snippet</a> }
 <a href=#572 id=572 data-nosnippet>572</a>                } <span class="kw">else </span>{
-<a href=#573 id=573 data-nosnippet>573</a>                    <a href="lints.rs.html#2161-2164">PathStatementDropSub::Help</a> { span: <a href="#564">s</a>.span }
+<a href=#573 id=573 data-nosnippet>573</a>                    <a href="lints.rs.html#2160-2163">PathStatementDropSub::Help</a> { span: <a href="#564">s</a>.span }
 <a href=#574 id=574 data-nosnippet>574</a>                };
-<a href=#575 id=575 data-nosnippet>575</a>                <a href="#564">cx</a>.<a href="context.rs.html#517-526">emit_span_lint</a>(<a href="#540-559">PATH_STATEMENTS</a>, <a href="#564">s</a>.span, <a href="lints.rs.html#2147-2150">PathStatementDrop</a> { <a href="#570">sub</a> })
+<a href=#575 id=575 data-nosnippet>575</a>                <a href="#564">cx</a>.<a href="context.rs.html#517-526">emit_span_lint</a>(<a href="#540-559">PATH_STATEMENTS</a>, <a href="#564">s</a>.span, <a href="lints.rs.html#2146-2149">PathStatementDrop</a> { <a href="#570">sub</a> })
 <a href=#576 id=576 data-nosnippet>576</a>            } <span class="kw">else </span>{
-<a href=#577 id=577 data-nosnippet>577</a>                <a href="#564">cx</a>.<a href="context.rs.html#517-526">emit_span_lint</a>(<a href="#540-559">PATH_STATEMENTS</a>, <a href="#564">s</a>.span, <a href="lints.rs.html#2169">PathStatementNoEffect</a>);
+<a href=#577 id=577 data-nosnippet>577</a>                <a href="#564">cx</a>.<a href="context.rs.html#517-526">emit_span_lint</a>(<a href="#540-559">PATH_STATEMENTS</a>, <a href="#564">s</a>.span, <a href="lints.rs.html#2168">PathStatementNoEffect</a>);
 <a href=#578 id=578 data-nosnippet>578</a>            }
 <a href=#579 id=579 data-nosnippet>579</a>        }
 <a href=#580 id=580 data-nosnippet>580</a>    }
@@ -855,7 +855,7 @@
 <a href=#855 id=855 data-nosnippet>855</a>            </span>} <span class="kw">else </span>{
 <a href=#856 id=856 data-nosnippet>856</a>                <span class="string">""
 <a href=#857 id=857 data-nosnippet>857</a>            </span>};
-<a href=#858 id=858 data-nosnippet>858</a>            <a href="lints.rs.html#2182-2189">UnusedDelimSuggestion</a> {
+<a href=#858 id=858 data-nosnippet>858</a>            <a href="lints.rs.html#2181-2188">UnusedDelimSuggestion</a> {
 <a href=#859 id=859 data-nosnippet>859</a>                start_span: <a href="#839">lo</a>,
 <a href=#860 id=860 data-nosnippet>860</a>                start_replace: <a href="#841">lo_replace</a>,
 <a href=#861 id=861 data-nosnippet>861</a>                end_span: <a href="#839">hi</a>,
@@ -865,7 +865,7 @@
 <a href=#865 id=865 data-nosnippet>865</a>        <a href="#823">cx</a>.<a href="context.rs.html#517-526">emit_span_lint</a>(
 <a href=#866 id=866 data-nosnippet>866</a>            <a class="self" href="#822">self</a>.<a href="#646">lint</a>(),
 <a href=#867 id=867 data-nosnippet>867</a>            <a href="#830">primary_span</a>,
-<a href=#868 id=868 data-nosnippet>868</a>            <a href="lints.rs.html#2173-2178">UnusedDelim</a> { delim: <span class="self">Self</span>::DELIM_STR, item: <a href="#826">msg</a>, <a href="#839">suggestion</a> },
+<a href=#868 id=868 data-nosnippet>868</a>            <a href="lints.rs.html#2172-2177">UnusedDelim</a> { delim: <span class="self">Self</span>::DELIM_STR, item: <a href="#826">msg</a>, <a href="#839">suggestion</a> },
 <a href=#869 id=869 data-nosnippet>869</a>        );
 <a href=#870 id=870 data-nosnippet>870</a>    }
 <a href=#871 id=871 data-nosnippet>871</a>
@@ -1691,7 +1691,7 @@
 <a href=#1691 id=1691 data-nosnippet>1691</a>            <a href="#1668">cx</a>.<a href="context.rs.html#517-526">emit_span_lint</a>(
 <a href=#1692 id=1692 data-nosnippet>1692</a>                <a href="#1635-1663">UNUSED_IMPORT_BRACES</a>,
 <a href=#1693 id=1693 data-nosnippet>1693</a>                <a href="#1668">item</a>.span,
-<a href=#1694 id=1694 data-nosnippet>1694</a>                <a href="lints.rs.html#2193-2195">UnusedImportBracesDiag</a> { node: <a href="#1679">node_name</a> },
+<a href=#1694 id=1694 data-nosnippet>1694</a>                <a href="lints.rs.html#2192-2194">UnusedImportBracesDiag</a> { node: <a href="#1679">node_name</a> },
 <a href=#1695 id=1695 data-nosnippet>1695</a>            );
 <a href=#1696 id=1696 data-nosnippet>1696</a>        }
 <a href=#1697 id=1697 data-nosnippet>1697</a>    }

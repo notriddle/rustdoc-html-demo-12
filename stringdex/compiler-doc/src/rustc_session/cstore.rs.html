@@ -1,19 +1,19 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_session/src/cstore.rs`."><title>cstore.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_session" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_session/</div>cstore.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! the rustc crate store interface. This also includes types that
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_session/src/cstore.rs`."><title>cstore.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_session" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_session/</div>cstore.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! the rustc crate store interface. This also includes types that
 <a href=#2 id=2 data-nosnippet>2</a>//! are *mostly* used as a part of that interface, but these should
 <a href=#3 id=3 data-nosnippet>3</a>//! probably get a better home if someone can find one.
 <a href=#4 id=4 data-nosnippet>4</a>
 <a href=#5 id=5 data-nosnippet>5</a></span><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/any/trait.Any.html">std::any::Any</a>;
 <a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">std::path::PathBuf</a>;
 <a href=#7 id=7 data-nosnippet>7</a>
-<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="../../rustc_abi/extern_abi/enum.ExternAbi.html">rustc_abi::ExternAbi</a>;
-<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="../../rustc_ast/index.html">rustc_ast</a> <span class="kw">as </span>ast;
-<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>rustc_data_structures::sync::{<a class="self" href="../../rustc_data_structures/sync/index.html">self</a>, <a href="../../rustc_data_structures/sync/vec/struct.AppendOnlyIndexVec.html">AppendOnlyIndexVec</a>, <a href="../../rustc_data_structures/sync/freeze/struct.FreezeLock.html">FreezeLock</a>};
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span>rustc_abi::ExternAbi;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/index.html">rustc_ast</a> <span class="kw">as </span>ast;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>rustc_data_structures::sync::{<a class="self" href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/index.html">self</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/vec/struct.AppendOnlyIndexVec.html">AppendOnlyIndexVec</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/freeze/struct.FreezeLock.html">FreezeLock</a>};
 <a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>rustc_hir::def_id::{
-<a href=#12 id=12 data-nosnippet>12</a>    <a href="../../rustc_span/def_id/struct.CrateNum.html">CrateNum</a>, <a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>, <a href="../../rustc_span/def_id/constant.LOCAL_CRATE.html">LOCAL_CRATE</a>, <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>, <a href="../../rustc_session/struct.StableCrateId.html">StableCrateId</a>, <a href="../../rustc_span/def_id/type.StableCrateIdMap.html">StableCrateIdMap</a>,
+<a href=#12 id=12 data-nosnippet>12</a>    <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.CrateNum.html">CrateNum</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.DefId.html">DefId</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/constant.LOCAL_CRATE.html">LOCAL_CRATE</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>, <a href="../../rustc_session/struct.StableCrateId.html">StableCrateId</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/type.StableCrateIdMap.html">StableCrateIdMap</a>,
 <a href=#13 id=13 data-nosnippet>13</a>};
-<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span>rustc_hir::definitions::{<a href="../../rustc_hir/definitions/struct.DefKey.html">DefKey</a>, <a href="../../rustc_hir/definitions/struct.DefPath.html">DefPath</a>, <a href="../../rustc_span/def_id/struct.DefPathHash.html">DefPathHash</a>, <a href="../../rustc_hir/definitions/struct.Definitions.html">Definitions</a>};
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span>rustc_hir::definitions::{DefKey, DefPath, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.DefPathHash.html">DefPathHash</a>, Definitions};
 <a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span>rustc_macros::{<a href="../../rustc_macros/derive.Decodable.html">Decodable</a>, <a href="../../rustc_macros/derive.Encodable.html">Encodable</a>, <a href="../../rustc_macros/derive.HashStable_Generic.html">HashStable_Generic</a>};
-<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span>rustc_span::{<a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>, <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>};
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span>rustc_span::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html">Span</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.Symbol.html">Symbol</a>};
 <a href=#17 id=17 data-nosnippet>17</a>
 <a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span><a href="search_paths.rs.html#69-76"><span class="kw">crate</span>::search_paths::PathKind</a>;
 <a href=#19 id=19 data-nosnippet>19</a><span class="kw">use </span><a href="utils.rs.html#22-53"><span class="kw">crate</span>::utils::NativeLibKind</a>;
@@ -69,11 +69,11 @@
 <a href=#69 id=69 data-nosnippet>69</a><span class="attr">#[derive(Debug, Encodable, Decodable, HashStable_Generic)]
 <a href=#70 id=70 data-nosnippet>70</a></span><span class="kw">pub struct </span><a href="../../rustc_session/cstore/struct.NativeLib.html">NativeLib</a> {
 <a href=#71 id=71 data-nosnippet>71</a>    <span class="kw">pub </span>kind: <a href="utils.rs.html#22-53">NativeLibKind</a>,
-<a href=#72 id=72 data-nosnippet>72</a>    <span class="kw">pub </span>name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>,
+<a href=#72 id=72 data-nosnippet>72</a>    <span class="kw">pub </span>name: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.Symbol.html">Symbol</a>,
 <a href=#73 id=73 data-nosnippet>73</a>    <span class="doccomment">/// If packed_bundled_libs enabled, actual filename of library is stored.
-<a href=#74 id=74 data-nosnippet>74</a>    </span><span class="kw">pub </span>filename: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>&gt;,
-<a href=#75 id=75 data-nosnippet>75</a>    <span class="kw">pub </span>cfg: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_ast/ast/enum.MetaItemInner.html">ast::MetaItemInner</a>&gt;,
-<a href=#76 id=76 data-nosnippet>76</a>    <span class="kw">pub </span>foreign_module: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt;,
+<a href=#74 id=74 data-nosnippet>74</a>    </span><span class="kw">pub </span>filename: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.Symbol.html">Symbol</a>&gt;,
+<a href=#75 id=75 data-nosnippet>75</a>    <span class="kw">pub </span>cfg: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/ast/enum.MetaItemInner.html">ast::MetaItemInner</a>&gt;,
+<a href=#76 id=76 data-nosnippet>76</a>    <span class="kw">pub </span>foreign_module: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.DefId.html">DefId</a>&gt;,
 <a href=#77 id=77 data-nosnippet>77</a>    <span class="kw">pub </span>verbatim: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>&gt;,
 <a href=#78 id=78 data-nosnippet>78</a>    <span class="kw">pub </span>dll_imports: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="#111-123">DllImport</a>&gt;,
 <a href=#79 id=79 data-nosnippet>79</a>}
@@ -83,7 +83,7 @@
 <a href=#83 id=83 data-nosnippet>83</a>        <a class="self" href="#82">self</a>.verbatim.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_some">is_some</a>() || <a class="self" href="#82">self</a>.kind.<a href="utils.rs.html#56-69">has_modifiers</a>()
 <a href=#84 id=84 data-nosnippet>84</a>    }
 <a href=#85 id=85 data-nosnippet>85</a>
-<a href=#86 id=86 data-nosnippet>86</a>    <span class="kw">pub fn </span>wasm_import_module(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>&gt; {
+<a href=#86 id=86 data-nosnippet>86</a>    <span class="kw">pub fn </span>wasm_import_module(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.Symbol.html">Symbol</a>&gt; {
 <a href=#87 id=87 data-nosnippet>87</a>        <span class="kw">if </span><a class="self" href="#86">self</a>.kind == <a href="utils.rs.html#49">NativeLibKind::WasmImportModule</a> { <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a class="self" href="#86">self</a>.name) } <span class="kw">else </span>{ <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a> </a>}
 <a href=#88 id=88 data-nosnippet>88</a>    }
 <a href=#89 id=89 data-nosnippet>89</a>}
@@ -109,7 +109,7 @@
 <a href=#109 id=109 data-nosnippet>109</a>
 <a href=#110 id=110 data-nosnippet>110</a><span class="attr">#[derive(Clone, Debug, Encodable, Decodable, HashStable_Generic)]
 <a href=#111 id=111 data-nosnippet>111</a></span><span class="kw">pub struct </span><a href="../../rustc_session/cstore/struct.DllImport.html">DllImport</a> {
-<a href=#112 id=112 data-nosnippet>112</a>    <span class="kw">pub </span>name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>,
+<a href=#112 id=112 data-nosnippet>112</a>    <span class="kw">pub </span>name: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.Symbol.html">Symbol</a>,
 <a href=#113 id=113 data-nosnippet>113</a>    <span class="kw">pub </span>import_name_type: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="#94-108">PeImportNameType</a>&gt;,
 <a href=#114 id=114 data-nosnippet>114</a>    <span class="doccomment">/// Calling convention for the function.
 <a href=#115 id=115 data-nosnippet>115</a>    ///
@@ -117,7 +117,7 @@
 <a href=#117 id=117 data-nosnippet>117</a>    /// of the values, and we use `DllCallingConvention::C` to represent `"cdecl"`.
 <a href=#118 id=118 data-nosnippet>118</a>    </span><span class="kw">pub </span>calling_convention: <a href="#145-150">DllCallingConvention</a>,
 <a href=#119 id=119 data-nosnippet>119</a>    <span class="doccomment">/// Span of import's "extern" declaration; used for diagnostics.
-<a href=#120 id=120 data-nosnippet>120</a>    </span><span class="kw">pub </span>span: <a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#120 id=120 data-nosnippet>120</a>    </span><span class="kw">pub </span>span: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html">Span</a>,
 <a href=#121 id=121 data-nosnippet>121</a>    <span class="doccomment">/// Is this for a function (rather than a static variable).
 <a href=#122 id=122 data-nosnippet>122</a>    </span><span class="kw">pub </span>is_fn: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
 <a href=#123 id=123 data-nosnippet>123</a>}
@@ -151,9 +151,9 @@
 <a href=#151 id=151 data-nosnippet>151</a>
 <a href=#152 id=152 data-nosnippet>152</a><span class="attr">#[derive(Clone, Encodable, Decodable, HashStable_Generic, Debug)]
 <a href=#153 id=153 data-nosnippet>153</a></span><span class="kw">pub struct </span><a href="../../rustc_session/cstore/struct.ForeignModule.html">ForeignModule</a> {
-<a href=#154 id=154 data-nosnippet>154</a>    <span class="kw">pub </span>foreign_items: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt;,
-<a href=#155 id=155 data-nosnippet>155</a>    <span class="kw">pub </span>def_id: <a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>,
-<a href=#156 id=156 data-nosnippet>156</a>    <span class="kw">pub </span>abi: <a href="../../rustc_abi/extern_abi/enum.ExternAbi.html">ExternAbi</a>,
+<a href=#154 id=154 data-nosnippet>154</a>    <span class="kw">pub </span>foreign_items: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.DefId.html">DefId</a>&gt;,
+<a href=#155 id=155 data-nosnippet>155</a>    <span class="kw">pub </span>def_id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.DefId.html">DefId</a>,
+<a href=#156 id=156 data-nosnippet>156</a>    <span class="kw">pub </span>abi: ExternAbi,
 <a href=#157 id=157 data-nosnippet>157</a>}
 <a href=#158 id=158 data-nosnippet>158</a>
 <a href=#159 id=159 data-nosnippet>159</a><span class="attr">#[derive(Copy, Clone, Debug, HashStable_Generic)]
@@ -161,14 +161,14 @@
 <a href=#161 id=161 data-nosnippet>161</a>    <span class="kw">pub </span>src: <a href="#193-203">ExternCrateSource</a>,
 <a href=#162 id=162 data-nosnippet>162</a>
 <a href=#163 id=163 data-nosnippet>163</a>    <span class="doccomment">/// span of the extern crate that caused this to be loaded
-<a href=#164 id=164 data-nosnippet>164</a>    </span><span class="kw">pub </span>span: <a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#164 id=164 data-nosnippet>164</a>    </span><span class="kw">pub </span>span: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html">Span</a>,
 <a href=#165 id=165 data-nosnippet>165</a>
 <a href=#166 id=166 data-nosnippet>166</a>    <span class="doccomment">/// Number of links to reach the extern;
 <a href=#167 id=167 data-nosnippet>167</a>    /// used to select the extern with the shortest path
 <a href=#168 id=168 data-nosnippet>168</a>    </span><span class="kw">pub </span>path_len: <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>,
 <a href=#169 id=169 data-nosnippet>169</a>
 <a href=#170 id=170 data-nosnippet>170</a>    <span class="doccomment">/// Crate that depends on this crate
-<a href=#171 id=171 data-nosnippet>171</a>    </span><span class="kw">pub </span>dependency_of: <a href="../../rustc_span/def_id/struct.CrateNum.html">CrateNum</a>,
+<a href=#171 id=171 data-nosnippet>171</a>    </span><span class="kw">pub </span>dependency_of: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.CrateNum.html">CrateNum</a>,
 <a href=#172 id=172 data-nosnippet>172</a>}
 <a href=#173 id=173 data-nosnippet>173</a>
 <a href=#174 id=174 data-nosnippet>174</a><span class="kw">impl </span><a href="#160-172">ExternCrate</a> {
@@ -177,7 +177,7 @@
 <a href=#177 id=177 data-nosnippet>177</a>    /// of the crate.
 <a href=#178 id=178 data-nosnippet>178</a>    </span><span class="attr">#[inline]
 <a href=#179 id=179 data-nosnippet>179</a>    </span><span class="kw">pub fn </span>is_direct(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
-<a href=#180 id=180 data-nosnippet>180</a>        <a class="self" href="#179">self</a>.dependency_of == <a href="../../rustc_span/def_id/constant.LOCAL_CRATE.html">LOCAL_CRATE</a>
+<a href=#180 id=180 data-nosnippet>180</a>        <a class="self" href="#179">self</a>.dependency_of == <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/constant.LOCAL_CRATE.html">LOCAL_CRATE</a>
 <a href=#181 id=181 data-nosnippet>181</a>    }
 <a href=#182 id=182 data-nosnippet>182</a>
 <a href=#183 id=183 data-nosnippet>183</a>    <span class="attr">#[inline]
@@ -196,7 +196,7 @@
 <a href=#196 id=196 data-nosnippet>196</a>        <span class="doccomment">/// def_id of the item in the current crate that caused
 <a href=#197 id=197 data-nosnippet>197</a>        /// this crate to be loaded; note that there could be multiple
 <a href=#198 id=198 data-nosnippet>198</a>        /// such ids
-<a href=#199 id=199 data-nosnippet>199</a>        </span><a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>,
+<a href=#199 id=199 data-nosnippet>199</a>        </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.DefId.html">DefId</a>,
 <a href=#200 id=200 data-nosnippet>200</a>    ),
 <a href=#201 id=201 data-nosnippet>201</a>    <span class="doccomment">/// Crate is implicitly loaded by a path resolving through extern prelude.
 <a href=#202 id=202 data-nosnippet>202</a>    </span>Path,
@@ -218,23 +218,23 @@
 <a href=#218 id=218 data-nosnippet>218</a>    <span class="comment">// Foreign definitions.
 <a href=#219 id=219 data-nosnippet>219</a>    // This information is safe to access, since it's hashed as part of the DefPathHash, which incr.
 <a href=#220 id=220 data-nosnippet>220</a>    // comp. uses to identify a DefId.
-<a href=#221 id=221 data-nosnippet>221</a>    </span><span class="kw">fn </span>def_key(<span class="kw-2">&amp;</span><span class="self">self</span>, def: <a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>) -&gt; <a href="../../rustc_hir/definitions/struct.DefKey.html">DefKey</a>;
-<a href=#222 id=222 data-nosnippet>222</a>    <span class="kw">fn </span>def_path(<span class="kw-2">&amp;</span><span class="self">self</span>, def: <a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>) -&gt; <a href="../../rustc_hir/definitions/struct.DefPath.html">DefPath</a>;
-<a href=#223 id=223 data-nosnippet>223</a>    <span class="kw">fn </span>def_path_hash(<span class="kw-2">&amp;</span><span class="self">self</span>, def: <a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>) -&gt; <a href="../../rustc_span/def_id/struct.DefPathHash.html">DefPathHash</a>;
+<a href=#221 id=221 data-nosnippet>221</a>    </span><span class="kw">fn </span>def_key(<span class="kw-2">&amp;</span><span class="self">self</span>, def: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.DefId.html">DefId</a>) -&gt; DefKey;
+<a href=#222 id=222 data-nosnippet>222</a>    <span class="kw">fn </span>def_path(<span class="kw-2">&amp;</span><span class="self">self</span>, def: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.DefId.html">DefId</a>) -&gt; DefPath;
+<a href=#223 id=223 data-nosnippet>223</a>    <span class="kw">fn </span>def_path_hash(<span class="kw-2">&amp;</span><span class="self">self</span>, def: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.DefId.html">DefId</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.DefPathHash.html">DefPathHash</a>;
 <a href=#224 id=224 data-nosnippet>224</a>
 <a href=#225 id=225 data-nosnippet>225</a>    <span class="comment">// This information is safe to access, since it's hashed as part of the StableCrateId, which
 <a href=#226 id=226 data-nosnippet>226</a>    // incr. comp. uses to identify a CrateNum.
-<a href=#227 id=227 data-nosnippet>227</a>    </span><span class="kw">fn </span>crate_name(<span class="kw-2">&amp;</span><span class="self">self</span>, cnum: <a href="../../rustc_span/def_id/struct.CrateNum.html">CrateNum</a>) -&gt; <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>;
-<a href=#228 id=228 data-nosnippet>228</a>    <span class="kw">fn </span>stable_crate_id(<span class="kw-2">&amp;</span><span class="self">self</span>, cnum: <a href="../../rustc_span/def_id/struct.CrateNum.html">CrateNum</a>) -&gt; <a href="../../rustc_session/struct.StableCrateId.html">StableCrateId</a>;
+<a href=#227 id=227 data-nosnippet>227</a>    </span><span class="kw">fn </span>crate_name(<span class="kw-2">&amp;</span><span class="self">self</span>, cnum: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.CrateNum.html">CrateNum</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.Symbol.html">Symbol</a>;
+<a href=#228 id=228 data-nosnippet>228</a>    <span class="kw">fn </span>stable_crate_id(<span class="kw-2">&amp;</span><span class="self">self</span>, cnum: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.CrateNum.html">CrateNum</a>) -&gt; <a href="../../rustc_session/struct.StableCrateId.html">StableCrateId</a>;
 <a href=#229 id=229 data-nosnippet>229</a>}
 <a href=#230 id=230 data-nosnippet>230</a>
-<a href=#231 id=231 data-nosnippet>231</a><span class="kw">pub type </span><a href="../../rustc_session/cstore/type.CrateStoreDyn.html">CrateStoreDyn</a> = <span class="kw">dyn </span><a href="#214-229">CrateStore</a> + <a href="../../rustc_data_structures/marker/trait.DynSync.html">sync::DynSync</a> + <a href="../../rustc_data_structures/marker/trait.DynSend.html">sync::DynSend</a>;
+<a href=#231 id=231 data-nosnippet>231</a><span class="kw">pub type </span><a href="../../rustc_session/cstore/type.CrateStoreDyn.html">CrateStoreDyn</a> = <span class="kw">dyn </span><a href="#214-229">CrateStore</a> + <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/marker/trait.DynSync.html">sync::DynSync</a> + <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/marker/trait.DynSend.html">sync::DynSend</a>;
 <a href=#232 id=232 data-nosnippet>232</a>
 <a href=#233 id=233 data-nosnippet>233</a><span class="kw">pub struct </span><a href="../../rustc_session/cstore/struct.Untracked.html">Untracked</a> {
-<a href=#234 id=234 data-nosnippet>234</a>    <span class="kw">pub </span>cstore: <a href="../../rustc_data_structures/sync/freeze/struct.FreezeLock.html">FreezeLock</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html">Box</a>&lt;<a href="#231">CrateStoreDyn</a>&gt;&gt;,
+<a href=#234 id=234 data-nosnippet>234</a>    <span class="kw">pub </span>cstore: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/freeze/struct.FreezeLock.html">FreezeLock</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html">Box</a>&lt;<a href="#231">CrateStoreDyn</a>&gt;&gt;,
 <a href=#235 id=235 data-nosnippet>235</a>    <span class="doccomment">/// Reference span for definitions.
-<a href=#236 id=236 data-nosnippet>236</a>    </span><span class="kw">pub </span>source_span: <a href="../../rustc_data_structures/sync/vec/struct.AppendOnlyIndexVec.html">AppendOnlyIndexVec</a>&lt;<a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>, <a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>&gt;,
-<a href=#237 id=237 data-nosnippet>237</a>    <span class="kw">pub </span>definitions: <a href="../../rustc_data_structures/sync/freeze/struct.FreezeLock.html">FreezeLock</a>&lt;<a href="../../rustc_hir/definitions/struct.Definitions.html">Definitions</a>&gt;,
+<a href=#236 id=236 data-nosnippet>236</a>    </span><span class="kw">pub </span>source_span: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/vec/struct.AppendOnlyIndexVec.html">AppendOnlyIndexVec</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html">Span</a>&gt;,
+<a href=#237 id=237 data-nosnippet>237</a>    <span class="kw">pub </span>definitions: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/freeze/struct.FreezeLock.html">FreezeLock</a>&lt;Definitions&gt;,
 <a href=#238 id=238 data-nosnippet>238</a>    <span class="doccomment">/// The interned [StableCrateId]s.
-<a href=#239 id=239 data-nosnippet>239</a>    </span><span class="kw">pub </span>stable_crate_ids: <a href="../../rustc_data_structures/sync/freeze/struct.FreezeLock.html">FreezeLock</a>&lt;<a href="../../rustc_span/def_id/type.StableCrateIdMap.html">StableCrateIdMap</a>&gt;,
+<a href=#239 id=239 data-nosnippet>239</a>    </span><span class="kw">pub </span>stable_crate_ids: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/freeze/struct.FreezeLock.html">FreezeLock</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/type.StableCrateIdMap.html">StableCrateIdMap</a>&gt;,
 <a href=#240 id=240 data-nosnippet>240</a>}</code></pre></div></section></main></body></html>

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"trait":["InferCtxtExt"]};
+window.SIDEBAR_ITEMS = {"enum":["DeferredOpaqueTypeError"],"trait":["InferCtxtExt"]};

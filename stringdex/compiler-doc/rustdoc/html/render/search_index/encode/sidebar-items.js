@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["read_signed_vlqhex_from_string","write_signed_vlqhex_to_string"]};
+window.SIDEBAR_ITEMS = {"fn":["read_postings_from_string","read_signed_vlqhex_from_string","write_postings_to_string","write_signed_vlqhex_to_string"]};

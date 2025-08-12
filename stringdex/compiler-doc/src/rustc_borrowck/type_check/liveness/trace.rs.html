@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/type_check/liveness/trace.rs`."><title>trace.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-1b37d467.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/type_check/liveness/</div>trace.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>rustc_data_structures::fx::{<a href="../../../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>, <a href="../../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>};
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/type_check/liveness/trace.rs`."><title>trace.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-1b37d467.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/type_check/liveness/</div>trace.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>rustc_data_structures::fx::{<a href="../../../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>, <a href="../../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>};
 <a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span><a href="../../../../rustc_index/bit_set/struct.DenseBitSet.html">rustc_index::bit_set::DenseBitSet</a>;
 <a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span><a href="../../../../rustc_index/interval/struct.IntervalSet.html">rustc_index::interval::IntervalSet</a>;
 <a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><a href="../../../../rustc_middle/infer/canonical/struct.QueryRegionConstraints.html">rustc_infer::infer::canonical::QueryRegionConstraints</a>;
@@ -7,10 +7,10 @@
 <a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span><a href="../../../../rustc_middle/traits/query/struct.DropckOutlivesResult.html">rustc_middle::traits::query::DropckOutlivesResult</a>;
 <a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="../../../../rustc_type_ir/relate/trait.Relate.html">rustc_middle::ty::relate::Relate</a>;
 <a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span>rustc_middle::ty::{<a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>, <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>, <a href="../../../../rustc_type_ir/visit/trait.TypeVisitable.html">TypeVisitable</a>, <a href="../../../../rustc_type_ir/visit/trait.TypeVisitableExt.html">TypeVisitableExt</a>};
-<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><a href="../../../../rustc_mir_dataflow/impls/initialized/struct.MaybeInitializedPlaces.html">rustc_mir_dataflow::impls::MaybeInitializedPlaces</a>;
-<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>rustc_mir_dataflow::move_paths::{<a href="../../../../rustc_mir_dataflow/move_paths/trait.HasMoveData.html">HasMoveData</a>, <a href="../../../../rustc_mir_dataflow/move_paths/struct.MoveData.html">MoveData</a>, <a href="../../../../rustc_mir_dataflow/move_paths/struct.MovePathIndex.html">MovePathIndex</a>};
-<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>rustc_mir_dataflow::points::{<a href="../../../../rustc_mir_dataflow/points/struct.DenseLocationMap.html">DenseLocationMap</a>, <a href="../../../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>};
-<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span>rustc_mir_dataflow::{<a href="../../../../rustc_mir_dataflow/framework/trait.Analysis.html">Analysis</a>, <a href="../../../../rustc_mir_dataflow/framework/cursor/struct.ResultsCursor.html">ResultsCursor</a>};
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>rustc_mir_dataflow::impls::MaybeInitializedPlaces;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>rustc_mir_dataflow::move_paths::{HasMoveData, MoveData, MovePathIndex};
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>rustc_mir_dataflow::points::{DenseLocationMap, PointIndex};
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span>rustc_mir_dataflow::{Analysis, ResultsCursor};
 <a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span>rustc_span::{<a href="../../../../rustc_span/span_encoding/constant.DUMMY_SP.html">DUMMY_SP</a>, <a href="../../../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>, <a href="../../../../rustc_span/span_encoding/struct.Span.html">Span</a>};
 <a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span><a href="../../../../rustc_trait_selection/error_reporting/trait.InferCtxtErrorExt.html">rustc_trait_selection::error_reporting::InferCtxtErrorExt</a>;
 <a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span><a href="../../../../rustc_trait_selection/traits/engine/struct.ObligationCtxt.html">rustc_trait_selection::traits::ObligationCtxt</a>;
@@ -18,10 +18,10 @@
 <a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span>rustc_trait_selection::traits::query::type_op::{<a href="../../../../rustc_middle/traits/query/type_op/struct.DropckOutlives.html">DropckOutlives</a>, <a href="../../../../rustc_trait_selection/traits/query/type_op/trait.TypeOp.html">TypeOp</a>, <a href="../../../../rustc_trait_selection/traits/query/type_op/struct.TypeOpOutput.html">TypeOpOutput</a>};
 <a href=#19 id=19 data-nosnippet>19</a><span class="kw">use </span><a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">tracing::debug</a>;
 <a href=#20 id=20 data-nosnippet>20</a>
-<a href=#21 id=21 data-nosnippet>21</a><span class="kw">use </span><a href="../../lib.rs.html#81"><span class="kw">crate</span>::polonius</a>;
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">use </span><a href="../../lib.rs.html#86"><span class="kw">crate</span>::polonius</a>;
 <a href=#22 id=22 data-nosnippet>22</a><span class="kw">use </span><a href="../../region_infer/mod.rs.html#50"><span class="kw">crate</span>::region_infer::values</a>;
 <a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span><a href="local_use_map.rs.html#20-40"><span class="kw">crate</span>::type_check::liveness::local_use_map::LocalUseMap</a>;
-<a href=#24 id=24 data-nosnippet>24</a><span class="kw">use </span><span class="kw">crate</span>::type_check::{<a href="../mod.rs.html#2525-2527">NormalizeLocation</a>, <a href="../mod.rs.html#209-230">TypeChecker</a>};
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">use </span><span class="kw">crate</span>::type_check::{<a href="../mod.rs.html#2534-2536">NormalizeLocation</a>, <a href="../mod.rs.html#220-241">TypeChecker</a>};
 <a href=#25 id=25 data-nosnippet>25</a>
 <a href=#26 id=26 data-nosnippet>26</a><span class="doccomment">/// This is the heart of the liveness computation. For each variable X
 <a href=#27 id=27 data-nosnippet>27</a>/// that requires a liveness computation, it walks over all the uses
@@ -38,9 +38,9 @@
 <a href=#38 id=38 data-nosnippet>38</a>/// `dropck_outlives` result of the variable's type (in particular,
 <a href=#39 id=39 data-nosnippet>39</a>/// this respects `#[may_dangle]` annotations).
 <a href=#40 id=40 data-nosnippet>40</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../../rustc_borrowck/type_check/liveness/trace/fn.trace.html">trace</a>&lt;<span class="lifetime">'tcx</span>&gt;(
-<a href=#41 id=41 data-nosnippet>41</a>    typeck: <span class="kw-2">&amp;mut </span><a href="../mod.rs.html#209-230">TypeChecker</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
-<a href=#42 id=42 data-nosnippet>42</a>    location_map: <span class="kw-2">&amp;</span><a href="../../../../rustc_mir_dataflow/points/struct.DenseLocationMap.html">DenseLocationMap</a>,
-<a href=#43 id=43 data-nosnippet>43</a>    move_data: <span class="kw-2">&amp;</span><a href="../../../../rustc_mir_dataflow/move_paths/struct.MoveData.html">MoveData</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#41 id=41 data-nosnippet>41</a>    typeck: <span class="kw-2">&amp;mut </span><a href="../mod.rs.html#220-241">TypeChecker</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#42 id=42 data-nosnippet>42</a>    location_map: <span class="kw-2">&amp;</span>DenseLocationMap,
+<a href=#43 id=43 data-nosnippet>43</a>    move_data: <span class="kw-2">&amp;</span>MoveData&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#44 id=44 data-nosnippet>44</a>    relevant_live_locals: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../../../rustc_middle/mir/struct.Local.html">Local</a>&gt;,
 <a href=#45 id=45 data-nosnippet>45</a>    boring_locals: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../../../rustc_middle/mir/struct.Local.html">Local</a>&gt;,
 <a href=#46 id=46 data-nosnippet>46</a>) {
@@ -68,20 +68,20 @@
 <a href=#68 id=68 data-nosnippet>68</a>    <span class="doccomment">/// Current type-checker, giving us our inference context etc.
 <a href=#69 id=69 data-nosnippet>69</a>    ///
 <a href=#70 id=70 data-nosnippet>70</a>    /// This also stores the body we're currently analyzing.
-<a href=#71 id=71 data-nosnippet>71</a>    </span>typeck: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><a href="../mod.rs.html#209-230">TypeChecker</a>&lt;<span class="lifetime">'typeck</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#71 id=71 data-nosnippet>71</a>    </span>typeck: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><a href="../mod.rs.html#220-241">TypeChecker</a>&lt;<span class="lifetime">'typeck</span>, <span class="lifetime">'tcx</span>&gt;,
 <a href=#72 id=72 data-nosnippet>72</a>
 <a href=#73 id=73 data-nosnippet>73</a>    <span class="doccomment">/// Defines the `PointIndex` mapping
-<a href=#74 id=74 data-nosnippet>74</a>    </span>location_map: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../../../rustc_mir_dataflow/points/struct.DenseLocationMap.html">DenseLocationMap</a>,
+<a href=#74 id=74 data-nosnippet>74</a>    </span>location_map: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>DenseLocationMap,
 <a href=#75 id=75 data-nosnippet>75</a>
 <a href=#76 id=76 data-nosnippet>76</a>    <span class="doccomment">/// Mapping to/from the various indices used for initialization tracking.
-<a href=#77 id=77 data-nosnippet>77</a>    </span>move_data: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../../../rustc_mir_dataflow/move_paths/struct.MoveData.html">MoveData</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#77 id=77 data-nosnippet>77</a>    </span>move_data: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>MoveData&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#78 id=78 data-nosnippet>78</a>
 <a href=#79 id=79 data-nosnippet>79</a>    <span class="doccomment">/// Cache for the results of `dropck_outlives` query.
 <a href=#80 id=80 data-nosnippet>80</a>    </span>drop_data: <a href="../../../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;, <a href="#91-94">DropData</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
 <a href=#81 id=81 data-nosnippet>81</a>
 <a href=#82 id=82 data-nosnippet>82</a>    <span class="doccomment">/// Results of dataflow tracking which variables (and paths) have been
 <a href=#83 id=83 data-nosnippet>83</a>    /// initialized. Computed lazily when needed by drop-liveness.
-<a href=#84 id=84 data-nosnippet>84</a>    </span>flow_inits: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../../rustc_mir_dataflow/framework/cursor/struct.ResultsCursor.html">ResultsCursor</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, <a href="../../../../rustc_mir_dataflow/impls/initialized/struct.MaybeInitializedPlaces.html">MaybeInitializedPlaces</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt;&gt;,
+<a href=#84 id=84 data-nosnippet>84</a>    </span>flow_inits: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;ResultsCursor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, MaybeInitializedPlaces&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt;&gt;,
 <a href=#85 id=85 data-nosnippet>85</a>
 <a href=#86 id=86 data-nosnippet>86</a>    <span class="doccomment">/// Index indicating where each variable is assigned, used, or
 <a href=#87 id=87 data-nosnippet>87</a>    /// dropped.
@@ -97,27 +97,27 @@
 <a href=#97 id=97 data-nosnippet>97</a>    cx: <a href="#67-89">LivenessContext</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'tcx</span>&gt;,
 <a href=#98 id=98 data-nosnippet>98</a>
 <a href=#99 id=99 data-nosnippet>99</a>    <span class="doccomment">/// Set of points that define the current local.
-<a href=#100 id=100 data-nosnippet>100</a>    </span>defs: <a href="../../../../rustc_index/bit_set/struct.DenseBitSet.html">DenseBitSet</a>&lt;<a href="../../../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>&gt;,
+<a href=#100 id=100 data-nosnippet>100</a>    </span>defs: <a href="../../../../rustc_index/bit_set/struct.DenseBitSet.html">DenseBitSet</a>&lt;PointIndex&gt;,
 <a href=#101 id=101 data-nosnippet>101</a>
 <a href=#102 id=102 data-nosnippet>102</a>    <span class="doccomment">/// Points where the current variable is "use live" -- meaning
 <a href=#103 id=103 data-nosnippet>103</a>    /// that there is a future "full use" that may use its value.
-<a href=#104 id=104 data-nosnippet>104</a>    </span>use_live_at: <a href="../../../../rustc_index/interval/struct.IntervalSet.html">IntervalSet</a>&lt;<a href="../../../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>&gt;,
+<a href=#104 id=104 data-nosnippet>104</a>    </span>use_live_at: <a href="../../../../rustc_index/interval/struct.IntervalSet.html">IntervalSet</a>&lt;PointIndex&gt;,
 <a href=#105 id=105 data-nosnippet>105</a>
 <a href=#106 id=106 data-nosnippet>106</a>    <span class="doccomment">/// Points where the current variable is "drop live" -- meaning
 <a href=#107 id=107 data-nosnippet>107</a>    /// that there is no future "full use" that may use its value, but
 <a href=#108 id=108 data-nosnippet>108</a>    /// there is a future drop.
-<a href=#109 id=109 data-nosnippet>109</a>    </span>drop_live_at: <a href="../../../../rustc_index/interval/struct.IntervalSet.html">IntervalSet</a>&lt;<a href="../../../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>&gt;,
+<a href=#109 id=109 data-nosnippet>109</a>    </span>drop_live_at: <a href="../../../../rustc_index/interval/struct.IntervalSet.html">IntervalSet</a>&lt;PointIndex&gt;,
 <a href=#110 id=110 data-nosnippet>110</a>
 <a href=#111 id=111 data-nosnippet>111</a>    <span class="doccomment">/// Locations where drops may occur.
 <a href=#112 id=112 data-nosnippet>112</a>    </span>drop_locations: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../../../rustc_middle/mir/struct.Location.html">Location</a>&gt;,
 <a href=#113 id=113 data-nosnippet>113</a>
 <a href=#114 id=114 data-nosnippet>114</a>    <span class="doccomment">/// Stack used when doing (reverse) DFS.
-<a href=#115 id=115 data-nosnippet>115</a>    </span>stack: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>&gt;,
+<a href=#115 id=115 data-nosnippet>115</a>    </span>stack: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;PointIndex&gt;,
 <a href=#116 id=116 data-nosnippet>116</a>}
 <a href=#117 id=117 data-nosnippet>117</a>
 <a href=#118 id=118 data-nosnippet>118</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'tcx</span>&gt; <a href="#96-116">LivenessResults</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'tcx</span>&gt; {
 <a href=#119 id=119 data-nosnippet>119</a>    <span class="kw">fn </span>new(cx: <a href="#67-89">LivenessContext</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'typeck</span>, <span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
-<a href=#120 id=120 data-nosnippet>120</a>        <span class="kw">let </span>num_points = <a href="#119">cx</a>.location_map.<a href="../../../../rustc_mir_dataflow/points/struct.DenseLocationMap.html#method.num_points">num_points</a>();
+<a href=#120 id=120 data-nosnippet>120</a>        <span class="kw">let </span>num_points = <a href="#119">cx</a>.location_map.num_points();
 <a href=#121 id=121 data-nosnippet>121</a>        <a href="#96-116">LivenessResults</a> {
 <a href=#122 id=122 data-nosnippet>122</a>            <a href="#119">cx</a>,
 <a href=#123 id=123 data-nosnippet>123</a>            defs: <a href="../../../../rustc_index/bit_set/struct.DenseBitSet.html#method.new_empty">DenseBitSet::new_empty</a>(<a href="#120">num_points</a>),
@@ -209,7 +209,7 @@
 <a href=#209 id=209 data-nosnippet>209</a>                .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>()
 <a href=#210 id=210 data-nosnippet>210</a>        };
 <a href=#211 id=211 data-nosnippet>211</a>
-<a href=#212 id=212 data-nosnippet>212</a>        <span class="kw">let </span>live_at = <a href="../../../../rustc_index/interval/struct.IntervalSet.html#method.new">IntervalSet::new</a>(<a class="self" href="#182">self</a>.cx.location_map.<a href="../../../../rustc_mir_dataflow/points/struct.DenseLocationMap.html#method.num_points">num_points</a>());
+<a href=#212 id=212 data-nosnippet>212</a>        <span class="kw">let </span>live_at = <a href="../../../../rustc_index/interval/struct.IntervalSet.html#method.new">IntervalSet::new</a>(<a class="self" href="#182">self</a>.cx.location_map.num_points());
 <a href=#213 id=213 data-nosnippet>213</a>        <span class="kw">for </span>(local, local_ty, location) <span class="kw">in </span>facts_to_add {
 <a href=#214 id=214 data-nosnippet>214</a>            <span class="self">self</span>.cx.add_drop_live_facts_for(local, local_ty, <span class="kw-2">&amp;</span>[location], <span class="kw-2">&amp;</span>live_at);
 <a href=#215 id=215 data-nosnippet>215</a>        }
@@ -295,7 +295,7 @@
 <a href=#295 id=295 data-nosnippet>295</a>    </span><span class="kw">fn </span>compute_drop_live_points_for(<span class="kw-2">&amp;mut </span><span class="self">self</span>, local: <a href="../../../../rustc_middle/mir/struct.Local.html">Local</a>) {
 <a href=#296 id=296 data-nosnippet>296</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"compute_drop_live_points_for(local={:?})"</span>, local);
 <a href=#297 id=297 data-nosnippet>297</a>
-<a href=#298 id=298 data-nosnippet>298</a>        <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(mpi) = <a class="self" href="#295">self</a>.cx.move_data.rev_lookup.<a href="../../../../rustc_mir_dataflow/move_paths/struct.MovePathLookup.html#method.find_local">find_local</a>(<a href="#295">local</a>) <span class="kw">else </span>{ <span class="kw">return </span>};
+<a href=#298 id=298 data-nosnippet>298</a>        <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(mpi) = <a class="self" href="#295">self</a>.cx.move_data.rev_lookup.find_local(<a href="#295">local</a>) <span class="kw">else </span>{ <span class="kw">return </span>};
 <a href=#299 id=299 data-nosnippet>299</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"compute_drop_live_points_for: mpi = {:?}"</span>, mpi);
 <a href=#300 id=300 data-nosnippet>300</a>
 <a href=#301 id=301 data-nosnippet>301</a>        <span class="comment">// Find the drops where `local` is initialized.
@@ -332,7 +332,7 @@
 <a href=#332 id=332 data-nosnippet>332</a>    /// This method adds all drop-live points within the block and --
 <a href=#333 id=333 data-nosnippet>333</a>    /// where applicable -- pushes the terminators of preceding blocks
 <a href=#334 id=334 data-nosnippet>334</a>    /// onto `self.stack`.
-<a href=#335 id=335 data-nosnippet>335</a>    </span><span class="kw">fn </span>compute_drop_live_points_for_block(<span class="kw-2">&amp;mut </span><span class="self">self</span>, mpi: <a href="../../../../rustc_mir_dataflow/move_paths/struct.MovePathIndex.html">MovePathIndex</a>, term_point: <a href="../../../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>) {
+<a href=#335 id=335 data-nosnippet>335</a>    </span><span class="kw">fn </span>compute_drop_live_points_for_block(<span class="kw-2">&amp;mut </span><span class="self">self</span>, mpi: MovePathIndex, term_point: PointIndex) {
 <a href=#336 id=336 data-nosnippet>336</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(
 <a href=#337 id=337 data-nosnippet>337</a>            <span class="string">"compute_drop_live_points_for_block(mpi={:?}, term_point={:?})"</span>,
 <a href=#338 id=338 data-nosnippet>338</a>            <span class="self">self</span>.cx.move_data.move_paths[mpi].place,
@@ -346,10 +346,10 @@
 <a href=#346 id=346 data-nosnippet>346</a>        <span class="comment">// Otherwise, scan backwards through the statements in the
 <a href=#347 id=347 data-nosnippet>347</a>        // block. One of them may be either a definition or use
 <a href=#348 id=348 data-nosnippet>348</a>        // live point.
-<a href=#349 id=349 data-nosnippet>349</a>        </span><span class="kw">let </span>term_location = <a class="self" href="#335">self</a>.cx.location_map.<a href="../../../../rustc_mir_dataflow/points/struct.DenseLocationMap.html#method.to_location">to_location</a>(<a href="#335">term_point</a>);
+<a href=#349 id=349 data-nosnippet>349</a>        </span><span class="kw">let </span>term_location = <a class="self" href="#335">self</a>.cx.location_map.to_location(<a href="#335">term_point</a>);
 <a href=#350 id=350 data-nosnippet>350</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.debug_assert_eq.html">debug_assert_eq!</a>(<span class="self">self</span>.cx.body().terminator_loc(term_location.block), term_location,);
 <a href=#351 id=351 data-nosnippet>351</a>        <span class="kw">let </span>block = <a href="#349">term_location</a>.block;
-<a href=#352 id=352 data-nosnippet>352</a>        <span class="kw">let </span>entry_point = <a class="self" href="#335">self</a>.cx.location_map.<a href="../../../../rustc_mir_dataflow/points/struct.DenseLocationMap.html#method.entry_point">entry_point</a>(<a href="#349">term_location</a>.block);
+<a href=#352 id=352 data-nosnippet>352</a>        <span class="kw">let </span>entry_point = <a class="self" href="#335">self</a>.cx.location_map.entry_point(<a href="#349">term_location</a>.block);
 <a href=#353 id=353 data-nosnippet>353</a>        <span class="kw">for </span>p <span class="kw">in </span>(entry_point..term_point).rev() {
 <a href=#354 id=354 data-nosnippet>354</a>            <span class="macro">debug!</span>(
 <a href=#355 id=355 data-nosnippet>355</a>                <span class="string">"compute_drop_live_points_for_block: p = {:?}"</span>,
@@ -468,9 +468,9 @@
 <a href=#468 id=468 data-nosnippet>468</a>    ///
 <a href=#469 id=469 data-nosnippet>469</a>    /// This happens as part of the drop-liveness computation: it's the only place checking for
 <a href=#470 id=470 data-nosnippet>470</a>    /// maybe-initializedness of `MovePathIndex`es.
-<a href=#471 id=471 data-nosnippet>471</a>    </span><span class="kw">fn </span>flow_inits(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span><a href="../../../../rustc_mir_dataflow/framework/cursor/struct.ResultsCursor.html">ResultsCursor</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, <a href="../../../../rustc_mir_dataflow/impls/initialized/struct.MaybeInitializedPlaces.html">MaybeInitializedPlaces</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#471 id=471 data-nosnippet>471</a>    </span><span class="kw">fn </span>flow_inits(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>ResultsCursor&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, MaybeInitializedPlaces&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt; {
 <a href=#472 id=472 data-nosnippet>472</a>        <a class="self" href="#471">self</a>.flow_inits.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.get_or_insert_with">get_or_insert_with</a>(|| {
-<a href=#473 id=473 data-nosnippet>473</a>            <span class="kw">let </span>tcx = <a class="self" href="#471">self</a>.typeck.<a href="../mod.rs.html#364-366">tcx</a>();
+<a href=#473 id=473 data-nosnippet>473</a>            <span class="kw">let </span>tcx = <a class="self" href="#471">self</a>.typeck.<a href="../mod.rs.html#375-377">tcx</a>();
 <a href=#474 id=474 data-nosnippet>474</a>            <span class="kw">let </span>body = <a class="self" href="#471">self</a>.typeck.body;
 <a href=#475 id=475 data-nosnippet>475</a>            <span class="comment">// FIXME: reduce the `MaybeInitializedPlaces` domain to the useful `MovePath`s.
 <a href=#476 id=476 data-nosnippet>476</a>            //
@@ -484,9 +484,9 @@
 <a href=#484 id=484 data-nosnippet>484</a>            // a much, much smaller domain: in our benchmarks, when it's not zero (the most likely
 <a href=#485 id=485 data-nosnippet>485</a>            // case), there are a few dozens compared to e.g. thousands or tens of thousands of
 <a href=#486 id=486 data-nosnippet>486</a>            // locals and move paths.
-<a href=#487 id=487 data-nosnippet>487</a>            </span><span class="kw">let </span>flow_inits = <a href="../../../../rustc_mir_dataflow/impls/initialized/struct.MaybeInitializedPlaces.html#method.new">MaybeInitializedPlaces::new</a>(<a href="#473">tcx</a>, <a href="#474">body</a>, <a class="self" href="#471">self</a>.move_data)
-<a href=#488 id=488 data-nosnippet>488</a>                .<a href="../../../../rustc_mir_dataflow/framework/trait.Analysis.html#tymethod.iterate_to_fixpoint">iterate_to_fixpoint</a>(<a href="#473">tcx</a>, <a href="#474">body</a>, <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<span class="string">"borrowck"</span>))
-<a href=#489 id=489 data-nosnippet>489</a>                .<a href="../../../../rustc_mir_dataflow/framework/results/struct.AnalysisAndResults.html#method.into_results_cursor">into_results_cursor</a>(<a href="#474">body</a>);
+<a href=#487 id=487 data-nosnippet>487</a>            </span><span class="kw">let </span>flow_inits = MaybeInitializedPlaces::new(<a href="#473">tcx</a>, <a href="#474">body</a>, <a class="self" href="#471">self</a>.move_data)
+<a href=#488 id=488 data-nosnippet>488</a>                .iterate_to_fixpoint(<a href="#473">tcx</a>, <a href="#474">body</a>, <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<span class="string">"borrowck"</span>))
+<a href=#489 id=489 data-nosnippet>489</a>                .into_results_cursor(<a href="#474">body</a>);
 <a href=#490 id=490 data-nosnippet>490</a>            <a href="#487">flow_inits</a>
 <a href=#491 id=491 data-nosnippet>491</a>        })
 <a href=#492 id=492 data-nosnippet>492</a>    }
@@ -500,24 +500,24 @@
 <a href=#500 id=500 data-nosnippet>500</a>    <span class="doccomment">/// Returns `true` if the local variable (or some part of it) is initialized at the current
 <a href=#501 id=501 data-nosnippet>501</a>    /// cursor position. Callers should call one of the `seek` methods immediately before to point
 <a href=#502 id=502 data-nosnippet>502</a>    /// the cursor to the desired location.
-<a href=#503 id=503 data-nosnippet>503</a>    </span><span class="kw">fn </span>initialized_at_curr_loc(<span class="kw-2">&amp;mut </span><span class="self">self</span>, mpi: <a href="../../../../rustc_mir_dataflow/move_paths/struct.MovePathIndex.html">MovePathIndex</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#503 id=503 data-nosnippet>503</a>    </span><span class="kw">fn </span>initialized_at_curr_loc(<span class="kw-2">&amp;mut </span><span class="self">self</span>, mpi: MovePathIndex) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
 <a href=#504 id=504 data-nosnippet>504</a>        <span class="kw">let </span>flow_inits = <a class="self" href="#503">self</a>.<a href="#471-492">flow_inits</a>();
-<a href=#505 id=505 data-nosnippet>505</a>        <span class="kw">let </span>state = <a href="#504">flow_inits</a>.<a href="../../../../rustc_mir_dataflow/framework/cursor/struct.ResultsCursor.html#method.get">get</a>();
-<a href=#506 id=506 data-nosnippet>506</a>        <span class="kw">if </span><a href="#505">state</a>.<a href="../../../../rustc_mir_dataflow/framework/lattice/enum.MaybeReachable.html#method.contains">contains</a>(<a href="#503">mpi</a>) {
+<a href=#505 id=505 data-nosnippet>505</a>        <span class="kw">let </span>state = <a href="#504">flow_inits</a>.get();
+<a href=#506 id=506 data-nosnippet>506</a>        <span class="kw">if </span><a href="#505">state</a>.contains(<a href="#503">mpi</a>) {
 <a href=#507 id=507 data-nosnippet>507</a>            <span class="kw">return </span><span class="bool-val">true</span>;
 <a href=#508 id=508 data-nosnippet>508</a>        }
 <a href=#509 id=509 data-nosnippet>509</a>
-<a href=#510 id=510 data-nosnippet>510</a>        <span class="kw">let </span>move_paths = <span class="kw-2">&amp;</span><a href="#504">flow_inits</a>.<a href="../../../../rustc_mir_dataflow/framework/cursor/struct.ResultsCursor.html#method.analysis">analysis</a>().<a href="../../../../rustc_mir_dataflow/move_paths/trait.HasMoveData.html#tymethod.move_data">move_data</a>().move_paths;
-<a href=#511 id=511 data-nosnippet>511</a>        <a href="#510">move_paths</a>[<a href="#503">mpi</a>].<a href="../../../../rustc_mir_dataflow/move_paths/struct.MovePath.html#method.find_descendant">find_descendant</a>(<a href="#510">move_paths</a>, |mpi| <a href="#505">state</a>.<a href="../../../../rustc_mir_dataflow/framework/lattice/enum.MaybeReachable.html#method.contains">contains</a>(<a href="#511">mpi</a>)).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_some">is_some</a>()
+<a href=#510 id=510 data-nosnippet>510</a>        <span class="kw">let </span>move_paths = <span class="kw-2">&amp;</span><a href="#504">flow_inits</a>.analysis().move_data().move_paths;
+<a href=#511 id=511 data-nosnippet>511</a>        <a href="#510">move_paths</a>[<a href="#503">mpi</a>].find_descendant(<a href="#510">move_paths</a>, |mpi| <a href="#505">state</a>.contains(<a href="#511">mpi</a>)).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_some">is_some</a>()
 <a href=#512 id=512 data-nosnippet>512</a>    }
 <a href=#513 id=513 data-nosnippet>513</a>
 <a href=#514 id=514 data-nosnippet>514</a>    <span class="doccomment">/// Returns `true` if the local variable (or some part of it) is initialized in
 <a href=#515 id=515 data-nosnippet>515</a>    /// the terminator of `block`. We need to check this to determine if a
 <a href=#516 id=516 data-nosnippet>516</a>    /// DROP of some local variable will have an effect -- note that
 <a href=#517 id=517 data-nosnippet>517</a>    /// drops, as they may unwind, are always terminators.
-<a href=#518 id=518 data-nosnippet>518</a>    </span><span class="kw">fn </span>initialized_at_terminator(<span class="kw-2">&amp;mut </span><span class="self">self</span>, block: <a href="../../../../rustc_middle/mir/struct.BasicBlock.html">BasicBlock</a>, mpi: <a href="../../../../rustc_mir_dataflow/move_paths/struct.MovePathIndex.html">MovePathIndex</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#518 id=518 data-nosnippet>518</a>    </span><span class="kw">fn </span>initialized_at_terminator(<span class="kw-2">&amp;mut </span><span class="self">self</span>, block: <a href="../../../../rustc_middle/mir/struct.BasicBlock.html">BasicBlock</a>, mpi: MovePathIndex) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
 <a href=#519 id=519 data-nosnippet>519</a>        <span class="kw">let </span>terminator_location = <a class="self" href="#518">self</a>.<a href="#496-498">body</a>().<a href="../../../../rustc_middle/mir/struct.Body.html#method.terminator_loc">terminator_loc</a>(<a href="#518">block</a>);
-<a href=#520 id=520 data-nosnippet>520</a>        <a class="self" href="#518">self</a>.<a href="#471-492">flow_inits</a>().<a href="../../../../rustc_mir_dataflow/framework/cursor/struct.ResultsCursor.html#method.seek_before_primary_effect">seek_before_primary_effect</a>(<a href="#519">terminator_location</a>);
+<a href=#520 id=520 data-nosnippet>520</a>        <a class="self" href="#518">self</a>.<a href="#471-492">flow_inits</a>().seek_before_primary_effect(<a href="#519">terminator_location</a>);
 <a href=#521 id=521 data-nosnippet>521</a>        <a class="self" href="#518">self</a>.<a href="#503-512">initialized_at_curr_loc</a>(<a href="#518">mpi</a>)
 <a href=#522 id=522 data-nosnippet>522</a>    }
 <a href=#523 id=523 data-nosnippet>523</a>
@@ -526,15 +526,15 @@
 <a href=#526 id=526 data-nosnippet>526</a>    ///
 <a href=#527 id=527 data-nosnippet>527</a>    /// **Warning:** Does not account for the result of `Call`
 <a href=#528 id=528 data-nosnippet>528</a>    /// instructions.
-<a href=#529 id=529 data-nosnippet>529</a>    </span><span class="kw">fn </span>initialized_at_exit(<span class="kw-2">&amp;mut </span><span class="self">self</span>, block: <a href="../../../../rustc_middle/mir/struct.BasicBlock.html">BasicBlock</a>, mpi: <a href="../../../../rustc_mir_dataflow/move_paths/struct.MovePathIndex.html">MovePathIndex</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#529 id=529 data-nosnippet>529</a>    </span><span class="kw">fn </span>initialized_at_exit(<span class="kw-2">&amp;mut </span><span class="self">self</span>, block: <a href="../../../../rustc_middle/mir/struct.BasicBlock.html">BasicBlock</a>, mpi: MovePathIndex) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
 <a href=#530 id=530 data-nosnippet>530</a>        <span class="kw">let </span>terminator_location = <a class="self" href="#529">self</a>.<a href="#496-498">body</a>().<a href="../../../../rustc_middle/mir/struct.Body.html#method.terminator_loc">terminator_loc</a>(<a href="#529">block</a>);
-<a href=#531 id=531 data-nosnippet>531</a>        <a class="self" href="#529">self</a>.<a href="#471-492">flow_inits</a>().<a href="../../../../rustc_mir_dataflow/framework/cursor/struct.ResultsCursor.html#method.seek_after_primary_effect">seek_after_primary_effect</a>(<a href="#530">terminator_location</a>);
+<a href=#531 id=531 data-nosnippet>531</a>        <a class="self" href="#529">self</a>.<a href="#471-492">flow_inits</a>().seek_after_primary_effect(<a href="#530">terminator_location</a>);
 <a href=#532 id=532 data-nosnippet>532</a>        <a class="self" href="#529">self</a>.<a href="#503-512">initialized_at_curr_loc</a>(<a href="#529">mpi</a>)
 <a href=#533 id=533 data-nosnippet>533</a>    }
 <a href=#534 id=534 data-nosnippet>534</a>
 <a href=#535 id=535 data-nosnippet>535</a>    <span class="doccomment">/// Stores the result that all regions in `value` are live for the
 <a href=#536 id=536 data-nosnippet>536</a>    /// points `live_at`.
-<a href=#537 id=537 data-nosnippet>537</a>    </span><span class="kw">fn </span>add_use_live_facts_for(<span class="kw-2">&amp;mut </span><span class="self">self</span>, value: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;, live_at: <span class="kw-2">&amp;</span><a href="../../../../rustc_index/interval/struct.IntervalSet.html">IntervalSet</a>&lt;<a href="../../../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>&gt;) {
+<a href=#537 id=537 data-nosnippet>537</a>    </span><span class="kw">fn </span>add_use_live_facts_for(<span class="kw-2">&amp;mut </span><span class="self">self</span>, value: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;, live_at: <span class="kw-2">&amp;</span><a href="../../../../rustc_index/interval/struct.IntervalSet.html">IntervalSet</a>&lt;PointIndex&gt;) {
 <a href=#538 id=538 data-nosnippet>538</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"add_use_live_facts_for(value={:?})"</span>, value);
 <a href=#539 id=539 data-nosnippet>539</a>        <a href="#602-632"><span class="self">Self</span>::make_all_regions_live</a>(<a class="self" href="#537">self</a>.location_map, <a class="self" href="#537">self</a>.typeck, <a href="#537">value</a>, <a href="#537">live_at</a>);
 <a href=#540 id=540 data-nosnippet>540</a>    }
@@ -549,7 +549,7 @@
 <a href=#549 id=549 data-nosnippet>549</a>        dropped_local: <a href="../../../../rustc_middle/mir/struct.Local.html">Local</a>,
 <a href=#550 id=550 data-nosnippet>550</a>        dropped_ty: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#551 id=551 data-nosnippet>551</a>        drop_locations: <span class="kw-2">&amp;</span>[<a href="../../../../rustc_middle/mir/struct.Location.html">Location</a>],
-<a href=#552 id=552 data-nosnippet>552</a>        live_at: <span class="kw-2">&amp;</span><a href="../../../../rustc_index/interval/struct.IntervalSet.html">IntervalSet</a>&lt;<a href="../../../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>&gt;,
+<a href=#552 id=552 data-nosnippet>552</a>        live_at: <span class="kw-2">&amp;</span><a href="../../../../rustc_index/interval/struct.IntervalSet.html">IntervalSet</a>&lt;PointIndex&gt;,
 <a href=#553 id=553 data-nosnippet>553</a>    ) {
 <a href=#554 id=554 data-nosnippet>554</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(
 <a href=#555 id=555 data-nosnippet>555</a>            <span class="string">"add_drop_live_constraint(\
@@ -600,10 +600,10 @@
 <a href=#600 id=600 data-nosnippet>600</a>    }
 <a href=#601 id=601 data-nosnippet>601</a>
 <a href=#602 id=602 data-nosnippet>602</a>    <span class="kw">fn </span>make_all_regions_live(
-<a href=#603 id=603 data-nosnippet>603</a>        location_map: <span class="kw-2">&amp;</span><a href="../../../../rustc_mir_dataflow/points/struct.DenseLocationMap.html">DenseLocationMap</a>,
-<a href=#604 id=604 data-nosnippet>604</a>        typeck: <span class="kw-2">&amp;mut </span><a href="../mod.rs.html#209-230">TypeChecker</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#603 id=603 data-nosnippet>603</a>        location_map: <span class="kw-2">&amp;</span>DenseLocationMap,
+<a href=#604 id=604 data-nosnippet>604</a>        typeck: <span class="kw-2">&amp;mut </span><a href="../mod.rs.html#220-241">TypeChecker</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
 <a href=#605 id=605 data-nosnippet>605</a>        value: <span class="kw">impl </span><a href="../../../../rustc_type_ir/visit/trait.TypeVisitable.html">TypeVisitable</a>&lt;<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; + <a href="../../../../rustc_type_ir/relate/trait.Relate.html">Relate</a>&lt;<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
-<a href=#606 id=606 data-nosnippet>606</a>        live_at: <span class="kw-2">&amp;</span><a href="../../../../rustc_index/interval/struct.IntervalSet.html">IntervalSet</a>&lt;<a href="../../../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>&gt;,
+<a href=#606 id=606 data-nosnippet>606</a>        live_at: <span class="kw-2">&amp;</span><a href="../../../../rustc_index/interval/struct.IntervalSet.html">IntervalSet</a>&lt;PointIndex&gt;,
 <a href=#607 id=607 data-nosnippet>607</a>    ) {
 <a href=#608 id=608 data-nosnippet>608</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"make_all_regions_live(value={:?})"</span>, value);
 <a href=#609 id=609 data-nosnippet>609</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(
@@ -612,7 +612,7 @@
 <a href=#612 id=612 data-nosnippet>612</a>        );
 <a href=#613 id=613 data-nosnippet>613</a>
 <a href=#614 id=614 data-nosnippet>614</a>        <a href="#605">value</a>.<a href="../../../../rustc_type_ir/visit/trait.TypeVisitable.html#tymethod.visit_with">visit_with</a>(<span class="kw-2">&amp;mut </span><a href="../../../../rustc_infer/infer/outlives/for_liveness/struct.FreeRegionsVisitor.html">for_liveness::FreeRegionsVisitor</a> {
-<a href=#615 id=615 data-nosnippet>615</a>            tcx: <a href="#604">typeck</a>.<a href="../mod.rs.html#364-366">tcx</a>(),
+<a href=#615 id=615 data-nosnippet>615</a>            tcx: <a href="#604">typeck</a>.<a href="../mod.rs.html#375-377">tcx</a>(),
 <a href=#616 id=616 data-nosnippet>616</a>            param_env: <a href="#604">typeck</a>.infcx.param_env,
 <a href=#617 id=617 data-nosnippet>617</a>            op: |r| {
 <a href=#618 id=618 data-nosnippet>618</a>                <span class="kw">let </span>live_region_vid = <a href="#604">typeck</a>.universal_regions.<a href="../../universal_regions.rs.html#365-367">to_region_vid</a>(<a href="#617">r</a>);
@@ -632,7 +632,7 @@
 <a href=#632 id=632 data-nosnippet>632</a>    }
 <a href=#633 id=633 data-nosnippet>633</a>
 <a href=#634 id=634 data-nosnippet>634</a>    <span class="kw">fn </span>compute_drop_data(
-<a href=#635 id=635 data-nosnippet>635</a>        typeck: <span class="kw-2">&amp;</span><a href="../mod.rs.html#209-230">TypeChecker</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#635 id=635 data-nosnippet>635</a>        typeck: <span class="kw-2">&amp;</span><a href="../mod.rs.html#220-241">TypeChecker</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
 <a href=#636 id=636 data-nosnippet>636</a>        dropped_ty: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#637 id=637 data-nosnippet>637</a>        span: <a href="../../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
 <a href=#638 id=638 data-nosnippet>638</a>    ) -&gt; <a href="#91-94">DropData</a>&lt;<span class="lifetime">'tcx</span>&gt; {

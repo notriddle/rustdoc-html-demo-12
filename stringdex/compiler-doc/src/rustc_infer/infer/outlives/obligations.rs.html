@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_infer/src/infer/outlives/obligations.rs`."><title>obligations.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_infer" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-1b37d467.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_infer/infer/outlives/</div>obligations.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Code that handles "type-outlives" constraints like `T: 'a`. This
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_infer/src/infer/outlives/obligations.rs`."><title>obligations.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_infer" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-1b37d467.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_infer/infer/outlives/</div>obligations.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Code that handles "type-outlives" constraints like `T: 'a`. This
 <a href=#2 id=2 data-nosnippet>2</a>//! is based on the `push_outlives_components` function defined in rustc_infer,
 <a href=#3 id=3 data-nosnippet>3</a>//! but it adds a bit of heuristics on top, in particular to deal with
 <a href=#4 id=4 data-nosnippet>4</a>//! associated types and projections.
@@ -60,12 +60,12 @@
 <a href=#60 id=60 data-nosnippet>60</a>//! imply that `'b: 'a`.
 <a href=#61 id=61 data-nosnippet>61</a>
 <a href=#62 id=62 data-nosnippet>62</a></span><span class="kw">use </span><a href="https://docs.rs/ena/latest/ena/undo_log/trait.UndoLogs.html">rustc_data_structures::undo_log::UndoLogs</a>;
-<a href=#63 id=63 data-nosnippet>63</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/macro.bug.html">rustc_middle::bug</a>;
-<a href=#64 id=64 data-nosnippet>64</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/query/enum.ConstraintCategory.html">rustc_middle::mir::ConstraintCategory</a>;
+<a href=#63 id=63 data-nosnippet>63</a><span class="kw">use </span><a href="../../../../rustc_middle/macro.bug.html">rustc_middle::bug</a>;
+<a href=#64 id=64 data-nosnippet>64</a><span class="kw">use </span><a href="../../../../rustc_middle/mir/query/enum.ConstraintCategory.html">rustc_middle::mir::ConstraintCategory</a>;
 <a href=#65 id=65 data-nosnippet>65</a><span class="kw">use </span><a href="../../../../rustc_infer/traits/query/struct.NoSolution.html">rustc_middle::traits::query::NoSolution</a>;
 <a href=#66 id=66 data-nosnippet>66</a><span class="kw">use </span>rustc_middle::ty::outlives::{<a href="../../../../rustc_infer/infer/canonical/ir/outlives/enum.Component.html">Component</a>, <a href="../../../../rustc_infer/infer/canonical/ir/outlives/fn.push_outlives_components.html">push_outlives_components</a>};
 <a href=#67 id=67 data-nosnippet>67</a><span class="kw">use </span>rustc_middle::ty::{
-<a href=#68 id=68 data-nosnippet>68</a>    <a class="self" href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/index.html">self</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/generic_args/type.GenericArgKind.html">GenericArgKind</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/generic_args/type.GenericArgsRef.html">GenericArgsRef</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/predicate/type.PolyTypeOutlivesPredicate.html">PolyTypeOutlivesPredicate</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">Region</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/struct.Ty.html">Ty</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>,
+<a href=#68 id=68 data-nosnippet>68</a>    <a class="self" href="../../../../rustc_middle/ty/index.html">self</a>, <a href="../../../../rustc_middle/ty/generic_args/type.GenericArgKind.html">GenericArgKind</a>, <a href="../../../../rustc_middle/ty/generic_args/type.GenericArgsRef.html">GenericArgsRef</a>, <a href="../../../../rustc_middle/ty/predicate/type.PolyTypeOutlivesPredicate.html">PolyTypeOutlivesPredicate</a>, <a href="../../../../rustc_middle/ty/region/struct.Region.html">Region</a>, <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>, <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>,
 <a href=#69 id=69 data-nosnippet>69</a>    <a href="../../../../rustc_infer/infer/canonical/ir/trait.TypeFoldable.html">TypeFoldable</a> <span class="kw">as _</span>, <a href="../../../../rustc_infer/infer/canonical/ir/trait.TypeVisitableExt.html">TypeVisitableExt</a>,
 <a href=#70 id=70 data-nosnippet>70</a>};
 <a href=#71 id=71 data-nosnippet>71</a><span class="kw">use </span><a href="https://docs.rs/smallvec/1.15.1/smallvec/macro.smallvec.html">smallvec::smallvec</a>;
@@ -77,17 +77,17 @@
 <a href=#77 id=77 data-nosnippet>77</a><span class="kw">use </span><a href="../resolve.rs.html#76-78"><span class="kw">crate</span>::infer::resolve::OpportunisticRegionResolver</a>;
 <a href=#78 id=78 data-nosnippet>78</a><span class="kw">use </span><a href="../snapshot/undo_log.rs.html#20-33"><span class="kw">crate</span>::infer::snapshot::undo_log::UndoLog</a>;
 <a href=#79 id=79 data-nosnippet>79</a><span class="kw">use </span><span class="kw">crate</span>::infer::{
-<a href=#80 id=80 data-nosnippet>80</a>    <a class="self" href="../../lib.rs.html#27">self</a>, <a href="../region_constraints/mod.rs.html#126-130">GenericKind</a>, <a href="../mod.rs.html#247-328">InferCtxt</a>, <a href="../mod.rs.html#369-407">SubregionOrigin</a>, <a href="../mod.rs.html#527-531">TypeOutlivesConstraint</a>, <a href="../region_constraints/mod.rs.html#150-193">VerifyBound</a>,
+<a href=#80 id=80 data-nosnippet>80</a>    <a class="self" href="../../lib.rs.html#27">self</a>, <a href="../region_constraints/mod.rs.html#126-130">GenericKind</a>, <a href="../mod.rs.html#247-328">InferCtxt</a>, <a href="../mod.rs.html#369-407">SubregionOrigin</a>, <a href="../mod.rs.html#517-521">TypeOutlivesConstraint</a>, <a href="../region_constraints/mod.rs.html#150-193">VerifyBound</a>,
 <a href=#81 id=81 data-nosnippet>81</a>};
 <a href=#82 id=82 data-nosnippet>82</a><span class="kw">use </span><span class="kw">crate</span>::traits::{<a href="../../../../rustc_infer/traits/struct.ObligationCause.html">ObligationCause</a>, <a href="../../../../rustc_infer/traits/enum.ObligationCauseCode.html">ObligationCauseCode</a>};
 <a href=#83 id=83 data-nosnippet>83</a>
 <a href=#84 id=84 data-nosnippet>84</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="../mod.rs.html#247-328">InferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt; {
 <a href=#85 id=85 data-nosnippet>85</a>    <span class="kw">pub fn </span>register_outlives_constraint(
 <a href=#86 id=86 data-nosnippet>86</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
-<a href=#87 id=87 data-nosnippet>87</a>        <a href="../../../../rustc_infer/infer/canonical/ir/struct.OutlivesPredicate.html">ty::OutlivesPredicate</a>(arg, r2): <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/predicate/type.ArgOutlivesPredicate.html">ty::ArgOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#87 id=87 data-nosnippet>87</a>        <a href="../../../../rustc_infer/infer/canonical/ir/struct.OutlivesPredicate.html">ty::OutlivesPredicate</a>(arg, r2): <a href="../../../../rustc_middle/ty/predicate/type.ArgOutlivesPredicate.html">ty::ArgOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#88 id=88 data-nosnippet>88</a>        cause: <span class="kw-2">&amp;</span><a href="../../../../rustc_infer/traits/struct.ObligationCause.html">ObligationCause</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#89 id=89 data-nosnippet>89</a>    ) {
-<a href=#90 id=90 data-nosnippet>90</a>        <span class="kw">match </span><a href="#87">arg</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/generic_args/struct.GenericArg.html#method.kind">kind</a>() {
+<a href=#90 id=90 data-nosnippet>90</a>        <span class="kw">match </span><a href="#87">arg</a>.<a href="../../../../rustc_middle/ty/generic_args/struct.GenericArg.html#method.kind">kind</a>() {
 <a href=#91 id=91 data-nosnippet>91</a>            <a href="../../../../rustc_infer/infer/canonical/ir/enum.GenericArgKind.html">ty::GenericArgKind::Lifetime</a>(r1) =&gt; {
 <a href=#92 id=92 data-nosnippet>92</a>                <a class="self" href="#86">self</a>.<a href="#101-111">register_region_outlives_constraint</a>(<a href="../../../../rustc_infer/infer/canonical/ir/struct.OutlivesPredicate.html">ty::OutlivesPredicate</a>(<a href="#91">r1</a>, <a href="#87">r2</a>), <a href="#88">cause</a>);
 <a href=#93 id=93 data-nosnippet>93</a>            }
@@ -100,14 +100,14 @@
 <a href=#100 id=100 data-nosnippet>100</a>
 <a href=#101 id=101 data-nosnippet>101</a>    <span class="kw">pub fn </span>register_region_outlives_constraint(
 <a href=#102 id=102 data-nosnippet>102</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
-<a href=#103 id=103 data-nosnippet>103</a>        <a href="../../../../rustc_infer/infer/canonical/ir/struct.OutlivesPredicate.html">ty::OutlivesPredicate</a>(r_a, r_b): <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/predicate/type.RegionOutlivesPredicate.html">ty::RegionOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#103 id=103 data-nosnippet>103</a>        <a href="../../../../rustc_infer/infer/canonical/ir/struct.OutlivesPredicate.html">ty::OutlivesPredicate</a>(r_a, r_b): <a href="../../../../rustc_middle/ty/predicate/type.RegionOutlivesPredicate.html">ty::RegionOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#104 id=104 data-nosnippet>104</a>        cause: <span class="kw-2">&amp;</span><a href="../../../../rustc_infer/traits/struct.ObligationCause.html">ObligationCause</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#105 id=105 data-nosnippet>105</a>    ) {
-<a href=#106 id=106 data-nosnippet>106</a>        <span class="kw">let </span>origin = <a href="../mod.rs.html#1562-1600">SubregionOrigin::from_obligation_cause</a>(<a href="#104">cause</a>, || {
+<a href=#106 id=106 data-nosnippet>106</a>        <span class="kw">let </span>origin = <a href="../mod.rs.html#1552-1590">SubregionOrigin::from_obligation_cause</a>(<a href="#104">cause</a>, || {
 <a href=#107 id=107 data-nosnippet>107</a>            <a href="../mod.rs.html#383">SubregionOrigin::RelateRegionParamBound</a>(<a href="#104">cause</a>.span, <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>)
 <a href=#108 id=108 data-nosnippet>108</a>        });
 <a href=#109 id=109 data-nosnippet>109</a>        <span class="comment">// `'a: 'b` ==&gt; `'b &lt;= 'a`
-<a href=#110 id=110 data-nosnippet>110</a>        </span><a class="self" href="#102">self</a>.<a href="../mod.rs.html#715-722">sub_regions</a>(<a href="#106">origin</a>, <a href="#103">r_b</a>, <a href="#103">r_a</a>);
+<a href=#110 id=110 data-nosnippet>110</a>        </span><a class="self" href="#102">self</a>.<a href="../mod.rs.html#705-712">sub_regions</a>(<a href="#106">origin</a>, <a href="#103">r_b</a>, <a href="#103">r_a</a>);
 <a href=#111 id=111 data-nosnippet>111</a>    }
 <a href=#112 id=112 data-nosnippet>112</a>
 <a href=#113 id=113 data-nosnippet>113</a>    <span class="doccomment">/// Registers that the given region obligation must be resolved
@@ -118,7 +118,7 @@
 <a href=#118 id=118 data-nosnippet>118</a>    </span><span class="attr">#[instrument(level = <span class="string">"debug"</span>, skip(<span class="self">self</span>))]
 <a href=#119 id=119 data-nosnippet>119</a>    </span><span class="kw">pub fn </span>register_type_outlives_constraint_inner(
 <a href=#120 id=120 data-nosnippet>120</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
-<a href=#121 id=121 data-nosnippet>121</a>        obligation: <a href="../mod.rs.html#527-531">TypeOutlivesConstraint</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#121 id=121 data-nosnippet>121</a>        obligation: <a href="../mod.rs.html#517-521">TypeOutlivesConstraint</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#122 id=122 data-nosnippet>122</a>    ) {
 <a href=#123 id=123 data-nosnippet>123</a>        <span class="kw">let </span><span class="kw-2">mut </span>inner = <span class="self">self</span>.inner.borrow_mut();
 <a href=#124 id=124 data-nosnippet>124</a>        inner.undo_log.push(UndoLog::PushTypeOutlivesConstraint);
@@ -127,8 +127,8 @@
 <a href=#127 id=127 data-nosnippet>127</a>
 <a href=#128 id=128 data-nosnippet>128</a>    <span class="kw">pub fn </span>register_type_outlives_constraint(
 <a href=#129 id=129 data-nosnippet>129</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
-<a href=#130 id=130 data-nosnippet>130</a>        sup_type: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#131 id=131 data-nosnippet>131</a>        sub_region: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#130 id=130 data-nosnippet>130</a>        sup_type: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#131 id=131 data-nosnippet>131</a>        sub_region: <a href="../../../../rustc_middle/ty/region/struct.Region.html">Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#132 id=132 data-nosnippet>132</a>        cause: <span class="kw-2">&amp;</span><a href="../../../../rustc_infer/traits/struct.ObligationCause.html">ObligationCause</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#133 id=133 data-nosnippet>133</a>    ) {
 <a href=#134 id=134 data-nosnippet>134</a>        <span class="comment">// `is_global` means the type has no params, infer, placeholder, or non-`'static`
@@ -140,11 +140,11 @@
 <a href=#140 id=140 data-nosnippet>140</a>        }
 <a href=#141 id=141 data-nosnippet>141</a>
 <a href=#142 id=142 data-nosnippet>142</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="question-mark">?</span>sup_type, <span class="question-mark">?</span>sub_region, <span class="question-mark">?</span>cause);
-<a href=#143 id=143 data-nosnippet>143</a>        <span class="kw">let </span>origin = <a href="../mod.rs.html#1562-1600">SubregionOrigin::from_obligation_cause</a>(<a href="#132">cause</a>, || {
+<a href=#143 id=143 data-nosnippet>143</a>        <span class="kw">let </span>origin = <a href="../mod.rs.html#1552-1590">SubregionOrigin::from_obligation_cause</a>(<a href="#132">cause</a>, || {
 <a href=#144 id=144 data-nosnippet>144</a>            <a href="../mod.rs.html#379">SubregionOrigin::RelateParamBound</a>(
 <a href=#145 id=145 data-nosnippet>145</a>                <a href="#132">cause</a>.span,
 <a href=#146 id=146 data-nosnippet>146</a>                <a href="#130">sup_type</a>,
-<a href=#147 id=147 data-nosnippet>147</a>                <span class="kw">match </span><a href="#132">cause</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/traits/struct.ObligationCause.html#method.code">code</a>().<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/traits/enum.ObligationCauseCode.html#method.peel_derives">peel_derives</a>() {
+<a href=#147 id=147 data-nosnippet>147</a>                <span class="kw">match </span><a href="#132">cause</a>.<a href="../../../../rustc_middle/traits/struct.ObligationCause.html#method.code">code</a>().<a href="../../../../rustc_middle/traits/enum.ObligationCauseCode.html#method.peel_derives">peel_derives</a>() {
 <a href=#148 id=148 data-nosnippet>148</a>                    <a href="../../../../rustc_infer/traits/enum.ObligationCauseCode.html">ObligationCauseCode::WhereClause</a>(<span class="kw">_</span>, span)
 <a href=#149 id=149 data-nosnippet>149</a>                    | <a href="../../../../rustc_infer/traits/enum.ObligationCauseCode.html">ObligationCauseCode::WhereClauseInExpr</a>(<span class="kw">_</span>, span, ..)
 <a href=#150 id=150 data-nosnippet>150</a>                    | <a href="../../../../rustc_infer/traits/enum.ObligationCauseCode.html">ObligationCauseCode::OpaqueTypeBound</a>(span, <span class="kw">_</span>)
@@ -157,7 +157,7 @@
 <a href=#157 id=157 data-nosnippet>157</a>            )
 <a href=#158 id=158 data-nosnippet>158</a>        });
 <a href=#159 id=159 data-nosnippet>159</a>
-<a href=#160 id=160 data-nosnippet>160</a>        <a class="self" href="#129">self</a>.<a href="#119-126">register_type_outlives_constraint_inner</a>(<a href="../mod.rs.html#527-531">TypeOutlivesConstraint</a> {
+<a href=#160 id=160 data-nosnippet>160</a>        <a class="self" href="#129">self</a>.<a href="#119-126">register_type_outlives_constraint_inner</a>(<a href="../mod.rs.html#517-521">TypeOutlivesConstraint</a> {
 <a href=#161 id=161 data-nosnippet>161</a>            <a href="#130">sup_type</a>,
 <a href=#162 id=162 data-nosnippet>162</a>            <a href="#131">sub_region</a>,
 <a href=#163 id=163 data-nosnippet>163</a>            <a href="#143">origin</a>,
@@ -165,18 +165,18 @@
 <a href=#165 id=165 data-nosnippet>165</a>    }
 <a href=#166 id=166 data-nosnippet>166</a>
 <a href=#167 id=167 data-nosnippet>167</a>    <span class="doccomment">/// Trait queries just want to pass back type obligations "as is"
-<a href=#168 id=168 data-nosnippet>168</a>    </span><span class="kw">pub fn </span>take_registered_region_obligations(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../mod.rs.html#527-531">TypeOutlivesConstraint</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#168 id=168 data-nosnippet>168</a>    </span><span class="kw">pub fn </span>take_registered_region_obligations(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../mod.rs.html#517-521">TypeOutlivesConstraint</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
 <a href=#169 id=169 data-nosnippet>169</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert.html">assert!</a>(!<span class="self">self</span>.in_snapshot(), <span class="string">"cannot take registered region obligations in a snapshot"</span>);
 <a href=#170 id=170 data-nosnippet>170</a>        <a href="https://doc.rust-lang.org/nightly/core/mem/fn.take.html">std::mem::take</a>(<span class="kw-2">&amp;mut </span><a class="self" href="#168">self</a>.inner.<a href="https://doc.rust-lang.org/nightly/core/cell/struct.RefCell.html#method.borrow_mut">borrow_mut</a>().region_obligations)
 <a href=#171 id=171 data-nosnippet>171</a>    }
 <a href=#172 id=172 data-nosnippet>172</a>
-<a href=#173 id=173 data-nosnippet>173</a>    <span class="kw">pub fn </span>register_region_assumption(<span class="kw-2">&amp;</span><span class="self">self</span>, assumption: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/predicate/type.ArgOutlivesPredicate.html">ty::ArgOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;) {
+<a href=#173 id=173 data-nosnippet>173</a>    <span class="kw">pub fn </span>register_region_assumption(<span class="kw-2">&amp;</span><span class="self">self</span>, assumption: <a href="../../../../rustc_middle/ty/predicate/type.ArgOutlivesPredicate.html">ty::ArgOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;) {
 <a href=#174 id=174 data-nosnippet>174</a>        <span class="kw">let </span><span class="kw-2">mut </span>inner = <a class="self" href="#173">self</a>.inner.<a href="https://doc.rust-lang.org/nightly/core/cell/struct.RefCell.html#method.borrow_mut">borrow_mut</a>();
 <a href=#175 id=175 data-nosnippet>175</a>        <a href="#174">inner</a>.undo_log.<a href="https://docs.rs/ena/latest/ena/undo_log/trait.UndoLogs.html#tymethod.push">push</a>(<a href="../snapshot/undo_log.rs.html#31">UndoLog::PushRegionAssumption</a>);
 <a href=#176 id=176 data-nosnippet>176</a>        <a href="#174">inner</a>.region_assumptions.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#173">assumption</a>);
 <a href=#177 id=177 data-nosnippet>177</a>    }
 <a href=#178 id=178 data-nosnippet>178</a>
-<a href=#179 id=179 data-nosnippet>179</a>    <span class="kw">pub fn </span>take_registered_region_assumptions(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/predicate/type.ArgOutlivesPredicate.html">ty::ArgOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#179 id=179 data-nosnippet>179</a>    <span class="kw">pub fn </span>take_registered_region_assumptions(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../../../rustc_middle/ty/predicate/type.ArgOutlivesPredicate.html">ty::ArgOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
 <a href=#180 id=180 data-nosnippet>180</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert.html">assert!</a>(!<span class="self">self</span>.in_snapshot(), <span class="string">"cannot take registered region assumptions in a snapshot"</span>);
 <a href=#181 id=181 data-nosnippet>181</a>        <a href="https://doc.rust-lang.org/nightly/core/mem/fn.take.html">std::mem::take</a>(<span class="kw-2">&amp;mut </span><a class="self" href="#179">self</a>.inner.<a href="https://doc.rust-lang.org/nightly/core/cell/struct.RefCell.html#method.borrow_mut">borrow_mut</a>().region_assumptions)
 <a href=#182 id=182 data-nosnippet>182</a>    }
@@ -195,11 +195,11 @@
 <a href=#195 id=195 data-nosnippet>195</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
 <a href=#196 id=196 data-nosnippet>196</a>        outlives_env: <span class="kw-2">&amp;</span><a href="env.rs.html#31-45">OutlivesEnvironment</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#197 id=197 data-nosnippet>197</a>        <span class="kw-2">mut </span>deeply_normalize_ty: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnMut.html">FnMut</a>(
-<a href=#198 id=198 data-nosnippet>198</a>            <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/predicate/type.PolyTypeOutlivesPredicate.html">PolyTypeOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#198 id=198 data-nosnippet>198</a>            <a href="../../../../rustc_middle/ty/predicate/type.PolyTypeOutlivesPredicate.html">PolyTypeOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#199 id=199 data-nosnippet>199</a>            <a href="../mod.rs.html#369-407">SubregionOrigin</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#200 id=200 data-nosnippet>200</a>        )
-<a href=#201 id=201 data-nosnippet>201</a>            -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/predicate/type.PolyTypeOutlivesPredicate.html">PolyTypeOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;, <a href="../../../../rustc_infer/traits/query/struct.NoSolution.html">NoSolution</a>&gt;,
-<a href=#202 id=202 data-nosnippet>202</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;(), (<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/predicate/type.PolyTypeOutlivesPredicate.html">PolyTypeOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;, <a href="../mod.rs.html#369-407">SubregionOrigin</a>&lt;<span class="lifetime">'tcx</span>&gt;)&gt; {
+<a href=#201 id=201 data-nosnippet>201</a>            -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="../../../../rustc_middle/ty/predicate/type.PolyTypeOutlivesPredicate.html">PolyTypeOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;, <a href="../../../../rustc_infer/traits/query/struct.NoSolution.html">NoSolution</a>&gt;,
+<a href=#202 id=202 data-nosnippet>202</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;(), (<a href="../../../../rustc_middle/ty/predicate/type.PolyTypeOutlivesPredicate.html">PolyTypeOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;, <a href="../mod.rs.html#369-407">SubregionOrigin</a>&lt;<span class="lifetime">'tcx</span>&gt;)&gt; {
 <a href=#203 id=203 data-nosnippet>203</a>        <span class="macro">assert!</span>(!<span class="self">self</span>.in_snapshot(), <span class="string">"cannot process registered region obligations in a snapshot"</span>);
 <a href=#204 id=204 data-nosnippet>204</a>
 <a href=#205 id=205 data-nosnippet>205</a>        <span class="comment">// Must loop since the process of normalizing may itself register region obligations.
@@ -270,7 +270,7 @@
 <a href=#270 id=270 data-nosnippet>270</a>    <span class="comment">// See the comments on `process_registered_region_obligations` for the meaning
 <a href=#271 id=271 data-nosnippet>271</a>    // of these fields.
 <a href=#272 id=272 data-nosnippet>272</a>    </span>delegate: D,
-<a href=#273 id=273 data-nosnippet>273</a>    tcx: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#273 id=273 data-nosnippet>273</a>    tcx: <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#274 id=274 data-nosnippet>274</a>    verify_bound: <a href="verify.rs.html#18-28">VerifyBoundCx</a>&lt;<span class="lifetime">'cx</span>, <span class="lifetime">'tcx</span>&gt;,
 <a href=#275 id=275 data-nosnippet>275</a>}
 <a href=#276 id=276 data-nosnippet>276</a>
@@ -278,16 +278,16 @@
 <a href=#278 id=278 data-nosnippet>278</a>    <span class="kw">fn </span>push_sub_region_constraint(
 <a href=#279 id=279 data-nosnippet>279</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#280 id=280 data-nosnippet>280</a>        origin: <a href="../mod.rs.html#369-407">SubregionOrigin</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#281 id=281 data-nosnippet>281</a>        a: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#282 id=282 data-nosnippet>282</a>        b: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#283 id=283 data-nosnippet>283</a>        constraint_category: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/query/enum.ConstraintCategory.html">ConstraintCategory</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#281 id=281 data-nosnippet>281</a>        a: <a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#282 id=282 data-nosnippet>282</a>        b: <a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#283 id=283 data-nosnippet>283</a>        constraint_category: <a href="../../../../rustc_middle/mir/query/enum.ConstraintCategory.html">ConstraintCategory</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#284 id=284 data-nosnippet>284</a>    );
 <a href=#285 id=285 data-nosnippet>285</a>
 <a href=#286 id=286 data-nosnippet>286</a>    <span class="kw">fn </span>push_verify(
 <a href=#287 id=287 data-nosnippet>287</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#288 id=288 data-nosnippet>288</a>        origin: <a href="../mod.rs.html#369-407">SubregionOrigin</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#289 id=289 data-nosnippet>289</a>        kind: <a href="../region_constraints/mod.rs.html#126-130">GenericKind</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#290 id=290 data-nosnippet>290</a>        a: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#290 id=290 data-nosnippet>290</a>        a: <a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#291 id=291 data-nosnippet>291</a>        bound: <a href="../region_constraints/mod.rs.html#150-193">VerifyBound</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#292 id=292 data-nosnippet>292</a>    );
 <a href=#293 id=293 data-nosnippet>293</a>}
@@ -298,10 +298,10 @@
 <a href=#298 id=298 data-nosnippet>298</a>{
 <a href=#299 id=299 data-nosnippet>299</a>    <span class="kw">pub fn </span>new(
 <a href=#300 id=300 data-nosnippet>300</a>        delegate: D,
-<a href=#301 id=301 data-nosnippet>301</a>        tcx: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#301 id=301 data-nosnippet>301</a>        tcx: <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#302 id=302 data-nosnippet>302</a>        region_bound_pairs: <span class="kw-2">&amp;</span><span class="lifetime">'cx </span><a href="env.rs.html#50">RegionBoundPairs</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#303 id=303 data-nosnippet>303</a>        implicit_region_bound: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
-<a href=#304 id=304 data-nosnippet>304</a>        caller_bounds: <span class="kw-2">&amp;</span><span class="lifetime">'cx </span>[<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/predicate/type.PolyTypeOutlivesPredicate.html">ty::PolyTypeOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;],
+<a href=#303 id=303 data-nosnippet>303</a>        implicit_region_bound: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#304 id=304 data-nosnippet>304</a>        caller_bounds: <span class="kw-2">&amp;</span><span class="lifetime">'cx </span>[<a href="../../../../rustc_middle/ty/predicate/type.PolyTypeOutlivesPredicate.html">ty::PolyTypeOutlivesPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;],
 <a href=#305 id=305 data-nosnippet>305</a>    ) -&gt; <span class="self">Self </span>{
 <a href=#306 id=306 data-nosnippet>306</a>        <span class="self">Self </span>{
 <a href=#307 id=307 data-nosnippet>307</a>            <a href="#300">delegate</a>,
@@ -327,9 +327,9 @@
 <a href=#327 id=327 data-nosnippet>327</a>    </span><span class="kw">pub fn </span>type_must_outlive(
 <a href=#328 id=328 data-nosnippet>328</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#329 id=329 data-nosnippet>329</a>        origin: <a href="../mod.rs.html#369-407">infer::SubregionOrigin</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#330 id=330 data-nosnippet>330</a>        ty: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#331 id=331 data-nosnippet>331</a>        region: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#332 id=332 data-nosnippet>332</a>        category: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/query/enum.ConstraintCategory.html">ConstraintCategory</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#330 id=330 data-nosnippet>330</a>        ty: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#331 id=331 data-nosnippet>331</a>        region: <a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#332 id=332 data-nosnippet>332</a>        category: <a href="../../../../rustc_middle/mir/query/enum.ConstraintCategory.html">ConstraintCategory</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#333 id=333 data-nosnippet>333</a>    ) {
 <a href=#334 id=334 data-nosnippet>334</a>        <span class="macro">assert!</span>(!ty.has_escaping_bound_vars());
 <a href=#335 id=335 data-nosnippet>335</a>
@@ -341,9 +341,9 @@
 <a href=#341 id=341 data-nosnippet>341</a>    <span class="kw">fn </span>components_must_outlive(
 <a href=#342 id=342 data-nosnippet>342</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#343 id=343 data-nosnippet>343</a>        origin: <a href="../mod.rs.html#369-407">infer::SubregionOrigin</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#344 id=344 data-nosnippet>344</a>        components: <span class="kw-2">&amp;</span>[<a href="../../../../rustc_infer/infer/canonical/ir/outlives/enum.Component.html">Component</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;],
-<a href=#345 id=345 data-nosnippet>345</a>        region: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#346 id=346 data-nosnippet>346</a>        category: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/query/enum.ConstraintCategory.html">ConstraintCategory</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#344 id=344 data-nosnippet>344</a>        components: <span class="kw-2">&amp;</span>[<a href="../../../../rustc_infer/infer/canonical/ir/outlives/enum.Component.html">Component</a>&lt;<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;],
+<a href=#345 id=345 data-nosnippet>345</a>        region: <a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#346 id=346 data-nosnippet>346</a>        category: <a href="../../../../rustc_middle/mir/query/enum.ConstraintCategory.html">ConstraintCategory</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#347 id=347 data-nosnippet>347</a>    ) {
 <a href=#348 id=348 data-nosnippet>348</a>        <span class="kw">for </span>component <span class="kw">in </span>components.iter() {
 <a href=#349 id=349 data-nosnippet>349</a>            <span class="kw">let </span>origin = origin.clone();
@@ -378,8 +378,8 @@
 <a href=#378 id=378 data-nosnippet>378</a>    </span><span class="kw">fn </span>param_ty_must_outlive(
 <a href=#379 id=379 data-nosnippet>379</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#380 id=380 data-nosnippet>380</a>        origin: <a href="../mod.rs.html#369-407">infer::SubregionOrigin</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#381 id=381 data-nosnippet>381</a>        region: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#382 id=382 data-nosnippet>382</a>        param_ty: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/sty/struct.ParamTy.html">ty::ParamTy</a>,
+<a href=#381 id=381 data-nosnippet>381</a>        region: <a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#382 id=382 data-nosnippet>382</a>        param_ty: <a href="../../../../rustc_middle/ty/sty/struct.ParamTy.html">ty::ParamTy</a>,
 <a href=#383 id=383 data-nosnippet>383</a>    ) {
 <a href=#384 id=384 data-nosnippet>384</a>        <span class="kw">let </span>verify_bound = <span class="self">self</span>.verify_bound.param_or_placeholder_bound(param_ty.to_ty(<span class="self">self</span>.tcx));
 <a href=#385 id=385 data-nosnippet>385</a>        <span class="self">self</span>.delegate.push_verify(origin, GenericKind::Param(param_ty), region, verify_bound);
@@ -389,8 +389,8 @@
 <a href=#389 id=389 data-nosnippet>389</a>    </span><span class="kw">fn </span>placeholder_ty_must_outlive(
 <a href=#390 id=390 data-nosnippet>390</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#391 id=391 data-nosnippet>391</a>        origin: <a href="../mod.rs.html#369-407">infer::SubregionOrigin</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#392 id=392 data-nosnippet>392</a>        region: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#393 id=393 data-nosnippet>393</a>        placeholder_ty: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/type.PlaceholderType.html">ty::PlaceholderType</a>,
+<a href=#392 id=392 data-nosnippet>392</a>        region: <a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#393 id=393 data-nosnippet>393</a>        placeholder_ty: <a href="../../../../rustc_middle/ty/type.PlaceholderType.html">ty::PlaceholderType</a>,
 <a href=#394 id=394 data-nosnippet>394</a>    ) {
 <a href=#395 id=395 data-nosnippet>395</a>        <span class="kw">let </span>verify_bound = <span class="self">self
 <a href=#396 id=396 data-nosnippet>396</a>            </span>.verify_bound
@@ -407,8 +407,8 @@
 <a href=#407 id=407 data-nosnippet>407</a>    </span><span class="kw">fn </span>alias_ty_must_outlive(
 <a href=#408 id=408 data-nosnippet>408</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#409 id=409 data-nosnippet>409</a>        origin: <a href="../mod.rs.html#369-407">infer::SubregionOrigin</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#410 id=410 data-nosnippet>410</a>        region: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#411 id=411 data-nosnippet>411</a>        alias_ty: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/sty/type.AliasTy.html">ty::AliasTy</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#410 id=410 data-nosnippet>410</a>        region: <a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#411 id=411 data-nosnippet>411</a>        alias_ty: <a href="../../../../rustc_middle/ty/sty/type.AliasTy.html">ty::AliasTy</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#412 id=412 data-nosnippet>412</a>    ) {
 <a href=#413 id=413 data-nosnippet>413</a>        <span class="comment">// An optimization for a common case with opaque types.
 <a href=#414 id=414 data-nosnippet>414</a>        </span><span class="kw">if </span>alias_ty.args.is_empty() {
@@ -520,9 +520,9 @@
 <a href=#520 id=520 data-nosnippet>520</a>    <span class="attr">#[instrument(level = <span class="string">"debug"</span>, skip(<span class="self">self</span>))]
 <a href=#521 id=521 data-nosnippet>521</a>    </span><span class="kw">fn </span>args_must_outlive(
 <a href=#522 id=522 data-nosnippet>522</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-<a href=#523 id=523 data-nosnippet>523</a>        args: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/generic_args/type.GenericArgsRef.html">GenericArgsRef</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#523 id=523 data-nosnippet>523</a>        args: <a href="../../../../rustc_middle/ty/generic_args/type.GenericArgsRef.html">GenericArgsRef</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#524 id=524 data-nosnippet>524</a>        origin: <a href="../mod.rs.html#369-407">infer::SubregionOrigin</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#525 id=525 data-nosnippet>525</a>        region: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#525 id=525 data-nosnippet>525</a>        region: <a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#526 id=526 data-nosnippet>526</a>        opt_variances: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span>[<a href="../../../../rustc_infer/infer/canonical/ir/enum.Variance.html">ty::Variance</a>]&gt;,
 <a href=#527 id=527 data-nosnippet>527</a>    ) {
 <a href=#528 id=528 data-nosnippet>528</a>        <span class="kw">let </span>constraint = origin.to_constraint_category();
@@ -558,20 +558,20 @@
 <a href=#558 id=558 data-nosnippet>558</a>    <span class="kw">fn </span>push_sub_region_constraint(
 <a href=#559 id=559 data-nosnippet>559</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#560 id=560 data-nosnippet>560</a>        origin: <a href="../mod.rs.html#369-407">SubregionOrigin</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#561 id=561 data-nosnippet>561</a>        a: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#562 id=562 data-nosnippet>562</a>        b: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#563 id=563 data-nosnippet>563</a>        _constraint_category: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/mir/query/enum.ConstraintCategory.html">ConstraintCategory</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#561 id=561 data-nosnippet>561</a>        a: <a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#562 id=562 data-nosnippet>562</a>        b: <a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#563 id=563 data-nosnippet>563</a>        _constraint_category: <a href="../../../../rustc_middle/mir/query/enum.ConstraintCategory.html">ConstraintCategory</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#564 id=564 data-nosnippet>564</a>    ) {
-<a href=#565 id=565 data-nosnippet>565</a>        <a class="self" href="#559">self</a>.<a href="../mod.rs.html#715-722">sub_regions</a>(<a href="#560">origin</a>, <a href="#561">a</a>, <a href="#562">b</a>)
+<a href=#565 id=565 data-nosnippet>565</a>        <a class="self" href="#559">self</a>.<a href="../mod.rs.html#705-712">sub_regions</a>(<a href="#560">origin</a>, <a href="#561">a</a>, <a href="#562">b</a>)
 <a href=#566 id=566 data-nosnippet>566</a>    }
 <a href=#567 id=567 data-nosnippet>567</a>
 <a href=#568 id=568 data-nosnippet>568</a>    <span class="kw">fn </span>push_verify(
 <a href=#569 id=569 data-nosnippet>569</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#570 id=570 data-nosnippet>570</a>        origin: <a href="../mod.rs.html#369-407">SubregionOrigin</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#571 id=571 data-nosnippet>571</a>        kind: <a href="../region_constraints/mod.rs.html#126-130">GenericKind</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#572 id=572 data-nosnippet>572</a>        a: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#572 id=572 data-nosnippet>572</a>        a: <a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#573 id=573 data-nosnippet>573</a>        bound: <a href="../region_constraints/mod.rs.html#150-193">VerifyBound</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#574 id=574 data-nosnippet>574</a>    ) {
-<a href=#575 id=575 data-nosnippet>575</a>        <a class="self" href="#569">self</a>.<a href="../mod.rs.html#1277-1290">verify_generic_bound</a>(<a href="#570">origin</a>, <a href="#571">kind</a>, <a href="#572">a</a>, <a href="#573">bound</a>)
+<a href=#575 id=575 data-nosnippet>575</a>        <a class="self" href="#569">self</a>.<a href="../mod.rs.html#1267-1280">verify_generic_bound</a>(<a href="#570">origin</a>, <a href="#571">kind</a>, <a href="#572">a</a>, <a href="#573">bound</a>)
 <a href=#576 id=576 data-nosnippet>576</a>    }
 <a href=#577 id=577 data-nosnippet>577</a>}</code></pre></div></section></main></body></html>

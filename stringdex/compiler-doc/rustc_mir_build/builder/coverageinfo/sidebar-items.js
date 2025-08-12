@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["mcdc"],"struct":["BlockMarkerGen","BranchInfo","CoverageInfoBuilder","NotInfo"]};
+window.SIDEBAR_ITEMS = {"struct":["BlockMarkerGen","BranchInfo","CoverageInfoBuilder","NotInfo"]};

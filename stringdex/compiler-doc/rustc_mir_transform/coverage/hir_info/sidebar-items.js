@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["extract_hir_info","extract_hole_spans_from_hir","hash_mir_source"],"struct":["ExtractedHirInfo"]};

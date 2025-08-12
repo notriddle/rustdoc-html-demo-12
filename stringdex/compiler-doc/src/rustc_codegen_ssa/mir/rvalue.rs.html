@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_ssa/src/mir/rvalue.rs`."><title>rvalue.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_codegen_ssa" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_codegen_ssa/mir/</div>rvalue.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>rustc_abi::{<span class="self"><a href="../../../rustc_abi/index.html">self</a> </span><span class="kw">as </span>abi, <a href="../../../rustc_abi/layout/ty/constant.FIRST_VARIANT.html">FIRST_VARIANT</a>};
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_ssa/src/mir/rvalue.rs`."><title>rvalue.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_codegen_ssa" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_codegen_ssa/mir/</div>rvalue.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>rustc_abi::{<span class="self"><a href="../../../rustc_abi/index.html">self</a> </span><span class="kw">as </span>abi, <a href="../../../rustc_abi/layout/ty/constant.FIRST_VARIANT.html">FIRST_VARIANT</a>};
 <a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span><a href="../../../rustc_middle/ty/adjustment/enum.PointerCoercion.html">rustc_middle::ty::adjustment::PointerCoercion</a>;
 <a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>rustc_middle::ty::layout::{<a href="../../../rustc_middle/ty/layout/trait.HasTyCtxt.html">HasTyCtxt</a>, <a href="../../../rustc_middle/ty/layout/trait.HasTypingEnv.html">HasTypingEnv</a>, <a href="../../../rustc_middle/ty/layout/trait.LayoutOf.html">LayoutOf</a>, <a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>};
 <a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>rustc_middle::ty::{<a class="self" href="../../../rustc_middle/ty/index.html">self</a>, <a href="../../../rustc_middle/ty/instance/struct.Instance.html">Instance</a>, <a href="../../../rustc_middle/ty/struct.Ty.html">Ty</a>, <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>};
@@ -6,14 +6,14 @@
 <a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="../../../rustc_session/config/enum.OptLevel.html">rustc_session::config::OptLevel</a>;
 <a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug</a>, <a href="https://docs.rs/tracing-attributes/0.1.30/tracing_attributes/attr.instrument.html">instrument</a>};
 <a href=#8 id=8 data-nosnippet>8</a>
-<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><span class="kw">super</span>::operand::{<a href="operand.rs.html#121-127">OperandRef</a>, <a href="operand.rs.html#634-637">OperandRefBuilder</a>, <a href="operand.rs.html#27-71">OperandValue</a>};
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><span class="kw">super</span>::operand::{<a href="operand.rs.html#121-127">OperandRef</a>, <a href="operand.rs.html#649-652">OperandRefBuilder</a>, <a href="operand.rs.html#27-71">OperandValue</a>};
 <a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><span class="kw">super</span>::place::{<a href="place.rs.html#80-90">PlaceRef</a>, <a href="place.rs.html#24-33">PlaceValue</a>, <a href="place.rs.html#450-506">codegen_tag_value</a>};
 <a href=#11 id=11 data-nosnippet>11</a><span class="kw">use super</span>::{<a href="mod.rs.html#50-123">FunctionCx</a>, <a href="mod.rs.html#139-155">LocalRef</a>};
 <a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span><span class="kw">crate</span>::common::{<a href="../common.rs.html#14-25">IntPredicate</a>, <a href="../common.rs.html#69-89">TypeKind</a>};
 <a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span><a href="../lib.rs.html#63"><span class="kw">crate</span>::traits</a>::<span class="kw-2">*</span>;
 <a href=#14 id=14 data-nosnippet>14</a><span class="kw">use crate</span>::{<a href="../lib.rs.html#176-183">MemFlags</a>, <a href="../lib.rs.html#53">base</a>};
 <a href=#15 id=15 data-nosnippet>15</a>
-<a href=#16 id=16 data-nosnippet>16</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Bx: <a href="../traits/builder.rs.html#33-613">BuilderMethods</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt; <a href="mod.rs.html#50-123">FunctionCx</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Bx&gt; {
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Bx: <a href="../traits/builder.rs.html#33-616">BuilderMethods</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt; <a href="mod.rs.html#50-123">FunctionCx</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Bx&gt; {
 <a href=#17 id=17 data-nosnippet>17</a>    <span class="attr">#[instrument(level = <span class="string">"trace"</span>, skip(<span class="self">self</span>, bx))]
 <a href=#18 id=18 data-nosnippet>18</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>codegen_rvalue(
 <a href=#19 id=19 data-nosnippet>19</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
@@ -211,7 +211,7 @@
 <a href=#211 id=211 data-nosnippet>211</a>            <span class="comment">// Since in this path we have a place anyway, we can store or copy to it,
 <a href=#212 id=212 data-nosnippet>212</a>            // making sure we use the destination place's alignment even if the
 <a href=#213 id=213 data-nosnippet>213</a>            // source would normally have a higher one.
-<a href=#214 id=214 data-nosnippet>214</a>            </span><a href="#196">src</a>.val.<a href="operand.rs.html#840-846">store</a>(<a href="#195">bx</a>, <a href="#197">dst</a>.val.<a href="place.rs.html#57-64">with_type</a>(<a href="#196">src</a>.layout));
+<a href=#214 id=214 data-nosnippet>214</a>            </span><a href="#196">src</a>.val.<a href="operand.rs.html#855-861">store</a>(<a href="#195">bx</a>, <a href="#197">dst</a>.val.<a href="place.rs.html#57-64">with_type</a>(<a href="#196">src</a>.layout));
 <a href=#215 id=215 data-nosnippet>215</a>        }
 <a href=#216 id=216 data-nosnippet>216</a>    }
 <a href=#217 id=217 data-nosnippet>217</a>
@@ -246,7 +246,7 @@
 <a href=#246 id=246 data-nosnippet>246</a>
 <a href=#247 id=247 data-nosnippet>247</a>            <span class="comment">// We still need to return a value of the appropriate type, but
 <a href=#248 id=248 data-nosnippet>248</a>            // it's already UB so do the easiest thing available.
-<a href=#249 id=249 data-nosnippet>249</a>            </span><span class="kw">return </span><a href="operand.rs.html#820-838">OperandValue::poison</a>(<a href="#224">bx</a>, <a href="#226">cast</a>);
+<a href=#249 id=249 data-nosnippet>249</a>            </span><span class="kw">return </span><a href="operand.rs.html#835-853">OperandValue::poison</a>(<a href="#224">bx</a>, <a href="#226">cast</a>);
 <a href=#250 id=250 data-nosnippet>250</a>        }
 <a href=#251 id=251 data-nosnippet>251</a>
 <a href=#252 id=252 data-nosnippet>252</a>        <span class="comment">// To or from pointers takes different methods, so we use this to restrict
@@ -309,10 +309,10 @@
 <a href=#309 id=309 data-nosnippet>309</a>                </span><span class="kw">let </span>align = <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html#tymethod.max">Ord::max</a>(<a href="#225">operand</a>.layout.align.abi, <a href="#226">cast</a>.align.abi);
 <a href=#310 id=310 data-nosnippet>310</a>                <span class="kw">let </span>size = <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html#tymethod.max">Ord::max</a>(<a href="#225">operand</a>.layout.size, <a href="#226">cast</a>.size);
 <a href=#311 id=311 data-nosnippet>311</a>                <span class="kw">let </span>temp = <a href="place.rs.html#47-54">PlaceValue::alloca</a>(<a href="#224">bx</a>, <a href="#310">size</a>, <a href="#309">align</a>);
-<a href=#312 id=312 data-nosnippet>312</a>                <a href="#224">bx</a>.<a href="../traits/builder.rs.html#562">lifetime_start</a>(<a href="#311">temp</a>.llval, <a href="#310">size</a>);
-<a href=#313 id=313 data-nosnippet>313</a>                <a href="#225">operand</a>.val.<a href="operand.rs.html#840-846">store</a>(<a href="#224">bx</a>, <a href="#311">temp</a>.<a href="place.rs.html#57-64">with_type</a>(<a href="#225">operand</a>.layout));
+<a href=#312 id=312 data-nosnippet>312</a>                <a href="#224">bx</a>.<a href="../traits/builder.rs.html#565">lifetime_start</a>(<a href="#311">temp</a>.llval, <a href="#310">size</a>);
+<a href=#313 id=313 data-nosnippet>313</a>                <a href="#225">operand</a>.val.<a href="operand.rs.html#855-861">store</a>(<a href="#224">bx</a>, <a href="#311">temp</a>.<a href="place.rs.html#57-64">with_type</a>(<a href="#225">operand</a>.layout));
 <a href=#314 id=314 data-nosnippet>314</a>                <span class="kw">let </span>val = <a href="#224">bx</a>.<a href="../traits/builder.rs.html#251-252">load_operand</a>(<a href="#311">temp</a>.<a href="place.rs.html#57-64">with_type</a>(<a href="#226">cast</a>)).val;
-<a href=#315 id=315 data-nosnippet>315</a>                <a href="#224">bx</a>.<a href="../traits/builder.rs.html#565">lifetime_end</a>(<a href="#311">temp</a>.llval, <a href="#310">size</a>);
+<a href=#315 id=315 data-nosnippet>315</a>                <a href="#224">bx</a>.<a href="../traits/builder.rs.html#568">lifetime_end</a>(<a href="#311">temp</a>.llval, <a href="#310">size</a>);
 <a href=#316 id=316 data-nosnippet>316</a>                <a href="#314">val</a>
 <a href=#317 id=317 data-nosnippet>317</a>            }
 <a href=#318 id=318 data-nosnippet>318</a>        }
@@ -377,7 +377,7 @@
 <a href=#377 id=377 data-nosnippet>377</a>    ) -&gt; <a href="operand.rs.html#121-127">OperandRef</a>&lt;<span class="lifetime">'tcx</span>, Bx::Value&gt; {
 <a href=#378 id=378 data-nosnippet>378</a>        <span class="kw">match </span><span class="kw-2">*</span><a href="#376">rvalue</a> {
 <a href=#379 id=379 data-nosnippet>379</a>            <a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.Cast">mir::Rvalue::Cast</a>(<span class="kw-2">ref </span>kind, <span class="kw-2">ref </span>source, mir_cast_ty) =&gt; {
-<a href=#380 id=380 data-nosnippet>380</a>                <span class="kw">let </span>operand = <a class="self" href="#374">self</a>.<a href="operand.rs.html#991-1022">codegen_operand</a>(<a href="#375">bx</a>, <a href="#379">source</a>);
+<a href=#380 id=380 data-nosnippet>380</a>                <span class="kw">let </span>operand = <a class="self" href="#374">self</a>.<a href="operand.rs.html#1006-1037">codegen_operand</a>(<a href="#375">bx</a>, <a href="#379">source</a>);
 <a href=#381 id=381 data-nosnippet>381</a>                <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"cast operand is {:?}"</span>, operand);
 <a href=#382 id=382 data-nosnippet>382</a>                <span class="kw">let </span>cast = <a href="#375">bx</a>.<a href="../traits/builder.rs.html#64">cx</a>().<a href="../../../rustc_middle/ty/layout/trait.LayoutOf.html#tymethod.layout_of">layout_of</a>(<a class="self" href="#374">self</a>.<a href="mod.rs.html#126-136">monomorphize</a>(<a href="#379">mir_cast_ty</a>));
 <a href=#383 id=383 data-nosnippet>383</a>
@@ -495,7 +495,7 @@
 <a href=#495 id=495 data-nosnippet>495</a>            }
 <a href=#496 id=496 data-nosnippet>496</a>
 <a href=#497 id=497 data-nosnippet>497</a>            <a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.CopyForDeref">mir::Rvalue::CopyForDeref</a>(place) =&gt; {
-<a href=#498 id=498 data-nosnippet>498</a>                <a class="self" href="#374">self</a>.<a href="operand.rs.html#991-1022">codegen_operand</a>(<a href="#375">bx</a>, <span class="kw-2">&amp;</span><a href="../../../rustc_middle/mir/syntax/enum.Operand.html#variant.Copy">mir::Operand::Copy</a>(<a href="#497">place</a>))
+<a href=#498 id=498 data-nosnippet>498</a>                <a class="self" href="#374">self</a>.<a href="operand.rs.html#1006-1037">codegen_operand</a>(<a href="#375">bx</a>, <span class="kw-2">&amp;</span><a href="../../../rustc_middle/mir/syntax/enum.Operand.html#variant.Copy">mir::Operand::Copy</a>(<a href="#497">place</a>))
 <a href=#499 id=499 data-nosnippet>499</a>            }
 <a href=#500 id=500 data-nosnippet>500</a>            <a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.RawPtr">mir::Rvalue::RawPtr</a>(kind, place) =&gt; {
 <a href=#501 id=501 data-nosnippet>501</a>                <span class="kw">let </span>mk_ptr = <span class="kw">move </span>|tcx: <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;, ty: <a href="../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;| {
@@ -515,8 +515,8 @@
 <a href=#515 id=515 data-nosnippet>515</a>            <a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.BinaryOp">mir::Rvalue::BinaryOp</a>(op_with_overflow, <span class="kw">box </span>(<span class="kw-2">ref </span>lhs, <span class="kw-2">ref </span>rhs))
 <a href=#516 id=516 data-nosnippet>516</a>                <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(op) = <a href="#515">op_with_overflow</a>.<a href="../../../rustc_middle/mir/syntax/enum.BinOp.html#method.overflowing_to_wrapping">overflowing_to_wrapping</a>() =&gt;
 <a href=#517 id=517 data-nosnippet>517</a>            {
-<a href=#518 id=518 data-nosnippet>518</a>                <span class="kw">let </span>lhs = <a class="self" href="#374">self</a>.<a href="operand.rs.html#991-1022">codegen_operand</a>(<a href="#375">bx</a>, <a href="#515">lhs</a>);
-<a href=#519 id=519 data-nosnippet>519</a>                <span class="kw">let </span>rhs = <a class="self" href="#374">self</a>.<a href="operand.rs.html#991-1022">codegen_operand</a>(<a href="#375">bx</a>, <a href="#515">rhs</a>);
+<a href=#518 id=518 data-nosnippet>518</a>                <span class="kw">let </span>lhs = <a class="self" href="#374">self</a>.<a href="operand.rs.html#1006-1037">codegen_operand</a>(<a href="#375">bx</a>, <a href="#515">lhs</a>);
+<a href=#519 id=519 data-nosnippet>519</a>                <span class="kw">let </span>rhs = <a class="self" href="#374">self</a>.<a href="operand.rs.html#1006-1037">codegen_operand</a>(<a href="#375">bx</a>, <a href="#515">rhs</a>);
 <a href=#520 id=520 data-nosnippet>520</a>                <span class="kw">let </span>result = <a class="self" href="#374">self</a>.<a href="#979-1002">codegen_scalar_checked_binop</a>(
 <a href=#521 id=521 data-nosnippet>521</a>                    <a href="#375">bx</a>,
 <a href=#522 id=522 data-nosnippet>522</a>                    <a href="#516">op</a>,
@@ -529,8 +529,8 @@
 <a href=#529 id=529 data-nosnippet>529</a>                <a href="operand.rs.html#121-127">OperandRef</a> { val: <a href="#520">result</a>, layout: <a href="#375">bx</a>.<a href="../traits/builder.rs.html#64">cx</a>().<a href="../../../rustc_middle/ty/layout/trait.LayoutOf.html#tymethod.layout_of">layout_of</a>(<a href="#528">operand_ty</a>) }
 <a href=#530 id=530 data-nosnippet>530</a>            }
 <a href=#531 id=531 data-nosnippet>531</a>            <a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.BinaryOp">mir::Rvalue::BinaryOp</a>(op, <span class="kw">box </span>(<span class="kw-2">ref </span>lhs, <span class="kw-2">ref </span>rhs)) =&gt; {
-<a href=#532 id=532 data-nosnippet>532</a>                <span class="kw">let </span>lhs = <a class="self" href="#374">self</a>.<a href="operand.rs.html#991-1022">codegen_operand</a>(<a href="#375">bx</a>, <a href="#531">lhs</a>);
-<a href=#533 id=533 data-nosnippet>533</a>                <span class="kw">let </span>rhs = <a class="self" href="#374">self</a>.<a href="operand.rs.html#991-1022">codegen_operand</a>(<a href="#375">bx</a>, <a href="#531">rhs</a>);
+<a href=#532 id=532 data-nosnippet>532</a>                <span class="kw">let </span>lhs = <a class="self" href="#374">self</a>.<a href="operand.rs.html#1006-1037">codegen_operand</a>(<a href="#375">bx</a>, <a href="#531">lhs</a>);
+<a href=#533 id=533 data-nosnippet>533</a>                <span class="kw">let </span>rhs = <a class="self" href="#374">self</a>.<a href="operand.rs.html#1006-1037">codegen_operand</a>(<a href="#375">bx</a>, <a href="#531">rhs</a>);
 <a href=#534 id=534 data-nosnippet>534</a>                <span class="kw">let </span>llresult = <span class="kw">match </span>(<a href="#532">lhs</a>.val, <a href="#533">rhs</a>.val) {
 <a href=#535 id=535 data-nosnippet>535</a>                    (
 <a href=#536 id=536 data-nosnippet>536</a>                        OperandValue::Pair(lhs_addr, lhs_extra),
@@ -564,7 +564,7 @@
 <a href=#564 id=564 data-nosnippet>564</a>            }
 <a href=#565 id=565 data-nosnippet>565</a>
 <a href=#566 id=566 data-nosnippet>566</a>            <a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.UnaryOp">mir::Rvalue::UnaryOp</a>(op, <span class="kw-2">ref </span>operand) =&gt; {
-<a href=#567 id=567 data-nosnippet>567</a>                <span class="kw">let </span>operand = <a class="self" href="#374">self</a>.<a href="operand.rs.html#991-1022">codegen_operand</a>(<a href="#375">bx</a>, <a href="#566">operand</a>);
+<a href=#567 id=567 data-nosnippet>567</a>                <span class="kw">let </span>operand = <a class="self" href="#374">self</a>.<a href="operand.rs.html#1006-1037">codegen_operand</a>(<a href="#375">bx</a>, <a href="#566">operand</a>);
 <a href=#568 id=568 data-nosnippet>568</a>                <span class="kw">let </span>is_float = <a href="#567">operand</a>.layout.ty.<a href="../../../rustc_middle/ty/struct.Ty.html#method.is_floating_point">is_floating_point</a>();
 <a href=#569 id=569 data-nosnippet>569</a>                <span class="kw">let </span>(val, layout) = <span class="kw">match </span><a href="#566">op</a> {
 <a href=#570 id=570 data-nosnippet>570</a>                    <a href="../../../rustc_middle/mir/syntax/enum.UnOp.html#variant.Not">mir::UnOp::Not</a> =&gt; {
@@ -600,8 +600,8 @@
 <a href=#600 id=600 data-nosnippet>600</a>            <a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.Discriminant">mir::Rvalue::Discriminant</a>(<span class="kw-2">ref </span>place) =&gt; {
 <a href=#601 id=601 data-nosnippet>601</a>                <span class="kw">let </span>discr_ty = <a href="#376">rvalue</a>.<a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html#method.ty">ty</a>(<a class="self" href="#374">self</a>.mir, <a href="#375">bx</a>.<a href="../../../rustc_middle/ty/layout/trait.HasTyCtxt.html#tymethod.tcx">tcx</a>());
 <a href=#602 id=602 data-nosnippet>602</a>                <span class="kw">let </span>discr_ty = <a class="self" href="#374">self</a>.<a href="mod.rs.html#126-136">monomorphize</a>(<a href="#601">discr_ty</a>);
-<a href=#603 id=603 data-nosnippet>603</a>                <span class="kw">let </span>operand = <a class="self" href="#374">self</a>.<a href="operand.rs.html#966-989">codegen_consume</a>(<a href="#375">bx</a>, <a href="#600">place</a>.<a href="../../../rustc_middle/mir/syntax/struct.Place.html#method.as_ref">as_ref</a>());
-<a href=#604 id=604 data-nosnippet>604</a>                <span class="kw">let </span>discr = <a href="#603">operand</a>.<a href="operand.rs.html#389-615">codegen_get_discr</a>(<a class="self" href="#374">self</a>, <a href="#375">bx</a>, <a href="#602">discr_ty</a>);
+<a href=#603 id=603 data-nosnippet>603</a>                <span class="kw">let </span>operand = <a class="self" href="#374">self</a>.<a href="operand.rs.html#981-1004">codegen_consume</a>(<a href="#375">bx</a>, <a href="#600">place</a>.<a href="../../../rustc_middle/mir/syntax/struct.Place.html#method.as_ref">as_ref</a>());
+<a href=#604 id=604 data-nosnippet>604</a>                <span class="kw">let </span>discr = <a href="#603">operand</a>.<a href="operand.rs.html#389-630">codegen_get_discr</a>(<a class="self" href="#374">self</a>, <a href="#375">bx</a>, <a href="#602">discr_ty</a>);
 <a href=#605 id=605 data-nosnippet>605</a>                <a href="operand.rs.html#121-127">OperandRef</a> {
 <a href=#606 id=606 data-nosnippet>606</a>                    val: <a href="operand.rs.html#47">OperandValue::Immediate</a>(<a href="#604">discr</a>),
 <a href=#607 id=607 data-nosnippet>607</a>                    layout: <a class="self" href="#374">self</a>.cx.<a href="../../../rustc_middle/ty/layout/trait.LayoutOf.html#tymethod.layout_of">layout_of</a>(<a href="#602">discr_ty</a>),
@@ -662,7 +662,7 @@
 <a href=#662 id=662 data-nosnippet>662</a>                    } <span class="kw">else </span>{
 <a href=#663 id=663 data-nosnippet>663</a>                        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
 <a href=#664 id=664 data-nosnippet>664</a>                    </a>};
-<a href=#665 id=665 data-nosnippet>665</a>                    <a href="#375">bx</a>.<a href="../traits/builder.rs.html#588-597">call</a>(
+<a href=#665 id=665 data-nosnippet>665</a>                    <a href="#375">bx</a>.<a href="../traits/builder.rs.html#591-600">call</a>(
 <a href=#666 id=666 data-nosnippet>666</a>                        <a href="#659">fn_ty</a>,
 <a href=#667 id=667 data-nosnippet>667</a>                        <a href="#660">fn_attrs</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.as_deref">as_deref</a>(),
 <a href=#668 id=668 data-nosnippet>668</a>                        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#658">fn_abi</a>),
@@ -676,12 +676,12 @@
 <a href=#676 id=676 data-nosnippet>676</a>                };
 <a href=#677 id=677 data-nosnippet>677</a>                <a href="operand.rs.html#121-127">OperandRef</a> { val: <a href="operand.rs.html#47">OperandValue::Immediate</a>(<a href="#651">static_</a>), <a href="#650">layout</a> }
 <a href=#678 id=678 data-nosnippet>678</a>            }
-<a href=#679 id=679 data-nosnippet>679</a>            <a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.Use">mir::Rvalue::Use</a>(<span class="kw-2">ref </span>operand) =&gt; <a class="self" href="#374">self</a>.<a href="operand.rs.html#991-1022">codegen_operand</a>(<a href="#375">bx</a>, <a href="#679">operand</a>),
+<a href=#679 id=679 data-nosnippet>679</a>            <a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.Use">mir::Rvalue::Use</a>(<span class="kw-2">ref </span>operand) =&gt; <a class="self" href="#374">self</a>.<a href="operand.rs.html#1006-1037">codegen_operand</a>(<a href="#375">bx</a>, <a href="#679">operand</a>),
 <a href=#680 id=680 data-nosnippet>680</a>            <a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.Repeat">mir::Rvalue::Repeat</a>(<span class="kw-2">ref </span>elem, len_const) =&gt; {
 <a href=#681 id=681 data-nosnippet>681</a>                <span class="comment">// All arrays have `BackendRepr::Memory`, so only the ZST cases
 <a href=#682 id=682 data-nosnippet>682</a>                // end up here. Anything else forces the destination local to be
 <a href=#683 id=683 data-nosnippet>683</a>                // `Memory`, and thus ends up handled in `codegen_rvalue` instead.
-<a href=#684 id=684 data-nosnippet>684</a>                </span><span class="kw">let </span>operand = <a class="self" href="#374">self</a>.<a href="operand.rs.html#991-1022">codegen_operand</a>(<a href="#375">bx</a>, <a href="#680">elem</a>);
+<a href=#684 id=684 data-nosnippet>684</a>                </span><span class="kw">let </span>operand = <a class="self" href="#374">self</a>.<a href="operand.rs.html#1006-1037">codegen_operand</a>(<a href="#375">bx</a>, <a href="#680">elem</a>);
 <a href=#685 id=685 data-nosnippet>685</a>                <span class="kw">let </span>array_ty = <a href="../../../rustc_middle/ty/struct.Ty.html#method.new_array_with_const_len">Ty::new_array_with_const_len</a>(<a href="#375">bx</a>.<a href="../../../rustc_middle/ty/layout/trait.HasTyCtxt.html#tymethod.tcx">tcx</a>(), <a href="#684">operand</a>.layout.ty, <a href="#680">len_const</a>);
 <a href=#686 id=686 data-nosnippet>686</a>                <span class="kw">let </span>array_ty = <a class="self" href="#374">self</a>.<a href="mod.rs.html#126-136">monomorphize</a>(<a href="#685">array_ty</a>);
 <a href=#687 id=687 data-nosnippet>687</a>                <span class="kw">let </span>array_layout = <a href="#375">bx</a>.<a href="../../../rustc_middle/ty/layout/trait.LayoutOf.html#tymethod.layout_of">layout_of</a>(<a href="#686">array_ty</a>);
@@ -700,7 +700,7 @@
 <a href=#700 id=700 data-nosnippet>700</a>                <span class="kw">let </span>ty = <a class="self" href="#374">self</a>.<a href="mod.rs.html#126-136">monomorphize</a>(<a href="#699">ty</a>);
 <a href=#701 id=701 data-nosnippet>701</a>                <span class="kw">let </span>layout = <a class="self" href="#374">self</a>.cx.<a href="../../../rustc_middle/ty/layout/trait.LayoutOf.html#tymethod.layout_of">layout_of</a>(<a href="#700">ty</a>);
 <a href=#702 id=702 data-nosnippet>702</a>
-<a href=#703 id=703 data-nosnippet>703</a>                <span class="kw">let </span><span class="kw-2">mut </span>builder = <a href="operand.rs.html#645-658">OperandRefBuilder::new</a>(<a href="#701">layout</a>);
+<a href=#703 id=703 data-nosnippet>703</a>                <span class="kw">let </span><span class="kw-2">mut </span>builder = <a href="operand.rs.html#660-673">OperandRefBuilder::new</a>(<a href="#701">layout</a>);
 <a href=#704 id=704 data-nosnippet>704</a>                <span class="kw">for </span>(field_idx, field) <span class="kw">in </span>fields.iter_enumerated() {
 <a href=#705 id=705 data-nosnippet>705</a>                    <span class="kw">let </span>op = <span class="self">self</span>.codegen_operand(bx, field);
 <a href=#706 id=706 data-nosnippet>706</a>                    <span class="kw">let </span>fi = active_field_index.unwrap_or(field_idx);
@@ -714,19 +714,19 @@
 <a href=#714 id=714 data-nosnippet>714</a>                        // potentially `unreachable` or just return the poison for
 <a href=#715 id=715 data-nosnippet>715</a>                        // more optimizability, if that turns out to be helpful.
 <a href=#716 id=716 data-nosnippet>716</a>                        </span><a href="#375">bx</a>.<a href="../traits/intrinsic.rs.html#28">abort</a>();
-<a href=#717 id=717 data-nosnippet>717</a>                        <span class="kw">let </span>val = <a href="operand.rs.html#820-838">OperandValue::poison</a>(<a href="#375">bx</a>, <a href="#701">layout</a>);
+<a href=#717 id=717 data-nosnippet>717</a>                        <span class="kw">let </span>val = <a href="operand.rs.html#835-853">OperandValue::poison</a>(<a href="#375">bx</a>, <a href="#701">layout</a>);
 <a href=#718 id=718 data-nosnippet>718</a>                        <a href="operand.rs.html#121-127">OperandRef</a> { <a href="#717">val</a>, <a href="#701">layout</a> }
 <a href=#719 id=719 data-nosnippet>719</a>                    }
 <a href=#720 id=720 data-nosnippet>720</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(maybe_tag_value) =&gt; {
 <a href=#721 id=721 data-nosnippet>721</a>                        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>((tag_field, tag_imm)) = <a href="#720">maybe_tag_value</a> {
-<a href=#722 id=722 data-nosnippet>722</a>                            <a href="#703">builder</a>.<a href="operand.rs.html#754-769">insert_imm</a>(<a href="#721">tag_field</a>, <a href="#721">tag_imm</a>);
+<a href=#722 id=722 data-nosnippet>722</a>                            <a href="#703">builder</a>.<a href="operand.rs.html#769-784">insert_imm</a>(<a href="#721">tag_field</a>, <a href="#721">tag_imm</a>);
 <a href=#723 id=723 data-nosnippet>723</a>                        }
-<a href=#724 id=724 data-nosnippet>724</a>                        <a href="#703">builder</a>.<a href="operand.rs.html#775-810">build</a>(<a href="#375">bx</a>.<a href="../traits/builder.rs.html#64">cx</a>())
+<a href=#724 id=724 data-nosnippet>724</a>                        <a href="#703">builder</a>.<a href="operand.rs.html#790-825">build</a>(<a href="#375">bx</a>.<a href="../traits/builder.rs.html#64">cx</a>())
 <a href=#725 id=725 data-nosnippet>725</a>                    }
 <a href=#726 id=726 data-nosnippet>726</a>                }
 <a href=#727 id=727 data-nosnippet>727</a>            }
 <a href=#728 id=728 data-nosnippet>728</a>            <a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.ShallowInitBox">mir::Rvalue::ShallowInitBox</a>(<span class="kw-2">ref </span>operand, content_ty) =&gt; {
-<a href=#729 id=729 data-nosnippet>729</a>                <span class="kw">let </span>operand = <a class="self" href="#374">self</a>.<a href="operand.rs.html#991-1022">codegen_operand</a>(<a href="#375">bx</a>, <a href="#728">operand</a>);
+<a href=#729 id=729 data-nosnippet>729</a>                <span class="kw">let </span>operand = <a class="self" href="#374">self</a>.<a href="operand.rs.html#1006-1037">codegen_operand</a>(<a href="#375">bx</a>, <a href="#728">operand</a>);
 <a href=#730 id=730 data-nosnippet>730</a>                <span class="kw">let </span>val = <a href="#729">operand</a>.<a href="operand.rs.html#249-254">immediate</a>();
 <a href=#731 id=731 data-nosnippet>731</a>
 <a href=#732 id=732 data-nosnippet>732</a>                <span class="kw">let </span>content_ty = <a class="self" href="#374">self</a>.<a href="mod.rs.html#126-136">monomorphize</a>(<a href="#728">content_ty</a>);
@@ -735,7 +735,7 @@
 <a href=#735 id=735 data-nosnippet>735</a>                <a href="operand.rs.html#121-127">OperandRef</a> { val: <a href="operand.rs.html#47">OperandValue::Immediate</a>(<a href="#730">val</a>), layout: <a href="#733">box_layout</a> }
 <a href=#736 id=736 data-nosnippet>736</a>            }
 <a href=#737 id=737 data-nosnippet>737</a>            <a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.WrapUnsafeBinder">mir::Rvalue::WrapUnsafeBinder</a>(<span class="kw-2">ref </span>operand, binder_ty) =&gt; {
-<a href=#738 id=738 data-nosnippet>738</a>                <span class="kw">let </span>operand = <a class="self" href="#374">self</a>.<a href="operand.rs.html#991-1022">codegen_operand</a>(<a href="#375">bx</a>, <a href="#737">operand</a>);
+<a href=#738 id=738 data-nosnippet>738</a>                <span class="kw">let </span>operand = <a class="self" href="#374">self</a>.<a href="operand.rs.html#1006-1037">codegen_operand</a>(<a href="#375">bx</a>, <a href="#737">operand</a>);
 <a href=#739 id=739 data-nosnippet>739</a>                <span class="kw">let </span>binder_ty = <a class="self" href="#374">self</a>.<a href="mod.rs.html#126-136">monomorphize</a>(<a href="#737">binder_ty</a>);
 <a href=#740 id=740 data-nosnippet>740</a>                <span class="kw">let </span>layout = <a href="#375">bx</a>.<a href="../traits/builder.rs.html#64">cx</a>().<a href="../../../rustc_middle/ty/layout/trait.LayoutOf.html#tymethod.layout_of">layout_of</a>(<a href="#739">binder_ty</a>);
 <a href=#741 id=741 data-nosnippet>741</a>                <a href="operand.rs.html#121-127">OperandRef</a> { val: <a href="#738">operand</a>.val, <a href="#740">layout</a> }
@@ -909,9 +909,9 @@
 <a href=#909 id=909 data-nosnippet>909</a>                    // better (see &lt;https://github.com/llvm/llvm-project/issues/73417&gt;), it'll
 <a href=#910 id=910 data-nosnippet>910</a>                    // be worth trying it in optimized builds as well.
 <a href=#911 id=911 data-nosnippet>911</a>                    </span><span class="kw">let </span>is_gt = <a href="#786">bx</a>.<a href="../traits/builder.rs.html#404">icmp</a>(<a href="#903">pred</a>(<a href="../../../rustc_middle/mir/syntax/enum.BinOp.html#variant.Gt">mir::BinOp::Gt</a>), <a href="#788">lhs</a>, <a href="#789">rhs</a>);
-<a href=#912 id=912 data-nosnippet>912</a>                    <span class="kw">let </span>gtext = <a href="#786">bx</a>.<a href="../traits/builder.rs.html#610">zext</a>(<a href="#911">is_gt</a>, <a href="#786">bx</a>.<a href="../traits/type_.rs.html#13">type_i8</a>());
+<a href=#912 id=912 data-nosnippet>912</a>                    <span class="kw">let </span>gtext = <a href="#786">bx</a>.<a href="../traits/builder.rs.html#613">zext</a>(<a href="#911">is_gt</a>, <a href="#786">bx</a>.<a href="../traits/type_.rs.html#13">type_i8</a>());
 <a href=#913 id=913 data-nosnippet>913</a>                    <span class="kw">let </span>is_lt = <a href="#786">bx</a>.<a href="../traits/builder.rs.html#404">icmp</a>(<a href="#903">pred</a>(<a href="../../../rustc_middle/mir/syntax/enum.BinOp.html#variant.Lt">mir::BinOp::Lt</a>), <a href="#788">lhs</a>, <a href="#789">rhs</a>);
-<a href=#914 id=914 data-nosnippet>914</a>                    <span class="kw">let </span>ltext = <a href="#786">bx</a>.<a href="../traits/builder.rs.html#610">zext</a>(<a href="#913">is_lt</a>, <a href="#786">bx</a>.<a href="../traits/type_.rs.html#13">type_i8</a>());
+<a href=#914 id=914 data-nosnippet>914</a>                    <span class="kw">let </span>ltext = <a href="#786">bx</a>.<a href="../traits/builder.rs.html#613">zext</a>(<a href="#913">is_lt</a>, <a href="#786">bx</a>.<a href="../traits/type_.rs.html#13">type_i8</a>());
 <a href=#915 id=915 data-nosnippet>915</a>                    <a href="#786">bx</a>.<a href="../traits/builder.rs.html#193-195">unchecked_ssub</a>(<a href="#912">gtext</a>, <a href="#914">ltext</a>)
 <a href=#916 id=916 data-nosnippet>916</a>                } <span class="kw">else </span>{
 <a href=#917 id=917 data-nosnippet>917</a>                    <span class="comment">// These operations are those expected by `tests/codegen-llvm/integer-cmp.rs`,
@@ -1009,7 +1009,7 @@
 <a href=#1009 id=1009 data-nosnippet>1009</a>///
 <a href=#1010 id=1010 data-nosnippet>1010</a>/// ICEs if the passed-in `imm` is not a value of the expected type for
 <a href=#1011 id=1011 data-nosnippet>1011</a>/// `from_scalar`, such as if it's a vector or a pair.
-<a href=#1012 id=1012 data-nosnippet>1012</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../rustc_codegen_ssa/mir/rvalue/fn.transmute_scalar.html">transmute_scalar</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Bx: <a href="../traits/builder.rs.html#33-613">BuilderMethods</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt;(
+<a href=#1012 id=1012 data-nosnippet>1012</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../rustc_codegen_ssa/mir/rvalue/fn.transmute_scalar.html">transmute_scalar</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Bx: <a href="../traits/builder.rs.html#33-616">BuilderMethods</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt;(
 <a href=#1013 id=1013 data-nosnippet>1013</a>    bx: <span class="kw-2">&amp;mut </span>Bx,
 <a href=#1014 id=1014 data-nosnippet>1014</a>    <span class="kw-2">mut </span>imm: Bx::Value,
 <a href=#1015 id=1015 data-nosnippet>1015</a>    from_scalar: <a href="../../../rustc_abi/enum.Scalar.html">abi::Scalar</a>,
@@ -1084,7 +1084,7 @@
 <a href=#1084 id=1084 data-nosnippet>1084</a>///
 <a href=#1085 id=1085 data-nosnippet>1085</a>/// If `known` is `Some`, only emits the assume if it's more specific than
 <a href=#1086 id=1086 data-nosnippet>1086</a>/// whatever is already known from the range of *that* scalar.
-<a href=#1087 id=1087 data-nosnippet>1087</a></span><span class="kw">fn </span><a href="../../../rustc_codegen_ssa/mir/rvalue/fn.assume_scalar_range.html">assume_scalar_range</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Bx: <a href="../traits/builder.rs.html#33-613">BuilderMethods</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt;(
+<a href=#1087 id=1087 data-nosnippet>1087</a></span><span class="kw">fn </span><a href="../../../rustc_codegen_ssa/mir/rvalue/fn.assume_scalar_range.html">assume_scalar_range</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Bx: <a href="../traits/builder.rs.html#33-616">BuilderMethods</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;&gt;(
 <a href=#1088 id=1088 data-nosnippet>1088</a>    bx: <span class="kw-2">&amp;mut </span>Bx,
 <a href=#1089 id=1089 data-nosnippet>1089</a>    imm: Bx::Value,
 <a href=#1090 id=1090 data-nosnippet>1090</a>    scalar: <a href="../../../rustc_abi/enum.Scalar.html">abi::Scalar</a>,

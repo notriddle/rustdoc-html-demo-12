@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/universal_regions.rs`."><title>universal_regions.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/</div>universal_regions.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Code to extract the universally quantified regions declared on a
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/universal_regions.rs`."><title>universal_regions.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/</div>universal_regions.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Code to extract the universally quantified regions declared on a
 <a href=#2 id=2 data-nosnippet>2</a>//! function and the relationships between them. For example:
 <a href=#3 id=3 data-nosnippet>3</a>//!
 <a href=#4 id=4 data-nosnippet>4</a>//! ```
@@ -36,7 +36,7 @@
 <a href=#36 id=36 data-nosnippet>36</a><span class="kw">use </span>rustc_span::{<a href="../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>, <a href="../../rustc_span/symbol/kw/index.html">kw</a>, <a href="../../rustc_span/symbol/sym/index.html">sym</a>};
 <a href=#37 id=37 data-nosnippet>37</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug</a>, <a href="https://docs.rs/tracing-attributes/0.1.30/tracing_attributes/attr.instrument.html">instrument</a>};
 <a href=#38 id=38 data-nosnippet>38</a>
-<a href=#39 id=39 data-nosnippet>39</a><span class="kw">use </span><a href="lib.rs.html#541-545"><span class="kw">crate</span>::BorrowckInferCtxt</a>;
+<a href=#39 id=39 data-nosnippet>39</a><span class="kw">use </span><a href="lib.rs.html#582-586"><span class="kw">crate</span>::BorrowckInferCtxt</a>;
 <a href=#40 id=40 data-nosnippet>40</a><span class="kw">use </span><a href="renumber.rs.html#32-40"><span class="kw">crate</span>::renumber::RegionCtxt</a>;
 <a href=#41 id=41 data-nosnippet>41</a>
 <a href=#42 id=42 data-nosnippet>42</a><span class="attr">#[derive(Debug)]
@@ -217,7 +217,7 @@
 <a href=#217 id=217 data-nosnippet>217</a>
 <a href=#218 id=218 data-nosnippet>218</a>    <span class="doccomment">/// Whether we've encountered an error region. If we have, cancel all
 <a href=#219 id=219 data-nosnippet>219</a>    /// outlives errors, as they are likely bogus.
-<a href=#220 id=220 data-nosnippet>220</a>    </span><span class="kw">pub </span>tainted_by_errors: <a href="https://doc.rust-lang.org/nightly/core/cell/struct.Cell.html">Cell</a>&lt;<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt;&gt;,
+<a href=#220 id=220 data-nosnippet>220</a>    </span><span class="kw">pub </span>encountered_re_error: <a href="https://doc.rust-lang.org/nightly/core/cell/struct.Cell.html">Cell</a>&lt;<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt;&gt;,
 <a href=#221 id=221 data-nosnippet>221</a>}
 <a href=#222 id=222 data-nosnippet>222</a>
 <a href=#223 id=223 data-nosnippet>223</a><span class="attr">#[derive(Debug, PartialEq)]
@@ -271,7 +271,7 @@
 <a href=#271 id=271 data-nosnippet>271</a>    /// MIR -- that is, all the regions that appear in the function's
 <a href=#272 id=272 data-nosnippet>272</a>    /// signature. This will also compute the relationships that are
 <a href=#273 id=273 data-nosnippet>273</a>    /// known between those regions.
-<a href=#274 id=274 data-nosnippet>274</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(infcx: <span class="kw-2">&amp;</span><a href="lib.rs.html#541-545">BorrowckInferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;, mir_def: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <span class="self">Self </span>{
+<a href=#274 id=274 data-nosnippet>274</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(infcx: <span class="kw-2">&amp;</span><a href="lib.rs.html#582-586">BorrowckInferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;, mir_def: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <span class="self">Self </span>{
 <a href=#275 id=275 data-nosnippet>275</a>        <a href="#450-453">UniversalRegionsBuilder</a> { <a href="#274">infcx</a>, <a href="#274">mir_def</a> }.<a href="#458-600">build</a>()
 <a href=#276 id=276 data-nosnippet>276</a>    }
 <a href=#277 id=277 data-nosnippet>277</a>
@@ -442,13 +442,13 @@
 <a href=#442 id=442 data-nosnippet>442</a>        <a class="self" href="#441">self</a>.fr_fn_body
 <a href=#443 id=443 data-nosnippet>443</a>    }
 <a href=#444 id=444 data-nosnippet>444</a>
-<a href=#445 id=445 data-nosnippet>445</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>tainted_by_errors(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt; {
-<a href=#446 id=446 data-nosnippet>446</a>        <a class="self" href="#445">self</a>.indices.tainted_by_errors.<a href="https://doc.rust-lang.org/nightly/core/cell/struct.Cell.html#method.get">get</a>()
+<a href=#445 id=445 data-nosnippet>445</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>encountered_re_error(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt; {
+<a href=#446 id=446 data-nosnippet>446</a>        <a class="self" href="#445">self</a>.indices.encountered_re_error.<a href="https://doc.rust-lang.org/nightly/core/cell/struct.Cell.html#method.get">get</a>()
 <a href=#447 id=447 data-nosnippet>447</a>    }
 <a href=#448 id=448 data-nosnippet>448</a>}
 <a href=#449 id=449 data-nosnippet>449</a>
 <a href=#450 id=450 data-nosnippet>450</a><span class="kw">struct </span><a href="../../rustc_borrowck/universal_regions/struct.UniversalRegionsBuilder.html">UniversalRegionsBuilder</a>&lt;<span class="lifetime">'infcx</span>, <span class="lifetime">'tcx</span>&gt; {
-<a href=#451 id=451 data-nosnippet>451</a>    infcx: <span class="kw-2">&amp;</span><span class="lifetime">'infcx </span><a href="lib.rs.html#541-545">BorrowckInferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#451 id=451 data-nosnippet>451</a>    infcx: <span class="kw-2">&amp;</span><span class="lifetime">'infcx </span><a href="lib.rs.html#582-586">BorrowckInferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#452 id=452 data-nosnippet>452</a>    mir_def: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
 <a href=#453 id=453 data-nosnippet>453</a>}
 <a href=#454 id=454 data-nosnippet>454</a>
@@ -465,7 +465,7 @@
 <a href=#465 id=465 data-nosnippet>465</a>
 <a href=#466 id=466 data-nosnippet>466</a>        <span class="comment">// Create the "global" region that is always free in all contexts: 'static.
 <a href=#467 id=467 data-nosnippet>467</a>        </span><span class="kw">let </span>fr_static =
-<a href=#468 id=468 data-nosnippet>468</a>            <a class="self" href="#458">self</a>.infcx.<a href="lib.rs.html#581-600">next_nll_region_var</a>(<a href="#455">FR</a>, || <a href="renumber.rs.html#35">RegionCtxt::Free</a>(<a href="../../rustc_span/symbol/kw_generated/constant.Static.html">kw::Static</a>)).<a href="../../rustc_middle/ty/region/struct.Region.html#method.as_var">as_var</a>();
+<a href=#468 id=468 data-nosnippet>468</a>            <a class="self" href="#458">self</a>.infcx.<a href="lib.rs.html#622-641">next_nll_region_var</a>(<a href="#455">FR</a>, || <a href="renumber.rs.html#35">RegionCtxt::Free</a>(<a href="../../rustc_span/symbol/kw_generated/constant.Static.html">kw::Static</a>)).<a href="../../rustc_middle/ty/region/struct.Region.html#method.as_var">as_var</a>();
 <a href=#469 id=469 data-nosnippet>469</a>
 <a href=#470 id=470 data-nosnippet>470</a>        <span class="comment">// We've now added all the global regions. The next ones we
 <a href=#471 id=471 data-nosnippet>471</a>        // add will be external.
@@ -498,7 +498,7 @@
 <a href=#498 id=498 data-nosnippet>498</a>                    <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="question-mark">?</span>r);
 <a href=#499 id=499 data-nosnippet>499</a>                    <span class="kw">let </span>region_vid = {
 <a href=#500 id=500 data-nosnippet>500</a>                        <span class="kw">let </span>name = <a href="#497">r</a>.<a href="../../rustc_middle/ty/region/struct.Region.html#method.get_name_or_anon">get_name_or_anon</a>(<a class="self" href="#458">self</a>.infcx.tcx);
-<a href=#501 id=501 data-nosnippet>501</a>                        <a class="self" href="#458">self</a>.infcx.<a href="lib.rs.html#581-600">next_nll_region_var</a>(<a href="#455">FR</a>, || <a href="renumber.rs.html#36">RegionCtxt::LateBound</a>(<a href="#500">name</a>))
+<a href=#501 id=501 data-nosnippet>501</a>                        <a class="self" href="#458">self</a>.infcx.<a href="lib.rs.html#622-641">next_nll_region_var</a>(<a href="#455">FR</a>, || <a href="renumber.rs.html#36">RegionCtxt::LateBound</a>(<a href="#500">name</a>))
 <a href=#502 id=502 data-nosnippet>502</a>                    };
 <a href=#503 id=503 data-nosnippet>503</a>
 <a href=#504 id=504 data-nosnippet>504</a>                    <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="question-mark">?</span>region_vid);
@@ -551,7 +551,7 @@
 <a href=#551 id=551 data-nosnippet>551</a>
 <a href=#552 id=552 data-nosnippet>552</a>                <span class="kw">let </span>reg_vid = <span class="self"><a href="#458">self</a>
 <a href=#553 id=553 data-nosnippet>553</a>                    </span>.infcx
-<a href=#554 id=554 data-nosnippet>554</a>                    .<a href="lib.rs.html#581-600">next_nll_region_var</a>(<a href="#455">FR</a>, || <a href="renumber.rs.html#35">RegionCtxt::Free</a>(<a href="../../rustc_span/symbol/sym_generated/constant.c_dash_variadic.html">sym::c_dash_variadic</a>))
+<a href=#554 id=554 data-nosnippet>554</a>                    .<a href="lib.rs.html#622-641">next_nll_region_var</a>(<a href="#455">FR</a>, || <a href="renumber.rs.html#35">RegionCtxt::Free</a>(<a href="../../rustc_span/symbol/sym_generated/constant.c_dash_variadic.html">sym::c_dash_variadic</a>))
 <a href=#555 id=555 data-nosnippet>555</a>                    .<a href="../../rustc_middle/ty/region/struct.Region.html#method.as_var">as_var</a>();
 <a href=#556 id=556 data-nosnippet>556</a>
 <a href=#557 id=557 data-nosnippet>557</a>                <span class="kw">let </span>region = <a href="../../rustc_middle/ty/region/struct.Region.html#method.new_var">ty::Region::new_var</a>(<a class="self" href="#458">self</a>.infcx.tcx, <a href="#552">reg_vid</a>);
@@ -568,7 +568,7 @@
 <a href=#568 id=568 data-nosnippet>568</a>        }
 <a href=#569 id=569 data-nosnippet>569</a>
 <a href=#570 id=570 data-nosnippet>570</a>        <span class="kw">let </span>fr_fn_body =
-<a href=#571 id=571 data-nosnippet>571</a>            <a class="self" href="#458">self</a>.infcx.<a href="lib.rs.html#581-600">next_nll_region_var</a>(<a href="#455">FR</a>, || <a href="renumber.rs.html#35">RegionCtxt::Free</a>(<a href="../../rustc_span/symbol/sym_generated/constant.fn_body.html">sym::fn_body</a>)).<a href="../../rustc_middle/ty/region/struct.Region.html#method.as_var">as_var</a>();
+<a href=#571 id=571 data-nosnippet>571</a>            <a class="self" href="#458">self</a>.infcx.<a href="lib.rs.html#622-641">next_nll_region_var</a>(<a href="#455">FR</a>, || <a href="renumber.rs.html#35">RegionCtxt::Free</a>(<a href="../../rustc_span/symbol/sym_generated/constant.fn_body.html">sym::fn_body</a>)).<a href="../../rustc_middle/ty/region/struct.Region.html#method.as_var">as_var</a>();
 <a href=#572 id=572 data-nosnippet>572</a>
 <a href=#573 id=573 data-nosnippet>573</a>        <span class="kw">let </span>num_universals = <a class="self" href="#458">self</a>.infcx.<a href="../../rustc_infer/infer/struct.InferCtxt.html#method.num_region_vars">num_region_vars</a>();
 <a href=#574 id=574 data-nosnippet>574</a>
@@ -706,7 +706,7 @@
 <a href=#706 id=706 data-nosnippet>706</a>        <a href="#203-221">UniversalRegionIndices</a> {
 <a href=#707 id=707 data-nosnippet>707</a>            indices: <a href="#703">global_mapping</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.chain">chain</a>(<a href="#704">arg_mapping</a>).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>(),
 <a href=#708 id=708 data-nosnippet>708</a>            <a href="#675">fr_static</a>,
-<a href=#709 id=709 data-nosnippet>709</a>            tainted_by_errors: <a href="https://doc.rust-lang.org/nightly/core/cell/struct.Cell.html#method.new">Cell::new</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>),
+<a href=#709 id=709 data-nosnippet>709</a>            encountered_re_error: <a href="https://doc.rust-lang.org/nightly/core/cell/struct.Cell.html#method.new">Cell::new</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>),
 <a href=#710 id=710 data-nosnippet>710</a>        }
 <a href=#711 id=711 data-nosnippet>711</a>    }
 <a href=#712 id=712 data-nosnippet>712</a>
@@ -850,7 +850,7 @@
 <a href=#850 id=850 data-nosnippet>850</a>}
 <a href=#851 id=851 data-nosnippet>851</a>
 <a href=#852 id=852 data-nosnippet>852</a><span class="attr">#[extension(<span class="kw">trait </span><a href="#852">InferCtxtExt</a>&lt;<span class="lifetime">'tcx</span>&gt;)]
-<a href=#853 id=853 data-nosnippet>853</a></span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="lib.rs.html#541-545">BorrowckInferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#853 id=853 data-nosnippet>853</a></span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="lib.rs.html#582-586">BorrowckInferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt; {
 <a href=#854 id=854 data-nosnippet>854</a>    <span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"debug"</span>)]
 <a href=#855 id=855 data-nosnippet>855</a>    </span><span class="kw">fn </span>replace_free_regions_with_nll_infer_vars&lt;T&gt;(
 <a href=#856 id=856 data-nosnippet>856</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
@@ -916,7 +916,7 @@
 <a href=#916 id=916 data-nosnippet>916</a>        <span class="kw">match </span><a href="#915">r</a>.<a href="../../rustc_middle/ty/region/struct.Region.html#method.kind">kind</a>() {
 <a href=#917 id=917 data-nosnippet>917</a>            <a href="../../rustc_type_ir/region_kind/enum.RegionKind.html#variant.ReVar">ty::ReVar</a>(..) =&gt; <a href="#915">r</a>.<a href="../../rustc_middle/ty/region/struct.Region.html#method.as_var">as_var</a>(),
 <a href=#918 id=918 data-nosnippet>918</a>            <a href="../../rustc_type_ir/region_kind/enum.RegionKind.html#variant.ReError">ty::ReError</a>(guar) =&gt; {
-<a href=#919 id=919 data-nosnippet>919</a>                <a class="self" href="#915">self</a>.tainted_by_errors.<a href="https://doc.rust-lang.org/nightly/core/cell/struct.Cell.html#method.set">set</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#918">guar</a>));
+<a href=#919 id=919 data-nosnippet>919</a>                <a class="self" href="#915">self</a>.encountered_re_error.<a href="https://doc.rust-lang.org/nightly/core/cell/struct.Cell.html#method.set">set</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#918">guar</a>));
 <a href=#920 id=920 data-nosnippet>920</a>                <span class="comment">// We use the `'static` `RegionVid` because `ReError` doesn't actually exist in the
 <a href=#921 id=921 data-nosnippet>921</a>                // `UniversalRegionIndices`. This is fine because 1) it is a fallback only used if
 <a href=#922 id=922 data-nosnippet>922</a>                // errors are being emitted and 2) it leaves the happy path unaffected.

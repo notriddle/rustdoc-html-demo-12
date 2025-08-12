@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_span/src/source_map.rs`."><title>source_map.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_span" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_span/</div>source_map.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Types for tracking pieces of source code within a crate.
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_span/src/source_map.rs`."><title>source_map.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_span" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_span/</div>source_map.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Types for tracking pieces of source code within a crate.
 <a href=#2 id=2 data-nosnippet>2</a>//!
 <a href=#3 id=3 data-nosnippet>3</a>//! The [`SourceMap`] tracks all the source code used within a single crate, mapping
 <a href=#4 id=4 data-nosnippet>4</a>//! from integer byte positions to the original source code location. Each bit
@@ -12,8 +12,8 @@
 <a href=#12 id=12 data-nosnippet>12</a></span><span class="kw">use </span>std::io::{<a class="self" href="https://doc.rust-lang.org/nightly/std/io/index.html">self</a>, <a href="https://doc.rust-lang.org/nightly/core/io/borrowed_buf/struct.BorrowedBuf.html">BorrowedBuf</a>, <a href="https://doc.rust-lang.org/nightly/std/io/trait.Read.html">Read</a>};
 <a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span>std::{<a href="https://doc.rust-lang.org/nightly/std/fs/index.html">fs</a>, <a href="https://doc.rust-lang.org/nightly/std/path/index.html">path</a>};
 <a href=#14 id=14 data-nosnippet>14</a>
-<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span>rustc_data_structures::sync::{<a href="../../rustc_data_structures/marker/struct.IntoDynSyncSend.html">IntoDynSyncSend</a>, <a href="https://docs.rs/parking_lot/0.12.4/parking_lot/rwlock/type.MappedRwLockReadGuard.html">MappedReadGuard</a>, <a href="https://docs.rs/parking_lot/0.12.4/parking_lot/rwlock/type.RwLockReadGuard.html">ReadGuard</a>, <a href="../../rustc_data_structures/sync/struct.RwLock.html">RwLock</a>};
-<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span><a href="../../rustc_data_structures/unhash/type.UnhashMap.html">rustc_data_structures::unhash::UnhashMap</a>;
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span>rustc_data_structures::sync::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/marker/struct.IntoDynSyncSend.html">IntoDynSyncSend</a>, <a href="https://docs.rs/parking_lot/0.12.4/parking_lot/rwlock/type.MappedRwLockReadGuard.html">MappedReadGuard</a>, <a href="https://docs.rs/parking_lot/0.12.4/parking_lot/rwlock/type.RwLockReadGuard.html">ReadGuard</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/struct.RwLock.html">RwLock</a>};
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/unhash/type.UnhashMap.html">rustc_data_structures::unhash::UnhashMap</a>;
 <a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span>rustc_macros::{<a href="../../rustc_macros/derive.Decodable.html">Decodable</a>, <a href="../../rustc_macros/derive.Encodable.html">Encodable</a>};
 <a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug</a>, <a href="https://docs.rs/tracing-attributes/0.1.30/tracing_attributes/attr.instrument.html">instrument</a>, <a href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace</a>};
 <a href=#19 id=19 data-nosnippet>19</a>
@@ -172,34 +172,34 @@
 <a href=#172 id=172 data-nosnippet>172</a>
 <a href=#173 id=173 data-nosnippet>173</a></span><span class="attr">#[derive(Default)]
 <a href=#174 id=174 data-nosnippet>174</a></span><span class="kw">struct </span><a href="../../rustc_span/source_map/struct.SourceMapFiles.html">SourceMapFiles</a> {
-<a href=#175 id=175 data-nosnippet>175</a>    source_files: <a href="#53">monotonic::MonotonicVec</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1710-1742">SourceFile</a>&gt;&gt;,
-<a href=#176 id=176 data-nosnippet>176</a>    stable_id_to_source_file: <a href="../../rustc_data_structures/unhash/type.UnhashMap.html">UnhashMap</a>&lt;<a href="lib.rs.html#1921">StableSourceFileId</a>, <a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1710-1742">SourceFile</a>&gt;&gt;,
+<a href=#175 id=175 data-nosnippet>175</a>    source_files: <a href="#53">monotonic::MonotonicVec</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1711-1743">SourceFile</a>&gt;&gt;,
+<a href=#176 id=176 data-nosnippet>176</a>    stable_id_to_source_file: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/unhash/type.UnhashMap.html">UnhashMap</a>&lt;<a href="lib.rs.html#1922">StableSourceFileId</a>, <a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1711-1743">SourceFile</a>&gt;&gt;,
 <a href=#177 id=177 data-nosnippet>177</a>}
 <a href=#178 id=178 data-nosnippet>178</a>
 <a href=#179 id=179 data-nosnippet>179</a><span class="doccomment">/// Used to construct a `SourceMap` with `SourceMap::with_inputs`.
 <a href=#180 id=180 data-nosnippet>180</a></span><span class="kw">pub struct </span><a href="../../rustc_span/source_map/struct.SourceMapInputs.html">SourceMapInputs</a> {
 <a href=#181 id=181 data-nosnippet>181</a>    <span class="kw">pub </span>file_loader: <a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html">Box</a>&lt;<span class="kw">dyn </span><a href="#95-107">FileLoader</a> + <a href="https://doc.rust-lang.org/nightly/core/marker/trait.Send.html">Send</a> + <a href="https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html">Sync</a>&gt;,
 <a href=#182 id=182 data-nosnippet>182</a>    <span class="kw">pub </span>path_mapping: <a href="#1108-1112">FilePathMapping</a>,
-<a href=#183 id=183 data-nosnippet>183</a>    <span class="kw">pub </span>hash_kind: <a href="lib.rs.html#1497-1502">SourceFileHashAlgorithm</a>,
-<a href=#184 id=184 data-nosnippet>184</a>    <span class="kw">pub </span>checksum_hash_kind: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="lib.rs.html#1497-1502">SourceFileHashAlgorithm</a>&gt;,
+<a href=#183 id=183 data-nosnippet>183</a>    <span class="kw">pub </span>hash_kind: <a href="lib.rs.html#1498-1503">SourceFileHashAlgorithm</a>,
+<a href=#184 id=184 data-nosnippet>184</a>    <span class="kw">pub </span>checksum_hash_kind: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="lib.rs.html#1498-1503">SourceFileHashAlgorithm</a>&gt;,
 <a href=#185 id=185 data-nosnippet>185</a>}
 <a href=#186 id=186 data-nosnippet>186</a>
 <a href=#187 id=187 data-nosnippet>187</a><span class="kw">pub struct </span><a href="../../rustc_span/source_map/struct.SourceMap.html">SourceMap</a> {
-<a href=#188 id=188 data-nosnippet>188</a>    files: <a href="../../rustc_data_structures/sync/struct.RwLock.html">RwLock</a>&lt;<a href="#174-177">SourceMapFiles</a>&gt;,
-<a href=#189 id=189 data-nosnippet>189</a>    file_loader: <a href="../../rustc_data_structures/marker/struct.IntoDynSyncSend.html">IntoDynSyncSend</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html">Box</a>&lt;<span class="kw">dyn </span><a href="#95-107">FileLoader</a> + <a href="https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html">Sync</a> + <a href="https://doc.rust-lang.org/nightly/core/marker/trait.Send.html">Send</a>&gt;&gt;,
+<a href=#188 id=188 data-nosnippet>188</a>    files: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/struct.RwLock.html">RwLock</a>&lt;<a href="#174-177">SourceMapFiles</a>&gt;,
+<a href=#189 id=189 data-nosnippet>189</a>    file_loader: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/marker/struct.IntoDynSyncSend.html">IntoDynSyncSend</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html">Box</a>&lt;<span class="kw">dyn </span><a href="#95-107">FileLoader</a> + <a href="https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html">Sync</a> + <a href="https://doc.rust-lang.org/nightly/core/marker/trait.Send.html">Send</a>&gt;&gt;,
 <a href=#190 id=190 data-nosnippet>190</a>
 <a href=#191 id=191 data-nosnippet>191</a>    <span class="comment">// This is used to apply the file path remapping as specified via
 <a href=#192 id=192 data-nosnippet>192</a>    // `--remap-path-prefix` to all `SourceFile`s allocated within this `SourceMap`.
 <a href=#193 id=193 data-nosnippet>193</a>    </span>path_mapping: <a href="#1108-1112">FilePathMapping</a>,
 <a href=#194 id=194 data-nosnippet>194</a>
 <a href=#195 id=195 data-nosnippet>195</a>    <span class="doccomment">/// The algorithm used for hashing the contents of each source file.
-<a href=#196 id=196 data-nosnippet>196</a>    </span>hash_kind: <a href="lib.rs.html#1497-1502">SourceFileHashAlgorithm</a>,
+<a href=#196 id=196 data-nosnippet>196</a>    </span>hash_kind: <a href="lib.rs.html#1498-1503">SourceFileHashAlgorithm</a>,
 <a href=#197 id=197 data-nosnippet>197</a>
 <a href=#198 id=198 data-nosnippet>198</a>    <span class="doccomment">/// Similar to `hash_kind`, however this algorithm is used for checksums to determine if a crate is fresh.
 <a href=#199 id=199 data-nosnippet>199</a>    /// `cargo` is the primary user of these.
 <a href=#200 id=200 data-nosnippet>200</a>    ///
 <a href=#201 id=201 data-nosnippet>201</a>    /// If this is equal to `hash_kind` then the checksum won't be computed twice.
-<a href=#202 id=202 data-nosnippet>202</a>    </span>checksum_hash_kind: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="lib.rs.html#1497-1502">SourceFileHashAlgorithm</a>&gt;,
+<a href=#202 id=202 data-nosnippet>202</a>    </span>checksum_hash_kind: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="lib.rs.html#1498-1503">SourceFileHashAlgorithm</a>&gt;,
 <a href=#203 id=203 data-nosnippet>203</a>}
 <a href=#204 id=204 data-nosnippet>204</a>
 <a href=#205 id=205 data-nosnippet>205</a><span class="kw">impl </span><a href="#187-203">SourceMap</a> {
@@ -207,7 +207,7 @@
 <a href=#207 id=207 data-nosnippet>207</a>        <a href="#215-225"><span class="self">Self</span>::with_inputs</a>(<a href="#180-185">SourceMapInputs</a> {
 <a href=#208 id=208 data-nosnippet>208</a>            file_loader: <a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html#method.new">Box::new</a>(<a href="#110">RealFileLoader</a>),
 <a href=#209 id=209 data-nosnippet>209</a>            <a href="#206">path_mapping</a>,
-<a href=#210 id=210 data-nosnippet>210</a>            hash_kind: <a href="lib.rs.html#1498">SourceFileHashAlgorithm::Md5</a>,
+<a href=#210 id=210 data-nosnippet>210</a>            hash_kind: <a href="lib.rs.html#1499">SourceFileHashAlgorithm::Md5</a>,
 <a href=#211 id=211 data-nosnippet>211</a>            checksum_hash_kind: <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
 <a href=#212 id=212 data-nosnippet>212</a>        })
 <a href=#213 id=213 data-nosnippet>213</a>    }
@@ -217,7 +217,7 @@
 <a href=#217 id=217 data-nosnippet>217</a>    ) -&gt; <a href="#187-203">SourceMap</a> {
 <a href=#218 id=218 data-nosnippet>218</a>        <a href="#187-203">SourceMap</a> {
 <a href=#219 id=219 data-nosnippet>219</a>            files: <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">Default::default</a>(),
-<a href=#220 id=220 data-nosnippet>220</a>            file_loader: <a href="../../rustc_data_structures/marker/struct.IntoDynSyncSend.html">IntoDynSyncSend</a>(<a href="#216">file_loader</a>),
+<a href=#220 id=220 data-nosnippet>220</a>            file_loader: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/marker/struct.IntoDynSyncSend.html">IntoDynSyncSend</a>(<a href="#216">file_loader</a>),
 <a href=#221 id=221 data-nosnippet>221</a>            <a href="#216">path_mapping</a>,
 <a href=#222 id=222 data-nosnippet>222</a>            <a href="#216">hash_kind</a>,
 <a href=#223 id=223 data-nosnippet>223</a>            <a href="#216">checksum_hash_kind</a>,
@@ -232,7 +232,7 @@
 <a href=#232 id=232 data-nosnippet>232</a>        <a class="self" href="#231">self</a>.file_loader.<a href="#97">file_exists</a>(<a href="#231">path</a>)
 <a href=#233 id=233 data-nosnippet>233</a>    }
 <a href=#234 id=234 data-nosnippet>234</a>
-<a href=#235 id=235 data-nosnippet>235</a>    <span class="kw">pub fn </span>load_file(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/io/error/type.Result.html">io::Result</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1710-1742">SourceFile</a>&gt;&gt; {
+<a href=#235 id=235 data-nosnippet>235</a>    <span class="kw">pub fn </span>load_file(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/io/error/type.Result.html">io::Result</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1711-1743">SourceFile</a>&gt;&gt; {
 <a href=#236 id=236 data-nosnippet>236</a>        <span class="kw">let </span>src = <a class="self" href="#235">self</a>.file_loader.<a href="#102">read_file</a>(<a href="#235">path</a>)<span class="question-mark">?</span>;
 <a href=#237 id=237 data-nosnippet>237</a>        <span class="kw">let </span>filename = <a href="#235">path</a>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/trait.ToOwned.html#tymethod.to_owned">to_owned</a>().<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>();
 <a href=#238 id=238 data-nosnippet>238</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a class="self" href="#235">self</a>.<a href="#304-312">new_source_file</a>(<a href="#237">filename</a>, <a href="#236">src</a>))
@@ -256,7 +256,7 @@
 <a href=#256 id=256 data-nosnippet>256</a>            <a href="#246">bytes</a>,
 <a href=#257 id=257 data-nosnippet>257</a>            <a href="span_encoding.rs.html#248-282">Span::new</a>(
 <a href=#258 id=258 data-nosnippet>258</a>                <a href="#254">file</a>.start_pos,
-<a href=#259 id=259 data-nosnippet>259</a>                <a href="lib.rs.html#2478-2496">BytePos</a>(<a href="#254">file</a>.start_pos.<span class="number">0 </span>+ <a href="#254">file</a>.source_len.<span class="number">0</span>),
+<a href=#259 id=259 data-nosnippet>259</a>                <a href="lib.rs.html#2479-2497">BytePos</a>(<a href="#254">file</a>.start_pos.<span class="number">0 </span>+ <a href="#254">file</a>.source_len.<span class="number">0</span>),
 <a href=#260 id=260 data-nosnippet>260</a>                <a href="hygiene.rs.html#705-707">SyntaxContext::root</a>(),
 <a href=#261 id=261 data-nosnippet>261</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
 <a href=#262 id=262 data-nosnippet>262</a>            ),
@@ -265,28 +265,28 @@
 <a href=#265 id=265 data-nosnippet>265</a>
 <a href=#266 id=266 data-nosnippet>266</a>    <span class="comment">// By returning a `MonotonicVec`, we ensure that consumers cannot invalidate
 <a href=#267 id=267 data-nosnippet>267</a>    // any existing indices pointing into `files`.
-<a href=#268 id=268 data-nosnippet>268</a>    </span><span class="kw">pub fn </span>files(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://docs.rs/parking_lot/0.12.4/parking_lot/rwlock/type.MappedRwLockReadGuard.html">MappedReadGuard</a>&lt;<span class="lifetime">'_</span>, <a href="#53">monotonic::MonotonicVec</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1710-1742">SourceFile</a>&gt;&gt;&gt; {
-<a href=#269 id=269 data-nosnippet>269</a>        <a href="https://docs.rs/lock_api/0.4.13/lock_api/rwlock/struct.RwLockReadGuard.html#method.map">ReadGuard::map</a>(<a class="self" href="#268">self</a>.files.<a href="../../rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>(), |files| <span class="kw-2">&amp;</span><a href="#269">files</a>.source_files)
+<a href=#268 id=268 data-nosnippet>268</a>    </span><span class="kw">pub fn </span>files(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://docs.rs/parking_lot/0.12.4/parking_lot/rwlock/type.MappedRwLockReadGuard.html">MappedReadGuard</a>&lt;<span class="lifetime">'_</span>, <a href="#53">monotonic::MonotonicVec</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1711-1743">SourceFile</a>&gt;&gt;&gt; {
+<a href=#269 id=269 data-nosnippet>269</a>        <a href="https://docs.rs/lock_api/0.4.13/lock_api/rwlock/struct.RwLockReadGuard.html#method.map">ReadGuard::map</a>(<a class="self" href="#268">self</a>.files.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>(), |files| <span class="kw-2">&amp;</span><a href="#269">files</a>.source_files)
 <a href=#270 id=270 data-nosnippet>270</a>    }
 <a href=#271 id=271 data-nosnippet>271</a>
 <a href=#272 id=272 data-nosnippet>272</a>    <span class="kw">pub fn </span>source_file_by_stable_id(
 <a href=#273 id=273 data-nosnippet>273</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
-<a href=#274 id=274 data-nosnippet>274</a>        stable_id: <a href="lib.rs.html#1921">StableSourceFileId</a>,
-<a href=#275 id=275 data-nosnippet>275</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1710-1742">SourceFile</a>&gt;&gt; {
-<a href=#276 id=276 data-nosnippet>276</a>        <a class="self" href="#273">self</a>.files.<a href="../../rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>().stable_id_to_source_file.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#274">stable_id</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.cloned">cloned</a>()
+<a href=#274 id=274 data-nosnippet>274</a>        stable_id: <a href="lib.rs.html#1922">StableSourceFileId</a>,
+<a href=#275 id=275 data-nosnippet>275</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1711-1743">SourceFile</a>&gt;&gt; {
+<a href=#276 id=276 data-nosnippet>276</a>        <a class="self" href="#273">self</a>.files.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>().stable_id_to_source_file.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#274">stable_id</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.cloned">cloned</a>()
 <a href=#277 id=277 data-nosnippet>277</a>    }
 <a href=#278 id=278 data-nosnippet>278</a>
 <a href=#279 id=279 data-nosnippet>279</a>    <span class="kw">fn </span>register_source_file(
 <a href=#280 id=280 data-nosnippet>280</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
-<a href=#281 id=281 data-nosnippet>281</a>        file_id: <a href="lib.rs.html#1921">StableSourceFileId</a>,
-<a href=#282 id=282 data-nosnippet>282</a>        <span class="kw-2">mut </span>file: <a href="lib.rs.html#1710-1742">SourceFile</a>,
-<a href=#283 id=283 data-nosnippet>283</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1710-1742">SourceFile</a>&gt;, <a href="lib.rs.html#1493">OffsetOverflowError</a>&gt; {
-<a href=#284 id=284 data-nosnippet>284</a>        <span class="kw">let </span><span class="kw-2">mut </span>files = <a class="self" href="#280">self</a>.files.<a href="../../rustc_data_structures/sync/struct.RwLock.html#method.borrow_mut">borrow_mut</a>();
+<a href=#281 id=281 data-nosnippet>281</a>        file_id: <a href="lib.rs.html#1922">StableSourceFileId</a>,
+<a href=#282 id=282 data-nosnippet>282</a>        <span class="kw-2">mut </span>file: <a href="lib.rs.html#1711-1743">SourceFile</a>,
+<a href=#283 id=283 data-nosnippet>283</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1711-1743">SourceFile</a>&gt;, <a href="lib.rs.html#1494">OffsetOverflowError</a>&gt; {
+<a href=#284 id=284 data-nosnippet>284</a>        <span class="kw">let </span><span class="kw-2">mut </span>files = <a class="self" href="#280">self</a>.files.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/struct.RwLock.html#method.borrow_mut">borrow_mut</a>();
 <a href=#285 id=285 data-nosnippet>285</a>
-<a href=#286 id=286 data-nosnippet>286</a>        <a href="#282">file</a>.start_pos = <a href="lib.rs.html#2478-2496">BytePos</a>(<span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(last_file) = <a href="#284">files</a>.source_files.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.last">last</a>() {
+<a href=#286 id=286 data-nosnippet>286</a>        <a href="#282">file</a>.start_pos = <a href="lib.rs.html#2479-2497">BytePos</a>(<span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(last_file) = <a href="#284">files</a>.source_files.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.last">last</a>() {
 <a href=#287 id=287 data-nosnippet>287</a>            <span class="comment">// Add one so there is some space between files. This lets us distinguish
 <a href=#288 id=288 data-nosnippet>288</a>            // positions in the `SourceMap`, even in the presence of zero-length files.
-<a href=#289 id=289 data-nosnippet>289</a>            </span><a href="#286">last_file</a>.<a href="lib.rs.html#2165-2167">end_position</a>().<span class="number">0</span>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.num.html#method.checked_add">checked_add</a>(<span class="number">1</span>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.ok_or">ok_or</a>(<a href="lib.rs.html#1493">OffsetOverflowError</a>)<span class="question-mark">?
+<a href=#289 id=289 data-nosnippet>289</a>            </span><a href="#286">last_file</a>.<a href="lib.rs.html#2166-2168">end_position</a>().<span class="number">0</span>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.num.html#method.checked_add">checked_add</a>(<span class="number">1</span>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.ok_or">ok_or</a>(<a href="lib.rs.html#1494">OffsetOverflowError</a>)<span class="question-mark">?
 <a href=#290 id=290 data-nosnippet>290</a>        </span>} <span class="kw">else </span>{
 <a href=#291 id=291 data-nosnippet>291</a>            <span class="number">0
 <a href=#292 id=292 data-nosnippet>292</a>        </span>});
@@ -301,8 +301,8 @@
 <a href=#301 id=301 data-nosnippet>301</a>    <span class="doccomment">/// Creates a new `SourceFile`.
 <a href=#302 id=302 data-nosnippet>302</a>    /// If a file already exists in the `SourceMap` with the same ID, that file is returned
 <a href=#303 id=303 data-nosnippet>303</a>    /// unmodified.
-<a href=#304 id=304 data-nosnippet>304</a>    </span><span class="kw">pub fn </span>new_source_file(<span class="kw-2">&amp;</span><span class="self">self</span>, filename: <a href="lib.rs.html#325-342">FileName</a>, src: <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1710-1742">SourceFile</a>&gt; {
-<a href=#305 id=305 data-nosnippet>305</a>        <a class="self" href="#304">self</a>.<a href="#314-338">try_new_source_file</a>(<a href="#304">filename</a>, <a href="#304">src</a>).<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.unwrap_or_else">unwrap_or_else</a>(|<a href="lib.rs.html#1493">OffsetOverflowError</a>| {
+<a href=#304 id=304 data-nosnippet>304</a>    </span><span class="kw">pub fn </span>new_source_file(<span class="kw-2">&amp;</span><span class="self">self</span>, filename: <a href="lib.rs.html#326-343">FileName</a>, src: <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1711-1743">SourceFile</a>&gt; {
+<a href=#305 id=305 data-nosnippet>305</a>        <a class="self" href="#304">self</a>.<a href="#314-338">try_new_source_file</a>(<a href="#304">filename</a>, <a href="#304">src</a>).<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.unwrap_or_else">unwrap_or_else</a>(|<a href="lib.rs.html#1494">OffsetOverflowError</a>| {
 <a href=#306 id=306 data-nosnippet>306</a>            <a class="macro" href="https://doc.rust-lang.org/nightly/std/macro.eprintln.html">eprintln!</a>(
 <a href=#307 id=307 data-nosnippet>307</a>                <span class="string">"fatal error: rustc does not support text files larger than {} bytes"</span>,
 <a href=#308 id=308 data-nosnippet>308</a>                SourceFile::MAX_FILE_SIZE
@@ -313,20 +313,20 @@
 <a href=#313 id=313 data-nosnippet>313</a>
 <a href=#314 id=314 data-nosnippet>314</a>    <span class="kw">fn </span>try_new_source_file(
 <a href=#315 id=315 data-nosnippet>315</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
-<a href=#316 id=316 data-nosnippet>316</a>        filename: <a href="lib.rs.html#325-342">FileName</a>,
+<a href=#316 id=316 data-nosnippet>316</a>        filename: <a href="lib.rs.html#326-343">FileName</a>,
 <a href=#317 id=317 data-nosnippet>317</a>        src: <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>,
-<a href=#318 id=318 data-nosnippet>318</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1710-1742">SourceFile</a>&gt;, <a href="lib.rs.html#1493">OffsetOverflowError</a>&gt; {
+<a href=#318 id=318 data-nosnippet>318</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1711-1743">SourceFile</a>&gt;, <a href="lib.rs.html#1494">OffsetOverflowError</a>&gt; {
 <a href=#319 id=319 data-nosnippet>319</a>        <span class="comment">// Note that filename may not be a valid path, eg it may be `&lt;anon&gt;` etc,
 <a href=#320 id=320 data-nosnippet>320</a>        // but this is okay because the directory determined by `path.pop()` will
 <a href=#321 id=321 data-nosnippet>321</a>        // be empty, so the working directory will be used.
 <a href=#322 id=322 data-nosnippet>322</a>        </span><span class="kw">let </span>(filename, <span class="kw">_</span>) = <a class="self" href="#315">self</a>.path_mapping.<a href="#1184-1201">map_filename_prefix</a>(<span class="kw-2">&amp;</span><a href="#316">filename</a>);
 <a href=#323 id=323 data-nosnippet>323</a>
-<a href=#324 id=324 data-nosnippet>324</a>        <span class="kw">let </span>stable_id = <a href="lib.rs.html#1924-1926">StableSourceFileId::from_filename_in_current_crate</a>(<span class="kw-2">&amp;</span><a href="#322">filename</a>);
+<a href=#324 id=324 data-nosnippet>324</a>        <span class="kw">let </span>stable_id = <a href="lib.rs.html#1925-1927">StableSourceFileId::from_filename_in_current_crate</a>(<span class="kw-2">&amp;</span><a href="#322">filename</a>);
 <a href=#325 id=325 data-nosnippet>325</a>        <span class="kw">match </span><a class="self" href="#315">self</a>.<a href="#272-277">source_file_by_stable_id</a>(<a href="#324">stable_id</a>) {
 <a href=#326 id=326 data-nosnippet>326</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(lrc_sf) =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="#326">lrc_sf</a>),
 <a href=#327 id=327 data-nosnippet>327</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a> </a>=&gt; {
 <a href=#328 id=328 data-nosnippet>328</a>                <span class="kw">let </span>source_file =
-<a href=#329 id=329 data-nosnippet>329</a>                    <a href="lib.rs.html#1949-1989">SourceFile::new</a>(<a href="#322">filename</a>, <a href="#317">src</a>, <a class="self" href="#315">self</a>.hash_kind, <a class="self" href="#315">self</a>.checksum_hash_kind)<span class="question-mark">?</span>;
+<a href=#329 id=329 data-nosnippet>329</a>                    <a href="lib.rs.html#1950-1990">SourceFile::new</a>(<a href="#322">filename</a>, <a href="#317">src</a>, <a class="self" href="#315">self</a>.hash_kind, <a class="self" href="#315">self</a>.checksum_hash_kind)<span class="question-mark">?</span>;
 <a href=#330 id=330 data-nosnippet>330</a>
 <a href=#331 id=331 data-nosnippet>331</a>                <span class="comment">// Let's make sure the file_id we generated above actually matches
 <a href=#332 id=332 data-nosnippet>332</a>                // the ID we generate for the SourceFile we just created.
@@ -343,29 +343,29 @@
 <a href=#343 id=343 data-nosnippet>343</a>    /// information for things inlined from other crates.
 <a href=#344 id=344 data-nosnippet>344</a>    </span><span class="kw">pub fn </span>new_imported_source_file(
 <a href=#345 id=345 data-nosnippet>345</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
-<a href=#346 id=346 data-nosnippet>346</a>        filename: <a href="lib.rs.html#325-342">FileName</a>,
-<a href=#347 id=347 data-nosnippet>347</a>        src_hash: <a href="lib.rs.html#1532-1535">SourceFileHash</a>,
-<a href=#348 id=348 data-nosnippet>348</a>        checksum_hash: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="lib.rs.html#1532-1535">SourceFileHash</a>&gt;,
-<a href=#349 id=349 data-nosnippet>349</a>        stable_id: <a href="lib.rs.html#1921">StableSourceFileId</a>,
+<a href=#346 id=346 data-nosnippet>346</a>        filename: <a href="lib.rs.html#326-343">FileName</a>,
+<a href=#347 id=347 data-nosnippet>347</a>        src_hash: <a href="lib.rs.html#1533-1536">SourceFileHash</a>,
+<a href=#348 id=348 data-nosnippet>348</a>        checksum_hash: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="lib.rs.html#1533-1536">SourceFileHash</a>&gt;,
+<a href=#349 id=349 data-nosnippet>349</a>        stable_id: <a href="lib.rs.html#1922">StableSourceFileId</a>,
 <a href=#350 id=350 data-nosnippet>350</a>        source_len: <a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>,
 <a href=#351 id=351 data-nosnippet>351</a>        cnum: <a href="def_id.rs.html#18-22">CrateNum</a>,
-<a href=#352 id=352 data-nosnippet>352</a>        file_local_lines: <a href="../../rustc_data_structures/sync/freeze/struct.FreezeLock.html">FreezeLock</a>&lt;<a href="lib.rs.html#1669-1675">SourceFileLines</a>&gt;,
-<a href=#353 id=353 data-nosnippet>353</a>        multibyte_chars: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="lib.rs.html#1445-1450">MultiByteChar</a>&gt;,
-<a href=#354 id=354 data-nosnippet>354</a>        normalized_pos: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="lib.rs.html#1454-1459">NormalizedPos</a>&gt;,
+<a href=#352 id=352 data-nosnippet>352</a>        file_local_lines: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/freeze/struct.FreezeLock.html">FreezeLock</a>&lt;<a href="lib.rs.html#1670-1676">SourceFileLines</a>&gt;,
+<a href=#353 id=353 data-nosnippet>353</a>        multibyte_chars: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="lib.rs.html#1446-1451">MultiByteChar</a>&gt;,
+<a href=#354 id=354 data-nosnippet>354</a>        normalized_pos: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="lib.rs.html#1455-1460">NormalizedPos</a>&gt;,
 <a href=#355 id=355 data-nosnippet>355</a>        metadata_index: <a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>,
-<a href=#356 id=356 data-nosnippet>356</a>    ) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1710-1742">SourceFile</a>&gt; {
-<a href=#357 id=357 data-nosnippet>357</a>        <span class="kw">let </span>source_len = <a href="lib.rs.html#2420">RelativeBytePos::from_u32</a>(<a href="#350">source_len</a>);
+<a href=#356 id=356 data-nosnippet>356</a>    ) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1711-1743">SourceFile</a>&gt; {
+<a href=#357 id=357 data-nosnippet>357</a>        <span class="kw">let </span>source_len = <a href="lib.rs.html#2421">RelativeBytePos::from_u32</a>(<a href="#350">source_len</a>);
 <a href=#358 id=358 data-nosnippet>358</a>
-<a href=#359 id=359 data-nosnippet>359</a>        <span class="kw">let </span>source_file = <a href="lib.rs.html#1710-1742">SourceFile</a> {
+<a href=#359 id=359 data-nosnippet>359</a>        <span class="kw">let </span>source_file = <a href="lib.rs.html#1711-1743">SourceFile</a> {
 <a href=#360 id=360 data-nosnippet>360</a>            name: <a href="#346">filename</a>,
 <a href=#361 id=361 data-nosnippet>361</a>            src: <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
 <a href=#362 id=362 data-nosnippet>362</a>            <a href="#347">src_hash</a>,
 <a href=#363 id=363 data-nosnippet>363</a>            <a href="#348">checksum_hash</a>,
-<a href=#364 id=364 data-nosnippet>364</a>            external_src: <a href="../../rustc_data_structures/sync/freeze/struct.FreezeLock.html#method.new">FreezeLock::new</a>(<a href="lib.rs.html#1465-1469">ExternalSource::Foreign</a> {
-<a href=#365 id=365 data-nosnippet>365</a>                kind: <a href="lib.rs.html#1478">ExternalSourceKind::AbsentOk</a>,
+<a href=#364 id=364 data-nosnippet>364</a>            external_src: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/freeze/struct.FreezeLock.html#method.new">FreezeLock::new</a>(<a href="lib.rs.html#1466-1470">ExternalSource::Foreign</a> {
+<a href=#365 id=365 data-nosnippet>365</a>                kind: <a href="lib.rs.html#1479">ExternalSourceKind::AbsentOk</a>,
 <a href=#366 id=366 data-nosnippet>366</a>                <a href="#355">metadata_index</a>,
 <a href=#367 id=367 data-nosnippet>367</a>            }),
-<a href=#368 id=368 data-nosnippet>368</a>            start_pos: <a href="lib.rs.html#2478-2496">BytePos</a>(<span class="number">0</span>),
+<a href=#368 id=368 data-nosnippet>368</a>            start_pos: <a href="lib.rs.html#2479-2497">BytePos</a>(<span class="number">0</span>),
 <a href=#369 id=369 data-nosnippet>369</a>            <a href="#357">source_len</a>,
 <a href=#370 id=370 data-nosnippet>370</a>            lines: <a href="#352">file_local_lines</a>,
 <a href=#371 id=371 data-nosnippet>371</a>            <a href="#353">multibyte_chars</a>,
@@ -379,9 +379,9 @@
 <a href=#379 id=379 data-nosnippet>379</a>    }
 <a href=#380 id=380 data-nosnippet>380</a>
 <a href=#381 id=381 data-nosnippet>381</a>    <span class="doccomment">/// If there is a doctest offset, applies it to the line.
-<a href=#382 id=382 data-nosnippet>382</a>    </span><span class="kw">pub fn </span>doctest_offset_line(<span class="kw-2">&amp;</span><span class="self">self</span>, file: <span class="kw-2">&amp;</span><a href="lib.rs.html#325-342">FileName</a>, orig: <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> {
+<a href=#382 id=382 data-nosnippet>382</a>    </span><span class="kw">pub fn </span>doctest_offset_line(<span class="kw-2">&amp;</span><span class="self">self</span>, file: <span class="kw-2">&amp;</span><a href="lib.rs.html#326-343">FileName</a>, orig: <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> {
 <a href=#383 id=383 data-nosnippet>383</a>        <span class="kw">match </span><a href="#382">file</a> {
-<a href=#384 id=384 data-nosnippet>384</a>            <a href="lib.rs.html#339">FileName::DocTest</a>(<span class="kw">_</span>, offset) =&gt; {
+<a href=#384 id=384 data-nosnippet>384</a>            <a href="lib.rs.html#340">FileName::DocTest</a>(<span class="kw">_</span>, offset) =&gt; {
 <a href=#385 id=385 data-nosnippet>385</a>                <span class="kw">if </span><span class="kw-2">*</span><a href="#384">offset</a> &lt; <span class="number">0 </span>{
 <a href=#386 id=386 data-nosnippet>386</a>                    <a href="#382">orig</a> - (-(<span class="kw-2">*</span><a href="#384">offset</a>)) <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>
 <a href=#387 id=387 data-nosnippet>387</a>                } <span class="kw">else </span>{
@@ -393,25 +393,25 @@
 <a href=#393 id=393 data-nosnippet>393</a>    }
 <a href=#394 id=394 data-nosnippet>394</a>
 <a href=#395 id=395 data-nosnippet>395</a>    <span class="doccomment">/// Return the SourceFile that contains the given `BytePos`
-<a href=#396 id=396 data-nosnippet>396</a>    </span><span class="kw">pub fn </span>lookup_source_file(<span class="kw-2">&amp;</span><span class="self">self</span>, pos: <a href="lib.rs.html#2478-2496">BytePos</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1710-1742">SourceFile</a>&gt; {
+<a href=#396 id=396 data-nosnippet>396</a>    </span><span class="kw">pub fn </span>lookup_source_file(<span class="kw-2">&amp;</span><span class="self">self</span>, pos: <a href="lib.rs.html#2479-2497">BytePos</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1711-1743">SourceFile</a>&gt; {
 <a href=#397 id=397 data-nosnippet>397</a>        <span class="kw">let </span>idx = <a class="self" href="#396">self</a>.<a href="#1041-1043">lookup_source_file_idx</a>(<a href="#396">pos</a>);
-<a href=#398 id=398 data-nosnippet>398</a>        <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">Arc::clone</a>(<span class="kw-2">&amp;</span>(<span class="kw-2">*</span><a class="self" href="#396">self</a>.files.<a href="../../rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>().source_files)[<a href="#397">idx</a>])
+<a href=#398 id=398 data-nosnippet>398</a>        <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">Arc::clone</a>(<span class="kw-2">&amp;</span>(<span class="kw-2">*</span><a class="self" href="#396">self</a>.files.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>().source_files)[<a href="#397">idx</a>])
 <a href=#399 id=399 data-nosnippet>399</a>    }
 <a href=#400 id=400 data-nosnippet>400</a>
 <a href=#401 id=401 data-nosnippet>401</a>    <span class="doccomment">/// Looks up source information about a `BytePos`.
-<a href=#402 id=402 data-nosnippet>402</a>    </span><span class="kw">pub fn </span>lookup_char_pos(<span class="kw-2">&amp;</span><span class="self">self</span>, pos: <a href="lib.rs.html#2478-2496">BytePos</a>) -&gt; <a href="lib.rs.html#2534-2543">Loc</a> {
+<a href=#402 id=402 data-nosnippet>402</a>    </span><span class="kw">pub fn </span>lookup_char_pos(<span class="kw-2">&amp;</span><span class="self">self</span>, pos: <a href="lib.rs.html#2479-2497">BytePos</a>) -&gt; <a href="lib.rs.html#2535-2544">Loc</a> {
 <a href=#403 id=403 data-nosnippet>403</a>        <span class="kw">let </span>sf = <a class="self" href="#402">self</a>.<a href="#396-399">lookup_source_file</a>(<a href="#402">pos</a>);
-<a href=#404 id=404 data-nosnippet>404</a>        <span class="kw">let </span>(line, col, col_display) = <a href="#403">sf</a>.<a href="lib.rs.html#2289-2310">lookup_file_pos_with_col_display</a>(<a href="#402">pos</a>);
-<a href=#405 id=405 data-nosnippet>405</a>        <a href="lib.rs.html#2534-2543">Loc</a> { file: <a href="#403">sf</a>, <a href="#404">line</a>, <a href="#404">col</a>, <a href="#404">col_display</a> }
+<a href=#404 id=404 data-nosnippet>404</a>        <span class="kw">let </span>(line, col, col_display) = <a href="#403">sf</a>.<a href="lib.rs.html#2290-2311">lookup_file_pos_with_col_display</a>(<a href="#402">pos</a>);
+<a href=#405 id=405 data-nosnippet>405</a>        <a href="lib.rs.html#2535-2544">Loc</a> { file: <a href="#403">sf</a>, <a href="#404">line</a>, <a href="#404">col</a>, <a href="#404">col_display</a> }
 <a href=#406 id=406 data-nosnippet>406</a>    }
 <a href=#407 id=407 data-nosnippet>407</a>
 <a href=#408 id=408 data-nosnippet>408</a>    <span class="doccomment">/// If the corresponding `SourceFile` is empty, does not return a line number.
-<a href=#409 id=409 data-nosnippet>409</a>    </span><span class="kw">pub fn </span>lookup_line(<span class="kw-2">&amp;</span><span class="self">self</span>, pos: <a href="lib.rs.html#2478-2496">BytePos</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="lib.rs.html#2547-2551">SourceFileAndLine</a>, <a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1710-1742">SourceFile</a>&gt;&gt; {
+<a href=#409 id=409 data-nosnippet>409</a>    </span><span class="kw">pub fn </span>lookup_line(<span class="kw-2">&amp;</span><span class="self">self</span>, pos: <a href="lib.rs.html#2479-2497">BytePos</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="lib.rs.html#2548-2552">SourceFileAndLine</a>, <a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1711-1743">SourceFile</a>&gt;&gt; {
 <a href=#410 id=410 data-nosnippet>410</a>        <span class="kw">let </span>f = <a class="self" href="#409">self</a>.<a href="#396-399">lookup_source_file</a>(<a href="#409">pos</a>);
 <a href=#411 id=411 data-nosnippet>411</a>
-<a href=#412 id=412 data-nosnippet>412</a>        <span class="kw">let </span>pos = <a href="#410">f</a>.<a href="lib.rs.html#2160-2162">relative_position</a>(<a href="#409">pos</a>);
-<a href=#413 id=413 data-nosnippet>413</a>        <span class="kw">match </span><a href="#410">f</a>.<a href="lib.rs.html#2173-2175">lookup_line</a>(<a href="#412">pos</a>) {
-<a href=#414 id=414 data-nosnippet>414</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(line) =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="lib.rs.html#2547-2551">SourceFileAndLine</a> { sf: <a href="#410">f</a>, <a href="#414">line</a> }),
+<a href=#412 id=412 data-nosnippet>412</a>        <span class="kw">let </span>pos = <a href="#410">f</a>.<a href="lib.rs.html#2161-2163">relative_position</a>(<a href="#409">pos</a>);
+<a href=#413 id=413 data-nosnippet>413</a>        <span class="kw">match </span><a href="#410">f</a>.<a href="lib.rs.html#2174-2176">lookup_line</a>(<a href="#412">pos</a>) {
+<a href=#414 id=414 data-nosnippet>414</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(line) =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="lib.rs.html#2548-2552">SourceFileAndLine</a> { sf: <a href="#410">f</a>, <a href="#414">line</a> }),
 <a href=#415 id=415 data-nosnippet>415</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a> </a>=&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#410">f</a>),
 <a href=#416 id=416 data-nosnippet>416</a>        }
 <a href=#417 id=417 data-nosnippet>417</a>    }
@@ -419,12 +419,12 @@
 <a href=#419 id=419 data-nosnippet>419</a>    <span class="kw">pub fn </span>span_to_string(
 <a href=#420 id=420 data-nosnippet>420</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
 <a href=#421 id=421 data-nosnippet>421</a>        sp: <a href="span_encoding.rs.html#82-86">Span</a>,
-<a href=#422 id=422 data-nosnippet>422</a>        filename_display_pref: <a href="lib.rs.html#361-371">FileNameDisplayPreference</a>,
+<a href=#422 id=422 data-nosnippet>422</a>        filename_display_pref: <a href="lib.rs.html#362-372">FileNameDisplayPreference</a>,
 <a href=#423 id=423 data-nosnippet>423</a>    ) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a> {
 <a href=#424 id=424 data-nosnippet>424</a>        <span class="kw">let </span>(source_file, lo_line, lo_col, hi_line, hi_col) = <a class="self" href="#420">self</a>.<a href="#441-452">span_to_location_info</a>(<a href="#421">sp</a>);
 <a href=#425 id=425 data-nosnippet>425</a>
 <a href=#426 id=426 data-nosnippet>426</a>        <span class="kw">let </span>file_name = <span class="kw">match </span><a href="#424">source_file</a> {
-<a href=#427 id=427 data-nosnippet>427</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(sf) =&gt; <a href="#427">sf</a>.name.<a href="lib.rs.html#432-434">display</a>(<a href="#422">filename_display_pref</a>).<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>(),
+<a href=#427 id=427 data-nosnippet>427</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(sf) =&gt; <a href="#427">sf</a>.name.<a href="lib.rs.html#433-435">display</a>(<a href="#422">filename_display_pref</a>).<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>(),
 <a href=#428 id=428 data-nosnippet>428</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a> </a>=&gt; <span class="kw">return </span><span class="string">"no-location"</span>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>(),
 <a href=#429 id=429 data-nosnippet>429</a>        };
 <a href=#430 id=430 data-nosnippet>430</a>
@@ -441,19 +441,19 @@
 <a href=#441 id=441 data-nosnippet>441</a>    <span class="kw">pub fn </span>span_to_location_info(
 <a href=#442 id=442 data-nosnippet>442</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
 <a href=#443 id=443 data-nosnippet>443</a>        sp: <a href="span_encoding.rs.html#82-86">Span</a>,
-<a href=#444 id=444 data-nosnippet>444</a>    ) -&gt; (<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1710-1742">SourceFile</a>&gt;&gt;, <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>) {
-<a href=#445 id=445 data-nosnippet>445</a>        <span class="kw">if </span><a class="self" href="#442">self</a>.files.<a href="../../rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>().source_files.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.is_empty">is_empty</a>() || <a href="#443">sp</a>.<a href="span_encoding.rs.html#328-341">is_dummy</a>() {
+<a href=#444 id=444 data-nosnippet>444</a>    ) -&gt; (<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1711-1743">SourceFile</a>&gt;&gt;, <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>) {
+<a href=#445 id=445 data-nosnippet>445</a>        <span class="kw">if </span><a class="self" href="#442">self</a>.files.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>().source_files.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.is_empty">is_empty</a>() || <a href="#443">sp</a>.<a href="span_encoding.rs.html#328-341">is_dummy</a>() {
 <a href=#446 id=446 data-nosnippet>446</a>            <span class="kw">return </span>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>);
 <a href=#447 id=447 data-nosnippet>447</a>        }
 <a href=#448 id=448 data-nosnippet>448</a>
-<a href=#449 id=449 data-nosnippet>449</a>        <span class="kw">let </span>lo = <a class="self" href="#442">self</a>.<a href="#402-406">lookup_char_pos</a>(<a href="#443">sp</a>.<a href="lib.rs.html#573-575">lo</a>());
-<a href=#450 id=450 data-nosnippet>450</a>        <span class="kw">let </span>hi = <a class="self" href="#442">self</a>.<a href="#402-406">lookup_char_pos</a>(<a href="#443">sp</a>.<a href="lib.rs.html#581-583">hi</a>());
-<a href=#451 id=451 data-nosnippet>451</a>        (<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#449">lo</a>.file), <a href="#449">lo</a>.line, <a href="#449">lo</a>.col.<a href="lib.rs.html#2419">to_usize</a>() + <span class="number">1</span>, <a href="#450">hi</a>.line, <a href="#450">hi</a>.col.<a href="lib.rs.html#2419">to_usize</a>() + <span class="number">1</span>)
+<a href=#449 id=449 data-nosnippet>449</a>        <span class="kw">let </span>lo = <a class="self" href="#442">self</a>.<a href="#402-406">lookup_char_pos</a>(<a href="#443">sp</a>.<a href="lib.rs.html#574-576">lo</a>());
+<a href=#450 id=450 data-nosnippet>450</a>        <span class="kw">let </span>hi = <a class="self" href="#442">self</a>.<a href="#402-406">lookup_char_pos</a>(<a href="#443">sp</a>.<a href="lib.rs.html#582-584">hi</a>());
+<a href=#451 id=451 data-nosnippet>451</a>        (<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#449">lo</a>.file), <a href="#449">lo</a>.line, <a href="#449">lo</a>.col.<a href="lib.rs.html#2420">to_usize</a>() + <span class="number">1</span>, <a href="#450">hi</a>.line, <a href="#450">hi</a>.col.<a href="lib.rs.html#2420">to_usize</a>() + <span class="number">1</span>)
 <a href=#452 id=452 data-nosnippet>452</a>    }
 <a href=#453 id=453 data-nosnippet>453</a>
 <a href=#454 id=454 data-nosnippet>454</a>    <span class="doccomment">/// Format the span location suitable for embedding in build artifacts
 <a href=#455 id=455 data-nosnippet>455</a>    </span><span class="kw">pub fn </span>span_to_embeddable_string(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a> {
-<a href=#456 id=456 data-nosnippet>456</a>        <a class="self" href="#455">self</a>.<a href="#419-439">span_to_string</a>(<a href="#455">sp</a>, <a href="lib.rs.html#364">FileNameDisplayPreference::Remapped</a>)
+<a href=#456 id=456 data-nosnippet>456</a>        <a class="self" href="#455">self</a>.<a href="#419-439">span_to_string</a>(<a href="#455">sp</a>, <a href="lib.rs.html#365">FileNameDisplayPreference::Remapped</a>)
 <a href=#457 id=457 data-nosnippet>457</a>    }
 <a href=#458 id=458 data-nosnippet>458</a>
 <a href=#459 id=459 data-nosnippet>459</a>    <span class="doccomment">/// Format the span location to be printed in diagnostics. Must not be emitted
@@ -463,28 +463,28 @@
 <a href=#463 id=463 data-nosnippet>463</a>        <a class="self" href="#462">self</a>.<a href="#419-439">span_to_string</a>(<a href="#462">sp</a>, <a class="self" href="#462">self</a>.path_mapping.filename_display_for_diagnostics)
 <a href=#464 id=464 data-nosnippet>464</a>    }
 <a href=#465 id=465 data-nosnippet>465</a>
-<a href=#466 id=466 data-nosnippet>466</a>    <span class="kw">pub fn </span>span_to_filename(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a href="lib.rs.html#325-342">FileName</a> {
-<a href=#467 id=467 data-nosnippet>467</a>        <a class="self" href="#466">self</a>.<a href="#402-406">lookup_char_pos</a>(<a href="#466">sp</a>.<a href="lib.rs.html#573-575">lo</a>()).file.name.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>()
+<a href=#466 id=466 data-nosnippet>466</a>    <span class="kw">pub fn </span>span_to_filename(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a href="lib.rs.html#326-343">FileName</a> {
+<a href=#467 id=467 data-nosnippet>467</a>        <a class="self" href="#466">self</a>.<a href="#402-406">lookup_char_pos</a>(<a href="#466">sp</a>.<a href="lib.rs.html#574-576">lo</a>()).file.name.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>()
 <a href=#468 id=468 data-nosnippet>468</a>    }
 <a href=#469 id=469 data-nosnippet>469</a>
-<a href=#470 id=470 data-nosnippet>470</a>    <span class="kw">pub fn </span>filename_for_diagnostics&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, filename: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="lib.rs.html#325-342">FileName</a>) -&gt; <a href="lib.rs.html#373-376">FileNameDisplay</a>&lt;<span class="lifetime">'a</span>&gt; {
-<a href=#471 id=471 data-nosnippet>471</a>        <a href="#470">filename</a>.<a href="lib.rs.html#432-434">display</a>(<a class="self" href="#470">self</a>.path_mapping.filename_display_for_diagnostics)
+<a href=#470 id=470 data-nosnippet>470</a>    <span class="kw">pub fn </span>filename_for_diagnostics&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, filename: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="lib.rs.html#326-343">FileName</a>) -&gt; <a href="lib.rs.html#374-377">FileNameDisplay</a>&lt;<span class="lifetime">'a</span>&gt; {
+<a href=#471 id=471 data-nosnippet>471</a>        <a href="#470">filename</a>.<a href="lib.rs.html#433-435">display</a>(<a class="self" href="#470">self</a>.path_mapping.filename_display_for_diagnostics)
 <a href=#472 id=472 data-nosnippet>472</a>    }
 <a href=#473 id=473 data-nosnippet>473</a>
 <a href=#474 id=474 data-nosnippet>474</a>    <span class="kw">pub fn </span>is_multiline(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
-<a href=#475 id=475 data-nosnippet>475</a>        <span class="kw">let </span>lo = <a class="self" href="#474">self</a>.<a href="#1041-1043">lookup_source_file_idx</a>(<a href="#474">sp</a>.<a href="lib.rs.html#573-575">lo</a>());
-<a href=#476 id=476 data-nosnippet>476</a>        <span class="kw">let </span>hi = <a class="self" href="#474">self</a>.<a href="#1041-1043">lookup_source_file_idx</a>(<a href="#474">sp</a>.<a href="lib.rs.html#581-583">hi</a>());
+<a href=#475 id=475 data-nosnippet>475</a>        <span class="kw">let </span>lo = <a class="self" href="#474">self</a>.<a href="#1041-1043">lookup_source_file_idx</a>(<a href="#474">sp</a>.<a href="lib.rs.html#574-576">lo</a>());
+<a href=#476 id=476 data-nosnippet>476</a>        <span class="kw">let </span>hi = <a class="self" href="#474">self</a>.<a href="#1041-1043">lookup_source_file_idx</a>(<a href="#474">sp</a>.<a href="lib.rs.html#582-584">hi</a>());
 <a href=#477 id=477 data-nosnippet>477</a>        <span class="kw">if </span><a href="#475">lo</a> != <a href="#476">hi</a> {
 <a href=#478 id=478 data-nosnippet>478</a>            <span class="kw">return </span><span class="bool-val">true</span>;
 <a href=#479 id=479 data-nosnippet>479</a>        }
-<a href=#480 id=480 data-nosnippet>480</a>        <span class="kw">let </span>f = <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">Arc::clone</a>(<span class="kw-2">&amp;</span>(<span class="kw-2">*</span><a class="self" href="#474">self</a>.files.<a href="../../rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>().source_files)[<a href="#475">lo</a>]);
-<a href=#481 id=481 data-nosnippet>481</a>        <span class="kw">let </span>lo = <a href="#480">f</a>.<a href="lib.rs.html#2160-2162">relative_position</a>(<a href="#474">sp</a>.<a href="lib.rs.html#573-575">lo</a>());
-<a href=#482 id=482 data-nosnippet>482</a>        <span class="kw">let </span>hi = <a href="#480">f</a>.<a href="lib.rs.html#2160-2162">relative_position</a>(<a href="#474">sp</a>.<a href="lib.rs.html#581-583">hi</a>());
-<a href=#483 id=483 data-nosnippet>483</a>        <a href="#480">f</a>.<a href="lib.rs.html#2173-2175">lookup_line</a>(<a href="#481">lo</a>) != <a href="#480">f</a>.<a href="lib.rs.html#2173-2175">lookup_line</a>(<a href="#482">hi</a>)
+<a href=#480 id=480 data-nosnippet>480</a>        <span class="kw">let </span>f = <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">Arc::clone</a>(<span class="kw-2">&amp;</span>(<span class="kw-2">*</span><a class="self" href="#474">self</a>.files.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>().source_files)[<a href="#475">lo</a>]);
+<a href=#481 id=481 data-nosnippet>481</a>        <span class="kw">let </span>lo = <a href="#480">f</a>.<a href="lib.rs.html#2161-2163">relative_position</a>(<a href="#474">sp</a>.<a href="lib.rs.html#574-576">lo</a>());
+<a href=#482 id=482 data-nosnippet>482</a>        <span class="kw">let </span>hi = <a href="#480">f</a>.<a href="lib.rs.html#2161-2163">relative_position</a>(<a href="#474">sp</a>.<a href="lib.rs.html#582-584">hi</a>());
+<a href=#483 id=483 data-nosnippet>483</a>        <a href="#480">f</a>.<a href="lib.rs.html#2174-2176">lookup_line</a>(<a href="#481">lo</a>) != <a href="#480">f</a>.<a href="lib.rs.html#2174-2176">lookup_line</a>(<a href="#482">hi</a>)
 <a href=#484 id=484 data-nosnippet>484</a>    }
 <a href=#485 id=485 data-nosnippet>485</a>
 <a href=#486 id=486 data-nosnippet>486</a>    <span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
-<a href=#487 id=487 data-nosnippet>487</a>    </span><span class="kw">pub fn </span>is_valid_span(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;(<a href="lib.rs.html#2534-2543">Loc</a>, <a href="lib.rs.html#2534-2543">Loc</a>), <a href="lib.rs.html#2584-2586">SpanLinesError</a>&gt; {
+<a href=#487 id=487 data-nosnippet>487</a>    </span><span class="kw">pub fn </span>is_valid_span(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;(<a href="lib.rs.html#2535-2544">Loc</a>, <a href="lib.rs.html#2535-2544">Loc</a>), <a href="lib.rs.html#2585-2587">SpanLinesError</a>&gt; {
 <a href=#488 id=488 data-nosnippet>488</a>        <span class="kw">let </span>lo = <span class="self">self</span>.lookup_char_pos(sp.lo());
 <a href=#489 id=489 data-nosnippet>489</a>        <span class="macro">trace!</span>(<span class="question-mark">?</span>lo);
 <a href=#490 id=490 data-nosnippet>490</a>        <span class="kw">let </span>hi = <span class="self">self</span>.lookup_char_pos(sp.hi());
@@ -505,13 +505,13 @@
 <a href=#505 id=505 data-nosnippet>505</a>        }
 <a href=#506 id=506 data-nosnippet>506</a>    }
 <a href=#507 id=507 data-nosnippet>507</a>
-<a href=#508 id=508 data-nosnippet>508</a>    <span class="kw">pub fn </span>span_to_lines(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a href="lib.rs.html#2581">FileLinesResult</a> {
+<a href=#508 id=508 data-nosnippet>508</a>    <span class="kw">pub fn </span>span_to_lines(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a href="lib.rs.html#2582">FileLinesResult</a> {
 <a href=#509 id=509 data-nosnippet>509</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"span_to_lines(sp={:?})"</span>, sp);
 <a href=#510 id=510 data-nosnippet>510</a>        <span class="kw">let </span>(lo, hi) = <a class="self" href="#508">self</a>.<a href="#487-499">is_valid_span</a>(<a href="#508">sp</a>)<span class="question-mark">?</span>;
 <a href=#511 id=511 data-nosnippet>511</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert.html">assert!</a>(hi.line &gt;= lo.line);
 <a href=#512 id=512 data-nosnippet>512</a>
 <a href=#513 id=513 data-nosnippet>513</a>        <span class="kw">if </span><a href="#508">sp</a>.<a href="span_encoding.rs.html#328-341">is_dummy</a>() {
-<a href=#514 id=514 data-nosnippet>514</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="lib.rs.html#2570-2573">FileLines</a> { file: <a href="#510">lo</a>.file, lines: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>() });
+<a href=#514 id=514 data-nosnippet>514</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="lib.rs.html#2571-2574">FileLines</a> { file: <a href="#510">lo</a>.file, lines: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>() });
 <a href=#515 id=515 data-nosnippet>515</a>        }
 <a href=#516 id=516 data-nosnippet>516</a>
 <a href=#517 id=517 data-nosnippet>517</a>        <span class="kw">let </span><span class="kw-2">mut </span>lines = <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.with_capacity">Vec::with_capacity</a>(<a href="#510">hi</a>.line - <a href="#510">lo</a>.line + <span class="number">1</span>);
@@ -535,35 +535,35 @@
 <a href=#535 id=535 data-nosnippet>535</a>        }
 <a href=#536 id=536 data-nosnippet>536</a>
 <a href=#537 id=537 data-nosnippet>537</a>        <span class="comment">// For the last line, it extends from `start_col` to `hi.col`:
-<a href=#538 id=538 data-nosnippet>538</a>        </span><a href="#517">lines</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="lib.rs.html#2559-2568">LineInfo</a> { line_index: <a href="#530">hi_line</a>, <a href="#521">start_col</a>, end_col: <a href="#510">hi</a>.col });
+<a href=#538 id=538 data-nosnippet>538</a>        </span><a href="#517">lines</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="lib.rs.html#2560-2569">LineInfo</a> { line_index: <a href="#530">hi_line</a>, <a href="#521">start_col</a>, end_col: <a href="#510">hi</a>.col });
 <a href=#539 id=539 data-nosnippet>539</a>
-<a href=#540 id=540 data-nosnippet>540</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="lib.rs.html#2570-2573">FileLines</a> { file: <a href="#510">lo</a>.file, <a href="#517">lines</a> })
+<a href=#540 id=540 data-nosnippet>540</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="lib.rs.html#2571-2574">FileLines</a> { file: <a href="#510">lo</a>.file, <a href="#517">lines</a> })
 <a href=#541 id=541 data-nosnippet>541</a>    }
 <a href=#542 id=542 data-nosnippet>542</a>
 <a href=#543 id=543 data-nosnippet>543</a>    <span class="doccomment">/// Extracts the source surrounding the given `Span` using the `extract_source` function. The
 <a href=#544 id=544 data-nosnippet>544</a>    /// extract function takes three arguments: a string slice containing the source, an index in
 <a href=#545 id=545 data-nosnippet>545</a>    /// the slice for the beginning of the span and an index in the slice for the end of the span.
-<a href=#546 id=546 data-nosnippet>546</a>    </span><span class="kw">pub fn </span>span_to_source&lt;F, T&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>, extract_source: F) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;T, <a href="lib.rs.html#2589-2594">SpanSnippetError</a>&gt;
+<a href=#546 id=546 data-nosnippet>546</a>    </span><span class="kw">pub fn </span>span_to_source&lt;F, T&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>, extract_source: F) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;T, <a href="lib.rs.html#2590-2595">SpanSnippetError</a>&gt;
 <a href=#547 id=547 data-nosnippet>547</a>    <span class="kw">where
-<a href=#548 id=548 data-nosnippet>548</a>        </span>F: <a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.Fn.html">Fn</a>(<span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;T, <a href="lib.rs.html#2589-2594">SpanSnippetError</a>&gt;,
+<a href=#548 id=548 data-nosnippet>548</a>        </span>F: <a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.Fn.html">Fn</a>(<span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;T, <a href="lib.rs.html#2590-2595">SpanSnippetError</a>&gt;,
 <a href=#549 id=549 data-nosnippet>549</a>    {
-<a href=#550 id=550 data-nosnippet>550</a>        <span class="kw">let </span>local_begin = <a class="self" href="#546">self</a>.<a href="#1031-1036">lookup_byte_offset</a>(<a href="#546">sp</a>.<a href="lib.rs.html#573-575">lo</a>());
-<a href=#551 id=551 data-nosnippet>551</a>        <span class="kw">let </span>local_end = <a class="self" href="#546">self</a>.<a href="#1031-1036">lookup_byte_offset</a>(<a href="#546">sp</a>.<a href="lib.rs.html#581-583">hi</a>());
+<a href=#550 id=550 data-nosnippet>550</a>        <span class="kw">let </span>local_begin = <a class="self" href="#546">self</a>.<a href="#1031-1036">lookup_byte_offset</a>(<a href="#546">sp</a>.<a href="lib.rs.html#574-576">lo</a>());
+<a href=#551 id=551 data-nosnippet>551</a>        <span class="kw">let </span>local_end = <a class="self" href="#546">self</a>.<a href="#1031-1036">lookup_byte_offset</a>(<a href="#546">sp</a>.<a href="lib.rs.html#582-584">hi</a>());
 <a href=#552 id=552 data-nosnippet>552</a>
 <a href=#553 id=553 data-nosnippet>553</a>        <span class="kw">if </span><a href="#550">local_begin</a>.sf.start_pos != <a href="#551">local_end</a>.sf.start_pos {
-<a href=#554 id=554 data-nosnippet>554</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="lib.rs.html#2591">SpanSnippetError::DistinctSources</a>(<a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html#method.new">Box::new</a>(<a href="lib.rs.html#2597-2600">DistinctSources</a> {
+<a href=#554 id=554 data-nosnippet>554</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="lib.rs.html#2592">SpanSnippetError::DistinctSources</a>(<a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html#method.new">Box::new</a>(<a href="lib.rs.html#2598-2601">DistinctSources</a> {
 <a href=#555 id=555 data-nosnippet>555</a>                begin: (<a href="#550">local_begin</a>.sf.name.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>(), <a href="#550">local_begin</a>.sf.start_pos),
 <a href=#556 id=556 data-nosnippet>556</a>                end: (<a href="#551">local_end</a>.sf.name.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>(), <a href="#551">local_end</a>.sf.start_pos),
 <a href=#557 id=557 data-nosnippet>557</a>            })))
 <a href=#558 id=558 data-nosnippet>558</a>        } <span class="kw">else </span>{
 <a href=#559 id=559 data-nosnippet>559</a>            <a class="self" href="#546">self</a>.<a href="#1049-1070">ensure_source_file_source_present</a>(<span class="kw-2">&amp;</span><a href="#550">local_begin</a>.sf);
 <a href=#560 id=560 data-nosnippet>560</a>
-<a href=#561 id=561 data-nosnippet>561</a>            <span class="kw">let </span>start_index = <a href="#550">local_begin</a>.pos.<a href="lib.rs.html#2419">to_usize</a>();
-<a href=#562 id=562 data-nosnippet>562</a>            <span class="kw">let </span>end_index = <a href="#551">local_end</a>.pos.<a href="lib.rs.html#2419">to_usize</a>();
-<a href=#563 id=563 data-nosnippet>563</a>            <span class="kw">let </span>source_len = <a href="#550">local_begin</a>.sf.source_len.<a href="lib.rs.html#2419">to_usize</a>();
+<a href=#561 id=561 data-nosnippet>561</a>            <span class="kw">let </span>start_index = <a href="#550">local_begin</a>.pos.<a href="lib.rs.html#2420">to_usize</a>();
+<a href=#562 id=562 data-nosnippet>562</a>            <span class="kw">let </span>end_index = <a href="#551">local_end</a>.pos.<a href="lib.rs.html#2420">to_usize</a>();
+<a href=#563 id=563 data-nosnippet>563</a>            <span class="kw">let </span>source_len = <a href="#550">local_begin</a>.sf.source_len.<a href="lib.rs.html#2420">to_usize</a>();
 <a href=#564 id=564 data-nosnippet>564</a>
 <a href=#565 id=565 data-nosnippet>565</a>            <span class="kw">if </span><a href="#561">start_index</a> &gt; <a href="#562">end_index</a> || <a href="#562">end_index</a> &gt; <a href="#563">source_len</a> {
-<a href=#566 id=566 data-nosnippet>566</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="lib.rs.html#2592">SpanSnippetError::MalformedForSourcemap</a>(<a href="lib.rs.html#2603-2608">MalformedSourceMapPositions</a> {
+<a href=#566 id=566 data-nosnippet>566</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="lib.rs.html#2593">SpanSnippetError::MalformedForSourcemap</a>(<a href="lib.rs.html#2604-2609">MalformedSourceMapPositions</a> {
 <a href=#567 id=567 data-nosnippet>567</a>                    name: <a href="#550">local_begin</a>.sf.name.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>(),
 <a href=#568 id=568 data-nosnippet>568</a>                    <a href="#563">source_len</a>,
 <a href=#569 id=569 data-nosnippet>569</a>                    begin_pos: <a href="#550">local_begin</a>.pos,
@@ -573,10 +573,10 @@
 <a href=#573 id=573 data-nosnippet>573</a>
 <a href=#574 id=574 data-nosnippet>574</a>            <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<span class="kw-2">ref </span>src) = <a href="#550">local_begin</a>.sf.src {
 <a href=#575 id=575 data-nosnippet>575</a>                <a href="#546">extract_source</a>(<a href="#574">src</a>, <a href="#561">start_index</a>, <a href="#562">end_index</a>)
-<a href=#576 id=576 data-nosnippet>576</a>            } <span class="kw">else if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(src) = <a href="#550">local_begin</a>.sf.external_src.<a href="../../rustc_data_structures/sync/freeze/struct.FreezeLock.html#method.read">read</a>().<a href="lib.rs.html#1484-1489">get_source</a>() {
+<a href=#576 id=576 data-nosnippet>576</a>            } <span class="kw">else if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(src) = <a href="#550">local_begin</a>.sf.external_src.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/freeze/struct.FreezeLock.html#method.read">read</a>().<a href="lib.rs.html#1485-1490">get_source</a>() {
 <a href=#577 id=577 data-nosnippet>577</a>                <a href="#546">extract_source</a>(<a href="#576">src</a>, <a href="#561">start_index</a>, <a href="#562">end_index</a>)
 <a href=#578 id=578 data-nosnippet>578</a>            } <span class="kw">else </span>{
-<a href=#579 id=579 data-nosnippet>579</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="lib.rs.html#2593">SpanSnippetError::SourceNotAvailable</a> { filename: <a href="#550">local_begin</a>.sf.name.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>() })
+<a href=#579 id=579 data-nosnippet>579</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="lib.rs.html#2594">SpanSnippetError::SourceNotAvailable</a> { filename: <a href="#550">local_begin</a>.sf.name.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>() })
 <a href=#580 id=580 data-nosnippet>580</a>            }
 <a href=#581 id=581 data-nosnippet>581</a>        }
 <a href=#582 id=582 data-nosnippet>582</a>    }
@@ -589,11 +589,11 @@
 <a href=#589 id=589 data-nosnippet>589</a>    }
 <a href=#590 id=590 data-nosnippet>590</a>
 <a href=#591 id=591 data-nosnippet>591</a>    <span class="doccomment">/// Returns the source snippet as `String` corresponding to the given `Span`.
-<a href=#592 id=592 data-nosnippet>592</a>    </span><span class="kw">pub fn </span>span_to_snippet(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>, <a href="lib.rs.html#2589-2594">SpanSnippetError</a>&gt; {
+<a href=#592 id=592 data-nosnippet>592</a>    </span><span class="kw">pub fn </span>span_to_snippet(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>, <a href="lib.rs.html#2590-2595">SpanSnippetError</a>&gt; {
 <a href=#593 id=593 data-nosnippet>593</a>        <a class="self" href="#592">self</a>.<a href="#546-582">span_to_source</a>(<a href="#592">sp</a>, |src, start_index, end_index| {
 <a href=#594 id=594 data-nosnippet>594</a>            <a href="#593">src</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.get">get</a>(<a href="#593">start_index</a>..<a href="#593">end_index</a>)
 <a href=#595 id=595 data-nosnippet>595</a>                .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|s| <a href="#595">s</a>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>())
-<a href=#596 id=596 data-nosnippet>596</a>                .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.ok_or">ok_or</a>(<a href="lib.rs.html#2590">SpanSnippetError::IllFormedSpan</a>(<a href="#592">sp</a>))
+<a href=#596 id=596 data-nosnippet>596</a>                .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.ok_or">ok_or</a>(<a href="lib.rs.html#2591">SpanSnippetError::IllFormedSpan</a>(<a href="#592">sp</a>))
 <a href=#597 id=597 data-nosnippet>597</a>        })
 <a href=#598 id=598 data-nosnippet>598</a>    }
 <a href=#599 id=599 data-nosnippet>599</a>
@@ -614,9 +614,9 @@
 <a href=#614 id=614 data-nosnippet>614</a>    }
 <a href=#615 id=615 data-nosnippet>615</a>
 <a href=#616 id=616 data-nosnippet>616</a>    <span class="doccomment">/// Returns the source snippet as `String` before the given `Span`.
-<a href=#617 id=617 data-nosnippet>617</a>    </span><span class="kw">pub fn </span>span_to_prev_source(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>, <a href="lib.rs.html#2589-2594">SpanSnippetError</a>&gt; {
+<a href=#617 id=617 data-nosnippet>617</a>    </span><span class="kw">pub fn </span>span_to_prev_source(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>, <a href="lib.rs.html#2590-2595">SpanSnippetError</a>&gt; {
 <a href=#618 id=618 data-nosnippet>618</a>        <a class="self" href="#617">self</a>.<a href="#546-582">span_to_source</a>(<a href="#617">sp</a>, |src, start_index, <span class="kw">_</span>| {
-<a href=#619 id=619 data-nosnippet>619</a>            <a href="#618">src</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.get">get</a>(..<a href="#618">start_index</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|s| <a href="#619">s</a>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>()).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.ok_or">ok_or</a>(<a href="lib.rs.html#2590">SpanSnippetError::IllFormedSpan</a>(<a href="#617">sp</a>))
+<a href=#619 id=619 data-nosnippet>619</a>            <a href="#618">src</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.get">get</a>(..<a href="#618">start_index</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|s| <a href="#619">s</a>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>()).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.ok_or">ok_or</a>(<a href="lib.rs.html#2591">SpanSnippetError::IllFormedSpan</a>(<a href="#617">sp</a>))
 <a href=#620 id=620 data-nosnippet>620</a>        })
 <a href=#621 id=621 data-nosnippet>621</a>    }
 <a href=#622 id=622 data-nosnippet>622</a>
@@ -626,7 +626,7 @@
 <a href=#626 id=626 data-nosnippet>626</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(prev_source) = <a class="self" href="#625">self</a>.<a href="#617-621">span_to_prev_source</a>(<a href="#625">sp</a>) {
 <a href=#627 id=627 data-nosnippet>627</a>            <span class="kw">let </span>prev_source = <a href="#626">prev_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.rsplit">rsplit</a>(<a href="#625">c</a>).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.next">next</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or">unwrap_or</a>(<span class="string">""</span>);
 <a href=#628 id=628 data-nosnippet>628</a>            <span class="kw">if </span>!<a href="#627">prev_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.is_empty">is_empty</a>() &amp;&amp; (<a href="#625">accept_newlines</a> || !<a href="#627">prev_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.contains">contains</a>(<span class="string">'\n'</span>)) {
-<a href=#629 id=629 data-nosnippet>629</a>                <span class="kw">return </span><a href="#625">sp</a>.<a href="lib.rs.html#577-579">with_lo</a>(<a href="lib.rs.html#2478-2496">BytePos</a>(<a href="#625">sp</a>.<a href="lib.rs.html#573-575">lo</a>().<span class="number">0 </span>- <a href="#627">prev_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.len">len</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>));
+<a href=#629 id=629 data-nosnippet>629</a>                <span class="kw">return </span><a href="#625">sp</a>.<a href="lib.rs.html#578-580">with_lo</a>(<a href="lib.rs.html#2479-2497">BytePos</a>(<a href="#625">sp</a>.<a href="lib.rs.html#574-576">lo</a>().<span class="number">0 </span>- <a href="#627">prev_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.len">len</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>));
 <a href=#630 id=630 data-nosnippet>630</a>            }
 <a href=#631 id=631 data-nosnippet>631</a>        }
 <a href=#632 id=632 data-nosnippet>632</a>
@@ -644,7 +644,7 @@
 <a href=#644 id=644 data-nosnippet>644</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(prev_source) = <a class="self" href="#639">self</a>.<a href="#617-621">span_to_prev_source</a>(<a href="#640">sp</a>) {
 <a href=#645 id=645 data-nosnippet>645</a>            <span class="kw">let </span>prev_source = <a href="#644">prev_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.rsplit">rsplit</a>(<a href="#641">c</a>).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.next">next</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or">unwrap_or</a>(<span class="string">""</span>);
 <a href=#646 id=646 data-nosnippet>646</a>            <span class="kw">if </span><a href="#642">accept_newlines</a> || !<a href="#645">prev_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.contains">contains</a>(<span class="string">'\n'</span>) {
-<a href=#647 id=647 data-nosnippet>647</a>                <span class="kw">return </span><a href="#640">sp</a>.<a href="lib.rs.html#577-579">with_lo</a>(<a href="lib.rs.html#2478-2496">BytePos</a>(<a href="#640">sp</a>.<a href="lib.rs.html#573-575">lo</a>().<span class="number">0 </span>- <a href="#645">prev_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.len">len</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a> - <span class="number">1_u32</span>));
+<a href=#647 id=647 data-nosnippet>647</a>                <span class="kw">return </span><a href="#640">sp</a>.<a href="lib.rs.html#578-580">with_lo</a>(<a href="lib.rs.html#2479-2497">BytePos</a>(<a href="#640">sp</a>.<a href="lib.rs.html#574-576">lo</a>().<span class="number">0 </span>- <a href="#645">prev_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.len">len</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a> - <span class="number">1_u32</span>));
 <a href=#648 id=648 data-nosnippet>648</a>            }
 <a href=#649 id=649 data-nosnippet>649</a>        }
 <a href=#650 id=650 data-nosnippet>650</a>
@@ -690,9 +690,9 @@
 <a href=#690 id=690 data-nosnippet>690</a>    </a>}
 <a href=#691 id=691 data-nosnippet>691</a>
 <a href=#692 id=692 data-nosnippet>692</a>    <span class="doccomment">/// Returns the source snippet as `String` after the given `Span`.
-<a href=#693 id=693 data-nosnippet>693</a>    </span><span class="kw">pub fn </span>span_to_next_source(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>, <a href="lib.rs.html#2589-2594">SpanSnippetError</a>&gt; {
+<a href=#693 id=693 data-nosnippet>693</a>    </span><span class="kw">pub fn </span>span_to_next_source(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>, <a href="lib.rs.html#2590-2595">SpanSnippetError</a>&gt; {
 <a href=#694 id=694 data-nosnippet>694</a>        <a class="self" href="#693">self</a>.<a href="#546-582">span_to_source</a>(<a href="#693">sp</a>, |src, <span class="kw">_</span>, end_index| {
-<a href=#695 id=695 data-nosnippet>695</a>            <a href="#694">src</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.get">get</a>(<a href="#694">end_index</a>..).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|s| <a href="#695">s</a>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>()).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.ok_or">ok_or</a>(<a href="lib.rs.html#2590">SpanSnippetError::IllFormedSpan</a>(<a href="#693">sp</a>))
+<a href=#695 id=695 data-nosnippet>695</a>            <a href="#694">src</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.get">get</a>(<a href="#694">end_index</a>..).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|s| <a href="#695">s</a>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>()).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.ok_or">ok_or</a>(<a href="lib.rs.html#2591">SpanSnippetError::IllFormedSpan</a>(<a href="#693">sp</a>))
 <a href=#696 id=696 data-nosnippet>696</a>        })
 <a href=#697 id=697 data-nosnippet>697</a>    }
 <a href=#698 id=698 data-nosnippet>698</a>
@@ -701,10 +701,10 @@
 <a href=#701 id=701 data-nosnippet>701</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
 <a href=#702 id=702 data-nosnippet>702</a>        span: <a href="span_encoding.rs.html#82-86">Span</a>,
 <a href=#703 id=703 data-nosnippet>703</a>        f: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.Fn.html">Fn</a>(<a href="https://doc.rust-lang.org/nightly/std/primitive.char.html">char</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
-<a href=#704 id=704 data-nosnippet>704</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="span_encoding.rs.html#82-86">Span</a>, <a href="lib.rs.html#2589-2594">SpanSnippetError</a>&gt; {
+<a href=#704 id=704 data-nosnippet>704</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="span_encoding.rs.html#82-86">Span</a>, <a href="lib.rs.html#2590-2595">SpanSnippetError</a>&gt; {
 <a href=#705 id=705 data-nosnippet>705</a>        <a class="self" href="#701">self</a>.<a href="#546-582">span_to_source</a>(<a href="#702">span</a>, |s, _start, end| {
 <a href=#706 id=706 data-nosnippet>706</a>            <span class="kw">let </span>n = <a href="#705">s</a>[<a href="#705">end</a>..].<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.char_indices">char_indices</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.find">find</a>(|<span class="kw-2">&amp;</span>(<span class="kw">_</span>, c)| !<a href="#703">f</a>(<a href="#706">c</a>)).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map_or">map_or</a>(<a href="#705">s</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.len">len</a>() - <a href="#705">end</a>, |(i, <span class="kw">_</span>)| <a href="#706">i</a>);
-<a href=#707 id=707 data-nosnippet>707</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="#702">span</a>.<a href="lib.rs.html#585-587">with_hi</a>(<a href="#702">span</a>.<a href="lib.rs.html#581-583">hi</a>() + <a href="lib.rs.html#2478-2496">BytePos</a>(<a href="#706">n</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>)))
+<a href=#707 id=707 data-nosnippet>707</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="#702">span</a>.<a href="lib.rs.html#586-588">with_hi</a>(<a href="#702">span</a>.<a href="lib.rs.html#582-584">hi</a>() + <a href="lib.rs.html#2479-2497">BytePos</a>(<a href="#706">n</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>)))
 <a href=#708 id=708 data-nosnippet>708</a>        })
 <a href=#709 id=709 data-nosnippet>709</a>    }
 <a href=#710 id=710 data-nosnippet>710</a>
@@ -719,13 +719,13 @@
 <a href=#719 id=719 data-nosnippet>719</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
 <a href=#720 id=720 data-nosnippet>720</a>        span: <a href="span_encoding.rs.html#82-86">Span</a>,
 <a href=#721 id=721 data-nosnippet>721</a>        f: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.Fn.html">Fn</a>(<a href="https://doc.rust-lang.org/nightly/std/primitive.char.html">char</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
-<a href=#722 id=722 data-nosnippet>722</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="span_encoding.rs.html#82-86">Span</a>, <a href="lib.rs.html#2589-2594">SpanSnippetError</a>&gt; {
+<a href=#722 id=722 data-nosnippet>722</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="span_encoding.rs.html#82-86">Span</a>, <a href="lib.rs.html#2590-2595">SpanSnippetError</a>&gt; {
 <a href=#723 id=723 data-nosnippet>723</a>        <a class="self" href="#719">self</a>.<a href="#546-582">span_to_source</a>(<a href="#720">span</a>, |s, start, _end| {
 <a href=#724 id=724 data-nosnippet>724</a>            <span class="kw">let </span>n = <a href="#723">s</a>[..<a href="#723">start</a>]
 <a href=#725 id=725 data-nosnippet>725</a>                .<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.char_indices">char_indices</a>()
 <a href=#726 id=726 data-nosnippet>726</a>                .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/double_ended/trait.DoubleEndedIterator.html#tymethod.rfind">rfind</a>(|<span class="kw-2">&amp;</span>(<span class="kw">_</span>, c)| !<a href="#721">f</a>(<a href="#726">c</a>))
 <a href=#727 id=727 data-nosnippet>727</a>                .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map_or">map_or</a>(<a href="#723">start</a>, |(i, <span class="kw">_</span>)| <a href="#723">start</a> - <a href="#727">i</a> - <span class="number">1</span>);
-<a href=#728 id=728 data-nosnippet>728</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="#720">span</a>.<a href="lib.rs.html#577-579">with_lo</a>(<a href="#720">span</a>.<a href="lib.rs.html#573-575">lo</a>() - <a href="lib.rs.html#2478-2496">BytePos</a>(<a href="#724">n</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>)))
+<a href=#728 id=728 data-nosnippet>728</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="#720">span</a>.<a href="lib.rs.html#578-580">with_lo</a>(<a href="#720">span</a>.<a href="lib.rs.html#574-576">lo</a>() - <a href="lib.rs.html#2479-2497">BytePos</a>(<a href="#724">n</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>)))
 <a href=#729 id=729 data-nosnippet>729</a>        })
 <a href=#730 id=730 data-nosnippet>730</a>    }
 <a href=#731 id=731 data-nosnippet>731</a>
@@ -734,7 +734,7 @@
 <a href=#734 id=734 data-nosnippet>734</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(next_source) = <a class="self" href="#733">self</a>.<a href="#693-697">span_to_next_source</a>(<a href="#733">sp</a>) {
 <a href=#735 id=735 data-nosnippet>735</a>            <span class="kw">let </span>next_source = <a href="#734">next_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.split">split</a>(<a href="#733">c</a>).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.next">next</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or">unwrap_or</a>(<span class="string">""</span>);
 <a href=#736 id=736 data-nosnippet>736</a>            <span class="kw">if </span>!<a href="#735">next_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.is_empty">is_empty</a>() &amp;&amp; (<a href="#733">accept_newlines</a> || !<a href="#735">next_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.contains">contains</a>(<span class="string">'\n'</span>)) {
-<a href=#737 id=737 data-nosnippet>737</a>                <span class="kw">return </span><a href="#733">sp</a>.<a href="lib.rs.html#585-587">with_hi</a>(<a href="lib.rs.html#2478-2496">BytePos</a>(<a href="#733">sp</a>.<a href="lib.rs.html#581-583">hi</a>().<span class="number">0 </span>+ <a href="#735">next_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.len">len</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>));
+<a href=#737 id=737 data-nosnippet>737</a>                <span class="kw">return </span><a href="#733">sp</a>.<a href="lib.rs.html#586-588">with_hi</a>(<a href="lib.rs.html#2479-2497">BytePos</a>(<a href="#733">sp</a>.<a href="lib.rs.html#582-584">hi</a>().<span class="number">0 </span>+ <a href="#735">next_source</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.len">len</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>));
 <a href=#738 id=738 data-nosnippet>738</a>            }
 <a href=#739 id=739 data-nosnippet>739</a>        }
 <a href=#740 id=740 data-nosnippet>740</a>
@@ -753,7 +753,7 @@
 <a href=#753 id=753 data-nosnippet>753</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(snippet) =&gt; {
 <a href=#754 id=754 data-nosnippet>754</a>                <span class="kw">let </span>snippet = <a href="#753">snippet</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.split">split</a>(<a href="#751">c</a>).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.next">next</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or">unwrap_or</a>(<span class="string">""</span>).<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.trim_end">trim_end</a>();
 <a href=#755 id=755 data-nosnippet>755</a>                <span class="kw">if </span>!<a href="#754">snippet</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.is_empty">is_empty</a>() &amp;&amp; !<a href="#754">snippet</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.contains">contains</a>(<span class="string">'\n'</span>) {
-<a href=#756 id=756 data-nosnippet>756</a>                    <a href="#751">sp</a>.<a href="lib.rs.html#585-587">with_hi</a>(<a href="lib.rs.html#2478-2496">BytePos</a>(<a href="#751">sp</a>.<a href="lib.rs.html#573-575">lo</a>().<span class="number">0 </span>+ <a href="#754">snippet</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.len">len</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>))
+<a href=#756 id=756 data-nosnippet>756</a>                    <a href="#751">sp</a>.<a href="lib.rs.html#586-588">with_hi</a>(<a href="lib.rs.html#2479-2497">BytePos</a>(<a href="#751">sp</a>.<a href="lib.rs.html#574-576">lo</a>().<span class="number">0 </span>+ <a href="#754">snippet</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.len">len</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>))
 <a href=#757 id=757 data-nosnippet>757</a>                } <span class="kw">else </span>{
 <a href=#758 id=758 data-nosnippet>758</a>                    <a href="#751">sp</a>
 <a href=#759 id=759 data-nosnippet>759</a>                }
@@ -829,7 +829,7 @@
 <a href=#829 id=829 data-nosnippet>829</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(snippet) = <a class="self" href="#828">self</a>.<a href="#592-598">span_to_snippet</a>(<a href="#828">sp</a>)
 <a href=#830 id=830 data-nosnippet>830</a>            &amp;&amp; <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(offset) = <a href="#829">snippet</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.find">find</a>(<a href="#828">c</a>)
 <a href=#831 id=831 data-nosnippet>831</a>        {
-<a href=#832 id=832 data-nosnippet>832</a>            <span class="kw">return </span><a href="#828">sp</a>.<a href="lib.rs.html#585-587">with_hi</a>(<a href="lib.rs.html#2478-2496">BytePos</a>(<a href="#828">sp</a>.<a href="lib.rs.html#573-575">lo</a>().<span class="number">0 </span>+ (<a href="#830">offset</a> + <a href="#828">c</a>.<a href="https://doc.rust-lang.org/nightly/core/char/foreigntype.methods.html#method.len_utf8">len_utf8</a>()) <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>));
+<a href=#832 id=832 data-nosnippet>832</a>            <span class="kw">return </span><a href="#828">sp</a>.<a href="lib.rs.html#586-588">with_hi</a>(<a href="lib.rs.html#2479-2497">BytePos</a>(<a href="#828">sp</a>.<a href="lib.rs.html#574-576">lo</a>().<span class="number">0 </span>+ (<a href="#830">offset</a> + <a href="#828">c</a>.<a href="https://doc.rust-lang.org/nightly/core/char/foreigntype.methods.html#method.len_utf8">len_utf8</a>()) <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>));
 <a href=#833 id=833 data-nosnippet>833</a>        }
 <a href=#834 id=834 data-nosnippet>834</a>        <a href="#828">sp</a>
 <a href=#835 id=835 data-nosnippet>835</a>    }
@@ -866,7 +866,7 @@
 <a href=#866 id=866 data-nosnippet>866</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(snippet) = <a class="self" href="#862">self</a>.<a href="#592-598">span_to_snippet</a>(<a href="#862">sp</a>) {
 <a href=#867 id=867 data-nosnippet>867</a>            <span class="kw">let </span>offset = <a href="#866">snippet</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.chars">chars</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.take_while">take_while</a>(<a href="#862">predicate</a>).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|c| <a href="#867">c</a>.<a href="https://doc.rust-lang.org/nightly/core/char/foreigntype.methods.html#method.len_utf8">len_utf8</a>()).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.sum">sum</a>::&lt;<a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>&gt;();
 <a href=#868 id=868 data-nosnippet>868</a>
-<a href=#869 id=869 data-nosnippet>869</a>            <a href="#862">sp</a>.<a href="lib.rs.html#585-587">with_hi</a>(<a href="lib.rs.html#2478-2496">BytePos</a>(<a href="#862">sp</a>.<a href="lib.rs.html#573-575">lo</a>().<span class="number">0 </span>+ (<a href="#867">offset</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>)))
+<a href=#869 id=869 data-nosnippet>869</a>            <a href="#862">sp</a>.<a href="lib.rs.html#586-588">with_hi</a>(<a href="lib.rs.html#2479-2497">BytePos</a>(<a href="#862">sp</a>.<a href="lib.rs.html#574-576">lo</a>().<span class="number">0 </span>+ (<a href="#867">offset</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>)))
 <a href=#870 id=870 data-nosnippet>870</a>        } <span class="kw">else </span>{
 <a href=#871 id=871 data-nosnippet>871</a>            <a href="#862">sp</a>
 <a href=#872 id=872 data-nosnippet>872</a>        }
@@ -888,13 +888,13 @@
 <a href=#888 id=888 data-nosnippet>888</a>        <span class="kw">let </span>width = {
 <a href=#889 id=889 data-nosnippet>889</a>            <span class="kw">let </span>sp = <a href="#887">sp</a>.<a href="span_encoding.rs.html#285-291">data</a>();
 <a href=#890 id=890 data-nosnippet>890</a>            <span class="kw">let </span>local_begin = <a class="self" href="#887">self</a>.<a href="#1031-1036">lookup_byte_offset</a>(<a href="#889">sp</a>.lo);
-<a href=#891 id=891 data-nosnippet>891</a>            <span class="kw">let </span>start_index = <a href="#890">local_begin</a>.pos.<a href="lib.rs.html#2419">to_usize</a>();
-<a href=#892 id=892 data-nosnippet>892</a>            <span class="kw">let </span>src = <a href="#890">local_begin</a>.sf.external_src.<a href="../../rustc_data_structures/sync/freeze/struct.FreezeLock.html#method.read">read</a>();
+<a href=#891 id=891 data-nosnippet>891</a>            <span class="kw">let </span>start_index = <a href="#890">local_begin</a>.pos.<a href="lib.rs.html#2420">to_usize</a>();
+<a href=#892 id=892 data-nosnippet>892</a>            <span class="kw">let </span>src = <a href="#890">local_begin</a>.sf.external_src.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/freeze/struct.FreezeLock.html#method.read">read</a>();
 <a href=#893 id=893 data-nosnippet>893</a>
 <a href=#894 id=894 data-nosnippet>894</a>            <span class="kw">let </span>snippet = <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<span class="kw-2">ref </span>src) = <a href="#890">local_begin</a>.sf.src {
 <a href=#895 id=895 data-nosnippet>895</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<span class="kw-2">&amp;</span><a href="#894">src</a>[<a href="#891">start_index</a>..])
 <a href=#896 id=896 data-nosnippet>896</a>            } <span class="kw">else </span>{
-<a href=#897 id=897 data-nosnippet>897</a>                <a href="#892">src</a>.<a href="lib.rs.html#1484-1489">get_source</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|src| <span class="kw-2">&amp;</span><a href="#897">src</a>[<a href="#891">start_index</a>..])
+<a href=#897 id=897 data-nosnippet>897</a>                <a href="#892">src</a>.<a href="lib.rs.html#1485-1490">get_source</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|src| <span class="kw-2">&amp;</span><a href="#897">src</a>[<a href="#891">start_index</a>..])
 <a href=#898 id=898 data-nosnippet>898</a>            };
 <a href=#899 id=899 data-nosnippet>899</a>
 <a href=#900 id=900 data-nosnippet>900</a>            <span class="kw">match </span><a href="#894">snippet</a> {
@@ -906,18 +906,18 @@
 <a href=#906 id=906 data-nosnippet>906</a>            }
 <a href=#907 id=907 data-nosnippet>907</a>        };
 <a href=#908 id=908 data-nosnippet>908</a>
-<a href=#909 id=909 data-nosnippet>909</a>        <a href="#887">sp</a>.<a href="lib.rs.html#585-587">with_hi</a>(<a href="lib.rs.html#2478-2496">BytePos</a>(<a href="#887">sp</a>.<a href="lib.rs.html#573-575">lo</a>().<span class="number">0 </span>+ <a href="#888">width</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>))
+<a href=#909 id=909 data-nosnippet>909</a>        <a href="#887">sp</a>.<a href="lib.rs.html#586-588">with_hi</a>(<a href="lib.rs.html#2479-2497">BytePos</a>(<a href="#887">sp</a>.<a href="lib.rs.html#574-576">lo</a>().<span class="number">0 </span>+ <a href="#888">width</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>))
 <a href=#910 id=910 data-nosnippet>910</a>    }
 <a href=#911 id=911 data-nosnippet>911</a>
 <a href=#912 id=912 data-nosnippet>912</a>    <span class="doccomment">/// Returns a new span representing just the last character of this span.
 <a href=#913 id=913 data-nosnippet>913</a>    </span><span class="kw">pub fn </span>end_point(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a href="span_encoding.rs.html#82-86">Span</a> {
-<a href=#914 id=914 data-nosnippet>914</a>        <span class="kw">let </span>pos = <a href="#913">sp</a>.<a href="lib.rs.html#581-583">hi</a>().<span class="number">0</span>;
+<a href=#914 id=914 data-nosnippet>914</a>        <span class="kw">let </span>pos = <a href="#913">sp</a>.<a href="lib.rs.html#582-584">hi</a>().<span class="number">0</span>;
 <a href=#915 id=915 data-nosnippet>915</a>
 <a href=#916 id=916 data-nosnippet>916</a>        <span class="kw">let </span>width = <a class="self" href="#913">self</a>.<a href="#966-1017">find_width_of_character_at_span</a>(<a href="#913">sp</a>, <span class="bool-val">false</span>);
 <a href=#917 id=917 data-nosnippet>917</a>        <span class="kw">let </span>corrected_end_position = <a href="#914">pos</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.num.html#method.checked_sub">checked_sub</a>(<a href="#916">width</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or">unwrap_or</a>(<a href="#914">pos</a>);
 <a href=#918 id=918 data-nosnippet>918</a>
-<a href=#919 id=919 data-nosnippet>919</a>        <span class="kw">let </span>end_point = <a href="lib.rs.html#2478-2496">BytePos</a>(<a href="https://doc.rust-lang.org/nightly/core/cmp/fn.max.html">cmp::max</a>(<a href="#917">corrected_end_position</a>, <a href="#913">sp</a>.<a href="lib.rs.html#573-575">lo</a>().<span class="number">0</span>));
-<a href=#920 id=920 data-nosnippet>920</a>        <a href="#913">sp</a>.<a href="lib.rs.html#577-579">with_lo</a>(<a href="#919">end_point</a>)
+<a href=#919 id=919 data-nosnippet>919</a>        <span class="kw">let </span>end_point = <a href="lib.rs.html#2479-2497">BytePos</a>(<a href="https://doc.rust-lang.org/nightly/core/cmp/fn.max.html">cmp::max</a>(<a href="#917">corrected_end_position</a>, <a href="#913">sp</a>.<a href="lib.rs.html#574-576">lo</a>().<span class="number">0</span>));
+<a href=#920 id=920 data-nosnippet>920</a>        <a href="#913">sp</a>.<a href="lib.rs.html#578-580">with_lo</a>(<a href="#919">end_point</a>)
 <a href=#921 id=921 data-nosnippet>921</a>    }
 <a href=#922 id=922 data-nosnippet>922</a>
 <a href=#923 id=923 data-nosnippet>923</a>    <span class="doccomment">/// Returns a new span representing the next character after the end-point of this span.
@@ -930,7 +930,7 @@
 <a href=#930 id=930 data-nosnippet>930</a>        <span class="kw">if </span><a href="#929">sp</a>.<a href="span_encoding.rs.html#328-341">is_dummy</a>() {
 <a href=#931 id=931 data-nosnippet>931</a>            <span class="kw">return </span><a href="#929">sp</a>;
 <a href=#932 id=932 data-nosnippet>932</a>        }
-<a href=#933 id=933 data-nosnippet>933</a>        <span class="kw">let </span>start_of_next_point = <a href="#929">sp</a>.<a href="lib.rs.html#581-583">hi</a>().<span class="number">0</span>;
+<a href=#933 id=933 data-nosnippet>933</a>        <span class="kw">let </span>start_of_next_point = <a href="#929">sp</a>.<a href="lib.rs.html#582-584">hi</a>().<span class="number">0</span>;
 <a href=#934 id=934 data-nosnippet>934</a>
 <a href=#935 id=935 data-nosnippet>935</a>        <span class="kw">let </span>width = <a class="self" href="#929">self</a>.<a href="#966-1017">find_width_of_character_at_span</a>(<a href="#929">sp</a>, <span class="bool-val">true</span>);
 <a href=#936 id=936 data-nosnippet>936</a>        <span class="comment">// If the width is 1, then the next span should only contain the next char besides current ending.
@@ -939,8 +939,8 @@
 <a href=#939 id=939 data-nosnippet>939</a>        </span><span class="kw">let </span>end_of_next_point =
 <a href=#940 id=940 data-nosnippet>940</a>            <a href="#933">start_of_next_point</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.num.html#method.checked_add">checked_add</a>(<a href="#935">width</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or">unwrap_or</a>(<a href="#933">start_of_next_point</a>);
 <a href=#941 id=941 data-nosnippet>941</a>
-<a href=#942 id=942 data-nosnippet>942</a>        <span class="kw">let </span>end_of_next_point = <a href="lib.rs.html#2478-2496">BytePos</a>(<a href="https://doc.rust-lang.org/nightly/core/cmp/fn.max.html">cmp::max</a>(<a href="#933">start_of_next_point</a> + <span class="number">1</span>, <a href="#939">end_of_next_point</a>));
-<a href=#943 id=943 data-nosnippet>943</a>        <a href="span_encoding.rs.html#248-282">Span::new</a>(<a href="lib.rs.html#2478-2496">BytePos</a>(<a href="#933">start_of_next_point</a>), <a href="#942">end_of_next_point</a>, <a href="#929">sp</a>.<a href="span_encoding.rs.html#384-387">ctxt</a>(), <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>)
+<a href=#942 id=942 data-nosnippet>942</a>        <span class="kw">let </span>end_of_next_point = <a href="lib.rs.html#2479-2497">BytePos</a>(<a href="https://doc.rust-lang.org/nightly/core/cmp/fn.max.html">cmp::max</a>(<a href="#933">start_of_next_point</a> + <span class="number">1</span>, <a href="#939">end_of_next_point</a>));
+<a href=#943 id=943 data-nosnippet>943</a>        <a href="span_encoding.rs.html#248-282">Span::new</a>(<a href="lib.rs.html#2479-2497">BytePos</a>(<a href="#933">start_of_next_point</a>), <a href="#942">end_of_next_point</a>, <a href="#929">sp</a>.<a href="span_encoding.rs.html#384-387">ctxt</a>(), <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>)
 <a href=#944 id=944 data-nosnippet>944</a>    }
 <a href=#945 id=945 data-nosnippet>945</a>
 <a href=#946 id=946 data-nosnippet>946</a>    <span class="doccomment">/// Check whether span is followed by some specified expected string in limit scope
@@ -1016,7 +1016,7 @@
 <a href=#1016 id=1016 data-nosnippet>1016</a>        }
 <a href=#1017 id=1017 data-nosnippet>1017</a>    }
 <a href=#1018 id=1018 data-nosnippet>1018</a>
-<a href=#1019 id=1019 data-nosnippet>1019</a>    <span class="kw">pub fn </span>get_source_file(<span class="kw-2">&amp;</span><span class="self">self</span>, filename: <span class="kw-2">&amp;</span><a href="lib.rs.html#325-342">FileName</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1710-1742">SourceFile</a>&gt;&gt; {
+<a href=#1019 id=1019 data-nosnippet>1019</a>    <span class="kw">pub fn </span>get_source_file(<span class="kw-2">&amp;</span><span class="self">self</span>, filename: <span class="kw-2">&amp;</span><a href="lib.rs.html#326-343">FileName</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="lib.rs.html#1711-1743">SourceFile</a>&gt;&gt; {
 <a href=#1020 id=1020 data-nosnippet>1020</a>        <span class="comment">// Remap filename before lookup
 <a href=#1021 id=1021 data-nosnippet>1021</a>        </span><span class="kw">let </span>filename = <a class="self" href="#1019">self</a>.<a href="#227-229">path_mapping</a>().<a href="#1184-1201">map_filename_prefix</a>(<a href="#1019">filename</a>).<span class="number">0</span>;
 <a href=#1022 id=1022 data-nosnippet>1022</a>        <span class="kw">for </span>sf <span class="kw">in </span><span class="self">self</span>.files.borrow().source_files.iter() {
@@ -1028,34 +1028,34 @@
 <a href=#1028 id=1028 data-nosnippet>1028</a>    </a>}
 <a href=#1029 id=1029 data-nosnippet>1029</a>
 <a href=#1030 id=1030 data-nosnippet>1030</a>    <span class="doccomment">/// For a global `BytePos`, computes the local offset within the containing `SourceFile`.
-<a href=#1031 id=1031 data-nosnippet>1031</a>    </span><span class="kw">pub fn </span>lookup_byte_offset(<span class="kw-2">&amp;</span><span class="self">self</span>, bpos: <a href="lib.rs.html#2478-2496">BytePos</a>) -&gt; <a href="lib.rs.html#2553-2556">SourceFileAndBytePos</a> {
+<a href=#1031 id=1031 data-nosnippet>1031</a>    </span><span class="kw">pub fn </span>lookup_byte_offset(<span class="kw-2">&amp;</span><span class="self">self</span>, bpos: <a href="lib.rs.html#2479-2497">BytePos</a>) -&gt; <a href="lib.rs.html#2554-2557">SourceFileAndBytePos</a> {
 <a href=#1032 id=1032 data-nosnippet>1032</a>        <span class="kw">let </span>idx = <a class="self" href="#1031">self</a>.<a href="#1041-1043">lookup_source_file_idx</a>(<a href="#1031">bpos</a>);
-<a href=#1033 id=1033 data-nosnippet>1033</a>        <span class="kw">let </span>sf = <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">Arc::clone</a>(<span class="kw-2">&amp;</span>(<span class="kw-2">*</span><a class="self" href="#1031">self</a>.files.<a href="../../rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>().source_files)[<a href="#1032">idx</a>]);
+<a href=#1033 id=1033 data-nosnippet>1033</a>        <span class="kw">let </span>sf = <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">Arc::clone</a>(<span class="kw-2">&amp;</span>(<span class="kw-2">*</span><a class="self" href="#1031">self</a>.files.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>().source_files)[<a href="#1032">idx</a>]);
 <a href=#1034 id=1034 data-nosnippet>1034</a>        <span class="kw">let </span>offset = <a href="#1031">bpos</a> - <a href="#1033">sf</a>.start_pos;
-<a href=#1035 id=1035 data-nosnippet>1035</a>        <a href="lib.rs.html#2553-2556">SourceFileAndBytePos</a> { <a href="#1033">sf</a>, pos: <a href="#1034">offset</a> }
+<a href=#1035 id=1035 data-nosnippet>1035</a>        <a href="lib.rs.html#2554-2557">SourceFileAndBytePos</a> { <a href="#1033">sf</a>, pos: <a href="#1034">offset</a> }
 <a href=#1036 id=1036 data-nosnippet>1036</a>    }
 <a href=#1037 id=1037 data-nosnippet>1037</a>
 <a href=#1038 id=1038 data-nosnippet>1038</a>    <span class="doccomment">/// Returns the index of the [`SourceFile`] (in `self.files`) that contains `pos`.
 <a href=#1039 id=1039 data-nosnippet>1039</a>    /// This index is guaranteed to be valid for the lifetime of this `SourceMap`,
 <a href=#1040 id=1040 data-nosnippet>1040</a>    /// since `source_files` is a `MonotonicVec`
-<a href=#1041 id=1041 data-nosnippet>1041</a>    </span><span class="kw">pub fn </span>lookup_source_file_idx(<span class="kw-2">&amp;</span><span class="self">self</span>, pos: <a href="lib.rs.html#2478-2496">BytePos</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> {
-<a href=#1042 id=1042 data-nosnippet>1042</a>        <a class="self" href="#1041">self</a>.files.<a href="../../rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>().source_files.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.partition_point">partition_point</a>(|x| <a href="#1042">x</a>.start_pos &lt;= <a href="#1041">pos</a>) - <span class="number">1
+<a href=#1041 id=1041 data-nosnippet>1041</a>    </span><span class="kw">pub fn </span>lookup_source_file_idx(<span class="kw-2">&amp;</span><span class="self">self</span>, pos: <a href="lib.rs.html#2479-2497">BytePos</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> {
+<a href=#1042 id=1042 data-nosnippet>1042</a>        <a class="self" href="#1041">self</a>.files.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/struct.RwLock.html#method.borrow">borrow</a>().source_files.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.partition_point">partition_point</a>(|x| <a href="#1042">x</a>.start_pos &lt;= <a href="#1041">pos</a>) - <span class="number">1
 <a href=#1043 id=1043 data-nosnippet>1043</a>    </span>}
 <a href=#1044 id=1044 data-nosnippet>1044</a>
 <a href=#1045 id=1045 data-nosnippet>1045</a>    <span class="kw">pub fn </span>count_lines(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> {
-<a href=#1046 id=1046 data-nosnippet>1046</a>        <a class="self" href="#1045">self</a>.<a href="#268-270">files</a>().<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.fold">fold</a>(<span class="number">0</span>, |a, f| <a href="#1046">a</a> + <a href="#1046">f</a>.<a href="lib.rs.html#2150-2152">count_lines</a>())
+<a href=#1046 id=1046 data-nosnippet>1046</a>        <a class="self" href="#1045">self</a>.<a href="#268-270">files</a>().<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.fold">fold</a>(<span class="number">0</span>, |a, f| <a href="#1046">a</a> + <a href="#1046">f</a>.<a href="lib.rs.html#2151-2153">count_lines</a>())
 <a href=#1047 id=1047 data-nosnippet>1047</a>    }
 <a href=#1048 id=1048 data-nosnippet>1048</a>
-<a href=#1049 id=1049 data-nosnippet>1049</a>    <span class="kw">pub fn </span>ensure_source_file_source_present(<span class="kw-2">&amp;</span><span class="self">self</span>, source_file: <span class="kw-2">&amp;</span><a href="lib.rs.html#1710-1742">SourceFile</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
-<a href=#1050 id=1050 data-nosnippet>1050</a>        <a href="#1049">source_file</a>.<a href="lib.rs.html#2075-2110">add_external_src</a>(|| {
-<a href=#1051 id=1051 data-nosnippet>1051</a>            <span class="kw">let </span><a href="lib.rs.html#326">FileName::Real</a>(<span class="kw-2">ref </span>name) = <a href="#1049">source_file</a>.name <span class="kw">else </span>{
+<a href=#1049 id=1049 data-nosnippet>1049</a>    <span class="kw">pub fn </span>ensure_source_file_source_present(<span class="kw-2">&amp;</span><span class="self">self</span>, source_file: <span class="kw-2">&amp;</span><a href="lib.rs.html#1711-1743">SourceFile</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#1050 id=1050 data-nosnippet>1050</a>        <a href="#1049">source_file</a>.<a href="lib.rs.html#2076-2111">add_external_src</a>(|| {
+<a href=#1051 id=1051 data-nosnippet>1051</a>            <span class="kw">let </span><a href="lib.rs.html#327">FileName::Real</a>(<span class="kw-2">ref </span>name) = <a href="#1049">source_file</a>.name <span class="kw">else </span>{
 <a href=#1052 id=1052 data-nosnippet>1052</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>;
 <a href=#1053 id=1053 data-nosnippet>1053</a>            };
 <a href=#1054 id=1054 data-nosnippet>1054</a>
 <a href=#1055 id=1055 data-nosnippet>1055</a>            <span class="kw">let </span>local_path: <a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html">Cow</a>&lt;<span class="lifetime">'_</span>, <a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>&gt; = <span class="kw">match </span><a href="#1051">name</a> {
-<a href=#1056 id=1056 data-nosnippet>1056</a>                <a href="lib.rs.html#230">RealFileName::LocalPath</a>(local_path) =&gt; <a href="#1056">local_path</a>.<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>(),
-<a href=#1057 id=1057 data-nosnippet>1057</a>                <a href="lib.rs.html#234-241">RealFileName::Remapped</a> { local_path: <span class="prelude-val">Some</span>(local_path), .. } =&gt; <a href="#1057">local_path</a>.<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>(),
-<a href=#1058 id=1058 data-nosnippet>1058</a>                <a href="lib.rs.html#234-241">RealFileName::Remapped</a> { local_path: <span class="prelude-val">None</span>, virtual_name } =&gt; {
+<a href=#1056 id=1056 data-nosnippet>1056</a>                <a href="lib.rs.html#231">RealFileName::LocalPath</a>(local_path) =&gt; <a href="#1056">local_path</a>.<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>(),
+<a href=#1057 id=1057 data-nosnippet>1057</a>                <a href="lib.rs.html#235-242">RealFileName::Remapped</a> { local_path: <span class="prelude-val">Some</span>(local_path), .. } =&gt; <a href="#1057">local_path</a>.<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>(),
+<a href=#1058 id=1058 data-nosnippet>1058</a>                <a href="lib.rs.html#235-242">RealFileName::Remapped</a> { local_path: <span class="prelude-val">None</span>, virtual_name } =&gt; {
 <a href=#1059 id=1059 data-nosnippet>1059</a>                    <span class="comment">// The compiler produces better error messages if the sources of dependencies
 <a href=#1060 id=1060 data-nosnippet>1060</a>                    // are available. Attempt to undo any path mapping so we can find remapped
 <a href=#1061 id=1061 data-nosnippet>1061</a>                    // dependencies.
@@ -1070,9 +1070,9 @@
 <a href=#1070 id=1070 data-nosnippet>1070</a>    }
 <a href=#1071 id=1071 data-nosnippet>1071</a>
 <a href=#1072 id=1072 data-nosnippet>1072</a>    <span class="kw">pub fn </span>is_imported(<span class="kw-2">&amp;</span><span class="self">self</span>, sp: <a href="span_encoding.rs.html#82-86">Span</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
-<a href=#1073 id=1073 data-nosnippet>1073</a>        <span class="kw">let </span>source_file_index = <a class="self" href="#1072">self</a>.<a href="#1041-1043">lookup_source_file_idx</a>(<a href="#1072">sp</a>.<a href="lib.rs.html#573-575">lo</a>());
+<a href=#1073 id=1073 data-nosnippet>1073</a>        <span class="kw">let </span>source_file_index = <a class="self" href="#1072">self</a>.<a href="#1041-1043">lookup_source_file_idx</a>(<a href="#1072">sp</a>.<a href="lib.rs.html#574-576">lo</a>());
 <a href=#1074 id=1074 data-nosnippet>1074</a>        <span class="kw">let </span>source_file = <span class="kw-2">&amp;</span><a class="self" href="#1072">self</a>.<a href="#268-270">files</a>()[<a href="#1073">source_file_index</a>];
-<a href=#1075 id=1075 data-nosnippet>1075</a>        <a href="#1074">source_file</a>.<a href="lib.rs.html#2146-2148">is_imported</a>()
+<a href=#1075 id=1075 data-nosnippet>1075</a>        <a href="#1074">source_file</a>.<a href="lib.rs.html#2147-2149">is_imported</a>()
 <a href=#1076 id=1076 data-nosnippet>1076</a>    }
 <a href=#1077 id=1077 data-nosnippet>1077</a>
 <a href=#1078 id=1078 data-nosnippet>1078</a>    <span class="doccomment">/// Gets the span of a statement. If the statement is a macro expansion, the
@@ -1083,7 +1083,7 @@
 <a href=#1083 id=1083 data-nosnippet>1083</a>            <span class="kw">return </span><a href="#1081">stmt_span</a>;
 <a href=#1084 id=1084 data-nosnippet>1084</a>        }
 <a href=#1085 id=1085 data-nosnippet>1085</a>        <span class="kw">let </span>mac_call = <a href="#28-43">original_sp</a>(<a href="#1081">stmt_span</a>, <a href="#1081">block_span</a>);
-<a href=#1086 id=1086 data-nosnippet>1086</a>        <a class="self" href="#1081">self</a>.<a href="#1096-1100">mac_call_stmt_semi_span</a>(<a href="#1085">mac_call</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map_or">map_or</a>(<a href="#1085">mac_call</a>, |s| <a href="#1085">mac_call</a>.<a href="lib.rs.html#585-587">with_hi</a>(<a href="#1086">s</a>.<a href="lib.rs.html#581-583">hi</a>()))
+<a href=#1086 id=1086 data-nosnippet>1086</a>        <a class="self" href="#1081">self</a>.<a href="#1096-1100">mac_call_stmt_semi_span</a>(<a href="#1085">mac_call</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map_or">map_or</a>(<a href="#1085">mac_call</a>, |s| <a href="#1085">mac_call</a>.<a href="lib.rs.html#586-588">with_hi</a>(<a href="#1086">s</a>.<a href="lib.rs.html#582-584">hi</a>()))
 <a href=#1087 id=1087 data-nosnippet>1087</a>    }
 <a href=#1088 id=1088 data-nosnippet>1088</a>
 <a href=#1089 id=1089 data-nosnippet>1089</a>    <span class="doccomment">/// Tries to find the span of the semicolon of a macro call statement.
@@ -1101,29 +1101,29 @@
 <a href=#1101 id=1101 data-nosnippet>1101</a>}
 <a href=#1102 id=1102 data-nosnippet>1102</a>
 <a href=#1103 id=1103 data-nosnippet>1103</a><span class="kw">pub fn </span><a href="../../rustc_span/source_map/fn.get_source_map.html">get_source_map</a>() -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;<a href="#187-203">SourceMap</a>&gt;&gt; {
-<a href=#1104 id=1104 data-nosnippet>1104</a>    <a href="lib.rs.html#171-176">with_session_globals</a>(|session_globals| <a href="#1104">session_globals</a>.source_map.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>())
+<a href=#1104 id=1104 data-nosnippet>1104</a>    <a href="lib.rs.html#172-177">with_session_globals</a>(|session_globals| <a href="#1104">session_globals</a>.source_map.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>())
 <a href=#1105 id=1105 data-nosnippet>1105</a>}
 <a href=#1106 id=1106 data-nosnippet>1106</a>
 <a href=#1107 id=1107 data-nosnippet>1107</a><span class="attr">#[derive(Clone)]
 <a href=#1108 id=1108 data-nosnippet>1108</a></span><span class="kw">pub struct </span><a href="../../rustc_span/source_map/struct.FilePathMapping.html">FilePathMapping</a> {
 <a href=#1109 id=1109 data-nosnippet>1109</a>    mapping: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;(<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>, <a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>)&gt;,
-<a href=#1110 id=1110 data-nosnippet>1110</a>    filename_display_for_diagnostics: <a href="lib.rs.html#361-371">FileNameDisplayPreference</a>,
-<a href=#1111 id=1111 data-nosnippet>1111</a>    filename_embeddable_preference: <a href="lib.rs.html#351-358">FileNameEmbeddablePreference</a>,
+<a href=#1110 id=1110 data-nosnippet>1110</a>    filename_display_for_diagnostics: <a href="lib.rs.html#362-372">FileNameDisplayPreference</a>,
+<a href=#1111 id=1111 data-nosnippet>1111</a>    filename_embeddable_preference: <a href="lib.rs.html#352-359">FileNameEmbeddablePreference</a>,
 <a href=#1112 id=1112 data-nosnippet>1112</a>}
 <a href=#1113 id=1113 data-nosnippet>1113</a>
 <a href=#1114 id=1114 data-nosnippet>1114</a><span class="kw">impl </span><a href="#1108-1112">FilePathMapping</a> {
 <a href=#1115 id=1115 data-nosnippet>1115</a>    <span class="kw">pub fn </span>empty() -&gt; <a href="#1108-1112">FilePathMapping</a> {
 <a href=#1116 id=1116 data-nosnippet>1116</a>        <a href="#1123-1133">FilePathMapping::new</a>(
 <a href=#1117 id=1117 data-nosnippet>1117</a>            <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>(),
-<a href=#1118 id=1118 data-nosnippet>1118</a>            <a href="lib.rs.html#367">FileNameDisplayPreference::Local</a>,
-<a href=#1119 id=1119 data-nosnippet>1119</a>            <a href="lib.rs.html#355">FileNameEmbeddablePreference::RemappedOnly</a>,
+<a href=#1118 id=1118 data-nosnippet>1118</a>            <a href="lib.rs.html#368">FileNameDisplayPreference::Local</a>,
+<a href=#1119 id=1119 data-nosnippet>1119</a>            <a href="lib.rs.html#356">FileNameEmbeddablePreference::RemappedOnly</a>,
 <a href=#1120 id=1120 data-nosnippet>1120</a>        )
 <a href=#1121 id=1121 data-nosnippet>1121</a>    }
 <a href=#1122 id=1122 data-nosnippet>1122</a>
 <a href=#1123 id=1123 data-nosnippet>1123</a>    <span class="kw">pub fn </span>new(
 <a href=#1124 id=1124 data-nosnippet>1124</a>        mapping: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;(<a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>, <a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>)&gt;,
-<a href=#1125 id=1125 data-nosnippet>1125</a>        filename_display_for_diagnostics: <a href="lib.rs.html#361-371">FileNameDisplayPreference</a>,
-<a href=#1126 id=1126 data-nosnippet>1126</a>        filename_embeddable_preference: <a href="lib.rs.html#351-358">FileNameEmbeddablePreference</a>,
+<a href=#1125 id=1125 data-nosnippet>1125</a>        filename_display_for_diagnostics: <a href="lib.rs.html#362-372">FileNameDisplayPreference</a>,
+<a href=#1126 id=1126 data-nosnippet>1126</a>        filename_embeddable_preference: <a href="lib.rs.html#352-359">FileNameEmbeddablePreference</a>,
 <a href=#1127 id=1127 data-nosnippet>1127</a>    ) -&gt; <a href="#1108-1112">FilePathMapping</a> {
 <a href=#1128 id=1128 data-nosnippet>1128</a>        <a href="#1108-1112">FilePathMapping</a> {
 <a href=#1129 id=1129 data-nosnippet>1129</a>            <a href="#1124">mapping</a>,
@@ -1181,21 +1181,21 @@
 <a href=#1181 id=1181 data-nosnippet>1181</a>        }
 <a href=#1182 id=1182 data-nosnippet>1182</a>    }
 <a href=#1183 id=1183 data-nosnippet>1183</a>
-<a href=#1184 id=1184 data-nosnippet>1184</a>    <span class="kw">fn </span>map_filename_prefix(<span class="kw-2">&amp;</span><span class="self">self</span>, file: <span class="kw-2">&amp;</span><a href="lib.rs.html#325-342">FileName</a>) -&gt; (<a href="lib.rs.html#325-342">FileName</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>) {
+<a href=#1184 id=1184 data-nosnippet>1184</a>    <span class="kw">fn </span>map_filename_prefix(<span class="kw-2">&amp;</span><span class="self">self</span>, file: <span class="kw-2">&amp;</span><a href="lib.rs.html#326-343">FileName</a>) -&gt; (<a href="lib.rs.html#326-343">FileName</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>) {
 <a href=#1185 id=1185 data-nosnippet>1185</a>        <span class="kw">match </span><a href="#1184">file</a> {
-<a href=#1186 id=1186 data-nosnippet>1186</a>            <a href="lib.rs.html#326">FileName::Real</a>(realfile) <span class="kw">if let </span><a href="lib.rs.html#230">RealFileName::LocalPath</a>(local_path) = <a href="#1186">realfile</a> =&gt; {
+<a href=#1186 id=1186 data-nosnippet>1186</a>            <a href="lib.rs.html#327">FileName::Real</a>(realfile) <span class="kw">if let </span><a href="lib.rs.html#231">RealFileName::LocalPath</a>(local_path) = <a href="#1186">realfile</a> =&gt; {
 <a href=#1187 id=1187 data-nosnippet>1187</a>                <span class="kw">let </span>(mapped_path, mapped) = <a class="self" href="#1184">self</a>.<a href="#1138-1182">map_prefix</a>(<a href="#1186">local_path</a>);
 <a href=#1188 id=1188 data-nosnippet>1188</a>                <span class="kw">let </span>realfile = <span class="kw">if </span><a href="#1187">mapped</a> {
-<a href=#1189 id=1189 data-nosnippet>1189</a>                    <a href="lib.rs.html#234-241">RealFileName::Remapped</a> {
+<a href=#1189 id=1189 data-nosnippet>1189</a>                    <a href="lib.rs.html#235-242">RealFileName::Remapped</a> {
 <a href=#1190 id=1190 data-nosnippet>1190</a>                        local_path: <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#1186">local_path</a>.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>()),
 <a href=#1191 id=1191 data-nosnippet>1191</a>                        virtual_name: <a href="#1187">mapped_path</a>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#method.into_owned">into_owned</a>(),
 <a href=#1192 id=1192 data-nosnippet>1192</a>                    }
 <a href=#1193 id=1193 data-nosnippet>1193</a>                } <span class="kw">else </span>{
 <a href=#1194 id=1194 data-nosnippet>1194</a>                    <a href="#1186">realfile</a>.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>()
 <a href=#1195 id=1195 data-nosnippet>1195</a>                };
-<a href=#1196 id=1196 data-nosnippet>1196</a>                (<a href="lib.rs.html#326">FileName::Real</a>(<a href="#1188">realfile</a>), <a href="#1187">mapped</a>)
+<a href=#1196 id=1196 data-nosnippet>1196</a>                (<a href="lib.rs.html#327">FileName::Real</a>(<a href="#1188">realfile</a>), <a href="#1187">mapped</a>)
 <a href=#1197 id=1197 data-nosnippet>1197</a>            }
-<a href=#1198 id=1198 data-nosnippet>1198</a>            <a href="lib.rs.html#326">FileName::Real</a>(<span class="kw">_</span>) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(<span class="string">"attempted to remap an already remapped filename"</span>),
+<a href=#1198 id=1198 data-nosnippet>1198</a>            <a href="lib.rs.html#327">FileName::Real</a>(<span class="kw">_</span>) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(<span class="string">"attempted to remap an already remapped filename"</span>),
 <a href=#1199 id=1199 data-nosnippet>1199</a>            other =&gt; (<a href="#1199">other</a>.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>(), <span class="bool-val">false</span>),
 <a href=#1200 id=1200 data-nosnippet>1200</a>        }
 <a href=#1201 id=1201 data-nosnippet>1201</a>    }
@@ -1203,15 +1203,15 @@
 <a href=#1203 id=1203 data-nosnippet>1203</a>    <span class="doccomment">/// Applies any path prefix substitution as defined by the mapping.
 <a href=#1204 id=1204 data-nosnippet>1204</a>    /// The return value is the local path with a "virtual path" representing the remapped
 <a href=#1205 id=1205 data-nosnippet>1205</a>    /// part if any remapping was performed.
-<a href=#1206 id=1206 data-nosnippet>1206</a>    </span><span class="kw">pub fn </span>to_real_filename&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, local_path: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html">Into</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html">Cow</a>&lt;<span class="lifetime">'a</span>, <a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>&gt;&gt;) -&gt; <a href="lib.rs.html#229-242">RealFileName</a> {
+<a href=#1206 id=1206 data-nosnippet>1206</a>    </span><span class="kw">pub fn </span>to_real_filename&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, local_path: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html">Into</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html">Cow</a>&lt;<span class="lifetime">'a</span>, <a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>&gt;&gt;) -&gt; <a href="lib.rs.html#230-243">RealFileName</a> {
 <a href=#1207 id=1207 data-nosnippet>1207</a>        <span class="kw">let </span>local_path = <a href="#1206">local_path</a>.<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>();
 <a href=#1208 id=1208 data-nosnippet>1208</a>        <span class="kw">if let </span>(remapped_path, <span class="bool-val">true</span>) = <a class="self" href="#1206">self</a>.<a href="#1138-1182">map_prefix</a>(<span class="kw-2">&amp;*</span><a href="#1207">local_path</a>) {
-<a href=#1209 id=1209 data-nosnippet>1209</a>            <a href="lib.rs.html#234-241">RealFileName::Remapped</a> {
+<a href=#1209 id=1209 data-nosnippet>1209</a>            <a href="lib.rs.html#235-242">RealFileName::Remapped</a> {
 <a href=#1210 id=1210 data-nosnippet>1210</a>                virtual_name: <a href="#1208">remapped_path</a>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#method.into_owned">into_owned</a>(),
 <a href=#1211 id=1211 data-nosnippet>1211</a>                local_path: <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#1207">local_path</a>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#method.into_owned">into_owned</a>()),
 <a href=#1212 id=1212 data-nosnippet>1212</a>            }
 <a href=#1213 id=1213 data-nosnippet>1213</a>        } <span class="kw">else </span>{
-<a href=#1214 id=1214 data-nosnippet>1214</a>            <a href="lib.rs.html#230">RealFileName::LocalPath</a>(<a href="#1207">local_path</a>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#method.into_owned">into_owned</a>())
+<a href=#1214 id=1214 data-nosnippet>1214</a>            <a href="lib.rs.html#231">RealFileName::LocalPath</a>(<a href="#1207">local_path</a>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#method.into_owned">into_owned</a>())
 <a href=#1215 id=1215 data-nosnippet>1215</a>        }
 <a href=#1216 id=1216 data-nosnippet>1216</a>    }
 <a href=#1217 id=1217 data-nosnippet>1217</a>
@@ -1222,17 +1222,17 @@
 <a href=#1222 id=1222 data-nosnippet>1222</a>    /// possible (i.e. if there's also a remapped path).
 <a href=#1223 id=1223 data-nosnippet>1223</a>    </span><span class="kw">pub fn </span>to_embeddable_absolute_path(
 <a href=#1224 id=1224 data-nosnippet>1224</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
-<a href=#1225 id=1225 data-nosnippet>1225</a>        file_path: <a href="lib.rs.html#229-242">RealFileName</a>,
-<a href=#1226 id=1226 data-nosnippet>1226</a>        working_directory: <span class="kw-2">&amp;</span><a href="lib.rs.html#229-242">RealFileName</a>,
-<a href=#1227 id=1227 data-nosnippet>1227</a>    ) -&gt; <a href="lib.rs.html#229-242">RealFileName</a> {
+<a href=#1225 id=1225 data-nosnippet>1225</a>        file_path: <a href="lib.rs.html#230-243">RealFileName</a>,
+<a href=#1226 id=1226 data-nosnippet>1226</a>        working_directory: <span class="kw-2">&amp;</span><a href="lib.rs.html#230-243">RealFileName</a>,
+<a href=#1227 id=1227 data-nosnippet>1227</a>    ) -&gt; <a href="lib.rs.html#230-243">RealFileName</a> {
 <a href=#1228 id=1228 data-nosnippet>1228</a>        <span class="kw">match </span><a href="#1225">file_path</a> {
 <a href=#1229 id=1229 data-nosnippet>1229</a>            <span class="comment">// Anything that's already remapped we don't modify, except for erasing
 <a href=#1230 id=1230 data-nosnippet>1230</a>            // the `local_path` portion (if desired).
-<a href=#1231 id=1231 data-nosnippet>1231</a>            </span><a href="lib.rs.html#234-241">RealFileName::Remapped</a> { local_path, virtual_name } =&gt; {
-<a href=#1232 id=1232 data-nosnippet>1232</a>                <a href="lib.rs.html#234-241">RealFileName::Remapped</a> {
+<a href=#1231 id=1231 data-nosnippet>1231</a>            </span><a href="lib.rs.html#235-242">RealFileName::Remapped</a> { local_path, virtual_name } =&gt; {
+<a href=#1232 id=1232 data-nosnippet>1232</a>                <a href="lib.rs.html#235-242">RealFileName::Remapped</a> {
 <a href=#1233 id=1233 data-nosnippet>1233</a>                    local_path: <span class="kw">match </span><a class="self" href="#1224">self</a>.filename_embeddable_preference {
-<a href=#1234 id=1234 data-nosnippet>1234</a>                        <a href="lib.rs.html#355">FileNameEmbeddablePreference::RemappedOnly</a> =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
-<a href=#1235 id=1235 data-nosnippet>1235</a>                        <a href="lib.rs.html#357">FileNameEmbeddablePreference::LocalAndRemapped</a> =&gt; <a href="#1231">local_path</a>,
+<a href=#1234 id=1234 data-nosnippet>1234</a>                        <a href="lib.rs.html#356">FileNameEmbeddablePreference::RemappedOnly</a> =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#1235 id=1235 data-nosnippet>1235</a>                        <a href="lib.rs.html#358">FileNameEmbeddablePreference::LocalAndRemapped</a> =&gt; <a href="#1231">local_path</a>,
 <a href=#1236 id=1236 data-nosnippet>1236</a>                    },
 <a href=#1237 id=1237 data-nosnippet>1237</a>                    <span class="comment">// We use the remapped name verbatim, even if it looks like a relative
 <a href=#1238 id=1238 data-nosnippet>1238</a>                    // path. The assumption is that the user doesn't want us to further
@@ -1241,17 +1241,17 @@
 <a href=#1241 id=1241 data-nosnippet>1241</a>                }
 <a href=#1242 id=1242 data-nosnippet>1242</a>            }
 <a href=#1243 id=1243 data-nosnippet>1243</a>
-<a href=#1244 id=1244 data-nosnippet>1244</a>            <a href="lib.rs.html#230">RealFileName::LocalPath</a>(unmapped_file_path) =&gt; {
+<a href=#1244 id=1244 data-nosnippet>1244</a>            <a href="lib.rs.html#231">RealFileName::LocalPath</a>(unmapped_file_path) =&gt; {
 <a href=#1245 id=1245 data-nosnippet>1245</a>                <span class="comment">// If no remapping has been applied yet, try to do so
 <a href=#1246 id=1246 data-nosnippet>1246</a>                </span><span class="kw">let </span>(new_path, was_remapped) = <a class="self" href="#1224">self</a>.<a href="#1138-1182">map_prefix</a>(<span class="kw-2">&amp;</span><a href="#1244">unmapped_file_path</a>);
 <a href=#1247 id=1247 data-nosnippet>1247</a>                <span class="kw">if </span><a href="#1246">was_remapped</a> {
 <a href=#1248 id=1248 data-nosnippet>1248</a>                    <span class="comment">// It was remapped, so don't modify further
-<a href=#1249 id=1249 data-nosnippet>1249</a>                    </span><span class="kw">return </span><a href="lib.rs.html#234-241">RealFileName::Remapped</a> {
+<a href=#1249 id=1249 data-nosnippet>1249</a>                    </span><span class="kw">return </span><a href="lib.rs.html#235-242">RealFileName::Remapped</a> {
 <a href=#1250 id=1250 data-nosnippet>1250</a>                        virtual_name: <a href="#1246">new_path</a>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#method.into_owned">into_owned</a>(),
 <a href=#1251 id=1251 data-nosnippet>1251</a>                        <span class="comment">// But still provide the local path if desired
 <a href=#1252 id=1252 data-nosnippet>1252</a>                        </span>local_path: <span class="kw">match </span><a class="self" href="#1224">self</a>.filename_embeddable_preference {
-<a href=#1253 id=1253 data-nosnippet>1253</a>                            <a href="lib.rs.html#355">FileNameEmbeddablePreference::RemappedOnly</a> =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
-<a href=#1254 id=1254 data-nosnippet>1254</a>                            <a href="lib.rs.html#357">FileNameEmbeddablePreference::LocalAndRemapped</a> =&gt; {
+<a href=#1253 id=1253 data-nosnippet>1253</a>                            <a href="lib.rs.html#356">FileNameEmbeddablePreference::RemappedOnly</a> =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#1254 id=1254 data-nosnippet>1254</a>                            <a href="lib.rs.html#358">FileNameEmbeddablePreference::LocalAndRemapped</a> =&gt; {
 <a href=#1255 id=1255 data-nosnippet>1255</a>                                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#1244">unmapped_file_path</a>)
 <a href=#1256 id=1256 data-nosnippet>1256</a>                            }
 <a href=#1257 id=1257 data-nosnippet>1257</a>                        },
@@ -1262,14 +1262,14 @@
 <a href=#1262 id=1262 data-nosnippet>1262</a>                    <span class="comment">// No remapping has applied to this path and it is absolute,
 <a href=#1263 id=1263 data-nosnippet>1263</a>                    // so the working directory cannot influence it either, so
 <a href=#1264 id=1264 data-nosnippet>1264</a>                    // we are done.
-<a href=#1265 id=1265 data-nosnippet>1265</a>                    </span><span class="kw">return </span><a href="lib.rs.html#230">RealFileName::LocalPath</a>(<a href="#1246">new_path</a>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#method.into_owned">into_owned</a>());
+<a href=#1265 id=1265 data-nosnippet>1265</a>                    </span><span class="kw">return </span><a href="lib.rs.html#231">RealFileName::LocalPath</a>(<a href="#1246">new_path</a>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#method.into_owned">into_owned</a>());
 <a href=#1266 id=1266 data-nosnippet>1266</a>                }
 <a href=#1267 id=1267 data-nosnippet>1267</a>
 <a href=#1268 id=1268 data-nosnippet>1268</a>                <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.debug_assert.html">debug_assert!</a>(new_path.is_relative());
 <a href=#1269 id=1269 data-nosnippet>1269</a>                <span class="kw">let </span>unmapped_file_path_rel = <a href="#1246">new_path</a>;
 <a href=#1270 id=1270 data-nosnippet>1270</a>
 <a href=#1271 id=1271 data-nosnippet>1271</a>                <span class="kw">match </span><a href="#1226">working_directory</a> {
-<a href=#1272 id=1272 data-nosnippet>1272</a>                    <a href="lib.rs.html#230">RealFileName::LocalPath</a>(unmapped_working_dir_abs) =&gt; {
+<a href=#1272 id=1272 data-nosnippet>1272</a>                    <a href="lib.rs.html#231">RealFileName::LocalPath</a>(unmapped_working_dir_abs) =&gt; {
 <a href=#1273 id=1273 data-nosnippet>1273</a>                        <span class="kw">let </span>unmapped_file_path_abs =
 <a href=#1274 id=1274 data-nosnippet>1274</a>                            <a href="#1272">unmapped_working_dir_abs</a>.<a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html#method.join">join</a>(<a href="#1269">unmapped_file_path_rel</a>);
 <a href=#1275 id=1275 data-nosnippet>1275</a>
@@ -1279,11 +1279,11 @@
 <a href=#1279 id=1279 data-nosnippet>1279</a>                        </span><span class="kw">let </span>(file_path_abs, was_remapped) =
 <a href=#1280 id=1280 data-nosnippet>1280</a>                            <a class="self" href="#1224">self</a>.<a href="#1138-1182">map_prefix</a>(<span class="kw-2">&amp;</span><a href="#1273">unmapped_file_path_abs</a>);
 <a href=#1281 id=1281 data-nosnippet>1281</a>                        <span class="kw">if </span><a href="#1279">was_remapped</a> {
-<a href=#1282 id=1282 data-nosnippet>1282</a>                            <a href="lib.rs.html#234-241">RealFileName::Remapped</a> {
+<a href=#1282 id=1282 data-nosnippet>1282</a>                            <a href="lib.rs.html#235-242">RealFileName::Remapped</a> {
 <a href=#1283 id=1283 data-nosnippet>1283</a>                                virtual_name: <a href="#1279">file_path_abs</a>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#method.into_owned">into_owned</a>(),
 <a href=#1284 id=1284 data-nosnippet>1284</a>                                local_path: <span class="kw">match </span><a class="self" href="#1224">self</a>.filename_embeddable_preference {
-<a href=#1285 id=1285 data-nosnippet>1285</a>                                    <a href="lib.rs.html#355">FileNameEmbeddablePreference::RemappedOnly</a> =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
-<a href=#1286 id=1286 data-nosnippet>1286</a>                                    <a href="lib.rs.html#357">FileNameEmbeddablePreference::LocalAndRemapped</a> =&gt; {
+<a href=#1285 id=1285 data-nosnippet>1285</a>                                    <a href="lib.rs.html#356">FileNameEmbeddablePreference::RemappedOnly</a> =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#1286 id=1286 data-nosnippet>1286</a>                                    <a href="lib.rs.html#358">FileNameEmbeddablePreference::LocalAndRemapped</a> =&gt; {
 <a href=#1287 id=1287 data-nosnippet>1287</a>                                        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#1273">unmapped_file_path_abs</a>)
 <a href=#1288 id=1288 data-nosnippet>1288</a>                                    }
 <a href=#1289 id=1289 data-nosnippet>1289</a>                                },
@@ -1291,21 +1291,21 @@
 <a href=#1291 id=1291 data-nosnippet>1291</a>                        } <span class="kw">else </span>{
 <a href=#1292 id=1292 data-nosnippet>1292</a>                            <span class="comment">// No kind of remapping applied to this path, so
 <a href=#1293 id=1293 data-nosnippet>1293</a>                            // we leave it as it is.
-<a href=#1294 id=1294 data-nosnippet>1294</a>                            </span><a href="lib.rs.html#230">RealFileName::LocalPath</a>(<a href="#1279">file_path_abs</a>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#method.into_owned">into_owned</a>())
+<a href=#1294 id=1294 data-nosnippet>1294</a>                            </span><a href="lib.rs.html#231">RealFileName::LocalPath</a>(<a href="#1279">file_path_abs</a>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html#method.into_owned">into_owned</a>())
 <a href=#1295 id=1295 data-nosnippet>1295</a>                        }
 <a href=#1296 id=1296 data-nosnippet>1296</a>                    }
-<a href=#1297 id=1297 data-nosnippet>1297</a>                    <a href="lib.rs.html#234-241">RealFileName::Remapped</a> {
+<a href=#1297 id=1297 data-nosnippet>1297</a>                    <a href="lib.rs.html#235-242">RealFileName::Remapped</a> {
 <a href=#1298 id=1298 data-nosnippet>1298</a>                        local_path,
 <a href=#1299 id=1299 data-nosnippet>1299</a>                        virtual_name: remapped_working_dir_abs,
 <a href=#1300 id=1300 data-nosnippet>1300</a>                    } =&gt; {
 <a href=#1301 id=1301 data-nosnippet>1301</a>                        <span class="comment">// If working_directory has been remapped, then we emit
 <a href=#1302 id=1302 data-nosnippet>1302</a>                        // Remapped variant as the expanded path won't be valid
-<a href=#1303 id=1303 data-nosnippet>1303</a>                        </span><a href="lib.rs.html#234-241">RealFileName::Remapped</a> {
+<a href=#1303 id=1303 data-nosnippet>1303</a>                        </span><a href="lib.rs.html#235-242">RealFileName::Remapped</a> {
 <a href=#1304 id=1304 data-nosnippet>1304</a>                            virtual_name: <a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html#method.new">Path::new</a>(<a href="#1299">remapped_working_dir_abs</a>)
 <a href=#1305 id=1305 data-nosnippet>1305</a>                                .<a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html#method.join">join</a>(<span class="kw-2">&amp;</span><a href="#1269">unmapped_file_path_rel</a>),
 <a href=#1306 id=1306 data-nosnippet>1306</a>                            local_path: <span class="kw">match </span><a class="self" href="#1224">self</a>.filename_embeddable_preference {
-<a href=#1307 id=1307 data-nosnippet>1307</a>                                <a href="lib.rs.html#355">FileNameEmbeddablePreference::RemappedOnly</a> =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
-<a href=#1308 id=1308 data-nosnippet>1308</a>                                <a href="lib.rs.html#357">FileNameEmbeddablePreference::LocalAndRemapped</a> =&gt; <a href="#1298">local_path</a>
+<a href=#1307 id=1307 data-nosnippet>1307</a>                                <a href="lib.rs.html#356">FileNameEmbeddablePreference::RemappedOnly</a> =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#1308 id=1308 data-nosnippet>1308</a>                                <a href="lib.rs.html#358">FileNameEmbeddablePreference::LocalAndRemapped</a> =&gt; <a href="#1298">local_path</a>
 <a href=#1309 id=1309 data-nosnippet>1309</a>                                    .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.as_ref">as_ref</a>()
 <a href=#1310 id=1310 data-nosnippet>1310</a>                                    .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|local_path| <a href="#1310">local_path</a>.<a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html#method.join">join</a>(<a href="#1269">unmapped_file_path_rel</a>)),
 <a href=#1311 id=1311 data-nosnippet>1311</a>                            },

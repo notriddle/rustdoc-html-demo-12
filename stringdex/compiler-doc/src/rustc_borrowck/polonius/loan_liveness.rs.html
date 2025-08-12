@@ -1,307 +1,160 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/polonius/loan_liveness.rs`."><title>loan_liveness.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/polonius/</div>loan_liveness.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>std::collections::{<a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/map/struct.BTreeMap.html">BTreeMap</a>, <a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/set/struct.BTreeSet.html">BTreeSet</a>};
-<a href=#2 id=2 data-nosnippet>2</a>
-<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>rustc_data_structures::fx::{<a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>, <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>, <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>};
-<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><a href="../../../rustc_middle/mir/visit/trait.Visitor.html">rustc_middle::mir::visit::Visitor</a>;
-<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>rustc_middle::mir::{
-<a href=#6 id=6 data-nosnippet>6</a>    <a href="../../../rustc_middle/mir/struct.Body.html">Body</a>, <a href="../../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="../../../rustc_middle/mir/struct.Location.html">Location</a>, <a href="../../../rustc_middle/mir/syntax/struct.Place.html">Place</a>, <a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html">Rvalue</a>, <a href="../../../rustc_middle/mir/statement/struct.Statement.html">Statement</a>, <a href="../../../rustc_middle/mir/syntax/enum.StatementKind.html">StatementKind</a>, <a href="../../../rustc_middle/mir/terminator/struct.Terminator.html">Terminator</a>, <a href="../../../rustc_middle/mir/syntax/enum.TerminatorKind.html">TerminatorKind</a>,
-<a href=#7 id=7 data-nosnippet>7</a>};
-<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span>rustc_middle::ty::{<a href="../../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>, <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>};
-<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="../../../rustc_mir_dataflow/points/struct.PointIndex.html">rustc_mir_dataflow::points::PointIndex</a>;
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/polonius/loan_liveness.rs`."><title>loan_liveness.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/polonius/</div>loan_liveness.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>rustc_data_structures::fx::{<a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>, <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>, <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>};
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span><a href="../../../rustc_type_ir/region_kind/struct.RegionVid.html">rustc_middle::ty::RegionVid</a>;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>rustc_mir_dataflow::points::PointIndex;
+<a href=#4 id=4 data-nosnippet>4</a>
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use super</span>::{<a href="mod.rs.html#70">LiveLoans</a>, <a href="constraints.rs.html#31-33">LocalizedOutlivesConstraintSet</a>};
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="../borrow_set.rs.html#16-34"><span class="kw">crate</span>::BorrowSet</a>;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span><a href="../constraints/mod.rs.html#65-93"><span class="kw">crate</span>::constraints::OutlivesConstraint</a>;
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="../region_infer/values.rs.html#40-56"><span class="kw">crate</span>::region_infer::values::LivenessValues</a>;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="../type_check/mod.rs.html#313-355"><span class="kw">crate</span>::type_check::Locations</a>;
 <a href=#10 id=10 data-nosnippet>10</a>
-<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use super</span>::{<a href="mod.rs.html#70">LiveLoans</a>, <a href="constraints.rs.html#33-35">LocalizedOutlivesConstraintSet</a>};
-<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span><a href="../constraints/mod.rs.html#65-93"><span class="kw">crate</span>::constraints::OutlivesConstraint</a>;
-<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span><a href="../dataflow.rs.html#162-166"><span class="kw">crate</span>::dataflow::BorrowIndex</a>;
-<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span><a href="../region_infer/values.rs.html#40-56"><span class="kw">crate</span>::region_infer::values::LivenessValues</a>;
-<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span><a href="../type_check/mod.rs.html#302-344"><span class="kw">crate</span>::type_check::Locations</a>;
-<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use crate</span>::{<a href="../borrow_set.rs.html#16-34">BorrowSet</a>, <a href="../places_conflict.rs.html#73-76">PlaceConflictBias</a>, <a href="../places_conflict.rs.html#81-97">places_conflict</a>};
-<a href=#17 id=17 data-nosnippet>17</a>
-<a href=#18 id=18 data-nosnippet>18</a><span class="doccomment">/// Compute loan reachability, stop at kills, and trace loan liveness throughout the CFG, by
-<a href=#19 id=19 data-nosnippet>19</a>/// traversing the full graph of constraints that combines:
-<a href=#20 id=20 data-nosnippet>20</a>/// - the localized constraints (the physical edges),
-<a href=#21 id=21 data-nosnippet>21</a>/// - with the constraints that hold at all points (the logical edges).
-<a href=#22 id=22 data-nosnippet>22</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../rustc_borrowck/polonius/loan_liveness/fn.compute_loan_liveness.html">compute_loan_liveness</a>&lt;<span class="lifetime">'tcx</span>&gt;(
-<a href=#23 id=23 data-nosnippet>23</a>    tcx: <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#24 id=24 data-nosnippet>24</a>    body: <span class="kw-2">&amp;</span><a href="../../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#25 id=25 data-nosnippet>25</a>    liveness: <span class="kw-2">&amp;</span><a href="../region_infer/values.rs.html#40-56">LivenessValues</a>,
-<a href=#26 id=26 data-nosnippet>26</a>    outlives_constraints: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = <a href="../constraints/mod.rs.html#65-93">OutlivesConstraint</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
-<a href=#27 id=27 data-nosnippet>27</a>    borrow_set: <span class="kw-2">&amp;</span><a href="../borrow_set.rs.html#16-34">BorrowSet</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#28 id=28 data-nosnippet>28</a>    localized_outlives_constraints: <span class="kw-2">&amp;</span><a href="constraints.rs.html#33-35">LocalizedOutlivesConstraintSet</a>,
-<a href=#29 id=29 data-nosnippet>29</a>) -&gt; <a href="mod.rs.html#70">LiveLoans</a> {
-<a href=#30 id=30 data-nosnippet>30</a>    <span class="kw">let </span><span class="kw-2">mut </span>live_loans = <a href="../../../rustc_index/bit_set/struct.SparseBitMatrix.html#method.new">LiveLoans::new</a>(<a href="#27">borrow_set</a>.<a href="../borrow_set.rs.html#205-207">len</a>());
-<a href=#31 id=31 data-nosnippet>31</a>
-<a href=#32 id=32 data-nosnippet>32</a>    <span class="comment">// FIXME: it may be preferable for kills to be encoded in the edges themselves, to simplify and
-<a href=#33 id=33 data-nosnippet>33</a>    // likely make traversal (and constraint generation) more efficient. We also display kills on
-<a href=#34 id=34 data-nosnippet>34</a>    // edges when visualizing the constraint graph anyways.
-<a href=#35 id=35 data-nosnippet>35</a>    </span><span class="kw">let </span>kills = <a href="#197-207">collect_kills</a>(<a href="#24">body</a>, <a href="#23">tcx</a>, <a href="#27">borrow_set</a>);
+<a href=#11 id=11 data-nosnippet>11</a><span class="doccomment">/// Compute loan reachability to approximately trace loan liveness throughout the CFG, by
+<a href=#12 id=12 data-nosnippet>12</a>/// traversing the full graph of constraints that combines:
+<a href=#13 id=13 data-nosnippet>13</a>/// - the localized constraints (the physical edges),
+<a href=#14 id=14 data-nosnippet>14</a>/// - with the constraints that hold at all points (the logical edges).
+<a href=#15 id=15 data-nosnippet>15</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../rustc_borrowck/polonius/loan_liveness/fn.compute_loan_liveness.html">compute_loan_liveness</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#16 id=16 data-nosnippet>16</a>    liveness: <span class="kw-2">&amp;</span><a href="../region_infer/values.rs.html#40-56">LivenessValues</a>,
+<a href=#17 id=17 data-nosnippet>17</a>    outlives_constraints: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = <a href="../constraints/mod.rs.html#65-93">OutlivesConstraint</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#18 id=18 data-nosnippet>18</a>    borrow_set: <span class="kw-2">&amp;</span><a href="../borrow_set.rs.html#16-34">BorrowSet</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#19 id=19 data-nosnippet>19</a>    localized_outlives_constraints: <span class="kw-2">&amp;</span><a href="constraints.rs.html#31-33">LocalizedOutlivesConstraintSet</a>,
+<a href=#20 id=20 data-nosnippet>20</a>) -&gt; <a href="mod.rs.html#70">LiveLoans</a> {
+<a href=#21 id=21 data-nosnippet>21</a>    <span class="kw">let </span><span class="kw-2">mut </span>live_loans = <a href="../../../rustc_index/bit_set/struct.SparseBitMatrix.html#method.new">LiveLoans::new</a>(<a href="#18">borrow_set</a>.<a href="../borrow_set.rs.html#205-207">len</a>());
+<a href=#22 id=22 data-nosnippet>22</a>
+<a href=#23 id=23 data-nosnippet>23</a>    <span class="comment">// Create the full graph with the physical edges we've localized earlier, and the logical edges
+<a href=#24 id=24 data-nosnippet>24</a>    // of constraints that hold at all points.
+<a href=#25 id=25 data-nosnippet>25</a>    </span><span class="kw">let </span>logical_constraints =
+<a href=#26 id=26 data-nosnippet>26</a>        <a href="#17">outlives_constraints</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter">filter</a>(|c| <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.matches.html">matches!</a>(c.locations, Locations::All(<span class="kw">_</span>)));
+<a href=#27 id=27 data-nosnippet>27</a>    <span class="kw">let </span>graph = <a href="#124-141">LocalizedConstraintGraph::new</a>(<span class="kw-2">&amp;</span><a href="#19">localized_outlives_constraints</a>, <a href="#25">logical_constraints</a>);
+<a href=#28 id=28 data-nosnippet>28</a>    <span class="kw">let </span><span class="kw-2">mut </span>visited = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxHashSet::default</a>();
+<a href=#29 id=29 data-nosnippet>29</a>    <span class="kw">let </span><span class="kw-2">mut </span>stack = <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>();
+<a href=#30 id=30 data-nosnippet>30</a>
+<a href=#31 id=31 data-nosnippet>31</a>    <span class="comment">// Compute reachability per loan by traversing each loan's subgraph starting from where it is
+<a href=#32 id=32 data-nosnippet>32</a>    // introduced.
+<a href=#33 id=33 data-nosnippet>33</a>    </span><span class="kw">for </span>(loan_idx, loan) <span class="kw">in </span>borrow_set.iter_enumerated() {
+<a href=#34 id=34 data-nosnippet>34</a>        visited.clear();
+<a href=#35 id=35 data-nosnippet>35</a>        stack.clear();
 <a href=#36 id=36 data-nosnippet>36</a>
-<a href=#37 id=37 data-nosnippet>37</a>    <span class="comment">// Create the full graph with the physical edges we've localized earlier, and the logical edges
-<a href=#38 id=38 data-nosnippet>38</a>    // of constraints that hold at all points.
-<a href=#39 id=39 data-nosnippet>39</a>    </span><span class="kw">let </span>logical_constraints =
-<a href=#40 id=40 data-nosnippet>40</a>        <a href="#26">outlives_constraints</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter">filter</a>(|c| <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.matches.html">matches!</a>(c.locations, Locations::All(<span class="kw">_</span>)));
-<a href=#41 id=41 data-nosnippet>41</a>    <span class="kw">let </span>graph = <a href="#158-175">LocalizedConstraintGraph::new</a>(<span class="kw-2">&amp;</span><a href="#28">localized_outlives_constraints</a>, <a href="#39">logical_constraints</a>);
-<a href=#42 id=42 data-nosnippet>42</a>    <span class="kw">let </span><span class="kw-2">mut </span>visited = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxHashSet::default</a>();
-<a href=#43 id=43 data-nosnippet>43</a>    <span class="kw">let </span><span class="kw-2">mut </span>stack = <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>();
-<a href=#44 id=44 data-nosnippet>44</a>
-<a href=#45 id=45 data-nosnippet>45</a>    <span class="comment">// Compute reachability per loan by traversing each loan's subgraph starting from where it is
-<a href=#46 id=46 data-nosnippet>46</a>    // introduced.
-<a href=#47 id=47 data-nosnippet>47</a>    </span><span class="kw">for </span>(loan_idx, loan) <span class="kw">in </span>borrow_set.iter_enumerated() {
-<a href=#48 id=48 data-nosnippet>48</a>        visited.clear();
-<a href=#49 id=49 data-nosnippet>49</a>        stack.clear();
-<a href=#50 id=50 data-nosnippet>50</a>
-<a href=#51 id=51 data-nosnippet>51</a>        <span class="kw">let </span>start_node = LocalizedNode {
-<a href=#52 id=52 data-nosnippet>52</a>            region: loan.region,
-<a href=#53 id=53 data-nosnippet>53</a>            point: liveness.point_from_location(loan.reserve_location),
-<a href=#54 id=54 data-nosnippet>54</a>        };
-<a href=#55 id=55 data-nosnippet>55</a>        stack.push(start_node);
-<a href=#56 id=56 data-nosnippet>56</a>
-<a href=#57 id=57 data-nosnippet>57</a>        <span class="kw">while let </span><span class="prelude-val">Some</span>(node) = stack.pop() {
-<a href=#58 id=58 data-nosnippet>58</a>            <span class="kw">if </span>!visited.insert(node) {
-<a href=#59 id=59 data-nosnippet>59</a>                <span class="kw">continue</span>;
-<a href=#60 id=60 data-nosnippet>60</a>            }
-<a href=#61 id=61 data-nosnippet>61</a>
-<a href=#62 id=62 data-nosnippet>62</a>            <span class="comment">// Record the loan as being live on entry to this point.
-<a href=#63 id=63 data-nosnippet>63</a>            </span>live_loans.insert(node.point, loan_idx);
-<a href=#64 id=64 data-nosnippet>64</a>
-<a href=#65 id=65 data-nosnippet>65</a>            <span class="comment">// Here, we have a conundrum. There's currently a weakness in our theory, in that
-<a href=#66 id=66 data-nosnippet>66</a>            // we're using a single notion of reachability to represent what used to be _two_
-<a href=#67 id=67 data-nosnippet>67</a>            // different transitive closures. It didn't seem impactful when coming up with the
-<a href=#68 id=68 data-nosnippet>68</a>            // single-graph and reachability through space (regions) + time (CFG) concepts, but in
-<a href=#69 id=69 data-nosnippet>69</a>            // practice the combination of time-traveling with kills is more impactful than
-<a href=#70 id=70 data-nosnippet>70</a>            // initially anticipated.
-<a href=#71 id=71 data-nosnippet>71</a>            //
-<a href=#72 id=72 data-nosnippet>72</a>            // Kills should prevent a loan from reaching its successor points in the CFG, but not
-<a href=#73 id=73 data-nosnippet>73</a>            // while time-traveling: we're not actually at that CFG point, but looking for
-<a href=#74 id=74 data-nosnippet>74</a>            // predecessor regions that contain the loan. One of the two TCs we had pushed the
-<a href=#75 id=75 data-nosnippet>75</a>            // transitive subset edges to each point instead of having backward edges, and the
-<a href=#76 id=76 data-nosnippet>76</a>            // problem didn't exist before. In the abstract, naive reachability is not enough to
-<a href=#77 id=77 data-nosnippet>77</a>            // model this, we'd need a slightly different solution. For example, maybe with a
-<a href=#78 id=78 data-nosnippet>78</a>            // two-step traversal:
-<a href=#79 id=79 data-nosnippet>79</a>            // - at each point we first traverse the subgraph (and possibly time-travel) looking for
-<a href=#80 id=80 data-nosnippet>80</a>            //   exit nodes while ignoring kills,
-<a href=#81 id=81 data-nosnippet>81</a>            // - and then when we're back at the current point, we continue normally.
-<a href=#82 id=82 data-nosnippet>82</a>            //
-<a href=#83 id=83 data-nosnippet>83</a>            // Another (less annoying) subtlety is that kills and the loan use-map are
-<a href=#84 id=84 data-nosnippet>84</a>            // flow-insensitive. Kills can actually appear in places before a loan is introduced, or
-<a href=#85 id=85 data-nosnippet>85</a>            // at a location that is actually unreachable in the CFG from the introduction point,
-<a href=#86 id=86 data-nosnippet>86</a>            // and these can also be encountered during time-traveling.
-<a href=#87 id=87 data-nosnippet>87</a>            //
-<a href=#88 id=88 data-nosnippet>88</a>            // The simplest change that made sense to "fix" the issues above is taking into
-<a href=#89 id=89 data-nosnippet>89</a>            // account kills that are:
-<a href=#90 id=90 data-nosnippet>90</a>            // - reachable from the introduction point
-<a href=#91 id=91 data-nosnippet>91</a>            // - encountered during forward traversal. Note that this is not transitive like the
-<a href=#92 id=92 data-nosnippet>92</a>            //   two-step traversal described above: only kills encountered on exit via a backward
-<a href=#93 id=93 data-nosnippet>93</a>            //   edge are ignored.
-<a href=#94 id=94 data-nosnippet>94</a>            //
-<a href=#95 id=95 data-nosnippet>95</a>            // In our test suite, there are a couple of cases where kills are encountered while
-<a href=#96 id=96 data-nosnippet>96</a>            // time-traveling, however as far as we can tell, always in cases where they would be
-<a href=#97 id=97 data-nosnippet>97</a>            // unreachable. We have reason to believe that this is a property of the single-graph
-<a href=#98 id=98 data-nosnippet>98</a>            // approach (but haven't proved it yet):
-<a href=#99 id=99 data-nosnippet>99</a>            // - reachable kills while time-traveling would also be encountered via regular
-<a href=#100 id=100 data-nosnippet>100</a>            //   traversal
-<a href=#101 id=101 data-nosnippet>101</a>            // - it makes _some_ sense to ignore unreachable kills, but subtleties around dead code
-<a href=#102 id=102 data-nosnippet>102</a>            //   in general need to be better thought through (like they were for NLLs).
-<a href=#103 id=103 data-nosnippet>103</a>            // - ignoring kills is a conservative approximation: the loan is still live and could
-<a href=#104 id=104 data-nosnippet>104</a>            //   cause false positive errors at another place access. Soundness issues in this
-<a href=#105 id=105 data-nosnippet>105</a>            //   domain should look more like the absence of reachability instead.
-<a href=#106 id=106 data-nosnippet>106</a>            //
-<a href=#107 id=107 data-nosnippet>107</a>            // This is enough in practice to pass tests, and therefore is what we have implemented
-<a href=#108 id=108 data-nosnippet>108</a>            // for now.
-<a href=#109 id=109 data-nosnippet>109</a>            //
-<a href=#110 id=110 data-nosnippet>110</a>            // FIXME: all of the above. Analyze potential unsoundness, possibly in concert with a
-<a href=#111 id=111 data-nosnippet>111</a>            // borrowck implementation in a-mir-formality, fuzzing, or manually crafting
-<a href=#112 id=112 data-nosnippet>112</a>            // counter-examples.
-<a href=#113 id=113 data-nosnippet>113</a>
-<a href=#114 id=114 data-nosnippet>114</a>            // Continuing traversal will depend on whether the loan is killed at this point, and
-<a href=#115 id=115 data-nosnippet>115</a>            // whether we're time-traveling.
-<a href=#116 id=116 data-nosnippet>116</a>            </span><span class="kw">let </span>current_location = liveness.location_from_point(node.point);
-<a href=#117 id=117 data-nosnippet>117</a>            <span class="kw">let </span>is_loan_killed =
-<a href=#118 id=118 data-nosnippet>118</a>                kills.get(<span class="kw-2">&amp;</span>current_location).is_some_and(|kills| kills.contains(<span class="kw-2">&amp;</span>loan_idx));
-<a href=#119 id=119 data-nosnippet>119</a>
-<a href=#120 id=120 data-nosnippet>120</a>            <span class="kw">for </span>succ <span class="kw">in </span>graph.outgoing_edges(node) {
-<a href=#121 id=121 data-nosnippet>121</a>                <span class="comment">// If the loan is killed at this point, it is killed _on exit_. But only during
-<a href=#122 id=122 data-nosnippet>122</a>                // forward traversal.
-<a href=#123 id=123 data-nosnippet>123</a>                </span><span class="kw">if </span>is_loan_killed {
-<a href=#124 id=124 data-nosnippet>124</a>                    <span class="kw">let </span>destination = liveness.location_from_point(succ.point);
-<a href=#125 id=125 data-nosnippet>125</a>                    <span class="kw">if </span>current_location.is_predecessor_of(destination, body) {
-<a href=#126 id=126 data-nosnippet>126</a>                        <span class="kw">continue</span>;
-<a href=#127 id=127 data-nosnippet>127</a>                    }
-<a href=#128 id=128 data-nosnippet>128</a>                }
-<a href=#129 id=129 data-nosnippet>129</a>                stack.push(succ);
-<a href=#130 id=130 data-nosnippet>130</a>            }
-<a href=#131 id=131 data-nosnippet>131</a>        }
-<a href=#132 id=132 data-nosnippet>132</a>    }
-<a href=#133 id=133 data-nosnippet>133</a>
-<a href=#134 id=134 data-nosnippet>134</a>    <a href="#30">live_loans</a>
-<a href=#135 id=135 data-nosnippet>135</a>}
-<a href=#136 id=136 data-nosnippet>136</a>
-<a href=#137 id=137 data-nosnippet>137</a><span class="doccomment">/// The localized constraint graph indexes the physical and logical edges to compute a given node's
-<a href=#138 id=138 data-nosnippet>138</a>/// successors during traversal.
-<a href=#139 id=139 data-nosnippet>139</a></span><span class="kw">struct </span><a href="../../../rustc_borrowck/polonius/loan_liveness/struct.LocalizedConstraintGraph.html">LocalizedConstraintGraph</a> {
-<a href=#140 id=140 data-nosnippet>140</a>    <span class="doccomment">/// The actual, physical, edges we have recorded for a given node.
-<a href=#141 id=141 data-nosnippet>141</a>    </span>edges: <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<a href="#151-154">LocalizedNode</a>, <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<a href="#151-154">LocalizedNode</a>&gt;&gt;,
+<a href=#37 id=37 data-nosnippet>37</a>        <span class="kw">let </span>start_node = LocalizedNode {
+<a href=#38 id=38 data-nosnippet>38</a>            region: loan.region,
+<a href=#39 id=39 data-nosnippet>39</a>            point: liveness.point_from_location(loan.reserve_location),
+<a href=#40 id=40 data-nosnippet>40</a>        };
+<a href=#41 id=41 data-nosnippet>41</a>        stack.push(start_node);
+<a href=#42 id=42 data-nosnippet>42</a>
+<a href=#43 id=43 data-nosnippet>43</a>        <span class="kw">while let </span><span class="prelude-val">Some</span>(node) = stack.pop() {
+<a href=#44 id=44 data-nosnippet>44</a>            <span class="kw">if </span>!visited.insert(node) {
+<a href=#45 id=45 data-nosnippet>45</a>                <span class="kw">continue</span>;
+<a href=#46 id=46 data-nosnippet>46</a>            }
+<a href=#47 id=47 data-nosnippet>47</a>
+<a href=#48 id=48 data-nosnippet>48</a>            <span class="comment">// Record the loan as being live on entry to this point if it reaches a live region
+<a href=#49 id=49 data-nosnippet>49</a>            // there.
+<a href=#50 id=50 data-nosnippet>50</a>            //
+<a href=#51 id=51 data-nosnippet>51</a>            // This is an approximation of liveness (which is the thing we want), in that we're
+<a href=#52 id=52 data-nosnippet>52</a>            // using a single notion of reachability to represent what used to be _two_ different
+<a href=#53 id=53 data-nosnippet>53</a>            // transitive closures. It didn't seem impactful when coming up with the single-graph
+<a href=#54 id=54 data-nosnippet>54</a>            // and reachability through space (regions) + time (CFG) concepts, but in practice the
+<a href=#55 id=55 data-nosnippet>55</a>            // combination of time-traveling with kills is more impactful than initially
+<a href=#56 id=56 data-nosnippet>56</a>            // anticipated.
+<a href=#57 id=57 data-nosnippet>57</a>            //
+<a href=#58 id=58 data-nosnippet>58</a>            // Kills should prevent a loan from reaching its successor points in the CFG, but not
+<a href=#59 id=59 data-nosnippet>59</a>            // while time-traveling: we're not actually at that CFG point, but looking for
+<a href=#60 id=60 data-nosnippet>60</a>            // predecessor regions that contain the loan. One of the two TCs we had pushed the
+<a href=#61 id=61 data-nosnippet>61</a>            // transitive subset edges to each point instead of having backward edges, and the
+<a href=#62 id=62 data-nosnippet>62</a>            // problem didn't exist before. In the abstract, naive reachability is not enough to
+<a href=#63 id=63 data-nosnippet>63</a>            // model this, we'd need a slightly different solution. For example, maybe with a
+<a href=#64 id=64 data-nosnippet>64</a>            // two-step traversal:
+<a href=#65 id=65 data-nosnippet>65</a>            // - at each point we first traverse the subgraph (and possibly time-travel) looking for
+<a href=#66 id=66 data-nosnippet>66</a>            //   exit nodes while ignoring kills,
+<a href=#67 id=67 data-nosnippet>67</a>            // - and then when we're back at the current point, we continue normally.
+<a href=#68 id=68 data-nosnippet>68</a>            //
+<a href=#69 id=69 data-nosnippet>69</a>            // Another (less annoying) subtlety is that kills and the loan use-map are
+<a href=#70 id=70 data-nosnippet>70</a>            // flow-insensitive. Kills can actually appear in places before a loan is introduced, or
+<a href=#71 id=71 data-nosnippet>71</a>            // at a location that is actually unreachable in the CFG from the introduction point,
+<a href=#72 id=72 data-nosnippet>72</a>            // and these can also be encountered during time-traveling.
+<a href=#73 id=73 data-nosnippet>73</a>            //
+<a href=#74 id=74 data-nosnippet>74</a>            // The simplest change that made sense to "fix" the issues above is taking into
+<a href=#75 id=75 data-nosnippet>75</a>            // account kills that are:
+<a href=#76 id=76 data-nosnippet>76</a>            // - reachable from the introduction point
+<a href=#77 id=77 data-nosnippet>77</a>            // - encountered during forward traversal. Note that this is not transitive like the
+<a href=#78 id=78 data-nosnippet>78</a>            //   two-step traversal described above: only kills encountered on exit via a backward
+<a href=#79 id=79 data-nosnippet>79</a>            //   edge are ignored.
+<a href=#80 id=80 data-nosnippet>80</a>            //
+<a href=#81 id=81 data-nosnippet>81</a>            // This version of the analysis, however, is enough in practice to pass the tests that
+<a href=#82 id=82 data-nosnippet>82</a>            // we care about and NLLs reject, without regressions on crater, and is an actionable
+<a href=#83 id=83 data-nosnippet>83</a>            // subset of the full analysis. It also naturally points to areas of improvement that we
+<a href=#84 id=84 data-nosnippet>84</a>            // wish to explore later, namely handling kills appropriately during traversal, instead
+<a href=#85 id=85 data-nosnippet>85</a>            // of continuing traversal to all the reachable nodes.
+<a href=#86 id=86 data-nosnippet>86</a>            //
+<a href=#87 id=87 data-nosnippet>87</a>            // FIXME: analyze potential unsoundness, possibly in concert with a borrowck
+<a href=#88 id=88 data-nosnippet>88</a>            // implementation in a-mir-formality, fuzzing, or manually crafting counter-examples.
+<a href=#89 id=89 data-nosnippet>89</a>
+<a href=#90 id=90 data-nosnippet>90</a>            </span><span class="kw">if </span>liveness.is_live_at(node.region, liveness.location_from_point(node.point)) {
+<a href=#91 id=91 data-nosnippet>91</a>                live_loans.insert(node.point, loan_idx);
+<a href=#92 id=92 data-nosnippet>92</a>            }
+<a href=#93 id=93 data-nosnippet>93</a>
+<a href=#94 id=94 data-nosnippet>94</a>            <span class="kw">for </span>succ <span class="kw">in </span>graph.outgoing_edges(node) {
+<a href=#95 id=95 data-nosnippet>95</a>                stack.push(succ);
+<a href=#96 id=96 data-nosnippet>96</a>            }
+<a href=#97 id=97 data-nosnippet>97</a>        }
+<a href=#98 id=98 data-nosnippet>98</a>    }
+<a href=#99 id=99 data-nosnippet>99</a>
+<a href=#100 id=100 data-nosnippet>100</a>    <a href="#21">live_loans</a>
+<a href=#101 id=101 data-nosnippet>101</a>}
+<a href=#102 id=102 data-nosnippet>102</a>
+<a href=#103 id=103 data-nosnippet>103</a><span class="doccomment">/// The localized constraint graph indexes the physical and logical edges to compute a given node's
+<a href=#104 id=104 data-nosnippet>104</a>/// successors during traversal.
+<a href=#105 id=105 data-nosnippet>105</a></span><span class="kw">struct </span><a href="../../../rustc_borrowck/polonius/loan_liveness/struct.LocalizedConstraintGraph.html">LocalizedConstraintGraph</a> {
+<a href=#106 id=106 data-nosnippet>106</a>    <span class="doccomment">/// The actual, physical, edges we have recorded for a given node.
+<a href=#107 id=107 data-nosnippet>107</a>    </span>edges: <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<a href="#117-120">LocalizedNode</a>, <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<a href="#117-120">LocalizedNode</a>&gt;&gt;,
+<a href=#108 id=108 data-nosnippet>108</a>
+<a href=#109 id=109 data-nosnippet>109</a>    <span class="doccomment">/// The logical edges representing the outlives constraints that hold at all points in the CFG,
+<a href=#110 id=110 data-nosnippet>110</a>    /// which we don't localize to avoid creating a lot of unnecessary edges in the graph. Some CFGs
+<a href=#111 id=111 data-nosnippet>111</a>    /// can be big, and we don't need to create such a physical edge for every point in the CFG.
+<a href=#112 id=112 data-nosnippet>112</a>    </span>logical_edges: <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<a href="../../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>, <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<a href="../../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>&gt;&gt;,
+<a href=#113 id=113 data-nosnippet>113</a>}
+<a href=#114 id=114 data-nosnippet>114</a>
+<a href=#115 id=115 data-nosnippet>115</a><span class="doccomment">/// A node in the graph to be traversed, one of the two vertices of a localized outlives constraint.
+<a href=#116 id=116 data-nosnippet>116</a></span><span class="attr">#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+<a href=#117 id=117 data-nosnippet>117</a></span><span class="kw">struct </span><a href="../../../rustc_borrowck/polonius/loan_liveness/struct.LocalizedNode.html">LocalizedNode</a> {
+<a href=#118 id=118 data-nosnippet>118</a>    region: <a href="../../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>,
+<a href=#119 id=119 data-nosnippet>119</a>    point: PointIndex,
+<a href=#120 id=120 data-nosnippet>120</a>}
+<a href=#121 id=121 data-nosnippet>121</a>
+<a href=#122 id=122 data-nosnippet>122</a><span class="kw">impl </span><a href="#105-113">LocalizedConstraintGraph</a> {
+<a href=#123 id=123 data-nosnippet>123</a>    <span class="doccomment">/// Traverses the constraints and returns the indexed graph of edges per node.
+<a href=#124 id=124 data-nosnippet>124</a>    </span><span class="kw">fn </span>new&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#125 id=125 data-nosnippet>125</a>        constraints: <span class="kw-2">&amp;</span><a href="constraints.rs.html#31-33">LocalizedOutlivesConstraintSet</a>,
+<a href=#126 id=126 data-nosnippet>126</a>        logical_constraints: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = <a href="../constraints/mod.rs.html#65-93">OutlivesConstraint</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#127 id=127 data-nosnippet>127</a>    ) -&gt; <span class="self">Self </span>{
+<a href=#128 id=128 data-nosnippet>128</a>        <span class="kw">let </span><span class="kw-2">mut </span>edges: <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<span class="kw">_</span>, <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<span class="kw">_</span>&gt;&gt; = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxHashMap::default</a>();
+<a href=#129 id=129 data-nosnippet>129</a>        <span class="kw">for </span>constraint <span class="kw">in </span><span class="kw-2">&amp;</span>constraints.outlives {
+<a href=#130 id=130 data-nosnippet>130</a>            <span class="kw">let </span>source = LocalizedNode { region: constraint.source, point: constraint.from };
+<a href=#131 id=131 data-nosnippet>131</a>            <span class="kw">let </span>target = LocalizedNode { region: constraint.target, point: constraint.to };
+<a href=#132 id=132 data-nosnippet>132</a>            edges.entry(source).or_default().insert(target);
+<a href=#133 id=133 data-nosnippet>133</a>        }
+<a href=#134 id=134 data-nosnippet>134</a>
+<a href=#135 id=135 data-nosnippet>135</a>        <span class="kw">let </span><span class="kw-2">mut </span>logical_edges: <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<span class="kw">_</span>, <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<span class="kw">_</span>&gt;&gt; = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxHashMap::default</a>();
+<a href=#136 id=136 data-nosnippet>136</a>        <span class="kw">for </span>constraint <span class="kw">in </span>logical_constraints {
+<a href=#137 id=137 data-nosnippet>137</a>            logical_edges.entry(constraint.sup).or_default().insert(constraint.sub);
+<a href=#138 id=138 data-nosnippet>138</a>        }
+<a href=#139 id=139 data-nosnippet>139</a>
+<a href=#140 id=140 data-nosnippet>140</a>        <a href="#105-113">LocalizedConstraintGraph</a> { <a href="#128">edges</a>, <a href="#135">logical_edges</a> }
+<a href=#141 id=141 data-nosnippet>141</a>    }
 <a href=#142 id=142 data-nosnippet>142</a>
-<a href=#143 id=143 data-nosnippet>143</a>    <span class="doccomment">/// The logical edges representing the outlives constraints that hold at all points in the CFG,
-<a href=#144 id=144 data-nosnippet>144</a>    /// which we don't localize to avoid creating a lot of unnecessary edges in the graph. Some CFGs
-<a href=#145 id=145 data-nosnippet>145</a>    /// can be big, and we don't need to create such a physical edge for every point in the CFG.
-<a href=#146 id=146 data-nosnippet>146</a>    </span>logical_edges: <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<a href="../../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>, <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<a href="../../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>&gt;&gt;,
-<a href=#147 id=147 data-nosnippet>147</a>}
-<a href=#148 id=148 data-nosnippet>148</a>
-<a href=#149 id=149 data-nosnippet>149</a><span class="doccomment">/// A node in the graph to be traversed, one of the two vertices of a localized outlives constraint.
-<a href=#150 id=150 data-nosnippet>150</a></span><span class="attr">#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-<a href=#151 id=151 data-nosnippet>151</a></span><span class="kw">struct </span><a href="../../../rustc_borrowck/polonius/loan_liveness/struct.LocalizedNode.html">LocalizedNode</a> {
-<a href=#152 id=152 data-nosnippet>152</a>    region: <a href="../../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>,
-<a href=#153 id=153 data-nosnippet>153</a>    point: <a href="../../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>,
-<a href=#154 id=154 data-nosnippet>154</a>}
-<a href=#155 id=155 data-nosnippet>155</a>
-<a href=#156 id=156 data-nosnippet>156</a><span class="kw">impl </span><a href="#139-147">LocalizedConstraintGraph</a> {
-<a href=#157 id=157 data-nosnippet>157</a>    <span class="doccomment">/// Traverses the constraints and returns the indexed graph of edges per node.
-<a href=#158 id=158 data-nosnippet>158</a>    </span><span class="kw">fn </span>new&lt;<span class="lifetime">'tcx</span>&gt;(
-<a href=#159 id=159 data-nosnippet>159</a>        constraints: <span class="kw-2">&amp;</span><a href="constraints.rs.html#33-35">LocalizedOutlivesConstraintSet</a>,
-<a href=#160 id=160 data-nosnippet>160</a>        logical_constraints: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = <a href="../constraints/mod.rs.html#65-93">OutlivesConstraint</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
-<a href=#161 id=161 data-nosnippet>161</a>    ) -&gt; <span class="self">Self </span>{
-<a href=#162 id=162 data-nosnippet>162</a>        <span class="kw">let </span><span class="kw-2">mut </span>edges: <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<span class="kw">_</span>, <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<span class="kw">_</span>&gt;&gt; = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxHashMap::default</a>();
-<a href=#163 id=163 data-nosnippet>163</a>        <span class="kw">for </span>constraint <span class="kw">in </span><span class="kw-2">&amp;</span>constraints.outlives {
-<a href=#164 id=164 data-nosnippet>164</a>            <span class="kw">let </span>source = LocalizedNode { region: constraint.source, point: constraint.from };
-<a href=#165 id=165 data-nosnippet>165</a>            <span class="kw">let </span>target = LocalizedNode { region: constraint.target, point: constraint.to };
-<a href=#166 id=166 data-nosnippet>166</a>            edges.entry(source).or_default().insert(target);
-<a href=#167 id=167 data-nosnippet>167</a>        }
-<a href=#168 id=168 data-nosnippet>168</a>
-<a href=#169 id=169 data-nosnippet>169</a>        <span class="kw">let </span><span class="kw-2">mut </span>logical_edges: <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<span class="kw">_</span>, <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<span class="kw">_</span>&gt;&gt; = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxHashMap::default</a>();
-<a href=#170 id=170 data-nosnippet>170</a>        <span class="kw">for </span>constraint <span class="kw">in </span>logical_constraints {
-<a href=#171 id=171 data-nosnippet>171</a>            logical_edges.entry(constraint.sup).or_default().insert(constraint.sub);
-<a href=#172 id=172 data-nosnippet>172</a>        }
-<a href=#173 id=173 data-nosnippet>173</a>
-<a href=#174 id=174 data-nosnippet>174</a>        <a href="#139-147">LocalizedConstraintGraph</a> { <a href="#162">edges</a>, <a href="#169">logical_edges</a> }
-<a href=#175 id=175 data-nosnippet>175</a>    }
-<a href=#176 id=176 data-nosnippet>176</a>
-<a href=#177 id=177 data-nosnippet>177</a>    <span class="doccomment">/// Returns the outgoing edges of a given node, not its transitive closure.
-<a href=#178 id=178 data-nosnippet>178</a>    </span><span class="kw">fn </span>outgoing_edges(<span class="kw-2">&amp;</span><span class="self">self</span>, node: <a href="#151-154">LocalizedNode</a>) -&gt; <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = <a href="#151-154">LocalizedNode</a>&gt; {
-<a href=#179 id=179 data-nosnippet>179</a>        <span class="comment">// The outgoing edges are:
-<a href=#180 id=180 data-nosnippet>180</a>        // - the physical edges present at this node,
-<a href=#181 id=181 data-nosnippet>181</a>        // - the materialized logical edges that exist virtually at all points for this node's
-<a href=#182 id=182 data-nosnippet>182</a>        //   region, localized at this point.
-<a href=#183 id=183 data-nosnippet>183</a>        </span><span class="kw">let </span>physical_edges =
-<a href=#184 id=184 data-nosnippet>184</a>            <a class="self" href="#178">self</a>.edges.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#178">node</a>).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.flat_map">flat_map</a>(|targets| <a href="#184">targets</a>.<a href="https://docs.rs/indexmap/2.10.0/indexmap/set/struct.IndexSet.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.copied">copied</a>());
-<a href=#185 id=185 data-nosnippet>185</a>        <span class="kw">let </span>materialized_edges =
-<a href=#186 id=186 data-nosnippet>186</a>            <a class="self" href="#178">self</a>.logical_edges.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#178">node</a>.region).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.flat_map">flat_map</a>(<span class="kw">move </span>|targets| {
-<a href=#187 id=187 data-nosnippet>187</a>                <a href="#186">targets</a>
-<a href=#188 id=188 data-nosnippet>188</a>                    .<a href="https://docs.rs/indexmap/2.10.0/indexmap/set/struct.IndexSet.html#method.iter">iter</a>()
-<a href=#189 id=189 data-nosnippet>189</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.copied">copied</a>()
-<a href=#190 id=190 data-nosnippet>190</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(<span class="kw">move </span>|target| <a href="#151-154">LocalizedNode</a> { point: <a href="#178">node</a>.point, region: <a href="#190">target</a> })
-<a href=#191 id=191 data-nosnippet>191</a>            });
-<a href=#192 id=192 data-nosnippet>192</a>        <a href="#183">physical_edges</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.chain">chain</a>(<a href="#185">materialized_edges</a>)
-<a href=#193 id=193 data-nosnippet>193</a>    }
-<a href=#194 id=194 data-nosnippet>194</a>}
-<a href=#195 id=195 data-nosnippet>195</a>
-<a href=#196 id=196 data-nosnippet>196</a><span class="doccomment">/// Traverses the MIR and collects kills.
-<a href=#197 id=197 data-nosnippet>197</a></span><span class="kw">fn </span><a href="../../../rustc_borrowck/polonius/loan_liveness/fn.collect_kills.html">collect_kills</a>&lt;<span class="lifetime">'tcx</span>&gt;(
-<a href=#198 id=198 data-nosnippet>198</a>    body: <span class="kw-2">&amp;</span><a href="../../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#199 id=199 data-nosnippet>199</a>    tcx: <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#200 id=200 data-nosnippet>200</a>    borrow_set: <span class="kw-2">&amp;</span><a href="../borrow_set.rs.html#16-34">BorrowSet</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#201 id=201 data-nosnippet>201</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/map/struct.BTreeMap.html">BTreeMap</a>&lt;<a href="../../../rustc_middle/mir/struct.Location.html">Location</a>, <a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/set/struct.BTreeSet.html">BTreeSet</a>&lt;<a href="../dataflow.rs.html#162-166">BorrowIndex</a>&gt;&gt; {
-<a href=#202 id=202 data-nosnippet>202</a>    <span class="kw">let </span><span class="kw-2">mut </span>collector = <a href="#209-216">KillsCollector</a> { <a href="#200">borrow_set</a>, <a href="#199">tcx</a>, <a href="#198">body</a>, kills: <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">BTreeMap::default</a>() };
-<a href=#203 id=203 data-nosnippet>203</a>    <span class="kw">for </span>(block, data) <span class="kw">in </span>body.basic_blocks.iter_enumerated() {
-<a href=#204 id=204 data-nosnippet>204</a>        collector.visit_basic_block_data(block, data);
-<a href=#205 id=205 data-nosnippet>205</a>    }
-<a href=#206 id=206 data-nosnippet>206</a>    <a href="#202">collector</a>.kills
-<a href=#207 id=207 data-nosnippet>207</a>}
-<a href=#208 id=208 data-nosnippet>208</a>
-<a href=#209 id=209 data-nosnippet>209</a><span class="kw">struct </span><a href="../../../rustc_borrowck/polonius/loan_liveness/struct.KillsCollector.html">KillsCollector</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
-<a href=#210 id=210 data-nosnippet>210</a>    body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#211 id=211 data-nosnippet>211</a>    tcx: <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#212 id=212 data-nosnippet>212</a>    borrow_set: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../borrow_set.rs.html#16-34">BorrowSet</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#213 id=213 data-nosnippet>213</a>
-<a href=#214 id=214 data-nosnippet>214</a>    <span class="doccomment">/// The set of loans killed at each location.
-<a href=#215 id=215 data-nosnippet>215</a>    </span>kills: <a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/map/struct.BTreeMap.html">BTreeMap</a>&lt;<a href="../../../rustc_middle/mir/struct.Location.html">Location</a>, <a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/set/struct.BTreeSet.html">BTreeSet</a>&lt;<a href="../dataflow.rs.html#162-166">BorrowIndex</a>&gt;&gt;,
-<a href=#216 id=216 data-nosnippet>216</a>}
-<a href=#217 id=217 data-nosnippet>217</a>
-<a href=#218 id=218 data-nosnippet>218</a><span class="comment">// This visitor has a similar structure to the `Borrows` dataflow computation with respect to kills,
-<a href=#219 id=219 data-nosnippet>219</a>// and the datalog polonius fact generation for the `loan_killed_at` relation.
-<a href=#220 id=220 data-nosnippet>220</a></span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="#209-216">KillsCollector</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
-<a href=#221 id=221 data-nosnippet>221</a>    <span class="doccomment">/// Records the borrows on the specified place as `killed`. For example, when assigning to a
-<a href=#222 id=222 data-nosnippet>222</a>    /// local, or on a call's return destination.
-<a href=#223 id=223 data-nosnippet>223</a>    </span><span class="kw">fn </span>record_killed_borrows_for_place(<span class="kw-2">&amp;mut </span><span class="self">self</span>, place: <a href="../../../rustc_middle/mir/syntax/struct.Place.html">Place</a>&lt;<span class="lifetime">'tcx</span>&gt;, location: <a href="../../../rustc_middle/mir/struct.Location.html">Location</a>) {
-<a href=#224 id=224 data-nosnippet>224</a>        <span class="comment">// For the reasons described in graph traversal, we also filter out kills
-<a href=#225 id=225 data-nosnippet>225</a>        // unreachable from the loan's introduction point, as they would stop traversal when
-<a href=#226 id=226 data-nosnippet>226</a>        // e.g. checking for reachability in the subset graph through invariance constraints
-<a href=#227 id=227 data-nosnippet>227</a>        // higher up.
-<a href=#228 id=228 data-nosnippet>228</a>        </span><span class="kw">let </span>filter_unreachable_kills = |loan| {
-<a href=#229 id=229 data-nosnippet>229</a>            <span class="kw">let </span>introduction = <a class="self" href="#223">self</a>.borrow_set[<a href="#228">loan</a>].reserve_location;
-<a href=#230 id=230 data-nosnippet>230</a>            <span class="kw">let </span>reachable = <a href="#229">introduction</a>.<a href="../../../rustc_middle/mir/struct.Location.html#method.is_predecessor_of">is_predecessor_of</a>(<a href="#223">location</a>, <a class="self" href="#223">self</a>.body);
-<a href=#231 id=231 data-nosnippet>231</a>            <a href="#230">reachable</a>
-<a href=#232 id=232 data-nosnippet>232</a>        };
-<a href=#233 id=233 data-nosnippet>233</a>
-<a href=#234 id=234 data-nosnippet>234</a>        <span class="kw">let </span>other_borrows_of_local = <span class="self"><a href="#223">self</a>
-<a href=#235 id=235 data-nosnippet>235</a>            </span>.borrow_set
-<a href=#236 id=236 data-nosnippet>236</a>            .local_map
-<a href=#237 id=237 data-nosnippet>237</a>            .<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#223">place</a>.local)
-<a href=#238 id=238 data-nosnippet>238</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>()
-<a href=#239 id=239 data-nosnippet>239</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.flat_map">flat_map</a>(|bs| <a href="#239">bs</a>.<a href="https://docs.rs/indexmap/2.10.0/indexmap/set/struct.IndexSet.html#method.iter">iter</a>())
-<a href=#240 id=240 data-nosnippet>240</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.copied">copied</a>();
-<a href=#241 id=241 data-nosnippet>241</a>
-<a href=#242 id=242 data-nosnippet>242</a>        <span class="comment">// If the borrowed place is a local with no projections, all other borrows of this
-<a href=#243 id=243 data-nosnippet>243</a>        // local must conflict. This is purely an optimization so we don't have to call
-<a href=#244 id=244 data-nosnippet>244</a>        // `places_conflict` for every borrow.
-<a href=#245 id=245 data-nosnippet>245</a>        </span><span class="kw">if </span><a href="#223">place</a>.projection.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.is_empty">is_empty</a>() {
-<a href=#246 id=246 data-nosnippet>246</a>            <span class="kw">if </span>!<a class="self" href="#223">self</a>.body.local_decls[<a href="#223">place</a>.local].<a href="../../../rustc_middle/mir/struct.LocalDecl.html#method.is_ref_to_static">is_ref_to_static</a>() {
-<a href=#247 id=247 data-nosnippet>247</a>                <a class="self" href="#223">self</a>.kills
-<a href=#248 id=248 data-nosnippet>248</a>                    .<a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/map/struct.BTreeMap.html#method.entry">entry</a>(<a href="#223">location</a>)
-<a href=#249 id=249 data-nosnippet>249</a>                    .<a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/map/entry/enum.Entry.html#method.or_default">or_default</a>()
-<a href=#250 id=250 data-nosnippet>250</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.Extend.html#tymethod.extend">extend</a>(<a href="#234">other_borrows_of_local</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter">filter</a>(|<span class="kw-2">&amp;</span>loan| <a href="#228">filter_unreachable_kills</a>(<a href="#250">loan</a>)));
-<a href=#251 id=251 data-nosnippet>251</a>            }
-<a href=#252 id=252 data-nosnippet>252</a>            <span class="kw">return</span>;
-<a href=#253 id=253 data-nosnippet>253</a>        }
-<a href=#254 id=254 data-nosnippet>254</a>
-<a href=#255 id=255 data-nosnippet>255</a>        <span class="comment">// By passing `PlaceConflictBias::NoOverlap`, we conservatively assume that any given
-<a href=#256 id=256 data-nosnippet>256</a>        // pair of array indices are not equal, so that when `places_conflict` returns true, we
-<a href=#257 id=257 data-nosnippet>257</a>        // will be assured that two places being compared definitely denotes the same sets of
-<a href=#258 id=258 data-nosnippet>258</a>        // locations.
-<a href=#259 id=259 data-nosnippet>259</a>        </span><span class="kw">let </span>definitely_conflicting_borrows = <a href="#234">other_borrows_of_local</a>
-<a href=#260 id=260 data-nosnippet>260</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter">filter</a>(|<span class="kw-2">&amp;</span>i| {
-<a href=#261 id=261 data-nosnippet>261</a>                <a href="../places_conflict.rs.html#81-97">places_conflict</a>(
-<a href=#262 id=262 data-nosnippet>262</a>                    <a class="self" href="#223">self</a>.tcx,
-<a href=#263 id=263 data-nosnippet>263</a>                    <a class="self" href="#223">self</a>.body,
-<a href=#264 id=264 data-nosnippet>264</a>                    <a class="self" href="#223">self</a>.borrow_set[<a href="#260">i</a>].borrowed_place,
-<a href=#265 id=265 data-nosnippet>265</a>                    <a href="#223">place</a>,
-<a href=#266 id=266 data-nosnippet>266</a>                    <a href="../places_conflict.rs.html#75">PlaceConflictBias::NoOverlap</a>,
-<a href=#267 id=267 data-nosnippet>267</a>                )
-<a href=#268 id=268 data-nosnippet>268</a>            })
-<a href=#269 id=269 data-nosnippet>269</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter">filter</a>(|<span class="kw-2">&amp;</span>loan| <a href="#228">filter_unreachable_kills</a>(<a href="#269">loan</a>));
-<a href=#270 id=270 data-nosnippet>270</a>
-<a href=#271 id=271 data-nosnippet>271</a>        <a class="self" href="#223">self</a>.kills.<a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/map/struct.BTreeMap.html#method.entry">entry</a>(<a href="#223">location</a>).<a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/map/entry/enum.Entry.html#method.or_default">or_default</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.Extend.html#tymethod.extend">extend</a>(<a href="#259">definitely_conflicting_borrows</a>);
-<a href=#272 id=272 data-nosnippet>272</a>    }
-<a href=#273 id=273 data-nosnippet>273</a>
-<a href=#274 id=274 data-nosnippet>274</a>    <span class="doccomment">/// Records the borrows on the specified local as `killed`.
-<a href=#275 id=275 data-nosnippet>275</a>    </span><span class="kw">fn </span>record_killed_borrows_for_local(<span class="kw-2">&amp;mut </span><span class="self">self</span>, local: <a href="../../../rustc_middle/mir/struct.Local.html">Local</a>, location: <a href="../../../rustc_middle/mir/struct.Location.html">Location</a>) {
-<a href=#276 id=276 data-nosnippet>276</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(borrow_indices) = <a class="self" href="#275">self</a>.borrow_set.local_map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#275">local</a>) {
-<a href=#277 id=277 data-nosnippet>277</a>            <a class="self" href="#275">self</a>.kills.<a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/map/struct.BTreeMap.html#method.entry">entry</a>(<a href="#275">location</a>).<a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/map/entry/enum.Entry.html#method.or_default">or_default</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.Extend.html#tymethod.extend">extend</a>(<a href="#276">borrow_indices</a>.<a href="https://docs.rs/indexmap/2.10.0/indexmap/set/struct.IndexSet.html#method.iter">iter</a>());
-<a href=#278 id=278 data-nosnippet>278</a>        }
-<a href=#279 id=279 data-nosnippet>279</a>    }
-<a href=#280 id=280 data-nosnippet>280</a>}
-<a href=#281 id=281 data-nosnippet>281</a>
-<a href=#282 id=282 data-nosnippet>282</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="../../../rustc_middle/mir/visit/trait.Visitor.html">Visitor</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#209-216">KillsCollector</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
-<a href=#283 id=283 data-nosnippet>283</a>    <span class="kw">fn </span>visit_statement(<span class="kw-2">&amp;mut </span><span class="self">self</span>, statement: <span class="kw-2">&amp;</span><a href="../../../rustc_middle/mir/statement/struct.Statement.html">Statement</a>&lt;<span class="lifetime">'tcx</span>&gt;, location: <a href="../../../rustc_middle/mir/struct.Location.html">Location</a>) {
-<a href=#284 id=284 data-nosnippet>284</a>        <span class="comment">// Make sure there are no remaining borrows for locals that have gone out of scope.
-<a href=#285 id=285 data-nosnippet>285</a>        </span><span class="kw">if let </span><a href="../../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.StorageDead">StatementKind::StorageDead</a>(local) = <a href="#283">statement</a>.kind {
-<a href=#286 id=286 data-nosnippet>286</a>            <a class="self" href="#283">self</a>.<a href="#275-279">record_killed_borrows_for_local</a>(<a href="#285">local</a>, <a href="#283">location</a>);
-<a href=#287 id=287 data-nosnippet>287</a>        }
-<a href=#288 id=288 data-nosnippet>288</a>
-<a href=#289 id=289 data-nosnippet>289</a>        <a class="self" href="#283">self</a>.<a href="../../../rustc_middle/mir/visit/trait.Visitor.html#tymethod.super_statement">super_statement</a>(<a href="#283">statement</a>, <a href="#283">location</a>);
-<a href=#290 id=290 data-nosnippet>290</a>    }
-<a href=#291 id=291 data-nosnippet>291</a>
-<a href=#292 id=292 data-nosnippet>292</a>    <span class="kw">fn </span>visit_assign(<span class="kw-2">&amp;mut </span><span class="self">self</span>, place: <span class="kw-2">&amp;</span><a href="../../../rustc_middle/mir/syntax/struct.Place.html">Place</a>&lt;<span class="lifetime">'tcx</span>&gt;, rvalue: <span class="kw-2">&amp;</span><a href="../../../rustc_middle/mir/syntax/enum.Rvalue.html">Rvalue</a>&lt;<span class="lifetime">'tcx</span>&gt;, location: <a href="../../../rustc_middle/mir/struct.Location.html">Location</a>) {
-<a href=#293 id=293 data-nosnippet>293</a>        <span class="comment">// When we see `X = ...`, then kill borrows of `(*X).foo` and so forth.
-<a href=#294 id=294 data-nosnippet>294</a>        </span><a class="self" href="#292">self</a>.<a href="#223-272">record_killed_borrows_for_place</a>(<span class="kw-2">*</span><a href="#292">place</a>, <a href="#292">location</a>);
-<a href=#295 id=295 data-nosnippet>295</a>        <a class="self" href="#292">self</a>.<a href="../../../rustc_middle/mir/visit/trait.Visitor.html#tymethod.super_assign">super_assign</a>(<a href="#292">place</a>, <a href="#292">rvalue</a>, <a href="#292">location</a>);
-<a href=#296 id=296 data-nosnippet>296</a>    }
-<a href=#297 id=297 data-nosnippet>297</a>
-<a href=#298 id=298 data-nosnippet>298</a>    <span class="kw">fn </span>visit_terminator(<span class="kw-2">&amp;mut </span><span class="self">self</span>, terminator: <span class="kw-2">&amp;</span><a href="../../../rustc_middle/mir/terminator/struct.Terminator.html">Terminator</a>&lt;<span class="lifetime">'tcx</span>&gt;, location: <a href="../../../rustc_middle/mir/struct.Location.html">Location</a>) {
-<a href=#299 id=299 data-nosnippet>299</a>        <span class="comment">// A `Call` terminator's return value can be a local which has borrows, so we need to record
-<a href=#300 id=300 data-nosnippet>300</a>        // those as killed as well.
-<a href=#301 id=301 data-nosnippet>301</a>        </span><span class="kw">if let </span><a href="../../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.Call">TerminatorKind::Call</a> { destination, .. } = <a href="#298">terminator</a>.kind {
-<a href=#302 id=302 data-nosnippet>302</a>            <a class="self" href="#298">self</a>.<a href="#223-272">record_killed_borrows_for_place</a>(<a href="#301">destination</a>, <a href="#298">location</a>);
-<a href=#303 id=303 data-nosnippet>303</a>        }
-<a href=#304 id=304 data-nosnippet>304</a>
-<a href=#305 id=305 data-nosnippet>305</a>        <a class="self" href="#298">self</a>.<a href="../../../rustc_middle/mir/visit/trait.Visitor.html#tymethod.super_terminator">super_terminator</a>(<a href="#298">terminator</a>, <a href="#298">location</a>);
-<a href=#306 id=306 data-nosnippet>306</a>    }
-<a href=#307 id=307 data-nosnippet>307</a>}</code></pre></div></section></main></body></html>
+<a href=#143 id=143 data-nosnippet>143</a>    <span class="doccomment">/// Returns the outgoing edges of a given node, not its transitive closure.
+<a href=#144 id=144 data-nosnippet>144</a>    </span><span class="kw">fn </span>outgoing_edges(<span class="kw-2">&amp;</span><span class="self">self</span>, node: <a href="#117-120">LocalizedNode</a>) -&gt; <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = <a href="#117-120">LocalizedNode</a>&gt; {
+<a href=#145 id=145 data-nosnippet>145</a>        <span class="comment">// The outgoing edges are:
+<a href=#146 id=146 data-nosnippet>146</a>        // - the physical edges present at this node,
+<a href=#147 id=147 data-nosnippet>147</a>        // - the materialized logical edges that exist virtually at all points for this node's
+<a href=#148 id=148 data-nosnippet>148</a>        //   region, localized at this point.
+<a href=#149 id=149 data-nosnippet>149</a>        </span><span class="kw">let </span>physical_edges =
+<a href=#150 id=150 data-nosnippet>150</a>            <a class="self" href="#144">self</a>.edges.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#144">node</a>).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.flat_map">flat_map</a>(|targets| <a href="#150">targets</a>.<a href="https://docs.rs/indexmap/2.10.0/indexmap/set/struct.IndexSet.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.copied">copied</a>());
+<a href=#151 id=151 data-nosnippet>151</a>        <span class="kw">let </span>materialized_edges =
+<a href=#152 id=152 data-nosnippet>152</a>            <a class="self" href="#144">self</a>.logical_edges.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#144">node</a>.region).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.flat_map">flat_map</a>(<span class="kw">move </span>|targets| {
+<a href=#153 id=153 data-nosnippet>153</a>                <a href="#152">targets</a>
+<a href=#154 id=154 data-nosnippet>154</a>                    .<a href="https://docs.rs/indexmap/2.10.0/indexmap/set/struct.IndexSet.html#method.iter">iter</a>()
+<a href=#155 id=155 data-nosnippet>155</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.copied">copied</a>()
+<a href=#156 id=156 data-nosnippet>156</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(<span class="kw">move </span>|target| <a href="#117-120">LocalizedNode</a> { point: <a href="#144">node</a>.point, region: <a href="#156">target</a> })
+<a href=#157 id=157 data-nosnippet>157</a>            });
+<a href=#158 id=158 data-nosnippet>158</a>        <a href="#149">physical_edges</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.chain">chain</a>(<a href="#151">materialized_edges</a>)
+<a href=#159 id=159 data-nosnippet>159</a>    }
+<a href=#160 id=160 data-nosnippet>160</a>}</code></pre></div></section></main></body></html>

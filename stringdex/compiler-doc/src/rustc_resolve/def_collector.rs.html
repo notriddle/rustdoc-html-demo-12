@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_resolve/src/def_collector.rs`."><title>def_collector.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_resolve" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_resolve/</div>def_collector.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/mem/index.html">std::mem</a>;
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_resolve/src/def_collector.rs`."><title>def_collector.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_resolve" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_resolve/</div>def_collector.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/mem/index.html">std::mem</a>;
 <a href=#2 id=2 data-nosnippet>2</a>
 <a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span><a href="../../rustc_ast/visit/enum.FnKind.html">rustc_ast::visit::FnKind</a>;
 <a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><a href="../../rustc_ast/index.html">rustc_ast</a>::<span class="kw-2">*</span>;
@@ -12,10 +12,10 @@
 <a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>rustc_span::{<a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>, <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>, <a href="../../rustc_span/symbol/sym/index.html">sym</a>};
 <a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span><a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">tracing::debug</a>;
 <a href=#14 id=14 data-nosnippet>14</a>
-<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use crate</span>::{<a href="lib.rs.html#191-195">ImplTraitContext</a>, <a href="lib.rs.html#176-180">InvocationParent</a>, <a href="lib.rs.html#1048-1249">Resolver</a>};
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use crate</span>::{<a href="lib.rs.html#192-196">ImplTraitContext</a>, <a href="lib.rs.html#177-181">InvocationParent</a>, <a href="lib.rs.html#1052-1258">Resolver</a>};
 <a href=#16 id=16 data-nosnippet>16</a>
 <a href=#17 id=17 data-nosnippet>17</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span><a href="../../rustc_resolve/def_collector/fn.collect_definitions.html">collect_definitions</a>(
-<a href=#18 id=18 data-nosnippet>18</a>    resolver: <span class="kw-2">&amp;mut </span><a href="lib.rs.html#1048-1249">Resolver</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;,
+<a href=#18 id=18 data-nosnippet>18</a>    resolver: <span class="kw-2">&amp;mut </span><a href="lib.rs.html#1052-1258">Resolver</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;,
 <a href=#19 id=19 data-nosnippet>19</a>    fragment: <span class="kw-2">&amp;</span><a href="../../rustc_expand/expand/enum.AstFragment.html">AstFragment</a>,
 <a href=#20 id=20 data-nosnippet>20</a>    expansion: <a href="../../rustc_span/hygiene/struct.LocalExpnId.html">LocalExpnId</a>,
 <a href=#21 id=21 data-nosnippet>21</a>) {
@@ -26,8 +26,8 @@
 <a href=#26 id=26 data-nosnippet>26</a>
 <a href=#27 id=27 data-nosnippet>27</a><span class="doccomment">/// Creates `DefId`s for nodes in the AST.
 <a href=#28 id=28 data-nosnippet>28</a></span><span class="kw">struct </span><a href="../../rustc_resolve/def_collector/struct.DefCollector.html">DefCollector</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt; {
-<a href=#29 id=29 data-nosnippet>29</a>    resolver: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><a href="lib.rs.html#1048-1249">Resolver</a>&lt;<span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt;,
-<a href=#30 id=30 data-nosnippet>30</a>    invocation_parent: <a href="lib.rs.html#176-180">InvocationParent</a>,
+<a href=#29 id=29 data-nosnippet>29</a>    resolver: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><a href="lib.rs.html#1052-1258">Resolver</a>&lt;<span class="lifetime">'ra</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#30 id=30 data-nosnippet>30</a>    invocation_parent: <a href="lib.rs.html#177-181">InvocationParent</a>,
 <a href=#31 id=31 data-nosnippet>31</a>    expansion: <a href="../../rustc_span/hygiene/struct.LocalExpnId.html">LocalExpnId</a>,
 <a href=#32 id=32 data-nosnippet>32</a>}
 <a href=#33 id=33 data-nosnippet>33</a>
@@ -45,7 +45,7 @@
 <a href=#45 id=45 data-nosnippet>45</a>            node_id, def_kind, parent_def
 <a href=#46 id=46 data-nosnippet>46</a>        );
 <a href=#47 id=47 data-nosnippet>47</a>        <a class="self" href="#36">self</a>.resolver
-<a href=#48 id=48 data-nosnippet>48</a>            .<a href="lib.rs.html#1385-1426">create_def</a>(
+<a href=#48 id=48 data-nosnippet>48</a>            .<a href="lib.rs.html#1394-1435">create_def</a>(
 <a href=#49 id=49 data-nosnippet>49</a>                <a href="#42">parent_def</a>,
 <a href=#50 id=50 data-nosnippet>50</a>                <a href="#37">node_id</a>,
 <a href=#51 id=51 data-nosnippet>51</a>                <a href="#38">name</a>,
@@ -64,7 +64,7 @@
 <a href=#64 id=64 data-nosnippet>64</a>
 <a href=#65 id=65 data-nosnippet>65</a>    <span class="kw">fn </span>with_impl_trait&lt;F: <a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>(<span class="kw-2">&amp;mut </span><span class="self">Self</span>)&gt;(
 <a href=#66 id=66 data-nosnippet>66</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-<a href=#67 id=67 data-nosnippet>67</a>        impl_trait_context: <a href="lib.rs.html#191-195">ImplTraitContext</a>,
+<a href=#67 id=67 data-nosnippet>67</a>        impl_trait_context: <a href="lib.rs.html#192-196">ImplTraitContext</a>,
 <a href=#68 id=68 data-nosnippet>68</a>        f: F,
 <a href=#69 id=69 data-nosnippet>69</a>    ) {
 <a href=#70 id=70 data-nosnippet>70</a>        <span class="kw">let </span>orig_itc =
@@ -148,7 +148,7 @@
 <a href=#148 id=148 data-nosnippet>148</a>                );
 <a href=#149 id=149 data-nosnippet>149</a>
 <a href=#150 id=150 data-nosnippet>150</a>                <span class="kw">let </span>macro_data =
-<a href=#151 id=151 data-nosnippet>151</a>                    <a class="self" href="#103">self</a>.resolver.<a href="macros.rs.html#1162-1195">compile_macro</a>(<a href="#125">def</a>, <span class="kw-2">*</span><a href="#125">ident</a>, <span class="kw-2">&amp;</span><a href="#137">attrs</a>, <a href="#103">i</a>.span, <a href="#103">i</a>.id, <a href="#126">edition</a>);
+<a href=#151 id=151 data-nosnippet>151</a>                    <a class="self" href="#103">self</a>.resolver.<a href="macros.rs.html#1175-1209">compile_macro</a>(<a href="#125">def</a>, <span class="kw-2">*</span><a href="#125">ident</a>, <span class="kw-2">&amp;</span><a href="#137">attrs</a>, <a href="#103">i</a>.span, <a href="#103">i</a>.id, <a href="#126">edition</a>);
 <a href=#152 id=152 data-nosnippet>152</a>                <span class="kw">let </span>macro_kind = <a href="#150">macro_data</a>.ext.<a href="../../rustc_expand/base/struct.SyntaxExtension.html#method.macro_kind">macro_kind</a>();
 <a href=#153 id=153 data-nosnippet>153</a>                <a href="#106">opt_macro_data</a> = <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#150">macro_data</a>);
 <a href=#154 id=154 data-nosnippet>154</a>                <a href="../../rustc_hir/def/enum.DefKind.html#variant.Macro">DefKind::Macro</a>(<a href="#152">macro_kind</a>)
@@ -166,11 +166,11 @@
 <a href=#166 id=166 data-nosnippet>166</a>            <a class="self" href="#103">self</a>.<a href="#35-57">create_def</a>(<a href="#103">i</a>.id, <a href="#103">i</a>.kind.<a href="../../rustc_ast/ast/enum.ItemKind.html#method.ident">ident</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|ident| <a href="#166">ident</a>.name), <a href="#107">def_kind</a>, <a href="#103">i</a>.span);
 <a href=#167 id=167 data-nosnippet>167</a>
 <a href=#168 id=168 data-nosnippet>168</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(macro_data) = <a href="#106">opt_macro_data</a> {
-<a href=#169 id=169 data-nosnippet>169</a>            <a class="self" href="#103">self</a>.resolver.<a href="lib.rs.html#1679-1683">new_local_macro</a>(<a href="#165">def_id</a>, <a href="#168">macro_data</a>);
+<a href=#169 id=169 data-nosnippet>169</a>            <a class="self" href="#103">self</a>.resolver.<a href="lib.rs.html#1692-1696">new_local_macro</a>(<a href="#165">def_id</a>, <a href="#168">macro_data</a>);
 <a href=#170 id=170 data-nosnippet>170</a>        }
 <a href=#171 id=171 data-nosnippet>171</a>
 <a href=#172 id=172 data-nosnippet>172</a>        <a class="self" href="#103">self</a>.<a href="#59-63">with_parent</a>(<a href="#165">def_id</a>, |this| {
-<a href=#173 id=173 data-nosnippet>173</a>            <a href="#172">this</a>.<a href="#65-74">with_impl_trait</a>(<a href="lib.rs.html#192">ImplTraitContext::Existential</a>, |this| {
+<a href=#173 id=173 data-nosnippet>173</a>            <a href="#172">this</a>.<a href="#65-74">with_impl_trait</a>(<a href="lib.rs.html#193">ImplTraitContext::Existential</a>, |this| {
 <a href=#174 id=174 data-nosnippet>174</a>                <span class="kw">match </span><a href="#103">i</a>.kind {
 <a href=#175 id=175 data-nosnippet>175</a>                    <a href="../../rustc_ast/ast/enum.ItemKind.html#variant.Struct">ItemKind::Struct</a>(<span class="kw">_</span>, <span class="kw">_</span>, <span class="kw-2">ref </span>struct_def)
 <a href=#176 id=176 data-nosnippet>176</a>                    | <a href="../../rustc_ast/ast/enum.ItemKind.html#variant.Union">ItemKind::Union</a>(<span class="kw">_</span>, <span class="kw">_</span>, <span class="kw-2">ref </span>struct_def) =&gt; {
@@ -327,7 +327,7 @@
 <a href=#327 id=327 data-nosnippet>327</a>        // ```
 <a href=#328 id=328 data-nosnippet>328</a>        //
 <a href=#329 id=329 data-nosnippet>329</a>        // In that case, the impl-trait is lowered as an additional generic parameter.
-<a href=#330 id=330 data-nosnippet>330</a>        </span><a class="self" href="#312">self</a>.<a href="#65-74">with_impl_trait</a>(<a href="lib.rs.html#193">ImplTraitContext::Universal</a>, |this| {
+<a href=#330 id=330 data-nosnippet>330</a>        </span><a class="self" href="#312">self</a>.<a href="#65-74">with_impl_trait</a>(<a href="lib.rs.html#194">ImplTraitContext::Universal</a>, |this| {
 <a href=#331 id=331 data-nosnippet>331</a>            <a href="../../rustc_ast/visit/fn.walk_generic_param.html">visit::walk_generic_param</a>(<a href="#330">this</a>, <a href="#312">param</a>)
 <a href=#332 id=332 data-nosnippet>332</a>        });
 <a href=#333 id=333 data-nosnippet>333</a>    }
@@ -390,19 +390,19 @@
 <a href=#390 id=390 data-nosnippet>390</a>                    .<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#383">ty</a>.id)
 <a href=#391 id=391 data-nosnippet>391</a>                    .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or_else">unwrap_or_else</a>(|| <a class="macro" href="../../rustc_middle/macro.span_bug.html">span_bug!</a>(<a href="#383">ty</a>.span, <span class="string">"expected this opaque to be named"</span>));
 <a href=#392 id=392 data-nosnippet>392</a>                <span class="kw">let </span>kind = <span class="kw">match </span><a class="self" href="#383">self</a>.invocation_parent.impl_trait_context {
-<a href=#393 id=393 data-nosnippet>393</a>                    <a href="lib.rs.html#193">ImplTraitContext::Universal</a> =&gt; <a href="../../rustc_hir/def/enum.DefKind.html#variant.TyParam">DefKind::TyParam</a>,
-<a href=#394 id=394 data-nosnippet>394</a>                    <a href="lib.rs.html#192">ImplTraitContext::Existential</a> =&gt; <a href="../../rustc_hir/def/enum.DefKind.html#variant.OpaqueTy">DefKind::OpaqueTy</a>,
-<a href=#395 id=395 data-nosnippet>395</a>                    <a href="lib.rs.html#194">ImplTraitContext::InBinding</a> =&gt; <span class="kw">return </span><a href="../../rustc_ast/visit/fn.walk_ty.html">visit::walk_ty</a>(<a class="self" href="#383">self</a>, <a href="#383">ty</a>),
+<a href=#393 id=393 data-nosnippet>393</a>                    <a href="lib.rs.html#194">ImplTraitContext::Universal</a> =&gt; <a href="../../rustc_hir/def/enum.DefKind.html#variant.TyParam">DefKind::TyParam</a>,
+<a href=#394 id=394 data-nosnippet>394</a>                    <a href="lib.rs.html#193">ImplTraitContext::Existential</a> =&gt; <a href="../../rustc_hir/def/enum.DefKind.html#variant.OpaqueTy">DefKind::OpaqueTy</a>,
+<a href=#395 id=395 data-nosnippet>395</a>                    <a href="lib.rs.html#195">ImplTraitContext::InBinding</a> =&gt; <span class="kw">return </span><a href="../../rustc_ast/visit/fn.walk_ty.html">visit::walk_ty</a>(<a class="self" href="#383">self</a>, <a href="#383">ty</a>),
 <a href=#396 id=396 data-nosnippet>396</a>                };
 <a href=#397 id=397 data-nosnippet>397</a>                <span class="kw">let </span>id = <a class="self" href="#383">self</a>.<a href="#35-57">create_def</a>(<a href="#386">opaque_id</a>, <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#387">name</a>), <a href="#392">kind</a>, <a href="#383">ty</a>.span);
 <a href=#398 id=398 data-nosnippet>398</a>                <span class="kw">match </span><a class="self" href="#383">self</a>.invocation_parent.impl_trait_context {
 <a href=#399 id=399 data-nosnippet>399</a>                    <span class="comment">// Do not nest APIT, as we desugar them as `impl_trait: bounds`,
 <a href=#400 id=400 data-nosnippet>400</a>                    // so the `impl_trait` node is not a parent to `bounds`.
-<a href=#401 id=401 data-nosnippet>401</a>                    </span><a href="lib.rs.html#193">ImplTraitContext::Universal</a> =&gt; <a href="../../rustc_ast/visit/fn.walk_ty.html">visit::walk_ty</a>(<a class="self" href="#383">self</a>, <a href="#383">ty</a>),
-<a href=#402 id=402 data-nosnippet>402</a>                    <a href="lib.rs.html#192">ImplTraitContext::Existential</a> =&gt; {
+<a href=#401 id=401 data-nosnippet>401</a>                    </span><a href="lib.rs.html#194">ImplTraitContext::Universal</a> =&gt; <a href="../../rustc_ast/visit/fn.walk_ty.html">visit::walk_ty</a>(<a class="self" href="#383">self</a>, <a href="#383">ty</a>),
+<a href=#402 id=402 data-nosnippet>402</a>                    <a href="lib.rs.html#193">ImplTraitContext::Existential</a> =&gt; {
 <a href=#403 id=403 data-nosnippet>403</a>                        <a class="self" href="#383">self</a>.<a href="#59-63">with_parent</a>(<a href="#397">id</a>, |this| <a href="../../rustc_ast/visit/fn.walk_ty.html">visit::walk_ty</a>(<a href="#403">this</a>, <a href="#383">ty</a>))
 <a href=#404 id=404 data-nosnippet>404</a>                    }
-<a href=#405 id=405 data-nosnippet>405</a>                    <a href="lib.rs.html#194">ImplTraitContext::InBinding</a> =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#405 id=405 data-nosnippet>405</a>                    <a href="lib.rs.html#195">ImplTraitContext::InBinding</a> =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(),
 <a href=#406 id=406 data-nosnippet>406</a>                };
 <a href=#407 id=407 data-nosnippet>407</a>            }
 <a href=#408 id=408 data-nosnippet>408</a>            <span class="kw">_ </span>=&gt; <a href="../../rustc_ast/visit/fn.walk_ty.html">visit::walk_ty</a>(<a class="self" href="#383">self</a>, <a href="#383">ty</a>),
@@ -416,7 +416,7 @@
 <a href=#416 id=416 data-nosnippet>416</a>            // introducing the right `ImplTraitContext` here for all the cases we
 <a href=#417 id=417 data-nosnippet>417</a>            // care about, in case we want to introduce ITIB to other positions
 <a href=#418 id=418 data-nosnippet>418</a>            // such as turbofishes (e.g. `foo::&lt;impl Fn()&gt;(|| {})`).
-<a href=#419 id=419 data-nosnippet>419</a>            </span><a href="../../rustc_ast/ast/enum.StmtKind.html#variant.Let">StmtKind::Let</a>(<span class="kw-2">ref </span>local) =&gt; <a class="self" href="#412">self</a>.<a href="#65-74">with_impl_trait</a>(<a href="lib.rs.html#194">ImplTraitContext::InBinding</a>, |this| {
+<a href=#419 id=419 data-nosnippet>419</a>            </span><a href="../../rustc_ast/ast/enum.StmtKind.html#variant.Let">StmtKind::Let</a>(<span class="kw-2">ref </span>local) =&gt; <a class="self" href="#412">self</a>.<a href="#65-74">with_impl_trait</a>(<a href="lib.rs.html#195">ImplTraitContext::InBinding</a>, |this| {
 <a href=#420 id=420 data-nosnippet>420</a>                <a href="../../rustc_ast/visit/fn.walk_local.html">visit::walk_local</a>(<a href="#419">this</a>, <a href="#419">local</a>)
 <a href=#421 id=421 data-nosnippet>421</a>            }),
 <a href=#422 id=422 data-nosnippet>422</a>            <span class="kw">_ </span>=&gt; <a href="../../rustc_ast/visit/fn.walk_stmt.html">visit::walk_stmt</a>(<a class="self" href="#412">self</a>, <a href="#412">stmt</a>),
@@ -447,7 +447,7 @@
 <a href=#447 id=447 data-nosnippet>447</a>        <span class="kw">if </span><a href="#446">p</a>.is_placeholder {
 <a href=#448 id=448 data-nosnippet>448</a>            <a class="self" href="#446">self</a>.<a href="#95-99">visit_macro_invoc</a>(<a href="#446">p</a>.id)
 <a href=#449 id=449 data-nosnippet>449</a>        } <span class="kw">else </span>{
-<a href=#450 id=450 data-nosnippet>450</a>            <a class="self" href="#446">self</a>.<a href="#65-74">with_impl_trait</a>(<a href="lib.rs.html#193">ImplTraitContext::Universal</a>, |this| <a href="../../rustc_ast/visit/fn.walk_param.html">visit::walk_param</a>(<a href="#450">this</a>, <a href="#446">p</a>))
+<a href=#450 id=450 data-nosnippet>450</a>            <a class="self" href="#446">self</a>.<a href="#65-74">with_impl_trait</a>(<a href="lib.rs.html#194">ImplTraitContext::Universal</a>, |this| <a href="../../rustc_ast/visit/fn.walk_param.html">visit::walk_param</a>(<a href="#450">this</a>, <a href="#446">p</a>))
 <a href=#451 id=451 data-nosnippet>451</a>        }
 <a href=#452 id=452 data-nosnippet>452</a>    }
 <a href=#453 id=453 data-nosnippet>453</a>

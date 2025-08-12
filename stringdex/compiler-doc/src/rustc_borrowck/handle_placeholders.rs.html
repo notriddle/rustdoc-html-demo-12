@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/handle_placeholders.rs`."><title>handle_placeholders.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/</div>handle_placeholders.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Logic for lowering higher-kinded outlives constraints
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/handle_placeholders.rs`."><title>handle_placeholders.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/</div>handle_placeholders.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Logic for lowering higher-kinded outlives constraints
 <a href=#2 id=2 data-nosnippet>2</a>//! (with placeholders and universes) and turn them into regular
 <a href=#3 id=3 data-nosnippet>3</a>//! outlives constraints.
 <a href=#4 id=4 data-nosnippet>4</a>
@@ -20,9 +20,9 @@
 <a href=#20 id=20 data-nosnippet>20</a><span class="kw">use </span><span class="kw">crate</span>::region_infer::{<a href="region_infer/mod.rs.html#93">ConstraintSccs</a>, <a href="region_infer/mod.rs.html#180-195">RegionDefinition</a>, <a href="region_infer/mod.rs.html#57-61">Representative</a>, <a href="region_infer/mod.rs.html#242-255">TypeTest</a>};
 <a href=#21 id=21 data-nosnippet>21</a><span class="kw">use </span><a href="../../rustc_type_ir/relate/enum.VarianceDiagInfo.html"><span class="kw">crate</span>::ty::VarianceDiagInfo</a>;
 <a href=#22 id=22 data-nosnippet>22</a><span class="kw">use </span><a href="type_check/free_region_relations.rs.html#21-34"><span class="kw">crate</span>::type_check::free_region_relations::UniversalRegionRelations</a>;
-<a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span><span class="kw">crate</span>::type_check::{<a href="type_check/mod.rs.html#302-344">Locations</a>, <a href="type_check/mod.rs.html#243-274">MirTypeckRegionConstraints</a>};
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span><span class="kw">crate</span>::type_check::{<a href="type_check/mod.rs.html#313-355">Locations</a>, <a href="type_check/mod.rs.html#254-285">MirTypeckRegionConstraints</a>};
 <a href=#24 id=24 data-nosnippet>24</a><span class="kw">use </span><a href="universal_regions.rs.html#43-90"><span class="kw">crate</span>::universal_regions::UniversalRegions</a>;
-<a href=#25 id=25 data-nosnippet>25</a><span class="kw">use crate</span>::{<a href="lib.rs.html#541-545">BorrowckInferCtxt</a>, <a href="../../rustc_infer/infer/enum.NllRegionVariableOrigin.html">NllRegionVariableOrigin</a>};
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">use crate</span>::{<a href="lib.rs.html#582-586">BorrowckInferCtxt</a>, <a href="../../rustc_infer/infer/enum.NllRegionVariableOrigin.html">NllRegionVariableOrigin</a>};
 <a href=#26 id=26 data-nosnippet>26</a>
 <a href=#27 id=27 data-nosnippet>27</a><span class="doccomment">/// A set of outlives constraints after rewriting to remove
 <a href=#28 id=28 data-nosnippet>28</a>/// higher-kinded constraints.
@@ -145,7 +145,7 @@
 <a href=#145 id=145 data-nosnippet>145</a>/// placeholders, and compute them for later use.
 <a href=#146 id=146 data-nosnippet>146</a></span><span class="kw">fn </span><a href="../../rustc_borrowck/handle_placeholders/fn.region_definitions.html">region_definitions</a>&lt;<span class="lifetime">'tcx</span>&gt;(
 <a href=#147 id=147 data-nosnippet>147</a>    universal_regions: <span class="kw-2">&amp;</span><a href="universal_regions.rs.html#43-90">UniversalRegions</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#148 id=148 data-nosnippet>148</a>    infcx: <span class="kw-2">&amp;</span><a href="lib.rs.html#541-545">BorrowckInferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#148 id=148 data-nosnippet>148</a>    infcx: <span class="kw-2">&amp;</span><a href="lib.rs.html#582-586">BorrowckInferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#149 id=149 data-nosnippet>149</a>) -&gt; (<a href="../../rustc_data_structures/frozen/struct.Frozen.html">Frozen</a>&lt;<a href="../../rustc_index/vec/struct.IndexVec.html">IndexVec</a>&lt;<a href="../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>, <a href="region_infer/mod.rs.html#180-195">RegionDefinition</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt;, <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>) {
 <a href=#150 id=150 data-nosnippet>150</a>    <span class="kw">let </span>var_infos = <a href="#148">infcx</a>.<a href="../../rustc_infer/infer/struct.InferCtxt.html#method.get_region_var_infos">get_region_var_infos</a>();
 <a href=#151 id=151 data-nosnippet>151</a>    <span class="comment">// Create a RegionDefinition for each inference variable. This happens here because
@@ -157,7 +157,7 @@
 <a href=#157 id=157 data-nosnippet>157</a>    <span class="kw">for </span>info <span class="kw">in </span>var_infos.iter() {
 <a href=#158 id=158 data-nosnippet>158</a>        <span class="kw">let </span>origin = <span class="kw">match </span>info.origin {
 <a href=#159 id=159 data-nosnippet>159</a>            RegionVariableOrigin::Nll(origin) =&gt; origin,
-<a href=#160 id=160 data-nosnippet>160</a>            <span class="kw">_ </span>=&gt; NllRegionVariableOrigin::Existential { from_forall: <span class="bool-val">false </span>},
+<a href=#160 id=160 data-nosnippet>160</a>            <span class="kw">_ </span>=&gt; NllRegionVariableOrigin::Existential { name: <span class="prelude-val">None </span>},
 <a href=#161 id=161 data-nosnippet>161</a>        };
 <a href=#162 id=162 data-nosnippet>162</a>
 <a href=#163 id=163 data-nosnippet>163</a>        <span class="kw">let </span>definition = RegionDefinition { origin, universe: info.universe, external_name: <span class="prelude-val">None </span>};
@@ -204,145 +204,134 @@
 <a href=#204 id=204 data-nosnippet>204</a>///
 <a href=#205 id=205 data-nosnippet>205</a>/// Every constraint added by this method is an internal `IllegalUniverse` constraint.
 <a href=#206 id=206 data-nosnippet>206</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span><a href="../../rustc_borrowck/handle_placeholders/fn.compute_sccs_applying_placeholder_outlives_constraints.html">compute_sccs_applying_placeholder_outlives_constraints</a>&lt;<span class="lifetime">'tcx</span>&gt;(
-<a href=#207 id=207 data-nosnippet>207</a>    constraints: <a href="type_check/mod.rs.html#243-274">MirTypeckRegionConstraints</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#207 id=207 data-nosnippet>207</a>    constraints: <a href="type_check/mod.rs.html#254-285">MirTypeckRegionConstraints</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#208 id=208 data-nosnippet>208</a>    universal_region_relations: <span class="kw-2">&amp;</span><a href="../../rustc_data_structures/frozen/struct.Frozen.html">Frozen</a>&lt;<a href="type_check/free_region_relations.rs.html#21-34">UniversalRegionRelations</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
-<a href=#209 id=209 data-nosnippet>209</a>    infcx: <span class="kw-2">&amp;</span><a href="lib.rs.html#541-545">BorrowckInferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#209 id=209 data-nosnippet>209</a>    infcx: <span class="kw-2">&amp;</span><a href="lib.rs.html#582-586">BorrowckInferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#210 id=210 data-nosnippet>210</a>) -&gt; <a href="#29-39">LoweredConstraints</a>&lt;<span class="lifetime">'tcx</span>&gt; {
 <a href=#211 id=211 data-nosnippet>211</a>    <span class="kw">let </span>universal_regions = <span class="kw-2">&amp;</span><a href="#208">universal_region_relations</a>.universal_regions;
 <a href=#212 id=212 data-nosnippet>212</a>    <span class="kw">let </span>(definitions, has_placeholders) = <a href="#146-176">region_definitions</a>(<a href="#211">universal_regions</a>, <a href="#209">infcx</a>);
 <a href=#213 id=213 data-nosnippet>213</a>
-<a href=#214 id=214 data-nosnippet>214</a>    <span class="kw">let </span><a href="type_check/mod.rs.html#243-274">MirTypeckRegionConstraints</a> {
+<a href=#214 id=214 data-nosnippet>214</a>    <span class="kw">let </span><a href="type_check/mod.rs.html#254-285">MirTypeckRegionConstraints</a> {
 <a href=#215 id=215 data-nosnippet>215</a>        placeholder_indices,
 <a href=#216 id=216 data-nosnippet>216</a>        placeholder_index_to_region: <span class="kw">_</span>,
 <a href=#217 id=217 data-nosnippet>217</a>        liveness_constraints,
 <a href=#218 id=218 data-nosnippet>218</a>        <span class="kw-2">mut </span>outlives_constraints,
-<a href=#219 id=219 data-nosnippet>219</a>        <span class="kw-2">mut </span>member_constraints,
+<a href=#219 id=219 data-nosnippet>219</a>        member_constraints,
 <a href=#220 id=220 data-nosnippet>220</a>        universe_causes,
 <a href=#221 id=221 data-nosnippet>221</a>        type_tests,
 <a href=#222 id=222 data-nosnippet>222</a>    } = <a href="#207">constraints</a>;
 <a href=#223 id=223 data-nosnippet>223</a>
-<a href=#224 id=224 data-nosnippet>224</a>    <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(guar) = <a href="#211">universal_regions</a>.<a href="universal_regions.rs.html#445-447">tainted_by_errors</a>() {
-<a href=#225 id=225 data-nosnippet>225</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"Universal regions tainted by errors; removing constraints!"</span>);
-<a href=#226 id=226 data-nosnippet>226</a>        <span class="comment">// Suppress unhelpful extra errors in `infer_opaque_types` by clearing out all
-<a href=#227 id=227 data-nosnippet>227</a>        // outlives bounds that we may end up checking.
-<a href=#228 id=228 data-nosnippet>228</a>        </span><a href="#218">outlives_constraints</a> = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">Default::default</a>();
-<a href=#229 id=229 data-nosnippet>229</a>        <a href="#219">member_constraints</a> = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">Default::default</a>();
-<a href=#230 id=230 data-nosnippet>230</a>
-<a href=#231 id=231 data-nosnippet>231</a>        <span class="comment">// Also taint the entire scope.
-<a href=#232 id=232 data-nosnippet>232</a>        </span><a href="#209">infcx</a>.<a href="../../rustc_infer/infer/struct.InferCtxt.html#method.set_tainted_by_errors">set_tainted_by_errors</a>(<a href="#224">guar</a>);
-<a href=#233 id=233 data-nosnippet>233</a>    }
-<a href=#234 id=234 data-nosnippet>234</a>
-<a href=#235 id=235 data-nosnippet>235</a>    <span class="kw">let </span>fr_static = <a href="#211">universal_regions</a>.fr_static;
-<a href=#236 id=236 data-nosnippet>236</a>    <span class="kw">let </span>compute_sccs =
-<a href=#237 id=237 data-nosnippet>237</a>        |constraints: <span class="kw-2">&amp;</span><a href="constraints/mod.rs.html#19-21">OutlivesConstraintSet</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#238 id=238 data-nosnippet>238</a>         annotations: <span class="kw-2">&amp;mut </span><a href="#48-51">SccAnnotations</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>, <a href="#70-82">RegionTracker</a>&gt;| {
-<a href=#239 id=239 data-nosnippet>239</a>            <a href="../../rustc_data_structures/graph/scc/struct.Sccs.html#method.new_with_annotation">ConstraintSccs::new_with_annotation</a>(
-<a href=#240 id=240 data-nosnippet>240</a>                <span class="kw-2">&amp;</span><a href="#237">constraints</a>.<a href="constraints/mod.rs.html#39-41">graph</a>(<a href="#212">definitions</a>.<a href="../../rustc_index/slice/struct.IndexSlice.html#method.len">len</a>()).<a href="constraints/graph.rs.html#97-103">region_graph</a>(<a href="#237">constraints</a>, <a href="#235">fr_static</a>),
-<a href=#241 id=241 data-nosnippet>241</a>                <a href="#238">annotations</a>,
-<a href=#242 id=242 data-nosnippet>242</a>            )
-<a href=#243 id=243 data-nosnippet>243</a>        };
-<a href=#244 id=244 data-nosnippet>244</a>
-<a href=#245 id=245 data-nosnippet>245</a>    <span class="kw">let </span><span class="kw-2">mut </span>scc_annotations = <a href="#42-44">SccAnnotations::init</a>(<span class="kw-2">&amp;</span><a href="#212">definitions</a>);
-<a href=#246 id=246 data-nosnippet>246</a>    <span class="kw">let </span>constraint_sccs = <a href="#236">compute_sccs</a>(<span class="kw-2">&amp;</span><a href="#218">outlives_constraints</a>, <span class="kw-2">&amp;mut </span><a href="#245">scc_annotations</a>);
-<a href=#247 id=247 data-nosnippet>247</a>
-<a href=#248 id=248 data-nosnippet>248</a>    <span class="comment">// This code structure is a bit convoluted because it allows for a planned
-<a href=#249 id=249 data-nosnippet>249</a>    // future change where the early return here has a different type of annotation
-<a href=#250 id=250 data-nosnippet>250</a>    // that does much less work.
-<a href=#251 id=251 data-nosnippet>251</a>    </span><span class="kw">if </span>!<a href="#212">has_placeholders</a> {
-<a href=#252 id=252 data-nosnippet>252</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"No placeholder regions found; skipping rewriting logic!"</span>);
-<a href=#253 id=253 data-nosnippet>253</a>
-<a href=#254 id=254 data-nosnippet>254</a>        <span class="kw">return </span><a href="#29-39">LoweredConstraints</a> {
-<a href=#255 id=255 data-nosnippet>255</a>            <a href="#221">type_tests</a>,
-<a href=#256 id=256 data-nosnippet>256</a>            <a href="#219">member_constraints</a>,
-<a href=#257 id=257 data-nosnippet>257</a>            <a href="#246">constraint_sccs</a>,
-<a href=#258 id=258 data-nosnippet>258</a>            scc_annotations: <a href="#245">scc_annotations</a>.scc_to_annotation,
-<a href=#259 id=259 data-nosnippet>259</a>            <a href="#212">definitions</a>,
-<a href=#260 id=260 data-nosnippet>260</a>            outlives_constraints: <a href="../../rustc_data_structures/frozen/struct.Frozen.html#method.freeze">Frozen::freeze</a>(<a href="#218">outlives_constraints</a>),
-<a href=#261 id=261 data-nosnippet>261</a>            <a href="#217">liveness_constraints</a>,
-<a href=#262 id=262 data-nosnippet>262</a>            <a href="#220">universe_causes</a>,
-<a href=#263 id=263 data-nosnippet>263</a>            <a href="#215">placeholder_indices</a>,
-<a href=#264 id=264 data-nosnippet>264</a>        };
-<a href=#265 id=265 data-nosnippet>265</a>    }
-<a href=#266 id=266 data-nosnippet>266</a>    <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"Placeholders present; activating placeholder handling logic!"</span>);
-<a href=#267 id=267 data-nosnippet>267</a>
-<a href=#268 id=268 data-nosnippet>268</a>    <span class="kw">let </span>added_constraints = <a href="#302-348">rewrite_placeholder_outlives</a>(
-<a href=#269 id=269 data-nosnippet>269</a>        <span class="kw-2">&amp;</span><a href="#246">constraint_sccs</a>,
-<a href=#270 id=270 data-nosnippet>270</a>        <span class="kw-2">&amp;</span><a href="#245">scc_annotations</a>,
-<a href=#271 id=271 data-nosnippet>271</a>        <a href="#235">fr_static</a>,
-<a href=#272 id=272 data-nosnippet>272</a>        <span class="kw-2">&amp;mut </span><a href="#218">outlives_constraints</a>,
-<a href=#273 id=273 data-nosnippet>273</a>    );
-<a href=#274 id=274 data-nosnippet>274</a>
-<a href=#275 id=275 data-nosnippet>275</a>    <span class="kw">let </span>(constraint_sccs, scc_annotations) = <span class="kw">if </span><a href="#268">added_constraints</a> {
-<a href=#276 id=276 data-nosnippet>276</a>        <span class="kw">let </span><span class="kw-2">mut </span>annotations = <a href="#42-44">SccAnnotations::init</a>(<span class="kw-2">&amp;</span><a href="#212">definitions</a>);
+<a href=#224 id=224 data-nosnippet>224</a>    <span class="kw">let </span>fr_static = <a href="#211">universal_regions</a>.fr_static;
+<a href=#225 id=225 data-nosnippet>225</a>    <span class="kw">let </span>compute_sccs =
+<a href=#226 id=226 data-nosnippet>226</a>        |constraints: <span class="kw-2">&amp;</span><a href="constraints/mod.rs.html#19-21">OutlivesConstraintSet</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#227 id=227 data-nosnippet>227</a>         annotations: <span class="kw-2">&amp;mut </span><a href="#48-51">SccAnnotations</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>, <a href="#70-82">RegionTracker</a>&gt;| {
+<a href=#228 id=228 data-nosnippet>228</a>            <a href="../../rustc_data_structures/graph/scc/struct.Sccs.html#method.new_with_annotation">ConstraintSccs::new_with_annotation</a>(
+<a href=#229 id=229 data-nosnippet>229</a>                <span class="kw-2">&amp;</span><a href="#226">constraints</a>.<a href="constraints/mod.rs.html#39-41">graph</a>(<a href="#212">definitions</a>.<a href="../../rustc_index/slice/struct.IndexSlice.html#method.len">len</a>()).<a href="constraints/graph.rs.html#97-103">region_graph</a>(<a href="#226">constraints</a>, <a href="#224">fr_static</a>),
+<a href=#230 id=230 data-nosnippet>230</a>                <a href="#227">annotations</a>,
+<a href=#231 id=231 data-nosnippet>231</a>            )
+<a href=#232 id=232 data-nosnippet>232</a>        };
+<a href=#233 id=233 data-nosnippet>233</a>
+<a href=#234 id=234 data-nosnippet>234</a>    <span class="kw">let </span><span class="kw-2">mut </span>scc_annotations = <a href="#42-44">SccAnnotations::init</a>(<span class="kw-2">&amp;</span><a href="#212">definitions</a>);
+<a href=#235 id=235 data-nosnippet>235</a>    <span class="kw">let </span>constraint_sccs = <a href="#225">compute_sccs</a>(<span class="kw-2">&amp;</span><a href="#218">outlives_constraints</a>, <span class="kw-2">&amp;mut </span><a href="#234">scc_annotations</a>);
+<a href=#236 id=236 data-nosnippet>236</a>
+<a href=#237 id=237 data-nosnippet>237</a>    <span class="comment">// This code structure is a bit convoluted because it allows for a planned
+<a href=#238 id=238 data-nosnippet>238</a>    // future change where the early return here has a different type of annotation
+<a href=#239 id=239 data-nosnippet>239</a>    // that does much less work.
+<a href=#240 id=240 data-nosnippet>240</a>    </span><span class="kw">if </span>!<a href="#212">has_placeholders</a> {
+<a href=#241 id=241 data-nosnippet>241</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"No placeholder regions found; skipping rewriting logic!"</span>);
+<a href=#242 id=242 data-nosnippet>242</a>
+<a href=#243 id=243 data-nosnippet>243</a>        <span class="kw">return </span><a href="#29-39">LoweredConstraints</a> {
+<a href=#244 id=244 data-nosnippet>244</a>            <a href="#221">type_tests</a>,
+<a href=#245 id=245 data-nosnippet>245</a>            <a href="#219">member_constraints</a>,
+<a href=#246 id=246 data-nosnippet>246</a>            <a href="#235">constraint_sccs</a>,
+<a href=#247 id=247 data-nosnippet>247</a>            scc_annotations: <a href="#234">scc_annotations</a>.scc_to_annotation,
+<a href=#248 id=248 data-nosnippet>248</a>            <a href="#212">definitions</a>,
+<a href=#249 id=249 data-nosnippet>249</a>            outlives_constraints: <a href="../../rustc_data_structures/frozen/struct.Frozen.html#method.freeze">Frozen::freeze</a>(<a href="#218">outlives_constraints</a>),
+<a href=#250 id=250 data-nosnippet>250</a>            <a href="#217">liveness_constraints</a>,
+<a href=#251 id=251 data-nosnippet>251</a>            <a href="#220">universe_causes</a>,
+<a href=#252 id=252 data-nosnippet>252</a>            <a href="#215">placeholder_indices</a>,
+<a href=#253 id=253 data-nosnippet>253</a>        };
+<a href=#254 id=254 data-nosnippet>254</a>    }
+<a href=#255 id=255 data-nosnippet>255</a>    <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"Placeholders present; activating placeholder handling logic!"</span>);
+<a href=#256 id=256 data-nosnippet>256</a>
+<a href=#257 id=257 data-nosnippet>257</a>    <span class="kw">let </span>added_constraints = <a href="#291-337">rewrite_placeholder_outlives</a>(
+<a href=#258 id=258 data-nosnippet>258</a>        <span class="kw-2">&amp;</span><a href="#235">constraint_sccs</a>,
+<a href=#259 id=259 data-nosnippet>259</a>        <span class="kw-2">&amp;</span><a href="#234">scc_annotations</a>,
+<a href=#260 id=260 data-nosnippet>260</a>        <a href="#224">fr_static</a>,
+<a href=#261 id=261 data-nosnippet>261</a>        <span class="kw-2">&amp;mut </span><a href="#218">outlives_constraints</a>,
+<a href=#262 id=262 data-nosnippet>262</a>    );
+<a href=#263 id=263 data-nosnippet>263</a>
+<a href=#264 id=264 data-nosnippet>264</a>    <span class="kw">let </span>(constraint_sccs, scc_annotations) = <span class="kw">if </span><a href="#257">added_constraints</a> {
+<a href=#265 id=265 data-nosnippet>265</a>        <span class="kw">let </span><span class="kw-2">mut </span>annotations = <a href="#42-44">SccAnnotations::init</a>(<span class="kw-2">&amp;</span><a href="#212">definitions</a>);
+<a href=#266 id=266 data-nosnippet>266</a>
+<a href=#267 id=267 data-nosnippet>267</a>        <span class="comment">// We changed the constraint set and so must recompute SCCs.
+<a href=#268 id=268 data-nosnippet>268</a>        // Optimisation opportunity: if we can add them incrementally (and that's
+<a href=#269 id=269 data-nosnippet>269</a>        // possible because edges to 'static always only merge SCCs into 'static),
+<a href=#270 id=270 data-nosnippet>270</a>        // we would potentially save a lot of work here.
+<a href=#271 id=271 data-nosnippet>271</a>        </span>(<a href="#225">compute_sccs</a>(<span class="kw-2">&amp;</span><a href="#218">outlives_constraints</a>, <span class="kw-2">&amp;mut </span><a href="#265">annotations</a>), <a href="#265">annotations</a>.scc_to_annotation)
+<a href=#272 id=272 data-nosnippet>272</a>    } <span class="kw">else </span>{
+<a href=#273 id=273 data-nosnippet>273</a>        <span class="comment">// If we didn't add any back-edges; no more work needs doing
+<a href=#274 id=274 data-nosnippet>274</a>        </span><a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"No constraints rewritten!"</span>);
+<a href=#275 id=275 data-nosnippet>275</a>        (<a href="#235">constraint_sccs</a>, <a href="#234">scc_annotations</a>.scc_to_annotation)
+<a href=#276 id=276 data-nosnippet>276</a>    };
 <a href=#277 id=277 data-nosnippet>277</a>
-<a href=#278 id=278 data-nosnippet>278</a>        <span class="comment">// We changed the constraint set and so must recompute SCCs.
-<a href=#279 id=279 data-nosnippet>279</a>        // Optimisation opportunity: if we can add them incrementally (and that's
-<a href=#280 id=280 data-nosnippet>280</a>        // possible because edges to 'static always only merge SCCs into 'static),
-<a href=#281 id=281 data-nosnippet>281</a>        // we would potentially save a lot of work here.
-<a href=#282 id=282 data-nosnippet>282</a>        </span>(<a href="#236">compute_sccs</a>(<span class="kw-2">&amp;</span><a href="#218">outlives_constraints</a>, <span class="kw-2">&amp;mut </span><a href="#276">annotations</a>), <a href="#276">annotations</a>.scc_to_annotation)
-<a href=#283 id=283 data-nosnippet>283</a>    } <span class="kw">else </span>{
-<a href=#284 id=284 data-nosnippet>284</a>        <span class="comment">// If we didn't add any back-edges; no more work needs doing
-<a href=#285 id=285 data-nosnippet>285</a>        </span><a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"No constraints rewritten!"</span>);
-<a href=#286 id=286 data-nosnippet>286</a>        (<a href="#246">constraint_sccs</a>, <a href="#245">scc_annotations</a>.scc_to_annotation)
-<a href=#287 id=287 data-nosnippet>287</a>    };
-<a href=#288 id=288 data-nosnippet>288</a>
-<a href=#289 id=289 data-nosnippet>289</a>    <a href="#29-39">LoweredConstraints</a> {
-<a href=#290 id=290 data-nosnippet>290</a>        <a href="#275">constraint_sccs</a>,
-<a href=#291 id=291 data-nosnippet>291</a>        <a href="#212">definitions</a>,
-<a href=#292 id=292 data-nosnippet>292</a>        <a href="#275">scc_annotations</a>,
-<a href=#293 id=293 data-nosnippet>293</a>        <a href="#219">member_constraints</a>,
-<a href=#294 id=294 data-nosnippet>294</a>        outlives_constraints: <a href="../../rustc_data_structures/frozen/struct.Frozen.html#method.freeze">Frozen::freeze</a>(<a href="#218">outlives_constraints</a>),
-<a href=#295 id=295 data-nosnippet>295</a>        <a href="#221">type_tests</a>,
-<a href=#296 id=296 data-nosnippet>296</a>        <a href="#217">liveness_constraints</a>,
-<a href=#297 id=297 data-nosnippet>297</a>        <a href="#220">universe_causes</a>,
-<a href=#298 id=298 data-nosnippet>298</a>        <a href="#215">placeholder_indices</a>,
-<a href=#299 id=299 data-nosnippet>299</a>    }
-<a href=#300 id=300 data-nosnippet>300</a>}
-<a href=#301 id=301 data-nosnippet>301</a>
-<a href=#302 id=302 data-nosnippet>302</a><span class="kw">fn </span><a href="../../rustc_borrowck/handle_placeholders/fn.rewrite_placeholder_outlives.html">rewrite_placeholder_outlives</a>&lt;<span class="lifetime">'tcx</span>&gt;(
-<a href=#303 id=303 data-nosnippet>303</a>    sccs: <span class="kw-2">&amp;</span><a href="../../rustc_data_structures/graph/scc/struct.Sccs.html">Sccs</a>&lt;<a href="../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>, <a href="constraints/mod.rs.html#110-114">ConstraintSccIndex</a>&gt;,
-<a href=#304 id=304 data-nosnippet>304</a>    annotations: <span class="kw-2">&amp;</span><a href="#48-51">SccAnnotations</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <a href="#70-82">RegionTracker</a>&gt;,
-<a href=#305 id=305 data-nosnippet>305</a>    fr_static: <a href="../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>,
-<a href=#306 id=306 data-nosnippet>306</a>    outlives_constraints: <span class="kw-2">&amp;mut </span><a href="constraints/mod.rs.html#19-21">OutlivesConstraintSet</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#307 id=307 data-nosnippet>307</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
-<a href=#308 id=308 data-nosnippet>308</a>    <span class="comment">// Changed to `true` if we added any constraints and need to
-<a href=#309 id=309 data-nosnippet>309</a>    // recompute SCCs.
-<a href=#310 id=310 data-nosnippet>310</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>added_constraints = <span class="bool-val">false</span>;
-<a href=#311 id=311 data-nosnippet>311</a>
-<a href=#312 id=312 data-nosnippet>312</a>    <span class="kw">let </span>annotations = <span class="kw-2">&amp;</span><a href="#304">annotations</a>.scc_to_annotation;
-<a href=#313 id=313 data-nosnippet>313</a>
-<a href=#314 id=314 data-nosnippet>314</a>    <span class="kw">for </span>scc <span class="kw">in </span>sccs.all_sccs() {
-<a href=#315 id=315 data-nosnippet>315</a>        <span class="comment">// No point in adding 'static: 'static!
-<a href=#316 id=316 data-nosnippet>316</a>        // This micro-optimisation makes somewhat sense
-<a href=#317 id=317 data-nosnippet>317</a>        // because static outlives *everything*.
-<a href=#318 id=318 data-nosnippet>318</a>        </span><span class="kw">if </span>scc == sccs.scc(fr_static) {
-<a href=#319 id=319 data-nosnippet>319</a>            <span class="kw">continue</span>;
-<a href=#320 id=320 data-nosnippet>320</a>        }
-<a href=#321 id=321 data-nosnippet>321</a>
-<a href=#322 id=322 data-nosnippet>322</a>        <span class="kw">let </span>annotation = annotations[scc];
-<a href=#323 id=323 data-nosnippet>323</a>
-<a href=#324 id=324 data-nosnippet>324</a>        <span class="comment">// If this SCC participates in a universe violation,
-<a href=#325 id=325 data-nosnippet>325</a>        // e.g. if it reaches a region with a universe smaller than
-<a href=#326 id=326 data-nosnippet>326</a>        // the largest region reached, add a requirement that it must
-<a href=#327 id=327 data-nosnippet>327</a>        // outlive `'static`.
-<a href=#328 id=328 data-nosnippet>328</a>        </span><span class="kw">if </span>annotation.has_incompatible_universes() {
-<a href=#329 id=329 data-nosnippet>329</a>            <span class="comment">// Optimisation opportunity: this will add more constraints than
-<a href=#330 id=330 data-nosnippet>330</a>            // needed for correctness, since an SCC upstream of another with
-<a href=#331 id=331 data-nosnippet>331</a>            // a universe violation will "infect" its downstream SCCs to also
-<a href=#332 id=332 data-nosnippet>332</a>            // outlive static.
-<a href=#333 id=333 data-nosnippet>333</a>            </span><span class="kw">let </span>scc_representative_outlives_static = OutlivesConstraint {
-<a href=#334 id=334 data-nosnippet>334</a>                sup: annotation.representative.rvid(),
-<a href=#335 id=335 data-nosnippet>335</a>                sub: fr_static,
-<a href=#336 id=336 data-nosnippet>336</a>                category: ConstraintCategory::IllegalUniverse,
-<a href=#337 id=337 data-nosnippet>337</a>                locations: Locations::All(rustc_span::DUMMY_SP),
-<a href=#338 id=338 data-nosnippet>338</a>                span: rustc_span::DUMMY_SP,
-<a href=#339 id=339 data-nosnippet>339</a>                variance_info: VarianceDiagInfo::None,
-<a href=#340 id=340 data-nosnippet>340</a>                from_closure: <span class="bool-val">false</span>,
-<a href=#341 id=341 data-nosnippet>341</a>            };
-<a href=#342 id=342 data-nosnippet>342</a>            outlives_constraints.push(scc_representative_outlives_static);
-<a href=#343 id=343 data-nosnippet>343</a>            added_constraints = <span class="bool-val">true</span>;
-<a href=#344 id=344 data-nosnippet>344</a>            <span class="macro">debug!</span>(<span class="string">"Added {:?}: 'static!"</span>, annotation.representative.rvid());
-<a href=#345 id=345 data-nosnippet>345</a>        }
-<a href=#346 id=346 data-nosnippet>346</a>    }
-<a href=#347 id=347 data-nosnippet>347</a>    <a href="#310">added_constraints</a>
-<a href=#348 id=348 data-nosnippet>348</a>}</code></pre></div></section></main></body></html>
+<a href=#278 id=278 data-nosnippet>278</a>    <a href="#29-39">LoweredConstraints</a> {
+<a href=#279 id=279 data-nosnippet>279</a>        <a href="#264">constraint_sccs</a>,
+<a href=#280 id=280 data-nosnippet>280</a>        <a href="#212">definitions</a>,
+<a href=#281 id=281 data-nosnippet>281</a>        <a href="#264">scc_annotations</a>,
+<a href=#282 id=282 data-nosnippet>282</a>        <a href="#219">member_constraints</a>,
+<a href=#283 id=283 data-nosnippet>283</a>        outlives_constraints: <a href="../../rustc_data_structures/frozen/struct.Frozen.html#method.freeze">Frozen::freeze</a>(<a href="#218">outlives_constraints</a>),
+<a href=#284 id=284 data-nosnippet>284</a>        <a href="#221">type_tests</a>,
+<a href=#285 id=285 data-nosnippet>285</a>        <a href="#217">liveness_constraints</a>,
+<a href=#286 id=286 data-nosnippet>286</a>        <a href="#220">universe_causes</a>,
+<a href=#287 id=287 data-nosnippet>287</a>        <a href="#215">placeholder_indices</a>,
+<a href=#288 id=288 data-nosnippet>288</a>    }
+<a href=#289 id=289 data-nosnippet>289</a>}
+<a href=#290 id=290 data-nosnippet>290</a>
+<a href=#291 id=291 data-nosnippet>291</a><span class="kw">fn </span><a href="../../rustc_borrowck/handle_placeholders/fn.rewrite_placeholder_outlives.html">rewrite_placeholder_outlives</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#292 id=292 data-nosnippet>292</a>    sccs: <span class="kw-2">&amp;</span><a href="../../rustc_data_structures/graph/scc/struct.Sccs.html">Sccs</a>&lt;<a href="../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>, <a href="constraints/mod.rs.html#110-114">ConstraintSccIndex</a>&gt;,
+<a href=#293 id=293 data-nosnippet>293</a>    annotations: <span class="kw-2">&amp;</span><a href="#48-51">SccAnnotations</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <a href="#70-82">RegionTracker</a>&gt;,
+<a href=#294 id=294 data-nosnippet>294</a>    fr_static: <a href="../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>,
+<a href=#295 id=295 data-nosnippet>295</a>    outlives_constraints: <span class="kw-2">&amp;mut </span><a href="constraints/mod.rs.html#19-21">OutlivesConstraintSet</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#296 id=296 data-nosnippet>296</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#297 id=297 data-nosnippet>297</a>    <span class="comment">// Changed to `true` if we added any constraints and need to
+<a href=#298 id=298 data-nosnippet>298</a>    // recompute SCCs.
+<a href=#299 id=299 data-nosnippet>299</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>added_constraints = <span class="bool-val">false</span>;
+<a href=#300 id=300 data-nosnippet>300</a>
+<a href=#301 id=301 data-nosnippet>301</a>    <span class="kw">let </span>annotations = <span class="kw-2">&amp;</span><a href="#293">annotations</a>.scc_to_annotation;
+<a href=#302 id=302 data-nosnippet>302</a>
+<a href=#303 id=303 data-nosnippet>303</a>    <span class="kw">for </span>scc <span class="kw">in </span>sccs.all_sccs() {
+<a href=#304 id=304 data-nosnippet>304</a>        <span class="comment">// No point in adding 'static: 'static!
+<a href=#305 id=305 data-nosnippet>305</a>        // This micro-optimisation makes somewhat sense
+<a href=#306 id=306 data-nosnippet>306</a>        // because static outlives *everything*.
+<a href=#307 id=307 data-nosnippet>307</a>        </span><span class="kw">if </span>scc == sccs.scc(fr_static) {
+<a href=#308 id=308 data-nosnippet>308</a>            <span class="kw">continue</span>;
+<a href=#309 id=309 data-nosnippet>309</a>        }
+<a href=#310 id=310 data-nosnippet>310</a>
+<a href=#311 id=311 data-nosnippet>311</a>        <span class="kw">let </span>annotation = annotations[scc];
+<a href=#312 id=312 data-nosnippet>312</a>
+<a href=#313 id=313 data-nosnippet>313</a>        <span class="comment">// If this SCC participates in a universe violation,
+<a href=#314 id=314 data-nosnippet>314</a>        // e.g. if it reaches a region with a universe smaller than
+<a href=#315 id=315 data-nosnippet>315</a>        // the largest region reached, add a requirement that it must
+<a href=#316 id=316 data-nosnippet>316</a>        // outlive `'static`.
+<a href=#317 id=317 data-nosnippet>317</a>        </span><span class="kw">if </span>annotation.has_incompatible_universes() {
+<a href=#318 id=318 data-nosnippet>318</a>            <span class="comment">// Optimisation opportunity: this will add more constraints than
+<a href=#319 id=319 data-nosnippet>319</a>            // needed for correctness, since an SCC upstream of another with
+<a href=#320 id=320 data-nosnippet>320</a>            // a universe violation will "infect" its downstream SCCs to also
+<a href=#321 id=321 data-nosnippet>321</a>            // outlive static.
+<a href=#322 id=322 data-nosnippet>322</a>            </span><span class="kw">let </span>scc_representative_outlives_static = OutlivesConstraint {
+<a href=#323 id=323 data-nosnippet>323</a>                sup: annotation.representative.rvid(),
+<a href=#324 id=324 data-nosnippet>324</a>                sub: fr_static,
+<a href=#325 id=325 data-nosnippet>325</a>                category: ConstraintCategory::IllegalUniverse,
+<a href=#326 id=326 data-nosnippet>326</a>                locations: Locations::All(rustc_span::DUMMY_SP),
+<a href=#327 id=327 data-nosnippet>327</a>                span: rustc_span::DUMMY_SP,
+<a href=#328 id=328 data-nosnippet>328</a>                variance_info: VarianceDiagInfo::None,
+<a href=#329 id=329 data-nosnippet>329</a>                from_closure: <span class="bool-val">false</span>,
+<a href=#330 id=330 data-nosnippet>330</a>            };
+<a href=#331 id=331 data-nosnippet>331</a>            outlives_constraints.push(scc_representative_outlives_static);
+<a href=#332 id=332 data-nosnippet>332</a>            added_constraints = <span class="bool-val">true</span>;
+<a href=#333 id=333 data-nosnippet>333</a>            <span class="macro">debug!</span>(<span class="string">"Added {:?}: 'static!"</span>, annotation.representative.rvid());
+<a href=#334 id=334 data-nosnippet>334</a>        }
+<a href=#335 id=335 data-nosnippet>335</a>    }
+<a href=#336 id=336 data-nosnippet>336</a>    <a href="#299">added_constraints</a>
+<a href=#337 id=337 data-nosnippet>337</a>}</code></pre></div></section></main></body></html>

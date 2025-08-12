@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["is_diagnostic_name","is_impl_slice","is_unit_type"],"static":["MAP_UNIT_FN"],"struct":["MapUnitFn"]};
+window.SIDEBAR_ITEMS = {"fn":["is_impl_slice"],"static":["MAP_UNIT_FN"],"struct":["MapUnitFn"]};

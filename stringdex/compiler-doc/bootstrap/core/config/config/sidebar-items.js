@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["RUSTC_IF_UNCHANGED_ALLOWED_PATHS"],"struct":["Config"]};
+window.SIDEBAR_ITEMS = {"constant":["RUSTC_IF_UNCHANGED_ALLOWED_PATHS"],"fn":["check_path_modifications_","check_stage0_version","ci_llvm_root","compute_src_directory","download_ci_rustc_commit","git_config","git_info","has_changes_from_upstream","is_host_target","is_system_llvm","load_toml_config","parse_download_ci_llvm","postprocess_toml","read_file_by_commit","submodules_","update_submodule"],"struct":["Config"]};

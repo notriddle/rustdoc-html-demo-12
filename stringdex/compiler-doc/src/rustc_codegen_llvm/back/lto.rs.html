@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/back/lto.rs`."><title>lto.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_codegen_llvm/back/</div>lto.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/map/struct.BTreeMap.html">std::collections::BTreeMap</a>;
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/back/lto.rs`."><title>lto.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_codegen_llvm/back/</div>lto.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/alloc/collections/btree/map/struct.BTreeMap.html">std::collections::BTreeMap</a>;
 <a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span>std::ffi::{<a href="https://doc.rust-lang.org/nightly/core/ffi/c_str/struct.CStr.html">CStr</a>, <a href="https://doc.rust-lang.org/nightly/alloc/ffi/c_str/struct.CString.html">CString</a>};
 <a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/std/fs/struct.File.html">std::fs::File</a>;
 <a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>std::path::{<a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>, <a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>};
@@ -209,7 +209,7 @@
 <a href=#209 id=209 data-nosnippet>209</a>        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.enumerate">enumerate</a>()
 <a href=#210 id=210 data-nosnippet>210</a>        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter">filter</a>(|<span class="kw-2">&amp;</span>(<span class="kw">_</span>, module)| <a href="#210">module</a>.kind == <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/enum.ModuleKind.html#variant.Regular">ModuleKind::Regular</a>)
 <a href=#211 id=211 data-nosnippet>211</a>        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|(i, module)| {
-<a href=#212 id=212 data-nosnippet>212</a>            <span class="kw">let </span>cost = <span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#2588">llvm::LLVMRustModuleCost</a>(<a href="#211">module</a>.module_llvm.<a href="../lib.rs.html#448-450">llmod</a>()) };
+<a href=#212 id=212 data-nosnippet>212</a>            <span class="kw">let </span>cost = <span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#2584">llvm::LLVMRustModuleCost</a>(<a href="#211">module</a>.module_llvm.<a href="../lib.rs.html#448-450">llmod</a>()) };
 <a href=#213 id=213 data-nosnippet>213</a>            (<a href="#212">cost</a>, <a href="#211">i</a>)
 <a href=#214 id=214 data-nosnippet>214</a>        })
 <a href=#215 id=215 data-nosnippet>215</a>        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.max">max</a>();
@@ -274,7 +274,7 @@
 <a href=#274 id=274 data-nosnippet>274</a>        <span class="comment">// Internalize everything below threshold to help strip out more modules and such.
 <a href=#275 id=275 data-nosnippet>275</a>        </span><span class="kw">unsafe </span>{
 <a href=#276 id=276 data-nosnippet>276</a>            <span class="kw">let </span>ptr = <a href="#176">symbols_below_threshold</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.as_ptr">as_ptr</a>();
-<a href=#277 id=277 data-nosnippet>277</a>            <a href="../llvm/ffi.rs.html#2509">llvm::LLVMRustRunRestrictionPass</a>(
+<a href=#277 id=277 data-nosnippet>277</a>            <a href="../llvm/ffi.rs.html#2505">llvm::LLVMRustRunRestrictionPass</a>(
 <a href=#278 id=278 data-nosnippet>278</a>                <a href="#233">llmod</a>,
 <a href=#279 id=279 data-nosnippet>279</a>                <a href="#276">ptr</a> <span class="kw">as </span><span class="kw-2">*const *const </span><a href="https://docs.rs/libc/0.2.174/libc/primitives/type.c_char.html">libc::c_char</a>,
 <a href=#280 id=280 data-nosnippet>280</a>                <a href="#176">symbols_below_threshold</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.len">len</a>() <span class="kw">as </span><a href="https://docs.rs/libc/0.2.174/libc/unix/type.size_t.html">libc::size_t</a>,
@@ -290,12 +290,12 @@
 <a href=#290 id=290 data-nosnippet>290</a>
 <a href=#291 id=291 data-nosnippet>291</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>&gt; <a href="#289">Linker</a>&lt;<span class="lifetime">'a</span>&gt; {
 <a href=#292 id=292 data-nosnippet>292</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(llmod: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../llvm/ffi.rs.html#755">llvm::Module</a>) -&gt; <span class="self">Self </span>{
-<a href=#293 id=293 data-nosnippet>293</a>        <span class="kw">unsafe </span>{ <a href="#289">Linker</a>(<a href="../llvm/ffi.rs.html#2627">llvm::LLVMRustLinkerNew</a>(<a href="#292">llmod</a>)) }
+<a href=#293 id=293 data-nosnippet>293</a>        <span class="kw">unsafe </span>{ <a href="#289">Linker</a>(<a href="../llvm/ffi.rs.html#2623">llvm::LLVMRustLinkerNew</a>(<a href="#292">llmod</a>)) }
 <a href=#294 id=294 data-nosnippet>294</a>    }
 <a href=#295 id=295 data-nosnippet>295</a>
 <a href=#296 id=296 data-nosnippet>296</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>add(<span class="kw-2">&amp;mut </span><span class="self">self</span>, bytecode: <span class="kw-2">&amp;</span>[<a href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>]) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;(), ()&gt; {
 <a href=#297 id=297 data-nosnippet>297</a>        <span class="kw">unsafe </span>{
-<a href=#298 id=298 data-nosnippet>298</a>            <span class="kw">if </span><a href="../llvm/ffi.rs.html#2628-2632">llvm::LLVMRustLinkerAdd</a>(
+<a href=#298 id=298 data-nosnippet>298</a>            <span class="kw">if </span><a href="../llvm/ffi.rs.html#2624-2628">llvm::LLVMRustLinkerAdd</a>(
 <a href=#299 id=299 data-nosnippet>299</a>                <a class="self" href="#296">self</a>.<span class="number">0</span>,
 <a href=#300 id=300 data-nosnippet>300</a>                <a href="#296">bytecode</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.as_ptr">as_ptr</a>() <span class="kw">as </span><span class="kw-2">*const </span><a href="https://docs.rs/libc/0.2.174/libc/primitives/type.c_char.html">libc::c_char</a>,
 <a href=#301 id=301 data-nosnippet>301</a>                <a href="#296">bytecode</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.len">len</a>(),
@@ -311,7 +311,7 @@
 <a href=#311 id=311 data-nosnippet>311</a><span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/drop/trait.Drop.html">Drop</a> <span class="kw">for </span><a href="#289">Linker</a>&lt;<span class="lifetime">'_</span>&gt; {
 <a href=#312 id=312 data-nosnippet>312</a>    <span class="kw">fn </span>drop(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
 <a href=#313 id=313 data-nosnippet>313</a>        <span class="kw">unsafe </span>{
-<a href=#314 id=314 data-nosnippet>314</a>            <a href="../llvm/ffi.rs.html#2633">llvm::LLVMRustLinkerFree</a>(<span class="kw-2">&amp;mut *</span>(<a class="self" href="#312">self</a>.<span class="number">0 </span><span class="kw">as </span><span class="kw-2">*mut </span><span class="kw">_</span>));
+<a href=#314 id=314 data-nosnippet>314</a>            <a href="../llvm/ffi.rs.html#2629">llvm::LLVMRustLinkerFree</a>(<span class="kw-2">&amp;mut *</span>(<a class="self" href="#312">self</a>.<span class="number">0 </span><span class="kw">as </span><span class="kw-2">*mut </span><span class="kw">_</span>));
 <a href=#315 id=315 data-nosnippet>315</a>        }
 <a href=#316 id=316 data-nosnippet>316</a>    }
 <a href=#317 id=317 data-nosnippet>317</a>}
@@ -417,7 +417,7 @@
 <a href=#417 id=417 data-nosnippet>417</a>        // tried-and-true interface we may wish to try to upstream some of this
 <a href=#418 id=418 data-nosnippet>418</a>        // to LLVM itself, right now we reimplement a lot of what they do
 <a href=#419 id=419 data-nosnippet>419</a>        // upstream...
-<a href=#420 id=420 data-nosnippet>420</a>        </span><span class="kw">let </span>data = <a href="../llvm/ffi.rs.html#2601-2606">llvm::LLVMRustCreateThinLTOData</a>(
+<a href=#420 id=420 data-nosnippet>420</a>        </span><span class="kw">let </span>data = <a href="../llvm/ffi.rs.html#2597-2602">llvm::LLVMRustCreateThinLTOData</a>(
 <a href=#421 id=421 data-nosnippet>421</a>            <a href="#367">thin_modules</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.as_ptr">as_ptr</a>(),
 <a href=#422 id=422 data-nosnippet>422</a>            <a href="#367">thin_modules</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.len">len</a>(),
 <a href=#423 id=423 data-nosnippet>423</a>            <a href="#355">symbols_below_threshold</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.as_ptr">as_ptr</a>(),
@@ -644,15 +644,15 @@
 <a href=#644 id=644 data-nosnippet>644</a>
 <a href=#645 id=645 data-nosnippet>645</a><span class="kw">impl </span><a href="#640">ModuleBuffer</a> {
 <a href=#646 id=646 data-nosnippet>646</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(m: <span class="kw-2">&amp;</span><a href="../llvm/ffi.rs.html#755">llvm::Module</a>) -&gt; <a href="#640">ModuleBuffer</a> {
-<a href=#647 id=647 data-nosnippet>647</a>        <a href="#640">ModuleBuffer</a>(<span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#2584">llvm::LLVMRustModuleBufferCreate</a>(<a href="#646">m</a>) })
+<a href=#647 id=647 data-nosnippet>647</a>        <a href="#640">ModuleBuffer</a>(<span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#2580">llvm::LLVMRustModuleBufferCreate</a>(<a href="#646">m</a>) })
 <a href=#648 id=648 data-nosnippet>648</a>    }
 <a href=#649 id=649 data-nosnippet>649</a>}
 <a href=#650 id=650 data-nosnippet>650</a>
 <a href=#651 id=651 data-nosnippet>651</a><span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/write/trait.ModuleBufferMethods.html">ModuleBufferMethods</a> <span class="kw">for </span><a href="#640">ModuleBuffer</a> {
 <a href=#652 id=652 data-nosnippet>652</a>    <span class="kw">fn </span>data(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>[<a href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>] {
 <a href=#653 id=653 data-nosnippet>653</a>        <span class="kw">unsafe </span>{
-<a href=#654 id=654 data-nosnippet>654</a>            <span class="kw">let </span>ptr = <a href="../llvm/ffi.rs.html#2585">llvm::LLVMRustModuleBufferPtr</a>(<a class="self" href="#652">self</a>.<span class="number">0</span>);
-<a href=#655 id=655 data-nosnippet>655</a>            <span class="kw">let </span>len = <a href="../llvm/ffi.rs.html#2586">llvm::LLVMRustModuleBufferLen</a>(<a class="self" href="#652">self</a>.<span class="number">0</span>);
+<a href=#654 id=654 data-nosnippet>654</a>            <span class="kw">let </span>ptr = <a href="../llvm/ffi.rs.html#2581">llvm::LLVMRustModuleBufferPtr</a>(<a class="self" href="#652">self</a>.<span class="number">0</span>);
+<a href=#655 id=655 data-nosnippet>655</a>            <span class="kw">let </span>len = <a href="../llvm/ffi.rs.html#2582">llvm::LLVMRustModuleBufferLen</a>(<a class="self" href="#652">self</a>.<span class="number">0</span>);
 <a href=#656 id=656 data-nosnippet>656</a>            <a href="https://doc.rust-lang.org/nightly/core/slice/raw/fn.from_raw_parts.html">slice::from_raw_parts</a>(<a href="#654">ptr</a>, <a href="#655">len</a>)
 <a href=#657 id=657 data-nosnippet>657</a>        }
 <a href=#658 id=658 data-nosnippet>658</a>    }
@@ -661,7 +661,7 @@
 <a href=#661 id=661 data-nosnippet>661</a><span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/drop/trait.Drop.html">Drop</a> <span class="kw">for </span><a href="#640">ModuleBuffer</a> {
 <a href=#662 id=662 data-nosnippet>662</a>    <span class="kw">fn </span>drop(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
 <a href=#663 id=663 data-nosnippet>663</a>        <span class="kw">unsafe </span>{
-<a href=#664 id=664 data-nosnippet>664</a>            <a href="../llvm/ffi.rs.html#2587">llvm::LLVMRustModuleBufferFree</a>(<span class="kw-2">&amp;mut *</span>(<a class="self" href="#662">self</a>.<span class="number">0 </span><span class="kw">as </span><span class="kw-2">*mut </span><span class="kw">_</span>));
+<a href=#664 id=664 data-nosnippet>664</a>            <a href="../llvm/ffi.rs.html#2583">llvm::LLVMRustModuleBufferFree</a>(<span class="kw-2">&amp;mut *</span>(<a class="self" href="#662">self</a>.<span class="number">0 </span><span class="kw">as </span><span class="kw-2">*mut </span><span class="kw">_</span>));
 <a href=#665 id=665 data-nosnippet>665</a>        }
 <a href=#666 id=666 data-nosnippet>666</a>    }
 <a href=#667 id=667 data-nosnippet>667</a>}
@@ -674,7 +674,7 @@
 <a href=#674 id=674 data-nosnippet>674</a><span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/drop/trait.Drop.html">Drop</a> <span class="kw">for </span><a href="#669">ThinData</a> {
 <a href=#675 id=675 data-nosnippet>675</a>    <span class="kw">fn </span>drop(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
 <a href=#676 id=676 data-nosnippet>676</a>        <span class="kw">unsafe </span>{
-<a href=#677 id=677 data-nosnippet>677</a>            <a href="../llvm/ffi.rs.html#2619">llvm::LLVMRustFreeThinLTOData</a>(<span class="kw-2">&amp;mut *</span>(<a class="self" href="#675">self</a>.<span class="number">0 </span><span class="kw">as </span><span class="kw-2">*mut </span><span class="kw">_</span>));
+<a href=#677 id=677 data-nosnippet>677</a>            <a href="../llvm/ffi.rs.html#2615">llvm::LLVMRustFreeThinLTOData</a>(<span class="kw-2">&amp;mut *</span>(<a class="self" href="#675">self</a>.<span class="number">0 </span><span class="kw">as </span><span class="kw-2">*mut </span><span class="kw">_</span>));
 <a href=#678 id=678 data-nosnippet>678</a>        }
 <a href=#679 id=679 data-nosnippet>679</a>    }
 <a href=#680 id=680 data-nosnippet>680</a>}
@@ -687,7 +687,7 @@
 <a href=#687 id=687 data-nosnippet>687</a><span class="kw">impl </span><a href="#682">ThinBuffer</a> {
 <a href=#688 id=688 data-nosnippet>688</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new(m: <span class="kw-2">&amp;</span><a href="../llvm/ffi.rs.html#755">llvm::Module</a>, is_thin: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>, emit_summary: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>) -&gt; <a href="#682">ThinBuffer</a> {
 <a href=#689 id=689 data-nosnippet>689</a>        <span class="kw">unsafe </span>{
-<a href=#690 id=690 data-nosnippet>690</a>            <span class="kw">let </span>buffer = <a href="../llvm/ffi.rs.html#2591-2595">llvm::LLVMRustThinLTOBufferCreate</a>(<a href="#688">m</a>, <a href="#688">is_thin</a>, <a href="#688">emit_summary</a>);
+<a href=#690 id=690 data-nosnippet>690</a>            <span class="kw">let </span>buffer = <a href="../llvm/ffi.rs.html#2587-2591">llvm::LLVMRustThinLTOBufferCreate</a>(<a href="#688">m</a>, <a href="#688">is_thin</a>, <a href="#688">emit_summary</a>);
 <a href=#691 id=691 data-nosnippet>691</a>            <a href="#682">ThinBuffer</a>(<a href="#690">buffer</a>)
 <a href=#692 id=692 data-nosnippet>692</a>        }
 <a href=#693 id=693 data-nosnippet>693</a>    }
@@ -701,16 +701,16 @@
 <a href=#701 id=701 data-nosnippet>701</a><span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/write/trait.ThinBufferMethods.html">ThinBufferMethods</a> <span class="kw">for </span><a href="#682">ThinBuffer</a> {
 <a href=#702 id=702 data-nosnippet>702</a>    <span class="kw">fn </span>data(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>[<a href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>] {
 <a href=#703 id=703 data-nosnippet>703</a>        <span class="kw">unsafe </span>{
-<a href=#704 id=704 data-nosnippet>704</a>            <span class="kw">let </span>ptr = <a href="../llvm/ffi.rs.html#2597">llvm::LLVMRustThinLTOBufferPtr</a>(<a class="self" href="#702">self</a>.<span class="number">0</span>) <span class="kw">as </span><span class="kw-2">*const </span><span class="kw">_</span>;
-<a href=#705 id=705 data-nosnippet>705</a>            <span class="kw">let </span>len = <a href="../llvm/ffi.rs.html#2598">llvm::LLVMRustThinLTOBufferLen</a>(<a class="self" href="#702">self</a>.<span class="number">0</span>);
+<a href=#704 id=704 data-nosnippet>704</a>            <span class="kw">let </span>ptr = <a href="../llvm/ffi.rs.html#2593">llvm::LLVMRustThinLTOBufferPtr</a>(<a class="self" href="#702">self</a>.<span class="number">0</span>) <span class="kw">as </span><span class="kw-2">*const </span><span class="kw">_</span>;
+<a href=#705 id=705 data-nosnippet>705</a>            <span class="kw">let </span>len = <a href="../llvm/ffi.rs.html#2594">llvm::LLVMRustThinLTOBufferLen</a>(<a class="self" href="#702">self</a>.<span class="number">0</span>);
 <a href=#706 id=706 data-nosnippet>706</a>            <a href="https://doc.rust-lang.org/nightly/core/slice/raw/fn.from_raw_parts.html">slice::from_raw_parts</a>(<a href="#704">ptr</a>, <a href="#705">len</a>)
 <a href=#707 id=707 data-nosnippet>707</a>        }
 <a href=#708 id=708 data-nosnippet>708</a>    }
 <a href=#709 id=709 data-nosnippet>709</a>
 <a href=#710 id=710 data-nosnippet>710</a>    <span class="kw">fn </span>thin_link_data(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>[<a href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a>] {
 <a href=#711 id=711 data-nosnippet>711</a>        <span class="kw">unsafe </span>{
-<a href=#712 id=712 data-nosnippet>712</a>            <span class="kw">let </span>ptr = <a href="../llvm/ffi.rs.html#2599">llvm::LLVMRustThinLTOBufferThinLinkDataPtr</a>(<a class="self" href="#710">self</a>.<span class="number">0</span>) <span class="kw">as </span><span class="kw-2">*const </span><span class="kw">_</span>;
-<a href=#713 id=713 data-nosnippet>713</a>            <span class="kw">let </span>len = <a href="../llvm/ffi.rs.html#2600">llvm::LLVMRustThinLTOBufferThinLinkDataLen</a>(<a class="self" href="#710">self</a>.<span class="number">0</span>);
+<a href=#712 id=712 data-nosnippet>712</a>            <span class="kw">let </span>ptr = <a href="../llvm/ffi.rs.html#2595">llvm::LLVMRustThinLTOBufferThinLinkDataPtr</a>(<a class="self" href="#710">self</a>.<span class="number">0</span>) <span class="kw">as </span><span class="kw-2">*const </span><span class="kw">_</span>;
+<a href=#713 id=713 data-nosnippet>713</a>            <span class="kw">let </span>len = <a href="../llvm/ffi.rs.html#2596">llvm::LLVMRustThinLTOBufferThinLinkDataLen</a>(<a class="self" href="#710">self</a>.<span class="number">0</span>);
 <a href=#714 id=714 data-nosnippet>714</a>            <a href="https://doc.rust-lang.org/nightly/core/slice/raw/fn.from_raw_parts.html">slice::from_raw_parts</a>(<a href="#712">ptr</a>, <a href="#713">len</a>)
 <a href=#715 id=715 data-nosnippet>715</a>        }
 <a href=#716 id=716 data-nosnippet>716</a>    }
@@ -719,7 +719,7 @@
 <a href=#719 id=719 data-nosnippet>719</a><span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/drop/trait.Drop.html">Drop</a> <span class="kw">for </span><a href="#682">ThinBuffer</a> {
 <a href=#720 id=720 data-nosnippet>720</a>    <span class="kw">fn </span>drop(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
 <a href=#721 id=721 data-nosnippet>721</a>        <span class="kw">unsafe </span>{
-<a href=#722 id=722 data-nosnippet>722</a>            <a href="../llvm/ffi.rs.html#2596">llvm::LLVMRustThinLTOBufferFree</a>(<span class="kw-2">&amp;mut *</span>(<a class="self" href="#720">self</a>.<span class="number">0 </span><span class="kw">as </span><span class="kw-2">*mut </span><span class="kw">_</span>));
+<a href=#722 id=722 data-nosnippet>722</a>            <a href="../llvm/ffi.rs.html#2592">llvm::LLVMRustThinLTOBufferFree</a>(<span class="kw-2">&amp;mut *</span>(<a class="self" href="#720">self</a>.<span class="number">0 </span><span class="kw">as </span><span class="kw-2">*mut </span><span class="kw">_</span>));
 <a href=#723 id=723 data-nosnippet>723</a>        }
 <a href=#724 id=724 data-nosnippet>724</a>    }
 <a href=#725 id=725 data-nosnippet>725</a>}
@@ -761,7 +761,7 @@
 <a href=#761 id=761 data-nosnippet>761</a>            <span class="kw">let </span>_timer =
 <a href=#762 id=762 data-nosnippet>762</a>                <a href="#729">cgcx</a>.prof.<a href="../../../rustc_data_structures/profiling/struct.SelfProfilerRef.html#method.generic_activity_with_arg">generic_activity_with_arg</a>(<span class="string">"LLVM_thin_lto_rename"</span>, <a href="#728">thin_module</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/back/lto/struct.ThinModule.html#method.name">name</a>());
 <a href=#763 id=763 data-nosnippet>763</a>            <span class="kw">unsafe </span>{
-<a href=#764 id=764 data-nosnippet>764</a>                <a href="../llvm/ffi.rs.html#2607-2611">llvm::LLVMRustPrepareThinLTORename</a>(<a href="#728">thin_module</a>.shared.data.<span class="number">0</span>, <a href="#749">llmod</a>, <a href="#748">target</a>.<a href="owned_target_machine.rs.html#89-93">raw</a>())
+<a href=#764 id=764 data-nosnippet>764</a>                <a href="../llvm/ffi.rs.html#2603-2607">llvm::LLVMRustPrepareThinLTORename</a>(<a href="#728">thin_module</a>.shared.data.<span class="number">0</span>, <a href="#749">llmod</a>, <a href="#748">target</a>.<a href="owned_target_machine.rs.html#89-93">raw</a>())
 <a href=#765 id=765 data-nosnippet>765</a>            };
 <a href=#766 id=766 data-nosnippet>766</a>            <a href="write.rs.html#332-347">save_temp_bitcode</a>(<a href="#729">cgcx</a>, <span class="kw-2">&amp;</span><a href="#742">module</a>, <span class="string">"thin-lto-after-rename"</span>);
 <a href=#767 id=767 data-nosnippet>767</a>        }
@@ -770,7 +770,7 @@
 <a href=#770 id=770 data-nosnippet>770</a>            <span class="kw">let </span>_timer = <a href="#729">cgcx</a>
 <a href=#771 id=771 data-nosnippet>771</a>                .prof
 <a href=#772 id=772 data-nosnippet>772</a>                .<a href="../../../rustc_data_structures/profiling/struct.SelfProfilerRef.html#method.generic_activity_with_arg">generic_activity_with_arg</a>(<span class="string">"LLVM_thin_lto_resolve_weak"</span>, <a href="#728">thin_module</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/back/lto/struct.ThinModule.html#method.name">name</a>());
-<a href=#773 id=773 data-nosnippet>773</a>            <span class="kw">if unsafe </span>{ !<a href="../llvm/ffi.rs.html#2612">llvm::LLVMRustPrepareThinLTOResolveWeak</a>(<a href="#728">thin_module</a>.shared.data.<span class="number">0</span>, <a href="#749">llmod</a>) }
+<a href=#773 id=773 data-nosnippet>773</a>            <span class="kw">if unsafe </span>{ !<a href="../llvm/ffi.rs.html#2608">llvm::LLVMRustPrepareThinLTOResolveWeak</a>(<a href="#728">thin_module</a>.shared.data.<span class="number">0</span>, <a href="#749">llmod</a>) }
 <a href=#774 id=774 data-nosnippet>774</a>            {
 <a href=#775 id=775 data-nosnippet>775</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="write.rs.html#49-54">write::llvm_err</a>(<a href="#732">dcx</a>, <a href="../errors.rs.html#64">LlvmError::PrepareThinLtoModule</a>));
 <a href=#776 id=776 data-nosnippet>776</a>            }
@@ -781,7 +781,7 @@
 <a href=#781 id=781 data-nosnippet>781</a>            <span class="kw">let </span>_timer = <a href="#729">cgcx</a>
 <a href=#782 id=782 data-nosnippet>782</a>                .prof
 <a href=#783 id=783 data-nosnippet>783</a>                .<a href="../../../rustc_data_structures/profiling/struct.SelfProfilerRef.html#method.generic_activity_with_arg">generic_activity_with_arg</a>(<span class="string">"LLVM_thin_lto_internalize"</span>, <a href="#728">thin_module</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/back/lto/struct.ThinModule.html#method.name">name</a>());
-<a href=#784 id=784 data-nosnippet>784</a>            <span class="kw">if unsafe </span>{ !<a href="../llvm/ffi.rs.html#2613">llvm::LLVMRustPrepareThinLTOInternalize</a>(<a href="#728">thin_module</a>.shared.data.<span class="number">0</span>, <a href="#749">llmod</a>) }
+<a href=#784 id=784 data-nosnippet>784</a>            <span class="kw">if unsafe </span>{ !<a href="../llvm/ffi.rs.html#2609">llvm::LLVMRustPrepareThinLTOInternalize</a>(<a href="#728">thin_module</a>.shared.data.<span class="number">0</span>, <a href="#749">llmod</a>) }
 <a href=#785 id=785 data-nosnippet>785</a>            {
 <a href=#786 id=786 data-nosnippet>786</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="write.rs.html#49-54">write::llvm_err</a>(<a href="#732">dcx</a>, <a href="../errors.rs.html#64">LlvmError::PrepareThinLtoModule</a>));
 <a href=#787 id=787 data-nosnippet>787</a>            }
@@ -792,7 +792,7 @@
 <a href=#792 id=792 data-nosnippet>792</a>            <span class="kw">let </span>_timer =
 <a href=#793 id=793 data-nosnippet>793</a>                <a href="#729">cgcx</a>.prof.<a href="../../../rustc_data_structures/profiling/struct.SelfProfilerRef.html#method.generic_activity_with_arg">generic_activity_with_arg</a>(<span class="string">"LLVM_thin_lto_import"</span>, <a href="#728">thin_module</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/back/lto/struct.ThinModule.html#method.name">name</a>());
 <a href=#794 id=794 data-nosnippet>794</a>            <span class="kw">if unsafe </span>{
-<a href=#795 id=795 data-nosnippet>795</a>                !<a href="../llvm/ffi.rs.html#2614-2618">llvm::LLVMRustPrepareThinLTOImport</a>(<a href="#728">thin_module</a>.shared.data.<span class="number">0</span>, <a href="#749">llmod</a>, <a href="#748">target</a>.<a href="owned_target_machine.rs.html#89-93">raw</a>())
+<a href=#795 id=795 data-nosnippet>795</a>                !<a href="../llvm/ffi.rs.html#2610-2614">llvm::LLVMRustPrepareThinLTOImport</a>(<a href="#728">thin_module</a>.shared.data.<span class="number">0</span>, <a href="#749">llmod</a>, <a href="#748">target</a>.<a href="owned_target_machine.rs.html#89-93">raw</a>())
 <a href=#796 id=796 data-nosnippet>796</a>            } {
 <a href=#797 id=797 data-nosnippet>797</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="write.rs.html#49-54">write::llvm_err</a>(<a href="#732">dcx</a>, <a href="../errors.rs.html#64">LlvmError::PrepareThinLtoModule</a>));
 <a href=#798 id=798 data-nosnippet>798</a>            }
@@ -855,7 +855,7 @@
 <a href=#855 id=855 data-nosnippet>855</a>        <span class="kw">let </span>keys = <a href="https://doc.rust-lang.org/nightly/core/iter/adapters/zip/fn.zip.html">iter::zip</a>(<a href="#852">modules</a>, <a href="#853">names</a>)
 <a href=#856 id=856 data-nosnippet>856</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|(module, name)| {
 <a href=#857 id=857 data-nosnippet>857</a>                <span class="kw">let </span>key = <a href="../llvm/mod.rs.html#359-361">build_string</a>(|rust_str| <span class="kw">unsafe </span>{
-<a href=#858 id=858 data-nosnippet>858</a>                    <a href="../llvm/ffi.rs.html#2634-2638">llvm::LLVMRustComputeLTOCacheKey</a>(<a href="#857">rust_str</a>, <a href="#856">module</a>.identifier, <a href="#851">data</a>.<span class="number">0</span>);
+<a href=#858 id=858 data-nosnippet>858</a>                    <a href="../llvm/ffi.rs.html#2630-2634">llvm::LLVMRustComputeLTOCacheKey</a>(<a href="#857">rust_str</a>, <a href="#856">module</a>.identifier, <a href="#851">data</a>.<span class="number">0</span>);
 <a href=#859 id=859 data-nosnippet>859</a>                })
 <a href=#860 id=860 data-nosnippet>860</a>                .<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.expect">expect</a>(<span class="string">"Invalid ThinLTO module key"</span>);
 <a href=#861 id=861 data-nosnippet>861</a>                (<a href="#868-872">module_name_to_str</a>(<a href="#856">name</a>).<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>(), <a href="#857">key</a>)
@@ -878,7 +878,7 @@
 <a href=#878 id=878 data-nosnippet>878</a>    dcx: <a href="../../../rustc_errors/struct.DiagCtxtHandle.html">DiagCtxtHandle</a>&lt;<span class="lifetime">'_</span>&gt;,
 <a href=#879 id=879 data-nosnippet>879</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../llvm/ffi.rs.html#755">llvm::Module</a>, <a href="../../../rustc_span/fatal_error/struct.FatalError.html">FatalError</a>&gt; {
 <a href=#880 id=880 data-nosnippet>880</a>    <span class="kw">unsafe </span>{
-<a href=#881 id=881 data-nosnippet>881</a>        <a href="../llvm/ffi.rs.html#2620-2625">llvm::LLVMRustParseBitcodeForLTO</a>(<a href="#875">cx</a>, <a href="#877">data</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.as_ptr">as_ptr</a>(), <a href="#877">data</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.len">len</a>(), <a href="#876">name</a>.<a href="https://doc.rust-lang.org/nightly/core/ffi/c_str/struct.CStr.html#method.as_ptr">as_ptr</a>())
+<a href=#881 id=881 data-nosnippet>881</a>        <a href="../llvm/ffi.rs.html#2616-2621">llvm::LLVMRustParseBitcodeForLTO</a>(<a href="#875">cx</a>, <a href="#877">data</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.as_ptr">as_ptr</a>(), <a href="#877">data</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.len">len</a>(), <a href="#876">name</a>.<a href="https://doc.rust-lang.org/nightly/core/ffi/c_str/struct.CStr.html#method.as_ptr">as_ptr</a>())
 <a href=#882 id=882 data-nosnippet>882</a>            .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.ok_or_else">ok_or_else</a>(|| <a href="write.rs.html#49-54">write::llvm_err</a>(<a href="#878">dcx</a>, <a href="../errors.rs.html#66">LlvmError::ParseBitcode</a>))
 <a href=#883 id=883 data-nosnippet>883</a>    }
 <a href=#884 id=884 data-nosnippet>884</a>}</code></pre></div></section></main></body></html>

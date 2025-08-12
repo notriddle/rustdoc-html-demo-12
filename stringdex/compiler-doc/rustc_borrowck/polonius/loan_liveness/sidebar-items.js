@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["collect_kills","compute_loan_liveness"],"struct":["KillsCollector","LocalizedConstraintGraph","LocalizedNode"]};
+window.SIDEBAR_ITEMS = {"fn":["compute_loan_liveness"],"struct":["LocalizedConstraintGraph","LocalizedNode"]};

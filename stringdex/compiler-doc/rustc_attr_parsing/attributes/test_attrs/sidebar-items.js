@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["IgnoreParser"]};
+window.SIDEBAR_ITEMS = {"struct":["IgnoreParser","ShouldPanicParser"]};

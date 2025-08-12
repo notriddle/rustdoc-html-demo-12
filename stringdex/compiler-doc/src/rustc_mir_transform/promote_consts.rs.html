@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/promote_consts.rs`."><title>promote_consts.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>promote_consts.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! A pass that promotes borrows of constant rvalues.
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/promote_consts.rs`."><title>promote_consts.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>promote_consts.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! A pass that promotes borrows of constant rvalues.
 <a href=#2 id=2 data-nosnippet>2</a>//!
 <a href=#3 id=3 data-nosnippet>3</a>//! The rvalues considered constant are trees of temps, each with exactly one
 <a href=#4 id=4 data-nosnippet>4</a>//! initialization, and holding a constant value with no interior mutability.
@@ -15,7 +15,7 @@
 <a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span>std::{<a href="https://doc.rust-lang.org/nightly/core/cmp/index.html">cmp</a>, <a href="https://doc.rust-lang.org/nightly/core/iter/index.html">iter</a>, <a href="https://doc.rust-lang.org/nightly/core/mem/index.html">mem</a>};
 <a href=#16 id=16 data-nosnippet>16</a>
 <a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span>either::{<a href="https://docs.rs/either/1/either/Either/variant.Left.html">Left</a>, <a href="https://docs.rs/either/1/either/Either/variant.Right.html">Right</a>};
-<a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span>rustc_const_eval::check_consts::{<a href="../../rustc_const_eval/check_consts/struct.ConstCx.html">ConstCx</a>, <a href="../../rustc_const_eval/check_consts/qualifs/index.html">qualifs</a>};
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span>rustc_const_eval::check_consts::{ConstCx, qualifs};
 <a href=#19 id=19 data-nosnippet>19</a><span class="kw">use </span><a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">rustc_data_structures::fx::FxHashSet</a>;
 <a href=#20 id=20 data-nosnippet>20</a><span class="kw">use </span><a href="../../rustc_hir/index.html">rustc_hir</a> <span class="kw">as </span>hir;
 <a href=#21 id=21 data-nosnippet>21</a><span class="kw">use </span>rustc_index::{<a href="../../rustc_index/slice/struct.IndexSlice.html">IndexSlice</a>, <a href="../../rustc_index/vec/struct.IndexVec.html">IndexVec</a>};
@@ -53,7 +53,7 @@
 <a href=#53 id=53 data-nosnippet>53</a>            <span class="kw">return</span>;
 <a href=#54 id=54 data-nosnippet>54</a>        }
 <a href=#55 id=55 data-nosnippet>55</a>
-<a href=#56 id=56 data-nosnippet>56</a>        <span class="kw">let </span>ccx = <a href="../../rustc_const_eval/check_consts/struct.ConstCx.html#method.new">ConstCx::new</a>(<a href="#44">tcx</a>, <a href="#44">body</a>);
+<a href=#56 id=56 data-nosnippet>56</a>        <span class="kw">let </span>ccx = ConstCx::new(<a href="#44">tcx</a>, <a href="#44">body</a>);
 <a href=#57 id=57 data-nosnippet>57</a>        <span class="kw">let </span>(<span class="kw-2">mut </span>temps, all_candidates) = <a href="#156-168">collect_temps_and_candidates</a>(<span class="kw-2">&amp;</span><a href="#56">ccx</a>);
 <a href=#58 id=58 data-nosnippet>58</a>
 <a href=#59 id=59 data-nosnippet>59</a>        <span class="kw">let </span>promotable_candidates = <a href="#701-710">validate_candidates</a>(<span class="kw-2">&amp;</span><a href="#56">ccx</a>, <span class="kw-2">&amp;mut </span><a href="#57">temps</a>, <a href="#57">all_candidates</a>);
@@ -92,7 +92,7 @@
 <a href=#92 id=92 data-nosnippet>92</a>}
 <a href=#93 id=93 data-nosnippet>93</a>
 <a href=#94 id=94 data-nosnippet>94</a><span class="kw">struct </span><a href="../../rustc_mir_transform/promote_consts/struct.Collector.html">Collector</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
-<a href=#95 id=95 data-nosnippet>95</a>    ccx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_const_eval/check_consts/struct.ConstCx.html">ConstCx</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#95 id=95 data-nosnippet>95</a>    ccx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>ConstCx&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;,
 <a href=#96 id=96 data-nosnippet>96</a>    temps: <a href="../../rustc_index/vec/struct.IndexVec.html">IndexVec</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="#72-84">TempState</a>&gt;,
 <a href=#97 id=97 data-nosnippet>97</a>    candidates: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="#90-92">Candidate</a>&gt;,
 <a href=#98 id=98 data-nosnippet>98</a>}
@@ -154,7 +154,7 @@
 <a href=#154 id=154 data-nosnippet>154</a>}
 <a href=#155 id=155 data-nosnippet>155</a>
 <a href=#156 id=156 data-nosnippet>156</a><span class="kw">fn </span><a href="../../rustc_mir_transform/promote_consts/fn.collect_temps_and_candidates.html">collect_temps_and_candidates</a>&lt;<span class="lifetime">'tcx</span>&gt;(
-<a href=#157 id=157 data-nosnippet>157</a>    ccx: <span class="kw-2">&amp;</span><a href="../../rustc_const_eval/check_consts/struct.ConstCx.html">ConstCx</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#157 id=157 data-nosnippet>157</a>    ccx: <span class="kw-2">&amp;</span>ConstCx&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
 <a href=#158 id=158 data-nosnippet>158</a>) -&gt; (<a href="../../rustc_index/vec/struct.IndexVec.html">IndexVec</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="#72-84">TempState</a>&gt;, <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="#90-92">Candidate</a>&gt;) {
 <a href=#159 id=159 data-nosnippet>159</a>    <span class="kw">let </span><span class="kw-2">mut </span>collector = <a href="#94-98">Collector</a> {
 <a href=#160 id=160 data-nosnippet>160</a>        temps: <a href="../../rustc_index/vec/struct.IndexVec.html#method.from_elem">IndexVec::from_elem</a>(<a href="#74">TempState::Undefined</a>, <span class="kw-2">&amp;</span><a href="#157">ccx</a>.body.local_decls),
@@ -171,7 +171,7 @@
 <a href=#171 id=171 data-nosnippet>171</a>///
 <a href=#172 id=172 data-nosnippet>172</a>/// This wraps an `Item`, and has access to all fields of that `Item` via `Deref` coercion.
 <a href=#173 id=173 data-nosnippet>173</a></span><span class="kw">struct </span><a href="../../rustc_mir_transform/promote_consts/struct.Validator.html">Validator</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
-<a href=#174 id=174 data-nosnippet>174</a>    ccx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_const_eval/check_consts/struct.ConstCx.html">ConstCx</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#174 id=174 data-nosnippet>174</a>    ccx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>ConstCx&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;,
 <a href=#175 id=175 data-nosnippet>175</a>    temps: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><a href="../../rustc_index/slice/struct.IndexSlice.html">IndexSlice</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="#72-84">TempState</a>&gt;,
 <a href=#176 id=176 data-nosnippet>176</a>    <span class="doccomment">/// For backwards compatibility, we are promoting function calls in `const`/`static`
 <a href=#177 id=177 data-nosnippet>177</a>    /// initializers. But we want to avoid evaluating code that might panic and that otherwise would
@@ -182,7 +182,7 @@
 <a href=#182 id=182 data-nosnippet>182</a>}
 <a href=#183 id=183 data-nosnippet>183</a>
 <a href=#184 id=184 data-nosnippet>184</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; <a href="https://doc.rust-lang.org/nightly/core/ops/deref/trait.Deref.html">std::ops::Deref</a> <span class="kw">for </span><a href="#173-182">Validator</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
-<a href=#185 id=185 data-nosnippet>185</a>    <span class="kw">type </span>Target = <a href="../../rustc_const_eval/check_consts/struct.ConstCx.html">ConstCx</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;;
+<a href=#185 id=185 data-nosnippet>185</a>    <span class="kw">type </span>Target = ConstCx&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;;
 <a href=#186 id=186 data-nosnippet>186</a>
 <a href=#187 id=187 data-nosnippet>187</a>    <span class="kw">fn </span>deref(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="self">Self</span>::Target {
 <a href=#188 id=188 data-nosnippet>188</a>        <a class="self" href="#187">self</a>.ccx
@@ -214,7 +214,7 @@
 <a href=#214 id=214 data-nosnippet>214</a>    }
 <a href=#215 id=215 data-nosnippet>215</a>
 <a href=#216 id=216 data-nosnippet>216</a>    <span class="comment">// FIXME(eddyb) maybe cache this?
-<a href=#217 id=217 data-nosnippet>217</a>    </span><span class="kw">fn </span>qualif_local&lt;Q: <a href="../../rustc_const_eval/check_consts/qualifs/trait.Qualif.html">qualifs::Qualif</a>&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, local: <a href="../../rustc_middle/mir/struct.Local.html">Local</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#217 id=217 data-nosnippet>217</a>    </span><span class="kw">fn </span>qualif_local&lt;Q: qualifs::Qualif&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, local: <a href="../../rustc_middle/mir/struct.Local.html">Local</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
 <a href=#218 id=218 data-nosnippet>218</a>        <span class="kw">let </span><a href="#78">TempState::Defined</a> { location: loc, .. } = <a class="self" href="#217">self</a>.temps[<a href="#217">local</a>] <span class="kw">else </span>{
 <a href=#219 id=219 data-nosnippet>219</a>            <span class="kw">return </span><span class="bool-val">false</span>;
 <a href=#220 id=220 data-nosnippet>220</a>        };
@@ -225,12 +225,12 @@
 <a href=#225 id=225 data-nosnippet>225</a>                <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>((<span class="kw">_</span>, rhs)) = <a href="#224">statement</a>.kind.<a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#method.as_assign">as_assign</a>() <span class="kw">else </span>{
 <a href=#226 id=226 data-nosnippet>226</a>                    <a class="macro" href="../../rustc_middle/macro.span_bug.html">span_bug!</a>(<a href="#224">statement</a>.source_info.span, <span class="string">"{:?} is not an assignment"</span>, statement)
 <a href=#227 id=227 data-nosnippet>227</a>                };
-<a href=#228 id=228 data-nosnippet>228</a>                <a href="../../rustc_const_eval/check_consts/qualifs/fn.in_rvalue.html">qualifs::in_rvalue</a>::&lt;Q, <span class="kw">_</span>&gt;(<a class="self" href="#217">self</a>.ccx, <span class="kw-2">&amp;mut </span>|l| <a class="self" href="#217">self</a>.<a href="#217-236">qualif_local</a>::&lt;Q&gt;(<a href="#228">l</a>), <a href="#225">rhs</a>)
+<a href=#228 id=228 data-nosnippet>228</a>                qualifs::in_rvalue::&lt;Q, <span class="kw">_</span>&gt;(<a class="self" href="#217">self</a>.ccx, <span class="kw-2">&amp;mut </span>|l| <a class="self" href="#217">self</a>.<a href="#217-236">qualif_local</a>::&lt;Q&gt;(<a href="#228">l</a>), <a href="#225">rhs</a>)
 <a href=#229 id=229 data-nosnippet>229</a>            }
 <a href=#230 id=230 data-nosnippet>230</a>            <a href="https://docs.rs/either/1/either/Either/variant.Right.html">Right</a>(terminator) =&gt; {
 <a href=#231 id=231 data-nosnippet>231</a>                <a class="macro" href="https://doc.rust-lang.org/nightly/core/macros/macro.assert_matches.html">assert_matches!</a>(terminator.kind, TerminatorKind::Call { .. });
 <a href=#232 id=232 data-nosnippet>232</a>                <span class="kw">let </span>return_ty = <a class="self" href="#217">self</a>.body.local_decls[<a href="#217">local</a>].ty;
-<a href=#233 id=233 data-nosnippet>233</a>                <a href="../../rustc_const_eval/check_consts/qualifs/trait.Qualif.html#tymethod.in_any_value_of_ty">Q::in_any_value_of_ty</a>(<a class="self" href="#217">self</a>.ccx, <a href="#232">return_ty</a>)
+<a href=#233 id=233 data-nosnippet>233</a>                Q::in_any_value_of_ty(<a class="self" href="#217">self</a>.ccx, <a href="#232">return_ty</a>)
 <a href=#234 id=234 data-nosnippet>234</a>            }
 <a href=#235 id=235 data-nosnippet>235</a>        }
 <a href=#236 id=236 data-nosnippet>236</a>    }
@@ -242,7 +242,7 @@
 <a href=#242 id=242 data-nosnippet>242</a>
 <a href=#243 id=243 data-nosnippet>243</a>        <span class="comment">// We cannot promote things that need dropping, since the promoted value would not get
 <a href=#244 id=244 data-nosnippet>244</a>        // dropped.
-<a href=#245 id=245 data-nosnippet>245</a>        </span><span class="kw">if </span><a class="self" href="#238">self</a>.<a href="#217-236">qualif_local</a>::&lt;<a href="../../rustc_const_eval/check_consts/qualifs/struct.NeedsDrop.html">qualifs::NeedsDrop</a>&gt;(<a href="#238">local</a>) {
+<a href=#245 id=245 data-nosnippet>245</a>        </span><span class="kw">if </span><a class="self" href="#238">self</a>.<a href="#217-236">qualif_local</a>::&lt;qualifs::NeedsDrop&gt;(<a href="#238">local</a>) {
 <a href=#246 id=246 data-nosnippet>246</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#192">Unpromotable</a>);
 <a href=#247 id=247 data-nosnippet>247</a>        }
 <a href=#248 id=248 data-nosnippet>248</a>
@@ -397,7 +397,7 @@
 <a href=#397 id=397 data-nosnippet>397</a>            }
 <a href=#398 id=398 data-nosnippet>398</a>
 <a href=#399 id=399 data-nosnippet>399</a>            <a href="../../rustc_middle/mir/syntax/enum.BorrowKind.html#variant.Shared">BorrowKind::Shared</a> =&gt; {
-<a href=#400 id=400 data-nosnippet>400</a>                <span class="kw">let </span>has_mut_interior = <a class="self" href="#390">self</a>.<a href="#217-236">qualif_local</a>::&lt;<a href="../../rustc_const_eval/check_consts/qualifs/struct.HasMutInterior.html">qualifs::HasMutInterior</a>&gt;(<a href="#390">place</a>.local);
+<a href=#400 id=400 data-nosnippet>400</a>                <span class="kw">let </span>has_mut_interior = <a class="self" href="#390">self</a>.<a href="#217-236">qualif_local</a>::&lt;qualifs::HasMutInterior&gt;(<a href="#390">place</a>.local);
 <a href=#401 id=401 data-nosnippet>401</a>                <span class="kw">if </span><a href="#400">has_mut_interior</a> {
 <a href=#402 id=402 data-nosnippet>402</a>                    <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#192">Unpromotable</a>);
 <a href=#403 id=403 data-nosnippet>403</a>                }
@@ -699,7 +699,7 @@
 <a href=#699 id=699 data-nosnippet>699</a>}
 <a href=#700 id=700 data-nosnippet>700</a>
 <a href=#701 id=701 data-nosnippet>701</a><span class="kw">fn </span><a href="../../rustc_mir_transform/promote_consts/fn.validate_candidates.html">validate_candidates</a>(
-<a href=#702 id=702 data-nosnippet>702</a>    ccx: <span class="kw-2">&amp;</span><a href="../../rustc_const_eval/check_consts/struct.ConstCx.html">ConstCx</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;,
+<a href=#702 id=702 data-nosnippet>702</a>    ccx: <span class="kw-2">&amp;</span>ConstCx&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>&gt;,
 <a href=#703 id=703 data-nosnippet>703</a>    temps: <span class="kw-2">&amp;mut </span><a href="../../rustc_index/slice/struct.IndexSlice.html">IndexSlice</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="#72-84">TempState</a>&gt;,
 <a href=#704 id=704 data-nosnippet>704</a>    <span class="kw-2">mut </span>candidates: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="#90-92">Candidate</a>&gt;,
 <a href=#705 id=705 data-nosnippet>705</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="#90-92">Candidate</a>&gt; {

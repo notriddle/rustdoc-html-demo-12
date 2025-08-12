@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/traits/query/dropck_outlives.rs`."><title>dropck_outlives.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-865d4876.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-649a623e.js" data-stringdex-js="stringdex-910ef755.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-1b37d467.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-0ec66560.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_trait_selection/traits/query/</div>dropck_outlives.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="../../../../rustc_trait_selection/infer/canonical/ir/data_structures/type.HashSet.html">rustc_data_structures::fx::FxHashSet</a>;
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/traits/query/dropck_outlives.rs`."><title>dropck_outlives.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-1b37d467.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_trait_selection/traits/query/</div>dropck_outlives.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="../../../../rustc_trait_selection/infer/canonical/ir/data_structures/type.HashSet.html">rustc_data_structures::fx::FxHashSet</a>;
 <a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span><a href="../../../../rustc_trait_selection/traits/query/type_op/struct.DropckOutlives.html">rustc_infer::traits::query::type_op::DropckOutlives</a>;
 <a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>rustc_middle::traits::query::{<a href="../../../../rustc_trait_selection/traits/query/struct.DropckConstraint.html">DropckConstraint</a>, <a href="../../../../rustc_trait_selection/traits/query/struct.DropckOutlivesResult.html">DropckOutlivesResult</a>};
 <a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>rustc_middle::ty::{<a class="self" href="../../../../rustc_middle/ty/index.html">self</a>, <a href="../../../../rustc_middle/ty/sty/type.EarlyBinder.html">EarlyBinder</a>, <a href="../../../../rustc_middle/ty/struct.ParamEnvAnd.html">ParamEnvAnd</a>, <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>, <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>};
@@ -319,78 +319,104 @@
 <a href=#319 id=319 data-nosnippet>319</a>        }
 <a href=#320 id=320 data-nosnippet>320</a>
 <a href=#321 id=321 data-nosnippet>321</a>        ty::Coroutine(def_id, args) =&gt; {
-<a href=#322 id=322 data-nosnippet>322</a>            <span class="comment">// rust-lang/rust#49918: types can be constructed, stored
-<a href=#323 id=323 data-nosnippet>323</a>            // in the interior, and sit idle when coroutine yields
-<a href=#324 id=324 data-nosnippet>324</a>            // (and is subsequently dropped).
-<a href=#325 id=325 data-nosnippet>325</a>            //
-<a href=#326 id=326 data-nosnippet>326</a>            // It would be nice to descend into interior of a
-<a href=#327 id=327 data-nosnippet>327</a>            // coroutine to determine what effects dropping it might
-<a href=#328 id=328 data-nosnippet>328</a>            // have (by looking at any drop effects associated with
-<a href=#329 id=329 data-nosnippet>329</a>            // its interior).
-<a href=#330 id=330 data-nosnippet>330</a>            //
-<a href=#331 id=331 data-nosnippet>331</a>            // However, the interior's representation uses things like
-<a href=#332 id=332 data-nosnippet>332</a>            // CoroutineWitness that explicitly assume they are not
-<a href=#333 id=333 data-nosnippet>333</a>            // traversed in such a manner. So instead, we will
-<a href=#334 id=334 data-nosnippet>334</a>            // simplify things for now by treating all coroutines as
-<a href=#335 id=335 data-nosnippet>335</a>            // if they were like trait objects, where its upvars must
-<a href=#336 id=336 data-nosnippet>336</a>            // all be alive for the coroutine's (potential)
-<a href=#337 id=337 data-nosnippet>337</a>            // destructor.
-<a href=#338 id=338 data-nosnippet>338</a>            //
-<a href=#339 id=339 data-nosnippet>339</a>            // In particular, skipping over `_interior` is safe
-<a href=#340 id=340 data-nosnippet>340</a>            // because any side-effects from dropping `_interior` can
-<a href=#341 id=341 data-nosnippet>341</a>            // only take place through references with lifetimes
-<a href=#342 id=342 data-nosnippet>342</a>            // derived from lifetimes attached to the upvars and resume
-<a href=#343 id=343 data-nosnippet>343</a>            // argument, and we *do* incorporate those here.
-<a href=#344 id=344 data-nosnippet>344</a>            </span><span class="kw">let </span>args = args.as_coroutine();
-<a href=#345 id=345 data-nosnippet>345</a>
-<a href=#346 id=346 data-nosnippet>346</a>            <span class="comment">// While we conservatively assume that all coroutines require drop
-<a href=#347 id=347 data-nosnippet>347</a>            // to avoid query cycles during MIR building, we can check the actual
-<a href=#348 id=348 data-nosnippet>348</a>            // witness during borrowck to avoid unnecessary liveness constraints.
-<a href=#349 id=349 data-nosnippet>349</a>            </span><span class="kw">let </span>typing_env = tcx.erase_regions(typing_env);
-<a href=#350 id=350 data-nosnippet>350</a>            <span class="kw">if </span>tcx.mir_coroutine_witnesses(def_id).is_some_and(|witness| {
-<a href=#351 id=351 data-nosnippet>351</a>                witness.field_tys.iter().any(|field| field.ty.needs_drop(tcx, typing_env))
-<a href=#352 id=352 data-nosnippet>352</a>            }) {
-<a href=#353 id=353 data-nosnippet>353</a>                constraints.outlives.extend(args.upvar_tys().iter().map(ty::GenericArg::from));
-<a href=#354 id=354 data-nosnippet>354</a>                constraints.outlives.push(args.resume_ty().into());
-<a href=#355 id=355 data-nosnippet>355</a>            }
-<a href=#356 id=356 data-nosnippet>356</a>        }
-<a href=#357 id=357 data-nosnippet>357</a>
-<a href=#358 id=358 data-nosnippet>358</a>        ty::Adt(def, args) =&gt; {
-<a href=#359 id=359 data-nosnippet>359</a>            <span class="kw">let </span>DropckConstraint { dtorck_types, outlives, overflows } =
-<a href=#360 id=360 data-nosnippet>360</a>                tcx.at(span).adt_dtorck_constraint(def.did());
-<a href=#361 id=361 data-nosnippet>361</a>            <span class="comment">// FIXME: we can try to recursively `dtorck_constraint_on_ty`
-<a href=#362 id=362 data-nosnippet>362</a>            // there, but that needs some way to handle cycles.
-<a href=#363 id=363 data-nosnippet>363</a>            </span>constraints
-<a href=#364 id=364 data-nosnippet>364</a>                .dtorck_types
-<a href=#365 id=365 data-nosnippet>365</a>                .extend(dtorck_types.iter().map(|t| EarlyBinder::bind(<span class="kw-2">*</span>t).instantiate(tcx, args)));
-<a href=#366 id=366 data-nosnippet>366</a>            constraints
-<a href=#367 id=367 data-nosnippet>367</a>                .outlives
-<a href=#368 id=368 data-nosnippet>368</a>                .extend(outlives.iter().map(|t| EarlyBinder::bind(<span class="kw-2">*</span>t).instantiate(tcx, args)));
-<a href=#369 id=369 data-nosnippet>369</a>            constraints
-<a href=#370 id=370 data-nosnippet>370</a>                .overflows
-<a href=#371 id=371 data-nosnippet>371</a>                .extend(overflows.iter().map(|t| EarlyBinder::bind(<span class="kw-2">*</span>t).instantiate(tcx, args)));
-<a href=#372 id=372 data-nosnippet>372</a>        }
-<a href=#373 id=373 data-nosnippet>373</a>
-<a href=#374 id=374 data-nosnippet>374</a>        <span class="comment">// Objects must be alive in order for their destructor
-<a href=#375 id=375 data-nosnippet>375</a>        // to be called.
-<a href=#376 id=376 data-nosnippet>376</a>        </span>ty::Dynamic(..) =&gt; {
-<a href=#377 id=377 data-nosnippet>377</a>            constraints.outlives.push(ty.into());
-<a href=#378 id=378 data-nosnippet>378</a>        }
-<a href=#379 id=379 data-nosnippet>379</a>
-<a href=#380 id=380 data-nosnippet>380</a>        <span class="comment">// Types that can't be resolved. Pass them forward.
-<a href=#381 id=381 data-nosnippet>381</a>        </span>ty::Alias(..) | ty::Param(..) =&gt; {
-<a href=#382 id=382 data-nosnippet>382</a>            constraints.dtorck_types.push(ty);
-<a href=#383 id=383 data-nosnippet>383</a>        }
-<a href=#384 id=384 data-nosnippet>384</a>
-<a href=#385 id=385 data-nosnippet>385</a>        <span class="comment">// Can't instantiate binder here.
-<a href=#386 id=386 data-nosnippet>386</a>        </span>ty::UnsafeBinder(<span class="kw">_</span>) =&gt; {
-<a href=#387 id=387 data-nosnippet>387</a>            constraints.dtorck_types.push(ty);
-<a href=#388 id=388 data-nosnippet>388</a>        }
-<a href=#389 id=389 data-nosnippet>389</a>
-<a href=#390 id=390 data-nosnippet>390</a>        ty::Placeholder(..) | ty::Bound(..) | ty::Infer(..) | ty::Error(<span class="kw">_</span>) =&gt; {
-<a href=#391 id=391 data-nosnippet>391</a>            <span class="comment">// By the time this code runs, all type variables ought to
-<a href=#392 id=392 data-nosnippet>392</a>            // be fully resolved.
-<a href=#393 id=393 data-nosnippet>393</a>            </span>tcx.dcx().span_delayed_bug(span, <span class="macro">format!</span>(<span class="string">"Unresolved type in dropck: {:?}."</span>, ty));
-<a href=#394 id=394 data-nosnippet>394</a>        }
-<a href=#395 id=395 data-nosnippet>395</a>    }
-<a href=#396 id=396 data-nosnippet>396</a>}</code></pre></div></section></main></body></html>
+<a href=#322 id=322 data-nosnippet>322</a>            <span class="comment">// rust-lang/rust#49918: Locals can be stored across await points in the coroutine,
+<a href=#323 id=323 data-nosnippet>323</a>            // called interior/witness types. Since we do not compute these witnesses until after
+<a href=#324 id=324 data-nosnippet>324</a>            // building MIR, we consider all coroutines to unconditionally require a drop during
+<a href=#325 id=325 data-nosnippet>325</a>            // MIR building. However, considering the coroutine to unconditionally require a drop
+<a href=#326 id=326 data-nosnippet>326</a>            // here may unnecessarily require its upvars' regions to be live when they don't need
+<a href=#327 id=327 data-nosnippet>327</a>            // to be, leading to borrowck errors: &lt;https://github.com/rust-lang/rust/issues/116242&gt;.
+<a href=#328 id=328 data-nosnippet>328</a>            //
+<a href=#329 id=329 data-nosnippet>329</a>            // Here, we implement a more precise approximation for the coroutine's dtorck constraint
+<a href=#330 id=330 data-nosnippet>330</a>            // by considering whether any of the interior types needs drop. Note that this is still
+<a href=#331 id=331 data-nosnippet>331</a>            // an approximation because the coroutine interior has its regions erased, so we must add
+<a href=#332 id=332 data-nosnippet>332</a>            // *all* of the upvars to live types set if we find that *any* interior type needs drop.
+<a href=#333 id=333 data-nosnippet>333</a>            // This is because any of the regions captured in the upvars may be stored in the interior,
+<a href=#334 id=334 data-nosnippet>334</a>            // which then has its regions replaced by a binder (conceptually erasing the regions),
+<a href=#335 id=335 data-nosnippet>335</a>            // so there's no way to enforce that the precise region in the interior type is live
+<a href=#336 id=336 data-nosnippet>336</a>            // since we've lost that information by this point.
+<a href=#337 id=337 data-nosnippet>337</a>            //
+<a href=#338 id=338 data-nosnippet>338</a>            // Note also that this check requires that the coroutine's upvars are use-live, since
+<a href=#339 id=339 data-nosnippet>339</a>            // a region from a type that does not have a destructor that was captured in an upvar
+<a href=#340 id=340 data-nosnippet>340</a>            // may flow into an interior type with a destructor. This is stronger than requiring
+<a href=#341 id=341 data-nosnippet>341</a>            // the upvars are drop-live.
+<a href=#342 id=342 data-nosnippet>342</a>            //
+<a href=#343 id=343 data-nosnippet>343</a>            // For example, if we capture two upvar references `&amp;'1 (), &amp;'2 ()` and have some type
+<a href=#344 id=344 data-nosnippet>344</a>            // in the interior, `for&lt;'r&gt; { NeedsDrop&lt;'r&gt; }`, we have no way to tell whether the
+<a href=#345 id=345 data-nosnippet>345</a>            // region `'r` came from the `'1` or `'2` region, so we require both are live. This
+<a href=#346 id=346 data-nosnippet>346</a>            // could even be unnecessary if `'r` was actually a `'static` region or some region
+<a href=#347 id=347 data-nosnippet>347</a>            // local to the coroutine! That's why it's an approximation.
+<a href=#348 id=348 data-nosnippet>348</a>            </span><span class="kw">let </span>args = args.as_coroutine();
+<a href=#349 id=349 data-nosnippet>349</a>
+<a href=#350 id=350 data-nosnippet>350</a>            <span class="comment">// Note that we don't care about whether the resume type has any drops since this is
+<a href=#351 id=351 data-nosnippet>351</a>            // redundant; there is no storage for the resume type, so if it is actually stored
+<a href=#352 id=352 data-nosnippet>352</a>            // in the interior, we'll already detect the need for a drop by checking the interior.
+<a href=#353 id=353 data-nosnippet>353</a>            </span><span class="kw">let </span>typing_env = tcx.erase_regions(typing_env);
+<a href=#354 id=354 data-nosnippet>354</a>            <span class="kw">let </span>needs_drop = tcx.mir_coroutine_witnesses(def_id).is_some_and(|witness| {
+<a href=#355 id=355 data-nosnippet>355</a>                witness.field_tys.iter().any(|field| field.ty.needs_drop(tcx, typing_env))
+<a href=#356 id=356 data-nosnippet>356</a>            });
+<a href=#357 id=357 data-nosnippet>357</a>            <span class="kw">if </span>needs_drop {
+<a href=#358 id=358 data-nosnippet>358</a>                <span class="comment">// Pushing types directly to `constraints.outlives` is equivalent
+<a href=#359 id=359 data-nosnippet>359</a>                // to requiring them to be use-live, since if we were instead to
+<a href=#360 id=360 data-nosnippet>360</a>                // recurse on them like we do below, we only end up collecting the
+<a href=#361 id=361 data-nosnippet>361</a>                // types that are relevant for drop-liveness.
+<a href=#362 id=362 data-nosnippet>362</a>                </span>constraints.outlives.extend(args.upvar_tys().iter().map(ty::GenericArg::from));
+<a href=#363 id=363 data-nosnippet>363</a>                constraints.outlives.push(args.resume_ty().into());
+<a href=#364 id=364 data-nosnippet>364</a>            } <span class="kw">else </span>{
+<a href=#365 id=365 data-nosnippet>365</a>                <span class="comment">// Even if a witness type doesn't need a drop, we still require that
+<a href=#366 id=366 data-nosnippet>366</a>                // the upvars are drop-live. This is only needed if we aren't already
+<a href=#367 id=367 data-nosnippet>367</a>                // counting *all* of the upvars as use-live above, since use-liveness
+<a href=#368 id=368 data-nosnippet>368</a>                // is a *stronger requirement* than drop-liveness. Recursing here
+<a href=#369 id=369 data-nosnippet>369</a>                // unconditionally would just be collecting duplicated types for no
+<a href=#370 id=370 data-nosnippet>370</a>                // reason.
+<a href=#371 id=371 data-nosnippet>371</a>                </span><span class="kw">for </span>ty <span class="kw">in </span>args.upvar_tys() {
+<a href=#372 id=372 data-nosnippet>372</a>                    dtorck_constraint_for_ty_inner(
+<a href=#373 id=373 data-nosnippet>373</a>                        tcx,
+<a href=#374 id=374 data-nosnippet>374</a>                        typing_env,
+<a href=#375 id=375 data-nosnippet>375</a>                        span,
+<a href=#376 id=376 data-nosnippet>376</a>                        depth + <span class="number">1</span>,
+<a href=#377 id=377 data-nosnippet>377</a>                        ty,
+<a href=#378 id=378 data-nosnippet>378</a>                        constraints,
+<a href=#379 id=379 data-nosnippet>379</a>                    );
+<a href=#380 id=380 data-nosnippet>380</a>                }
+<a href=#381 id=381 data-nosnippet>381</a>            }
+<a href=#382 id=382 data-nosnippet>382</a>        }
+<a href=#383 id=383 data-nosnippet>383</a>
+<a href=#384 id=384 data-nosnippet>384</a>        ty::Adt(def, args) =&gt; {
+<a href=#385 id=385 data-nosnippet>385</a>            <span class="kw">let </span>DropckConstraint { dtorck_types, outlives, overflows } =
+<a href=#386 id=386 data-nosnippet>386</a>                tcx.at(span).adt_dtorck_constraint(def.did());
+<a href=#387 id=387 data-nosnippet>387</a>            <span class="comment">// FIXME: we can try to recursively `dtorck_constraint_on_ty`
+<a href=#388 id=388 data-nosnippet>388</a>            // there, but that needs some way to handle cycles.
+<a href=#389 id=389 data-nosnippet>389</a>            </span>constraints
+<a href=#390 id=390 data-nosnippet>390</a>                .dtorck_types
+<a href=#391 id=391 data-nosnippet>391</a>                .extend(dtorck_types.iter().map(|t| EarlyBinder::bind(<span class="kw-2">*</span>t).instantiate(tcx, args)));
+<a href=#392 id=392 data-nosnippet>392</a>            constraints
+<a href=#393 id=393 data-nosnippet>393</a>                .outlives
+<a href=#394 id=394 data-nosnippet>394</a>                .extend(outlives.iter().map(|t| EarlyBinder::bind(<span class="kw-2">*</span>t).instantiate(tcx, args)));
+<a href=#395 id=395 data-nosnippet>395</a>            constraints
+<a href=#396 id=396 data-nosnippet>396</a>                .overflows
+<a href=#397 id=397 data-nosnippet>397</a>                .extend(overflows.iter().map(|t| EarlyBinder::bind(<span class="kw-2">*</span>t).instantiate(tcx, args)));
+<a href=#398 id=398 data-nosnippet>398</a>        }
+<a href=#399 id=399 data-nosnippet>399</a>
+<a href=#400 id=400 data-nosnippet>400</a>        <span class="comment">// Objects must be alive in order for their destructor
+<a href=#401 id=401 data-nosnippet>401</a>        // to be called.
+<a href=#402 id=402 data-nosnippet>402</a>        </span>ty::Dynamic(..) =&gt; {
+<a href=#403 id=403 data-nosnippet>403</a>            constraints.outlives.push(ty.into());
+<a href=#404 id=404 data-nosnippet>404</a>        }
+<a href=#405 id=405 data-nosnippet>405</a>
+<a href=#406 id=406 data-nosnippet>406</a>        <span class="comment">// Types that can't be resolved. Pass them forward.
+<a href=#407 id=407 data-nosnippet>407</a>        </span>ty::Alias(..) | ty::Param(..) =&gt; {
+<a href=#408 id=408 data-nosnippet>408</a>            constraints.dtorck_types.push(ty);
+<a href=#409 id=409 data-nosnippet>409</a>        }
+<a href=#410 id=410 data-nosnippet>410</a>
+<a href=#411 id=411 data-nosnippet>411</a>        <span class="comment">// Can't instantiate binder here.
+<a href=#412 id=412 data-nosnippet>412</a>        </span>ty::UnsafeBinder(<span class="kw">_</span>) =&gt; {
+<a href=#413 id=413 data-nosnippet>413</a>            constraints.dtorck_types.push(ty);
+<a href=#414 id=414 data-nosnippet>414</a>        }
+<a href=#415 id=415 data-nosnippet>415</a>
+<a href=#416 id=416 data-nosnippet>416</a>        ty::Placeholder(..) | ty::Bound(..) | ty::Infer(..) | ty::Error(<span class="kw">_</span>) =&gt; {
+<a href=#417 id=417 data-nosnippet>417</a>            <span class="comment">// By the time this code runs, all type variables ought to
+<a href=#418 id=418 data-nosnippet>418</a>            // be fully resolved.
+<a href=#419 id=419 data-nosnippet>419</a>            </span>tcx.dcx().span_delayed_bug(span, <span class="macro">format!</span>(<span class="string">"Unresolved type in dropck: {:?}."</span>, ty));
+<a href=#420 id=420 data-nosnippet>420</a>        }
+<a href=#421 id=421 data-nosnippet>421</a>    }
+<a href=#422 id=422 data-nosnippet>422</a>}</code></pre></div></section></main></body></html>

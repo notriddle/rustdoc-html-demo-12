@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["generics_of","has_late_bound_regions"],"struct":["AnonConstInParamTyDetector"]};
+window.SIDEBAR_ITEMS = {"enum":["ParamDefaultPolicy"],"fn":["generics_of","has_late_bound_regions","param_default_policy"],"struct":["AnonConstInParamTyDetector"]};

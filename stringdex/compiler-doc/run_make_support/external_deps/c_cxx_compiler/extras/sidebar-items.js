@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["extra_c_flags","extra_cxx_flags"]};
+window.SIDEBAR_ITEMS = {"fn":["extra_c_flags","extra_cxx_flags","extra_linker_flags","get_windows_msvc_libs"]};
