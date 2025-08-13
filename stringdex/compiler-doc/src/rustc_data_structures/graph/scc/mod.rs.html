@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_data_structures/src/graph/scc/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_data_structures" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-1b37d467.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_data_structures/graph/scc/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Routine to compute the strongly connected components (SCCs) of a graph.
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_data_structures/src/graph/scc/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_data_structures" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-1a4373a8.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-1b37d467.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_data_structures/graph/scc/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Routine to compute the strongly connected components (SCCs) of a graph.
 <a href=#2 id=2 data-nosnippet>2</a>//!
 <a href=#3 id=3 data-nosnippet>3</a>//! Also computes as the resulting DAG if each SCC is replaced with a
 <a href=#4 id=4 data-nosnippet>4</a>//! node in the graph. This uses [Tarjan's algorithm](
@@ -13,7 +13,7 @@
 <a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/marker/struct.PhantomData.html">std::marker::PhantomData</a>;
 <a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/ops/range/struct.Range.html">std::ops::Range</a>;
 <a href=#15 id=15 data-nosnippet>15</a>
-<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span>rustc_index::{Idx, IndexSlice, IndexVec};
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span>rustc_index::{<a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a>, <a href="../../../../rustc_index/slice/struct.IndexSlice.html">IndexSlice</a>, <a href="../../../../rustc_index/vec/struct.IndexVec.html">IndexVec</a>};
 <a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug</a>, <a href="https://docs.rs/tracing-attributes/0.1.30/tracing_attributes/attr.instrument.html">instrument</a>, <a href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace</a>};
 <a href=#18 id=18 data-nosnippet>18</a>
 <a href=#19 id=19 data-nosnippet>19</a><span class="kw">use </span><a href="../../../../rustc_data_structures/fx/type.FxHashSet.html"><span class="kw">crate</span>::fx::FxHashSet</a>;
@@ -50,18 +50,18 @@
 <a href=#50 id=50 data-nosnippet>50</a>}
 <a href=#51 id=51 data-nosnippet>51</a>
 <a href=#52 id=52 data-nosnippet>52</a><span class="doccomment">/// An accumulator for annotations.
-<a href=#53 id=53 data-nosnippet>53</a></span><span class="kw">pub trait </span><a href="../../../../rustc_data_structures/graph/scc/trait.Annotations.html">Annotations</a>&lt;N: Idx&gt; {
+<a href=#53 id=53 data-nosnippet>53</a></span><span class="kw">pub trait </span><a href="../../../../rustc_data_structures/graph/scc/trait.Annotations.html">Annotations</a>&lt;N: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a>&gt; {
 <a href=#54 id=54 data-nosnippet>54</a>    <span class="kw">type </span>Ann: <a href="#35-50">Annotation</a>;
-<a href=#55 id=55 data-nosnippet>55</a>    <span class="kw">type </span>SccIdx: Idx + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>;
+<a href=#55 id=55 data-nosnippet>55</a>    <span class="kw">type </span>SccIdx: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a> + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>;
 <a href=#56 id=56 data-nosnippet>56</a>
 <a href=#57 id=57 data-nosnippet>57</a>    <span class="kw">fn </span>new(<span class="kw-2">&amp;</span><span class="self">self</span>, element: N) -&gt; <span class="self">Self</span>::Ann;
 <a href=#58 id=58 data-nosnippet>58</a>    <span class="kw">fn </span>annotate_scc(<span class="kw-2">&amp;mut </span><span class="self">self</span>, scc: <span class="self">Self</span>::SccIdx, annotation: <span class="self">Self</span>::Ann);
 <a href=#59 id=59 data-nosnippet>59</a>}
 <a href=#60 id=60 data-nosnippet>60</a>
 <a href=#61 id=61 data-nosnippet>61</a><span class="doccomment">/// The nil annotation accumulator, which does nothing.
-<a href=#62 id=62 data-nosnippet>62</a></span><span class="kw">struct </span><a href="../../../../rustc_data_structures/graph/scc/struct.NoAnnotations.html">NoAnnotations</a>&lt;S: Idx + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>&gt;(<a href="https://doc.rust-lang.org/nightly/core/marker/struct.PhantomData.html">PhantomData</a>&lt;S&gt;);
+<a href=#62 id=62 data-nosnippet>62</a></span><span class="kw">struct </span><a href="../../../../rustc_data_structures/graph/scc/struct.NoAnnotations.html">NoAnnotations</a>&lt;S: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a> + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>&gt;(<a href="https://doc.rust-lang.org/nightly/core/marker/struct.PhantomData.html">PhantomData</a>&lt;S&gt;);
 <a href=#63 id=63 data-nosnippet>63</a>
-<a href=#64 id=64 data-nosnippet>64</a><span class="kw">impl</span>&lt;N: Idx, S: Idx + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>&gt; <a href="#53-59">Annotations</a>&lt;N&gt; <span class="kw">for </span><a href="#62">NoAnnotations</a>&lt;S&gt; {
+<a href=#64 id=64 data-nosnippet>64</a><span class="kw">impl</span>&lt;N: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a>, S: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a> + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>&gt; <a href="#53-59">Annotations</a>&lt;N&gt; <span class="kw">for </span><a href="#62">NoAnnotations</a>&lt;S&gt; {
 <a href=#65 id=65 data-nosnippet>65</a>    <span class="kw">type </span>SccIdx = S;
 <a href=#66 id=66 data-nosnippet>66</a>    <span class="kw">type </span>Ann = ();
 <a href=#67 id=67 data-nosnippet>67</a>    <span class="kw">fn </span>new(<span class="kw-2">&amp;</span><span class="self">self</span>, _element: N) {}
@@ -82,10 +82,10 @@
 <a href=#82 id=82 data-nosnippet>82</a>/// the index type for the graph nodes and `S` is the index type for
 <a href=#83 id=83 data-nosnippet>83</a>/// the SCCs. We can map from each node to the SCC that it
 <a href=#84 id=84 data-nosnippet>84</a>/// participates in, and we also have the successors of each SCC.
-<a href=#85 id=85 data-nosnippet>85</a></span><span class="kw">pub struct </span><a href="../../../../rustc_data_structures/graph/scc/struct.Sccs.html">Sccs</a>&lt;N: Idx, S: Idx&gt; {
+<a href=#85 id=85 data-nosnippet>85</a></span><span class="kw">pub struct </span><a href="../../../../rustc_data_structures/graph/scc/struct.Sccs.html">Sccs</a>&lt;N: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a>, S: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a>&gt; {
 <a href=#86 id=86 data-nosnippet>86</a>    <span class="doccomment">/// For each node, what is the SCC index of the SCC to which it
 <a href=#87 id=87 data-nosnippet>87</a>    /// belongs.
-<a href=#88 id=88 data-nosnippet>88</a>    </span>scc_indices: IndexVec&lt;N, S&gt;,
+<a href=#88 id=88 data-nosnippet>88</a>    </span>scc_indices: <a href="../../../../rustc_index/vec/struct.IndexVec.html">IndexVec</a>&lt;N, S&gt;,
 <a href=#89 id=89 data-nosnippet>89</a>
 <a href=#90 id=90 data-nosnippet>90</a>    <span class="doccomment">/// Data about all the SCCs.
 <a href=#91 id=91 data-nosnippet>91</a>    </span>scc_data: <a href="#107-116">SccData</a>&lt;S&gt;,
@@ -104,10 +104,10 @@
 <a href=#104 id=104 data-nosnippet>104</a>// is difficult when it's publicly inspectable.
 <a href=#105 id=105 data-nosnippet>105</a>//
 <a href=#106 id=106 data-nosnippet>106</a>// Obey the law of Demeter!
-<a href=#107 id=107 data-nosnippet>107</a></span><span class="kw">struct </span><a href="../../../../rustc_data_structures/graph/scc/struct.SccData.html">SccData</a>&lt;S: Idx&gt; {
+<a href=#107 id=107 data-nosnippet>107</a></span><span class="kw">struct </span><a href="../../../../rustc_data_structures/graph/scc/struct.SccData.html">SccData</a>&lt;S: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a>&gt; {
 <a href=#108 id=108 data-nosnippet>108</a>    <span class="doccomment">/// Maps SCC indices to their metadata, including
 <a href=#109 id=109 data-nosnippet>109</a>    /// offsets into `all_successors`.
-<a href=#110 id=110 data-nosnippet>110</a>    </span>scc_details: IndexVec&lt;S, <a href="#95-99">SccDetails</a>&gt;,
+<a href=#110 id=110 data-nosnippet>110</a>    </span>scc_details: <a href="../../../../rustc_index/vec/struct.IndexVec.html">IndexVec</a>&lt;S, <a href="#95-99">SccDetails</a>&gt;,
 <a href=#111 id=111 data-nosnippet>111</a>
 <a href=#112 id=112 data-nosnippet>112</a>    <span class="doccomment">/// Contains the successors for all the Sccs, concatenated. The
 <a href=#113 id=113 data-nosnippet>113</a>    /// range of indices corresponding to a given SCC is found in its
@@ -115,7 +115,7 @@
 <a href=#115 id=115 data-nosnippet>115</a>    </span>all_successors: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;S&gt;,
 <a href=#116 id=116 data-nosnippet>116</a>}
 <a href=#117 id=117 data-nosnippet>117</a>
-<a href=#118 id=118 data-nosnippet>118</a><span class="kw">impl</span>&lt;N: Idx, S: Idx + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>&gt; <a href="#85-92">Sccs</a>&lt;N, S&gt; {
+<a href=#118 id=118 data-nosnippet>118</a><span class="kw">impl</span>&lt;N: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a>, S: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a> + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>&gt; <a href="#85-92">Sccs</a>&lt;N, S&gt; {
 <a href=#119 id=119 data-nosnippet>119</a>    <span class="doccomment">/// Compute SCCs without annotations.
 <a href=#120 id=120 data-nosnippet>120</a>    </span><span class="kw">pub fn </span>new(graph: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="../mod.rs.html#44-46">Successors</a>&lt;Node = N&gt;) -&gt; <span class="self">Self </span>{
 <a href=#121 id=121 data-nosnippet>121</a>        <a href="#125-130"><span class="self">Self</span>::new_with_annotation</a>(<a href="#120">graph</a>, <span class="kw-2">&amp;mut </span><a href="#62">NoAnnotations</a>(<a href="https://doc.rust-lang.org/nightly/core/marker/struct.PhantomData.html">PhantomData</a>::&lt;S&gt;))
@@ -129,7 +129,7 @@
 <a href=#129 id=129 data-nosnippet>129</a>        <a href="#322-346">SccsConstruction::construct</a>(<a href="#126">graph</a>, <a href="#127">annotations</a>)
 <a href=#130 id=130 data-nosnippet>130</a>    }
 <a href=#131 id=131 data-nosnippet>131</a>
-<a href=#132 id=132 data-nosnippet>132</a>    <span class="kw">pub fn </span>scc_indices(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>IndexSlice&lt;N, S&gt; {
+<a href=#132 id=132 data-nosnippet>132</a>    <span class="kw">pub fn </span>scc_indices(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><a href="../../../../rustc_index/slice/struct.IndexSlice.html">IndexSlice</a>&lt;N, S&gt; {
 <a href=#133 id=133 data-nosnippet>133</a>        <span class="kw-2">&amp;</span><a class="self" href="#132">self</a>.scc_indices
 <a href=#134 id=134 data-nosnippet>134</a>    }
 <a href=#135 id=135 data-nosnippet>135</a>
@@ -171,7 +171,7 @@
 <a href=#171 id=171 data-nosnippet>171</a>    }
 <a href=#172 id=172 data-nosnippet>172</a>}
 <a href=#173 id=173 data-nosnippet>173</a>
-<a href=#174 id=174 data-nosnippet>174</a><span class="kw">impl</span>&lt;N: Idx, S: Idx + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>&gt; <a href="../mod.rs.html#14-34">DirectedGraph</a> <span class="kw">for </span><a href="#85-92">Sccs</a>&lt;N, S&gt; {
+<a href=#174 id=174 data-nosnippet>174</a><span class="kw">impl</span>&lt;N: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a>, S: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a> + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>&gt; <a href="../mod.rs.html#14-34">DirectedGraph</a> <span class="kw">for </span><a href="#85-92">Sccs</a>&lt;N, S&gt; {
 <a href=#175 id=175 data-nosnippet>175</a>    <span class="kw">type </span>Node = S;
 <a href=#176 id=176 data-nosnippet>176</a>
 <a href=#177 id=177 data-nosnippet>177</a>    <span class="kw">fn </span>num_nodes(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> {
@@ -179,22 +179,22 @@
 <a href=#179 id=179 data-nosnippet>179</a>    }
 <a href=#180 id=180 data-nosnippet>180</a>}
 <a href=#181 id=181 data-nosnippet>181</a>
-<a href=#182 id=182 data-nosnippet>182</a><span class="kw">impl</span>&lt;N: Idx, S: Idx + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>&gt; <a href="../mod.rs.html#36-38">NumEdges</a> <span class="kw">for </span><a href="#85-92">Sccs</a>&lt;N, S&gt; {
+<a href=#182 id=182 data-nosnippet>182</a><span class="kw">impl</span>&lt;N: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a>, S: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a> + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>&gt; <a href="../mod.rs.html#36-38">NumEdges</a> <span class="kw">for </span><a href="#85-92">Sccs</a>&lt;N, S&gt; {
 <a href=#183 id=183 data-nosnippet>183</a>    <span class="kw">fn </span>num_edges(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> {
 <a href=#184 id=184 data-nosnippet>184</a>        <a class="self" href="#183">self</a>.scc_data.all_successors.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.len">len</a>()
 <a href=#185 id=185 data-nosnippet>185</a>    }
 <a href=#186 id=186 data-nosnippet>186</a>}
 <a href=#187 id=187 data-nosnippet>187</a>
-<a href=#188 id=188 data-nosnippet>188</a><span class="kw">impl</span>&lt;N: Idx, S: Idx + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>&gt; <a href="../mod.rs.html#44-46">Successors</a> <span class="kw">for </span><a href="#85-92">Sccs</a>&lt;N, S&gt; {
+<a href=#188 id=188 data-nosnippet>188</a><span class="kw">impl</span>&lt;N: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a>, S: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a> + <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html">Ord</a>&gt; <a href="../mod.rs.html#44-46">Successors</a> <span class="kw">for </span><a href="#85-92">Sccs</a>&lt;N, S&gt; {
 <a href=#189 id=189 data-nosnippet>189</a>    <span class="kw">fn </span>successors(<span class="kw-2">&amp;</span><span class="self">self</span>, node: S) -&gt; <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = <span class="self">Self</span>::Node&gt; {
 <a href=#190 id=190 data-nosnippet>190</a>        <a class="self" href="#189">self</a>.<a href="#157-159">successors</a>(<a href="#189">node</a>).<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.cloned">cloned</a>()
 <a href=#191 id=191 data-nosnippet>191</a>    }
 <a href=#192 id=192 data-nosnippet>192</a>}
 <a href=#193 id=193 data-nosnippet>193</a>
-<a href=#194 id=194 data-nosnippet>194</a><span class="kw">impl</span>&lt;S: Idx&gt; <a href="#107-116">SccData</a>&lt;S&gt; {
+<a href=#194 id=194 data-nosnippet>194</a><span class="kw">impl</span>&lt;S: <a href="../../../../rustc_index/idx/trait.Idx.html">Idx</a>&gt; <a href="#107-116">SccData</a>&lt;S&gt; {
 <a href=#195 id=195 data-nosnippet>195</a>    <span class="doccomment">/// Number of SCCs,
 <a href=#196 id=196 data-nosnippet>196</a>    </span><span class="kw">fn </span>len(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> {
-<a href=#197 id=197 data-nosnippet>197</a>        <a class="self" href="#196">self</a>.scc_details.len()
+<a href=#197 id=197 data-nosnippet>197</a>        <a class="self" href="#196">self</a>.scc_details.<a href="../../../../rustc_index/slice/struct.IndexSlice.html#method.len">len</a>()
 <a href=#198 id=198 data-nosnippet>198</a>    }
 <a href=#199 id=199 data-nosnippet>199</a>
 <a href=#200 id=200 data-nosnippet>200</a>    <span class="doccomment">/// Returns the successors of the given SCC.
@@ -219,7 +219,7 @@
 <a href=#219 id=219 data-nosnippet>219</a>
 <a href=#220 id=220 data-nosnippet>220</a>        <span class="kw">let </span>range = <a href="#210">all_successors_start</a>..<a href="#212">all_successors_end</a>;
 <a href=#221 id=221 data-nosnippet>221</a>        <span class="kw">let </span>metadata = <a href="#95-99">SccDetails</a> { <a href="#220">range</a> };
-<a href=#222 id=222 data-nosnippet>222</a>        <a class="self" href="#207">self</a>.scc_details.push(<a href="#221">metadata</a>)
+<a href=#222 id=222 data-nosnippet>222</a>        <a class="self" href="#207">self</a>.scc_details.<a href="../../../../rustc_index/vec/struct.IndexVec.html#method.push">push</a>(<a href="#221">metadata</a>)
 <a href=#223 id=223 data-nosnippet>223</a>    }
 <a href=#224 id=224 data-nosnippet>224</a>}
 <a href=#225 id=225 data-nosnippet>225</a>
@@ -233,7 +233,7 @@
 <a href=#233 id=233 data-nosnippet>233</a>    <span class="doccomment">/// The state of each node; used during walk to record the stack
 <a href=#234 id=234 data-nosnippet>234</a>    /// and after walk to record what cycle each node ended up being
 <a href=#235 id=235 data-nosnippet>235</a>    /// in.
-<a href=#236 id=236 data-nosnippet>236</a>    </span>node_states: IndexVec&lt;G::Node, <a href="#259-286">NodeState</a>&lt;G::Node, A::SccIdx, A::Ann&gt;&gt;,
+<a href=#236 id=236 data-nosnippet>236</a>    </span>node_states: <a href="../../../../rustc_index/vec/struct.IndexVec.html">IndexVec</a>&lt;G::Node, <a href="#259-286">NodeState</a>&lt;G::Node, A::SccIdx, A::Ann&gt;&gt;,
 <a href=#237 id=237 data-nosnippet>237</a>
 <a href=#238 id=238 data-nosnippet>238</a>    <span class="doccomment">/// The stack of nodes that we are visiting as part of the DFS.
 <a href=#239 id=239 data-nosnippet>239</a>    </span>node_stack: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;G::Node&gt;,
@@ -324,10 +324,10 @@
 <a href=#324 id=324 data-nosnippet>324</a>
 <a href=#325 id=325 data-nosnippet>325</a>        <span class="kw">let </span><span class="kw-2">mut </span>this = <span class="self">Self </span>{
 <a href=#326 id=326 data-nosnippet>326</a>            <a href="#322">graph</a>,
-<a href=#327 id=327 data-nosnippet>327</a>            node_states: IndexVec::from_elem_n(<a href="#264">NodeState::NotVisited</a>, <a href="#323">num_nodes</a>),
+<a href=#327 id=327 data-nosnippet>327</a>            node_states: <a href="../../../../rustc_index/vec/struct.IndexVec.html#method.from_elem_n">IndexVec::from_elem_n</a>(<a href="#264">NodeState::NotVisited</a>, <a href="#323">num_nodes</a>),
 <a href=#328 id=328 data-nosnippet>328</a>            node_stack: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.with_capacity">Vec::with_capacity</a>(<a href="#323">num_nodes</a>),
 <a href=#329 id=329 data-nosnippet>329</a>            successors_stack: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>(),
-<a href=#330 id=330 data-nosnippet>330</a>            scc_data: <a href="#107-116">SccData</a> { scc_details: IndexVec::new(), all_successors: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>() },
+<a href=#330 id=330 data-nosnippet>330</a>            scc_data: <a href="#107-116">SccData</a> { scc_details: <a href="../../../../rustc_index/vec/struct.IndexVec.html#method.new">IndexVec::new</a>(), all_successors: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>() },
 <a href=#331 id=331 data-nosnippet>331</a>            duplicate_set: <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxHashSet::default</a>(),
 <a href=#332 id=332 data-nosnippet>332</a>            <a href="#322">annotations</a>,
 <a href=#333 id=333 data-nosnippet>333</a>        };

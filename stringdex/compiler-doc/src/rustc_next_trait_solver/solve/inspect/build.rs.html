@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_next_trait_solver/src/solve/inspect/build.rs`."><title>build.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_next_trait_solver" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-1b37d467.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_next_trait_solver/solve/inspect/</div>build.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Building proof trees incrementally during trait solving.
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_next_trait_solver/src/solve/inspect/build.rs`."><title>build.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_next_trait_solver" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-1a4373a8.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-1b37d467.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_next_trait_solver/solve/inspect/</div>build.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Building proof trees incrementally during trait solving.
 <a href=#2 id=2 data-nosnippet>2</a>//!
 <a href=#3 id=3 data-nosnippet>3</a>//! This code is *a bit* of a mess and can hopefully be
 <a href=#4 id=4 data-nosnippet>4</a>//! mostly ignored. For a general overview of how it works,
@@ -7,8 +7,8 @@
 <a href=#7 id=7 data-nosnippet>7</a></span><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/marker/struct.PhantomData.html">std::marker::PhantomData</a>;
 <a href=#8 id=8 data-nosnippet>8</a>
 <a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="https://docs.rs/derive-where/1.5.0/derive_where/attr.derive_where.html">derive_where::derive_where</a>;
-<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>rustc_type_ir::inherent::<span class="kw-2">*</span>;
-<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>rustc_type_ir::{<span class="self">self </span><span class="kw">as </span>ty, Interner};
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><a href="../../../../rustc_type_ir/inherent/index.html">rustc_type_ir::inherent</a>::<span class="kw-2">*</span>;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>rustc_type_ir::{<span class="self"><a href="../../../../rustc_type_ir/index.html">self</a> </span><span class="kw">as </span>ty, <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>};
 <a href=#12 id=12 data-nosnippet>12</a>
 <a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span><a href="../../delegate.rs.html#6-91"><span class="kw">crate</span>::delegate::SolverDelegate</a>;
 <a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span><a href="../eval_ctxt/mod.rs.html#33"><span class="kw">crate</span>::solve::eval_ctxt::canonical</a>;
@@ -39,7 +39,7 @@
 <a href=#39 id=39 data-nosnippet>39</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span><a href="../../../../rustc_next_trait_solver/solve/inspect/build/struct.ProofTreeBuilder.html">ProofTreeBuilder</a>&lt;D, I = &lt;D <span class="kw">as </span>SolverDelegate&gt;::Interner&gt;
 <a href=#40 id=40 data-nosnippet>40</a><span class="kw">where
 <a href=#41 id=41 data-nosnippet>41</a>    </span>D: <a href="../../delegate.rs.html#6-91">SolverDelegate</a>&lt;Interner = I&gt;,
-<a href=#42 id=42 data-nosnippet>42</a>    I: Interner,
+<a href=#42 id=42 data-nosnippet>42</a>    I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>,
 <a href=#43 id=43 data-nosnippet>43</a>{
 <a href=#44 id=44 data-nosnippet>44</a>    _infcx: <a href="https://doc.rust-lang.org/nightly/core/marker/struct.PhantomData.html">PhantomData</a>&lt;D&gt;,
 <a href=#45 id=45 data-nosnippet>45</a>    state: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html">Box</a>&lt;<a href="#53-57">DebugSolver</a>&lt;I&gt;&gt;&gt;,
@@ -49,27 +49,27 @@
 <a href=#49 id=49 data-nosnippet>49</a>/// in the code, only one or two variants are actually possible.
 <a href=#50 id=50 data-nosnippet>50</a>///
 <a href=#51 id=51 data-nosnippet>51</a>/// We simply ICE in case that assumption is broken.
-<a href=#52 id=52 data-nosnippet>52</a></span><span class="attr">#[derive_where(Debug; I: Interner)]
-<a href=#53 id=53 data-nosnippet>53</a></span><span class="kw">enum </span><a href="#53-57">DebugSolver</a>&lt;I: Interner&gt; {
+<a href=#52 id=52 data-nosnippet>52</a></span><span class="attr">#[derive_where(Debug; I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>)]
+<a href=#53 id=53 data-nosnippet>53</a></span><span class="kw">enum </span><a href="#53-57">DebugSolver</a>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; {
 <a href=#54 id=54 data-nosnippet>54</a>    Root,
 <a href=#55 id=55 data-nosnippet>55</a>    GoalEvaluation(<a href="#72-79">WipGoalEvaluation</a>&lt;I&gt;),
 <a href=#56 id=56 data-nosnippet>56</a>    CanonicalGoalEvaluationStep(<a href="#104-114">WipCanonicalGoalEvaluationStep</a>&lt;I&gt;),
 <a href=#57 id=57 data-nosnippet>57</a>}
 <a href=#58 id=58 data-nosnippet>58</a>
-<a href=#59 id=59 data-nosnippet>59</a><span class="kw">impl</span>&lt;I: Interner&gt; <a href="https://doc.rust-lang.org/nightly/core/convert/trait.From.html">From</a>&lt;<a href="#72-79">WipGoalEvaluation</a>&lt;I&gt;&gt; <span class="kw">for </span><a href="#53-57">DebugSolver</a>&lt;I&gt; {
+<a href=#59 id=59 data-nosnippet>59</a><span class="kw">impl</span>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; <a href="https://doc.rust-lang.org/nightly/core/convert/trait.From.html">From</a>&lt;<a href="#72-79">WipGoalEvaluation</a>&lt;I&gt;&gt; <span class="kw">for </span><a href="#53-57">DebugSolver</a>&lt;I&gt; {
 <a href=#60 id=60 data-nosnippet>60</a>    <span class="kw">fn </span>from(g: <a href="#72-79">WipGoalEvaluation</a>&lt;I&gt;) -&gt; <a href="#53-57">DebugSolver</a>&lt;I&gt; {
 <a href=#61 id=61 data-nosnippet>61</a>        <a href="#55">DebugSolver::GoalEvaluation</a>(<a href="#60">g</a>)
 <a href=#62 id=62 data-nosnippet>62</a>    }
 <a href=#63 id=63 data-nosnippet>63</a>}
 <a href=#64 id=64 data-nosnippet>64</a>
-<a href=#65 id=65 data-nosnippet>65</a><span class="kw">impl</span>&lt;I: Interner&gt; <a href="https://doc.rust-lang.org/nightly/core/convert/trait.From.html">From</a>&lt;<a href="#104-114">WipCanonicalGoalEvaluationStep</a>&lt;I&gt;&gt; <span class="kw">for </span><a href="#53-57">DebugSolver</a>&lt;I&gt; {
+<a href=#65 id=65 data-nosnippet>65</a><span class="kw">impl</span>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; <a href="https://doc.rust-lang.org/nightly/core/convert/trait.From.html">From</a>&lt;<a href="#104-114">WipCanonicalGoalEvaluationStep</a>&lt;I&gt;&gt; <span class="kw">for </span><a href="#53-57">DebugSolver</a>&lt;I&gt; {
 <a href=#66 id=66 data-nosnippet>66</a>    <span class="kw">fn </span>from(g: <a href="#104-114">WipCanonicalGoalEvaluationStep</a>&lt;I&gt;) -&gt; <a href="#53-57">DebugSolver</a>&lt;I&gt; {
 <a href=#67 id=67 data-nosnippet>67</a>        <a href="#56">DebugSolver::CanonicalGoalEvaluationStep</a>(<a href="#66">g</a>)
 <a href=#68 id=68 data-nosnippet>68</a>    }
 <a href=#69 id=69 data-nosnippet>69</a>}
 <a href=#70 id=70 data-nosnippet>70</a>
-<a href=#71 id=71 data-nosnippet>71</a><span class="attr">#[derive_where(PartialEq, Debug; I: Interner)]
-<a href=#72 id=72 data-nosnippet>72</a></span><span class="kw">struct </span><a href="#72-79">WipGoalEvaluation</a>&lt;I: Interner&gt; {
+<a href=#71 id=71 data-nosnippet>71</a><span class="attr">#[derive_where(PartialEq, Debug; I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>)]
+<a href=#72 id=72 data-nosnippet>72</a></span><span class="kw">struct </span><a href="#72-79">WipGoalEvaluation</a>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; {
 <a href=#73 id=73 data-nosnippet>73</a>    <span class="kw">pub </span>uncanonicalized_goal: <a href="../../../../rustc_next_trait_solver/solve/struct.Goal.html">Goal</a>&lt;I, I::Predicate&gt;,
 <a href=#74 id=74 data-nosnippet>74</a>    <span class="kw">pub </span>orig_values: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;I::GenericArg&gt;,
 <a href=#75 id=75 data-nosnippet>75</a>    <span class="kw">pub </span>encountered_overflow: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
@@ -78,9 +78,9 @@
 <a href=#78 id=78 data-nosnippet>78</a>    <span class="kw">pub </span>result: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../../rustc_next_trait_solver/solve/type.QueryResult.html">QueryResult</a>&lt;I&gt;&gt;,
 <a href=#79 id=79 data-nosnippet>79</a>}
 <a href=#80 id=80 data-nosnippet>80</a>
-<a href=#81 id=81 data-nosnippet>81</a><span class="kw">impl</span>&lt;I: Interner&gt; <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Eq.html">Eq</a> <span class="kw">for </span><a href="#72-79">WipGoalEvaluation</a>&lt;I&gt; {}
+<a href=#81 id=81 data-nosnippet>81</a><span class="kw">impl</span>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Eq.html">Eq</a> <span class="kw">for </span><a href="#72-79">WipGoalEvaluation</a>&lt;I&gt; {}
 <a href=#82 id=82 data-nosnippet>82</a>
-<a href=#83 id=83 data-nosnippet>83</a><span class="kw">impl</span>&lt;I: Interner&gt; <a href="#72-79">WipGoalEvaluation</a>&lt;I&gt; {
+<a href=#83 id=83 data-nosnippet>83</a><span class="kw">impl</span>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; <a href="#72-79">WipGoalEvaluation</a>&lt;I&gt; {
 <a href=#84 id=84 data-nosnippet>84</a>    <span class="kw">fn </span>finalize(<span class="self">self</span>) -&gt; <a href="../../../../rustc_next_trait_solver/solve/inspect/struct.GoalEvaluation.html">inspect::GoalEvaluation</a>&lt;I&gt; {
 <a href=#85 id=85 data-nosnippet>85</a>        <a href="../../../../rustc_next_trait_solver/solve/inspect/struct.GoalEvaluation.html">inspect::GoalEvaluation</a> {
 <a href=#86 id=86 data-nosnippet>86</a>            uncanonicalized_goal: <a class="self" href="#84">self</a>.uncanonicalized_goal,
@@ -100,8 +100,8 @@
 <a href=#100 id=100 data-nosnippet>100</a><span class="doccomment">/// This only exists during proof tree building and does not have
 <a href=#101 id=101 data-nosnippet>101</a>/// a corresponding struct in `inspect`. We need this to track a
 <a href=#102 id=102 data-nosnippet>102</a>/// bunch of metadata about the current evaluation.
-<a href=#103 id=103 data-nosnippet>103</a></span><span class="attr">#[derive_where(PartialEq, Debug; I: Interner)]
-<a href=#104 id=104 data-nosnippet>104</a></span><span class="kw">struct </span><a href="#104-114">WipCanonicalGoalEvaluationStep</a>&lt;I: Interner&gt; {
+<a href=#103 id=103 data-nosnippet>103</a></span><span class="attr">#[derive_where(PartialEq, Debug; I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>)]
+<a href=#104 id=104 data-nosnippet>104</a></span><span class="kw">struct </span><a href="#104-114">WipCanonicalGoalEvaluationStep</a>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; {
 <a href=#105 id=105 data-nosnippet>105</a>    <span class="doccomment">/// Unlike `EvalCtxt::var_values`, we append a new
 <a href=#106 id=106 data-nosnippet>106</a>    /// generic arg here whenever we create a new inference
 <a href=#107 id=107 data-nosnippet>107</a>    /// variable.
@@ -113,9 +113,9 @@
 <a href=#113 id=113 data-nosnippet>113</a>    evaluation: <a href="#140-145">WipProbe</a>&lt;I&gt;,
 <a href=#114 id=114 data-nosnippet>114</a>}
 <a href=#115 id=115 data-nosnippet>115</a>
-<a href=#116 id=116 data-nosnippet>116</a><span class="kw">impl</span>&lt;I: Interner&gt; <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Eq.html">Eq</a> <span class="kw">for </span><a href="#104-114">WipCanonicalGoalEvaluationStep</a>&lt;I&gt; {}
+<a href=#116 id=116 data-nosnippet>116</a><span class="kw">impl</span>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Eq.html">Eq</a> <span class="kw">for </span><a href="#104-114">WipCanonicalGoalEvaluationStep</a>&lt;I&gt; {}
 <a href=#117 id=117 data-nosnippet>117</a>
-<a href=#118 id=118 data-nosnippet>118</a><span class="kw">impl</span>&lt;I: Interner&gt; <a href="#104-114">WipCanonicalGoalEvaluationStep</a>&lt;I&gt; {
+<a href=#118 id=118 data-nosnippet>118</a><span class="kw">impl</span>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; <a href="#104-114">WipCanonicalGoalEvaluationStep</a>&lt;I&gt; {
 <a href=#119 id=119 data-nosnippet>119</a>    <span class="kw">fn </span>current_evaluation_scope(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span><a href="#140-145">WipProbe</a>&lt;I&gt; {
 <a href=#120 id=120 data-nosnippet>120</a>        <span class="kw">let </span><span class="kw-2">mut </span>current = <span class="kw-2">&amp;mut </span><a class="self" href="#119">self</a>.evaluation;
 <a href=#121 id=121 data-nosnippet>121</a>        <span class="kw">for _ in </span><span class="number">0</span>..<span class="self">self</span>.probe_depth {
@@ -136,17 +136,17 @@
 <a href=#136 id=136 data-nosnippet>136</a>    }
 <a href=#137 id=137 data-nosnippet>137</a>}
 <a href=#138 id=138 data-nosnippet>138</a>
-<a href=#139 id=139 data-nosnippet>139</a><span class="attr">#[derive_where(PartialEq, Debug; I: Interner)]
-<a href=#140 id=140 data-nosnippet>140</a></span><span class="kw">struct </span><a href="#140-145">WipProbe</a>&lt;I: Interner&gt; {
+<a href=#139 id=139 data-nosnippet>139</a><span class="attr">#[derive_where(PartialEq, Debug; I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>)]
+<a href=#140 id=140 data-nosnippet>140</a></span><span class="kw">struct </span><a href="#140-145">WipProbe</a>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; {
 <a href=#141 id=141 data-nosnippet>141</a>    initial_num_var_values: <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>,
 <a href=#142 id=142 data-nosnippet>142</a>    steps: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="#160-165">WipProbeStep</a>&lt;I&gt;&gt;,
 <a href=#143 id=143 data-nosnippet>143</a>    kind: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../../rustc_next_trait_solver/solve/inspect/enum.ProbeKind.html">inspect::ProbeKind</a>&lt;I&gt;&gt;,
 <a href=#144 id=144 data-nosnippet>144</a>    final_state: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../../rustc_next_trait_solver/solve/inspect/type.CanonicalState.html">inspect::CanonicalState</a>&lt;I, ()&gt;&gt;,
 <a href=#145 id=145 data-nosnippet>145</a>}
 <a href=#146 id=146 data-nosnippet>146</a>
-<a href=#147 id=147 data-nosnippet>147</a><span class="kw">impl</span>&lt;I: Interner&gt; <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Eq.html">Eq</a> <span class="kw">for </span><a href="#140-145">WipProbe</a>&lt;I&gt; {}
+<a href=#147 id=147 data-nosnippet>147</a><span class="kw">impl</span>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Eq.html">Eq</a> <span class="kw">for </span><a href="#140-145">WipProbe</a>&lt;I&gt; {}
 <a href=#148 id=148 data-nosnippet>148</a>
-<a href=#149 id=149 data-nosnippet>149</a><span class="kw">impl</span>&lt;I: Interner&gt; <a href="#140-145">WipProbe</a>&lt;I&gt; {
+<a href=#149 id=149 data-nosnippet>149</a><span class="kw">impl</span>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; <a href="#140-145">WipProbe</a>&lt;I&gt; {
 <a href=#150 id=150 data-nosnippet>150</a>    <span class="kw">fn </span>finalize(<span class="self">self</span>) -&gt; <a href="../../../../rustc_next_trait_solver/solve/inspect/struct.Probe.html">inspect::Probe</a>&lt;I&gt; {
 <a href=#151 id=151 data-nosnippet>151</a>        <a href="../../../../rustc_next_trait_solver/solve/inspect/struct.Probe.html">inspect::Probe</a> {
 <a href=#152 id=152 data-nosnippet>152</a>            steps: <a class="self" href="#150">self</a>.steps.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(WipProbeStep::finalize).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>(),
@@ -156,17 +156,17 @@
 <a href=#156 id=156 data-nosnippet>156</a>    }
 <a href=#157 id=157 data-nosnippet>157</a>}
 <a href=#158 id=158 data-nosnippet>158</a>
-<a href=#159 id=159 data-nosnippet>159</a><span class="attr">#[derive_where(PartialEq, Debug; I: Interner)]
-<a href=#160 id=160 data-nosnippet>160</a></span><span class="kw">enum </span><a href="#160-165">WipProbeStep</a>&lt;I: Interner&gt; {
+<a href=#159 id=159 data-nosnippet>159</a><span class="attr">#[derive_where(PartialEq, Debug; I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>)]
+<a href=#160 id=160 data-nosnippet>160</a></span><span class="kw">enum </span><a href="#160-165">WipProbeStep</a>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; {
 <a href=#161 id=161 data-nosnippet>161</a>    AddGoal(<a href="../../../../rustc_next_trait_solver/solve/enum.GoalSource.html">GoalSource</a>, <a href="../../../../rustc_next_trait_solver/solve/inspect/type.CanonicalState.html">inspect::CanonicalState</a>&lt;I, <a href="../../../../rustc_next_trait_solver/solve/struct.Goal.html">Goal</a>&lt;I, I::Predicate&gt;&gt;),
 <a href=#162 id=162 data-nosnippet>162</a>    NestedProbe(<a href="#140-145">WipProbe</a>&lt;I&gt;),
 <a href=#163 id=163 data-nosnippet>163</a>    MakeCanonicalResponse { shallow_certainty: <a href="../../../../rustc_next_trait_solver/solve/enum.Certainty.html">Certainty</a> },
 <a href=#164 id=164 data-nosnippet>164</a>    RecordImplArgs { impl_args: <a href="../../../../rustc_next_trait_solver/solve/inspect/type.CanonicalState.html">inspect::CanonicalState</a>&lt;I, I::GenericArgs&gt; },
 <a href=#165 id=165 data-nosnippet>165</a>}
 <a href=#166 id=166 data-nosnippet>166</a>
-<a href=#167 id=167 data-nosnippet>167</a><span class="kw">impl</span>&lt;I: Interner&gt; <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Eq.html">Eq</a> <span class="kw">for </span><a href="#160-165">WipProbeStep</a>&lt;I&gt; {}
+<a href=#167 id=167 data-nosnippet>167</a><span class="kw">impl</span>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Eq.html">Eq</a> <span class="kw">for </span><a href="#160-165">WipProbeStep</a>&lt;I&gt; {}
 <a href=#168 id=168 data-nosnippet>168</a>
-<a href=#169 id=169 data-nosnippet>169</a><span class="kw">impl</span>&lt;I: Interner&gt; <a href="#160-165">WipProbeStep</a>&lt;I&gt; {
+<a href=#169 id=169 data-nosnippet>169</a><span class="kw">impl</span>&lt;I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; <a href="#160-165">WipProbeStep</a>&lt;I&gt; {
 <a href=#170 id=170 data-nosnippet>170</a>    <span class="kw">fn </span>finalize(<span class="self">self</span>) -&gt; <a href="../../../../rustc_next_trait_solver/solve/inspect/enum.ProbeStep.html">inspect::ProbeStep</a>&lt;I&gt; {
 <a href=#171 id=171 data-nosnippet>171</a>        <span class="kw">match </span><span class="self"><a href="#170">self</a> </span>{
 <a href=#172 id=172 data-nosnippet>172</a>            <a href="#161">WipProbeStep::AddGoal</a>(source, goal) =&gt; <a href="../../../../rustc_next_trait_solver/solve/inspect/enum.ProbeStep.html">inspect::ProbeStep::AddGoal</a>(<a href="#172">source</a>, <a href="#172">goal</a>),
@@ -181,7 +181,7 @@
 <a href=#181 id=181 data-nosnippet>181</a>    }
 <a href=#182 id=182 data-nosnippet>182</a>}
 <a href=#183 id=183 data-nosnippet>183</a>
-<a href=#184 id=184 data-nosnippet>184</a><span class="kw">impl</span>&lt;D: <a href="../../delegate.rs.html#6-91">SolverDelegate</a>&lt;Interner = I&gt;, I: Interner&gt; <a href="#39-46">ProofTreeBuilder</a>&lt;D&gt; {
+<a href=#184 id=184 data-nosnippet>184</a><span class="kw">impl</span>&lt;D: <a href="../../delegate.rs.html#6-91">SolverDelegate</a>&lt;Interner = I&gt;, I: <a href="../../../../rustc_type_ir/interner/trait.Interner.html">Interner</a>&gt; <a href="#39-46">ProofTreeBuilder</a>&lt;D&gt; {
 <a href=#185 id=185 data-nosnippet>185</a>    <span class="kw">fn </span>new(state: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html">Into</a>&lt;<a href="#53-57">DebugSolver</a>&lt;I&gt;&gt;) -&gt; <a href="#39-46">ProofTreeBuilder</a>&lt;D&gt; {
 <a href=#186 id=186 data-nosnippet>186</a>        <a href="#39-46">ProofTreeBuilder</a> { state: <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html#method.new">Box::new</a>(<a href="#185">state</a>.<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>())), _infcx: <a href="https://doc.rust-lang.org/nightly/core/marker/struct.PhantomData.html">PhantomData</a> }
 <a href=#187 id=187 data-nosnippet>187</a>    }
@@ -281,12 +281,12 @@
 <a href=#281 id=281 data-nosnippet>281</a>
 <a href=#282 id=282 data-nosnippet>282</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new_goal_evaluation_step(
 <a href=#283 id=283 data-nosnippet>283</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-<a href=#284 id=284 data-nosnippet>284</a>        var_values: ty::CanonicalVarValues&lt;I&gt;,
+<a href=#284 id=284 data-nosnippet>284</a>        var_values: <a href="../../../../rustc_type_ir/canonical/struct.CanonicalVarValues.html">ty::CanonicalVarValues</a>&lt;I&gt;,
 <a href=#285 id=285 data-nosnippet>285</a>    ) -&gt; <a href="#39-46">ProofTreeBuilder</a>&lt;D&gt; {
 <a href=#286 id=286 data-nosnippet>286</a>        <a class="self" href="#283">self</a>.<a href="#196-201">nested</a>(|| <a href="#104-114">WipCanonicalGoalEvaluationStep</a> {
-<a href=#287 id=287 data-nosnippet>287</a>            var_values: <a href="#284">var_values</a>.var_values.to_vec(),
+<a href=#287 id=287 data-nosnippet>287</a>            var_values: <a href="#284">var_values</a>.var_values.<a href="../../../../rustc_type_ir/inherent/trait.SliceLike.html#tymethod.to_vec">to_vec</a>(),
 <a href=#288 id=288 data-nosnippet>288</a>            evaluation: <a href="#140-145">WipProbe</a> {
-<a href=#289 id=289 data-nosnippet>289</a>                initial_num_var_values: <a href="#284">var_values</a>.len(),
+<a href=#289 id=289 data-nosnippet>289</a>                initial_num_var_values: <a href="#284">var_values</a>.<a href="../../../../rustc_type_ir/canonical/struct.CanonicalVarValues.html#method.len">len</a>(),
 <a href=#290 id=290 data-nosnippet>290</a>                steps: <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[],
 <a href=#291 id=291 data-nosnippet>291</a>                kind: <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
 <a href=#292 id=292 data-nosnippet>292</a>                final_state: <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
@@ -350,7 +350,7 @@
 <a href=#350 id=350 data-nosnippet>350</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>probe_final_state(
 <a href=#351 id=351 data-nosnippet>351</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#352 id=352 data-nosnippet>352</a>        delegate: <span class="kw-2">&amp;</span>D,
-<a href=#353 id=353 data-nosnippet>353</a>        max_input_universe: ty::UniverseIndex,
+<a href=#353 id=353 data-nosnippet>353</a>        max_input_universe: <a href="../../../../rustc_type_ir/struct.UniverseIndex.html">ty::UniverseIndex</a>,
 <a href=#354 id=354 data-nosnippet>354</a>    ) {
 <a href=#355 id=355 data-nosnippet>355</a>        <span class="kw">match </span><a class="self" href="#351">self</a>.<a href="#203-205">as_mut</a>() {
 <a href=#356 id=356 data-nosnippet>356</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a> </a>=&gt; {}
@@ -371,7 +371,7 @@
 <a href=#371 id=371 data-nosnippet>371</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>add_goal(
 <a href=#372 id=372 data-nosnippet>372</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#373 id=373 data-nosnippet>373</a>        delegate: <span class="kw-2">&amp;</span>D,
-<a href=#374 id=374 data-nosnippet>374</a>        max_input_universe: ty::UniverseIndex,
+<a href=#374 id=374 data-nosnippet>374</a>        max_input_universe: <a href="../../../../rustc_type_ir/struct.UniverseIndex.html">ty::UniverseIndex</a>,
 <a href=#375 id=375 data-nosnippet>375</a>        source: <a href="../../../../rustc_next_trait_solver/solve/enum.GoalSource.html">GoalSource</a>,
 <a href=#376 id=376 data-nosnippet>376</a>        goal: <a href="../../../../rustc_next_trait_solver/solve/struct.Goal.html">Goal</a>&lt;I, I::Predicate&gt;,
 <a href=#377 id=377 data-nosnippet>377</a>    ) {
@@ -393,7 +393,7 @@
 <a href=#393 id=393 data-nosnippet>393</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>record_impl_args(
 <a href=#394 id=394 data-nosnippet>394</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#395 id=395 data-nosnippet>395</a>        delegate: <span class="kw-2">&amp;</span>D,
-<a href=#396 id=396 data-nosnippet>396</a>        max_input_universe: ty::UniverseIndex,
+<a href=#396 id=396 data-nosnippet>396</a>        max_input_universe: <a href="../../../../rustc_type_ir/struct.UniverseIndex.html">ty::UniverseIndex</a>,
 <a href=#397 id=397 data-nosnippet>397</a>        impl_args: I::GenericArgs,
 <a href=#398 id=398 data-nosnippet>398</a>    ) {
 <a href=#399 id=399 data-nosnippet>399</a>        <span class="kw">match </span><a class="self" href="#394">self</a>.<a href="#203-205">as_mut</a>() {

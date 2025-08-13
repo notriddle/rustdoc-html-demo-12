@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_expand/src/mbe/macro_parser.rs`."><title>macro_parser.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_expand" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-88cc0424.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_expand/mbe/</div>macro_parser.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! This is an NFA-based parser, which calls out to the main Rust parser for named non-terminals
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_expand/src/mbe/macro_parser.rs`."><title>macro_parser.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_expand" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-1a4373a8.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_expand/mbe/</div>macro_parser.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! This is an NFA-based parser, which calls out to the main Rust parser for named non-terminals
 <a href=#2 id=2 data-nosnippet>2</a>//! (which it commits to fully when it hits one in a grammar). There's a set of current NFA threads
 <a href=#3 id=3 data-nosnippet>3</a>//! and a set of next ones. Instead of NTs, we have a special case for Kleene star. The big-O, in
 <a href=#4 id=4 data-nosnippet>4</a>//! pathological cases, is worse than traditional use of NFA or Earley parsing, but it's an easier
@@ -77,12 +77,12 @@
 <a href=#77 id=77 data-nosnippet>77</a>
 <a href=#78 id=78 data-nosnippet>78</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use </span><a href="#386-389">NamedMatch</a>::<span class="kw-2">*</span>;
 <a href=#79 id=79 data-nosnippet>79</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use </span><a href="#303-313">ParseResult</a>::<span class="kw-2">*</span>;
-<a href=#80 id=80 data-nosnippet>80</a><span class="kw">use </span>rustc_ast::token::{<a class="self" href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/index.html">self</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/TokenKind/variant.DocComment.html">DocComment</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/enum.NonterminalKind.html">NonterminalKind</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/struct.Token.html">Token</a>};
+<a href=#80 id=80 data-nosnippet>80</a><span class="kw">use </span>rustc_ast::token::{<a class="self" href="../../../rustc_ast/token/index.html">self</a>, <a href="../../../rustc_ast/token/TokenKind/variant.DocComment.html">DocComment</a>, <a href="../../../rustc_ast/token/enum.NonterminalKind.html">NonterminalKind</a>, <a href="../../../rustc_ast/token/struct.Token.html">Token</a>};
 <a href=#81 id=81 data-nosnippet>81</a><span class="kw">use </span><a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">rustc_data_structures::fx::FxHashMap</a>;
-<a href=#82 id=82 data-nosnippet>82</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/struct.ErrorGuaranteed.html">rustc_errors::ErrorGuaranteed</a>;
+<a href=#82 id=82 data-nosnippet>82</a><span class="kw">use </span><a href="../../../rustc_span/struct.ErrorGuaranteed.html">rustc_errors::ErrorGuaranteed</a>;
 <a href=#83 id=83 data-nosnippet>83</a><span class="kw">use </span><a href="../../../rustc_lint_defs/macro.pluralize.html">rustc_lint_defs::pluralize</a>;
 <a href=#84 id=84 data-nosnippet>84</a><span class="kw">use </span>rustc_parse::parser::{<a href="../../../rustc_parse/parser/enum.ParseNtResult.html">ParseNtResult</a>, <a href="../../../rustc_parse/parser/struct.Parser.html">Parser</a>, <a href="../../../rustc_parse/parser/fn.token_descr.html">token_descr</a>};
-<a href=#85 id=85 data-nosnippet>85</a><span class="kw">use </span>rustc_span::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.Ident.html">Ident</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html">Span</a>};
+<a href=#85 id=85 data-nosnippet>85</a><span class="kw">use </span>rustc_span::{<a href="../../../rustc_span/symbol/struct.Ident.html">Ident</a>, <a href="../../../rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>, <a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a>};
 <a href=#86 id=86 data-nosnippet>86</a>
 <a href=#87 id=87 data-nosnippet>87</a><span class="kw">use </span><a href="macro_rules.rs.html#223-245"><span class="kw">crate</span>::mbe::macro_rules::Tracker</a>;
 <a href=#88 id=88 data-nosnippet>88</a><span class="kw">use </span><span class="kw">crate</span>::mbe::{<a href="../mbe.rs.html#57-64">KleeneOp</a>, <a href="../mbe.rs.html#69-90">TokenTree</a>};
@@ -99,7 +99,7 @@
 <a href=#99 id=99 data-nosnippet>99</a></span><span class="attr">#[derive(Debug, PartialEq, Clone)]
 <a href=#100 id=100 data-nosnippet>100</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">enum </span><a href="../../../rustc_expand/mbe/macro_parser/enum.MatcherLoc.html">MatcherLoc</a> {
 <a href=#101 id=101 data-nosnippet>101</a>    Token {
-<a href=#102 id=102 data-nosnippet>102</a>        token: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/struct.Token.html">Token</a>,
+<a href=#102 id=102 data-nosnippet>102</a>        token: <a href="../../../rustc_ast/token/struct.Token.html">Token</a>,
 <a href=#103 id=103 data-nosnippet>103</a>    },
 <a href=#104 id=104 data-nosnippet>104</a>    Delimited,
 <a href=#105 id=105 data-nosnippet>105</a>    Sequence {
@@ -114,15 +114,15 @@
 <a href=#114 id=114 data-nosnippet>114</a>        idx_first: <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>,
 <a href=#115 id=115 data-nosnippet>115</a>    },
 <a href=#116 id=116 data-nosnippet>116</a>    SequenceSep {
-<a href=#117 id=117 data-nosnippet>117</a>        separator: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/struct.Token.html">Token</a>,
+<a href=#117 id=117 data-nosnippet>117</a>        separator: <a href="../../../rustc_ast/token/struct.Token.html">Token</a>,
 <a href=#118 id=118 data-nosnippet>118</a>    },
 <a href=#119 id=119 data-nosnippet>119</a>    SequenceKleeneOpAfterSep {
 <a href=#120 id=120 data-nosnippet>120</a>        idx_first: <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>,
 <a href=#121 id=121 data-nosnippet>121</a>    },
 <a href=#122 id=122 data-nosnippet>122</a>    MetaVarDecl {
-<a href=#123 id=123 data-nosnippet>123</a>        span: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html">Span</a>,
-<a href=#124 id=124 data-nosnippet>124</a>        bind: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.Ident.html">Ident</a>,
-<a href=#125 id=125 data-nosnippet>125</a>        kind: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/enum.NonterminalKind.html">NonterminalKind</a>,
+<a href=#123 id=123 data-nosnippet>123</a>        span: <a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#124 id=124 data-nosnippet>124</a>        bind: <a href="../../../rustc_span/symbol/struct.Ident.html">Ident</a>,
+<a href=#125 id=125 data-nosnippet>125</a>        kind: <a href="../../../rustc_ast/token/enum.NonterminalKind.html">NonterminalKind</a>,
 <a href=#126 id=126 data-nosnippet>126</a>        next_metavar: <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>,
 <a href=#127 id=127 data-nosnippet>127</a>        seq_depth: <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>,
 <a href=#128 id=128 data-nosnippet>128</a>    },
@@ -130,7 +130,7 @@
 <a href=#130 id=130 data-nosnippet>130</a>}
 <a href=#131 id=131 data-nosnippet>131</a>
 <a href=#132 id=132 data-nosnippet>132</a><span class="kw">impl </span><a href="#100-130">MatcherLoc</a> {
-<a href=#133 id=133 data-nosnippet>133</a>    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>span(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html">Span</a>&gt; {
+<a href=#133 id=133 data-nosnippet>133</a>    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>span(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a>&gt; {
 <a href=#134 id=134 data-nosnippet>134</a>        <span class="kw">match </span><span class="self"><a href="#133">self</a> </span>{
 <a href=#135 id=135 data-nosnippet>135</a>            <a href="#101-103">MatcherLoc::Token</a> { token } =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#135">token</a>.span),
 <a href=#136 id=136 data-nosnippet>136</a>            <a href="#104">MatcherLoc::Delimited</a> =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
@@ -259,7 +259,7 @@
 <a href=#259 id=259 data-nosnippet>259</a>
 <a href=#260 id=260 data-nosnippet>260</a><span class="comment">// This type is used a lot. Make sure it doesn't unintentionally get bigger.
 <a href=#261 id=261 data-nosnippet>261</a></span><span class="attr">#[cfg(target_pointer_width = <span class="string">"64"</span>)]
-<a href=#262 id=262 data-nosnippet>262</a></span><span class="macro">rustc_data_structures::static_assert_size!</span>(MatcherPos, <span class="number">16</span>);
+<a href=#262 id=262 data-nosnippet>262</a></span><a class="macro" href="../../../rustc_index/macro.static_assert_size.html">rustc_data_structures::static_assert_size!</a>(MatcherPos, <span class="number">16</span>);
 <a href=#263 id=263 data-nosnippet>263</a>
 <a href=#264 id=264 data-nosnippet>264</a><span class="kw">impl </span><a href="#245-258">MatcherPos</a> {
 <a href=#265 id=265 data-nosnippet>265</a>    <span class="doccomment">/// Adds `m` as a named match for the `metavar_idx`-th metavar. There are only two call sites,
@@ -308,8 +308,8 @@
 <a href=#308 id=308 data-nosnippet>308</a>    /// The usize is the approximate position of the token in the input token stream.
 <a href=#309 id=309 data-nosnippet>309</a>    </span>Failure(F),
 <a href=#310 id=310 data-nosnippet>310</a>    <span class="doccomment">/// Fatal error (malformed macro?). Abort compilation.
-<a href=#311 id=311 data-nosnippet>311</a>    </span>Error(<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html">rustc_span::Span</a>, <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>),
-<a href=#312 id=312 data-nosnippet>312</a>    ErrorReported(<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>),
+<a href=#311 id=311 data-nosnippet>311</a>    </span>Error(<a href="../../../rustc_span/span_encoding/struct.Span.html">rustc_span::Span</a>, <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>),
+<a href=#312 id=312 data-nosnippet>312</a>    ErrorReported(<a href="../../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>),
 <a href=#313 id=313 data-nosnippet>313</a>}
 <a href=#314 id=314 data-nosnippet>314</a>
 <a href=#315 id=315 data-nosnippet>315</a><span class="doccomment">/// A `ParseResult` where the `Success` variant contains a mapping of
@@ -319,7 +319,7 @@
 <a href=#319 id=319 data-nosnippet>319</a>
 <a href=#320 id=320 data-nosnippet>320</a><span class="doccomment">/// Contains a mapping of `MacroRulesNormalizedIdent`s to `NamedMatch`es.
 <a href=#321 id=321 data-nosnippet>321</a>/// This represents the mapping of metavars to the token trees they bind to.
-<a href=#322 id=322 data-nosnippet>322</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">type </span><a href="../../../rustc_expand/mbe/macro_parser/type.NamedMatches.html">NamedMatches</a> = <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>, <a href="#386-389">NamedMatch</a>&gt;;
+<a href=#322 id=322 data-nosnippet>322</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">type </span><a href="../../../rustc_expand/mbe/macro_parser/type.NamedMatches.html">NamedMatches</a> = <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<a href="../../../rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>, <a href="#386-389">NamedMatch</a>&gt;;
 <a href=#323 id=323 data-nosnippet>323</a>
 <a href=#324 id=324 data-nosnippet>324</a><span class="doccomment">/// Count how many metavars declarations are in `matcher`.
 <a href=#325 id=325 data-nosnippet>325</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../rustc_expand/mbe/macro_parser/fn.count_metavar_decls.html">count_metavar_decls</a>(matcher: <span class="kw-2">&amp;</span>[<a href="../mbe.rs.html#69-90">TokenTree</a>]) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> {
@@ -389,11 +389,11 @@
 <a href=#389 id=389 data-nosnippet>389</a>}
 <a href=#390 id=390 data-nosnippet>390</a>
 <a href=#391 id=391 data-nosnippet>391</a><span class="doccomment">/// Performs a token equality check, ignoring syntax context (that is, an unhygienic comparison)
-<a href=#392 id=392 data-nosnippet>392</a></span><span class="kw">fn </span><a href="../../../rustc_expand/mbe/macro_parser/fn.token_name_eq.html">token_name_eq</a>(t1: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/struct.Token.html">Token</a>, t2: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/struct.Token.html">Token</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
-<a href=#393 id=393 data-nosnippet>393</a>    <span class="kw">if let </span>(<span class="prelude-val">Some</span>((ident1, is_raw1)), <span class="prelude-val">Some</span>((ident2, is_raw2))) = (<a href="#392">t1</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/struct.Token.html#method.ident">ident</a>(), <a href="#392">t2</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/struct.Token.html#method.ident">ident</a>()) {
+<a href=#392 id=392 data-nosnippet>392</a></span><span class="kw">fn </span><a href="../../../rustc_expand/mbe/macro_parser/fn.token_name_eq.html">token_name_eq</a>(t1: <span class="kw-2">&amp;</span><a href="../../../rustc_ast/token/struct.Token.html">Token</a>, t2: <span class="kw-2">&amp;</span><a href="../../../rustc_ast/token/struct.Token.html">Token</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#393 id=393 data-nosnippet>393</a>    <span class="kw">if let </span>(<span class="prelude-val">Some</span>((ident1, is_raw1)), <span class="prelude-val">Some</span>((ident2, is_raw2))) = (<a href="#392">t1</a>.<a href="../../../rustc_ast/token/struct.Token.html#method.ident">ident</a>(), <a href="#392">t2</a>.<a href="../../../rustc_ast/token/struct.Token.html#method.ident">ident</a>()) {
 <a href=#394 id=394 data-nosnippet>394</a>        <a href="#393">ident1</a>.name == <a href="#393">ident2</a>.name &amp;&amp; <a href="#393">is_raw1</a> == <a href="#393">is_raw2</a>
 <a href=#395 id=395 data-nosnippet>395</a>    } <span class="kw">else if let </span>(<span class="prelude-val">Some</span>((ident1, is_raw1)), <span class="prelude-val">Some</span>((ident2, is_raw2))) =
-<a href=#396 id=396 data-nosnippet>396</a>        (<a href="#392">t1</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/struct.Token.html#method.lifetime">lifetime</a>(), <a href="#392">t2</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/struct.Token.html#method.lifetime">lifetime</a>())
+<a href=#396 id=396 data-nosnippet>396</a>        (<a href="#392">t1</a>.<a href="../../../rustc_ast/token/struct.Token.html#method.lifetime">lifetime</a>(), <a href="#392">t2</a>.<a href="../../../rustc_ast/token/struct.Token.html#method.lifetime">lifetime</a>())
 <a href=#397 id=397 data-nosnippet>397</a>    {
 <a href=#398 id=398 data-nosnippet>398</a>        <a href="#395">ident1</a>.name == <a href="#395">ident2</a>.name &amp;&amp; <a href="#395">is_raw1</a> == <a href="#395">is_raw2</a>
 <a href=#399 id=399 data-nosnippet>399</a>    } <span class="kw">else </span>{
@@ -404,7 +404,7 @@
 <a href=#404 id=404 data-nosnippet>404</a><span class="comment">// Note: the vectors could be created and dropped within `parse_tt`, but to avoid excess
 <a href=#405 id=405 data-nosnippet>405</a>// allocations we have a single vector for each kind that is cleared and reused repeatedly.
 <a href=#406 id=406 data-nosnippet>406</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct </span><a href="../../../rustc_expand/mbe/macro_parser/struct.TtParser.html">TtParser</a> {
-<a href=#407 id=407 data-nosnippet>407</a>    macro_name: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.Ident.html">Ident</a>,
+<a href=#407 id=407 data-nosnippet>407</a>    macro_name: <a href="../../../rustc_span/symbol/struct.Ident.html">Ident</a>,
 <a href=#408 id=408 data-nosnippet>408</a>
 <a href=#409 id=409 data-nosnippet>409</a>    <span class="doccomment">/// The set of current mps to be processed. This should be empty by the end of a successful
 <a href=#410 id=410 data-nosnippet>410</a>    /// execution of `parse_tt_inner`.
@@ -423,7 +423,7 @@
 <a href=#423 id=423 data-nosnippet>423</a>}
 <a href=#424 id=424 data-nosnippet>424</a>
 <a href=#425 id=425 data-nosnippet>425</a><span class="kw">impl </span><a href="#406-423">TtParser</a> {
-<a href=#426 id=426 data-nosnippet>426</a>    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>new(macro_name: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.Ident.html">Ident</a>) -&gt; <a href="#406-423">TtParser</a> {
+<a href=#426 id=426 data-nosnippet>426</a>    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>new(macro_name: <a href="../../../rustc_span/symbol/struct.Ident.html">Ident</a>) -&gt; <a href="#406-423">TtParser</a> {
 <a href=#427 id=427 data-nosnippet>427</a>        <a href="#406-423">TtParser</a> {
 <a href=#428 id=428 data-nosnippet>428</a>            <a href="#426">macro_name</a>,
 <a href=#429 id=429 data-nosnippet>429</a>            cur_mps: <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[],
@@ -447,7 +447,7 @@
 <a href=#447 id=447 data-nosnippet>447</a>    </span><span class="kw">fn </span>parse_tt_inner&lt;<span class="lifetime">'matcher</span>, T: <a href="macro_rules.rs.html#223-245">Tracker</a>&lt;<span class="lifetime">'matcher</span>&gt;&gt;(
 <a href=#448 id=448 data-nosnippet>448</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
 <a href=#449 id=449 data-nosnippet>449</a>        matcher: <span class="kw-2">&amp;</span><span class="lifetime">'matcher </span>[<a href="#100-130">MatcherLoc</a>],
-<a href=#450 id=450 data-nosnippet>450</a>        token: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/struct.Token.html">Token</a>,
+<a href=#450 id=450 data-nosnippet>450</a>        token: <span class="kw-2">&amp;</span><a href="../../../rustc_ast/token/struct.Token.html">Token</a>,
 <a href=#451 id=451 data-nosnippet>451</a>        approx_position: <a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>,
 <a href=#452 id=452 data-nosnippet>452</a>        track: <span class="kw-2">&amp;mut </span>T,
 <a href=#453 id=453 data-nosnippet>453</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="#318">NamedParseResult</a>&lt;T::Failure&gt;&gt; {
@@ -570,7 +570,7 @@
 <a href=#570 id=570 data-nosnippet>570</a>
 <a href=#571 id=571 data-nosnippet>571</a>        <span class="comment">// If we reached the end of input, check that there is EXACTLY ONE possible matcher.
 <a href=#572 id=572 data-nosnippet>572</a>        // Otherwise, either the parse is ambiguous (which is an error) or there is a syntax error.
-<a href=#573 id=573 data-nosnippet>573</a>        </span><span class="kw">if </span><span class="kw-2">*</span><a href="#450">token</a> == <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/enum.TokenKind.html#variant.Eof">token::Eof</a> {
+<a href=#573 id=573 data-nosnippet>573</a>        </span><span class="kw">if </span><span class="kw-2">*</span><a href="#450">token</a> == <a href="../../../rustc_ast/token/enum.TokenKind.html#variant.Eof">token::Eof</a> {
 <a href=#574 id=574 data-nosnippet>574</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<span class="kw">match </span><a href="#456">eof_mps</a> {
 <a href=#575 id=575 data-nosnippet>575</a>                <a href="#297">EofMatcherPositions::One</a>(<span class="kw-2">mut </span>eof_mp) =&gt; {
 <a href=#576 id=576 data-nosnippet>576</a>                    <span class="comment">// Need to take ownership of the matches from within the `Rc`.
@@ -582,9 +582,9 @@
 <a href=#582 id=582 data-nosnippet>582</a>                    <a href="#311">Error</a>(<a href="#450">token</a>.span, <span class="string">"ambiguity: multiple successful parses"</span>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>())
 <a href=#583 id=583 data-nosnippet>583</a>                }
 <a href=#584 id=584 data-nosnippet>584</a>                <a href="#296">EofMatcherPositions::None</a> =&gt; <a href="#309">Failure</a>(<a href="macro_rules.rs.html#230">T::build_failure</a>(
-<a href=#585 id=585 data-nosnippet>585</a>                    <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/struct.Token.html#method.new">Token::new</a>(
-<a href=#586 id=586 data-nosnippet>586</a>                        <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/enum.TokenKind.html#variant.Eof">token::Eof</a>,
-<a href=#587 id=587 data-nosnippet>587</a>                        <span class="kw">if </span><a href="#450">token</a>.span.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html#method.is_dummy">is_dummy</a>() { <a href="#450">token</a>.span } <span class="kw">else </span>{ <a href="#450">token</a>.span.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html#method.shrink_to_hi">shrink_to_hi</a>() },
+<a href=#585 id=585 data-nosnippet>585</a>                    <a href="../../../rustc_ast/token/struct.Token.html#method.new">Token::new</a>(
+<a href=#586 id=586 data-nosnippet>586</a>                        <a href="../../../rustc_ast/token/enum.TokenKind.html#variant.Eof">token::Eof</a>,
+<a href=#587 id=587 data-nosnippet>587</a>                        <span class="kw">if </span><a href="#450">token</a>.span.<a href="../../../rustc_span/span_encoding/struct.Span.html#method.is_dummy">is_dummy</a>() { <a href="#450">token</a>.span } <span class="kw">else </span>{ <a href="#450">token</a>.span.<a href="../../../rustc_span/span_encoding/struct.Span.html#method.shrink_to_hi">shrink_to_hi</a>() },
 <a href=#588 id=588 data-nosnippet>588</a>                    ),
 <a href=#589 id=589 data-nosnippet>589</a>                    <a href="#451">approx_position</a>,
 <a href=#590 id=590 data-nosnippet>590</a>                    <span class="string">"missing tokens in macro arguments"</span>,
@@ -693,7 +693,7 @@
 <a href=#693 id=693 data-nosnippet>693</a>    <span class="kw">fn </span>ambiguity_error&lt;F&gt;(
 <a href=#694 id=694 data-nosnippet>694</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
 <a href=#695 id=695 data-nosnippet>695</a>        matcher: <span class="kw-2">&amp;</span>[<a href="#100-130">MatcherLoc</a>],
-<a href=#696 id=696 data-nosnippet>696</a>        token_span: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html">rustc_span::Span</a>,
+<a href=#696 id=696 data-nosnippet>696</a>        token_span: <a href="../../../rustc_span/span_encoding/struct.Span.html">rustc_span::Span</a>,
 <a href=#697 id=697 data-nosnippet>697</a>    ) -&gt; <a href="#318">NamedParseResult</a>&lt;F&gt; {
 <a href=#698 id=698 data-nosnippet>698</a>        <span class="kw">let </span>nts = <span class="self"><a href="#694">self</a>
 <a href=#699 id=699 data-nosnippet>699</a>            </span>.bb_mps
