@@ -4426,6 +4426,9 @@ class DocSearch {
                     }
                     resultPromises.length = 0;
                 }
+                if (resultCounter >= MAX_RESULTS) {
+                    return;
+                }
                 for await (const result of sortAndTransformResults(
                     await Promise.all(pushToBottom),
                     typeInfo,
@@ -4935,7 +4938,11 @@ async function showResults(docSearch, results, goToFirst, filterCrates) {
     searchState.currentTab = 0;
     if (results.query.error !== null) {
         tabs.push(makeTab(0, "In Names", results.others, results.query, false, goToFirst));
-    } else if (results.query.foundElems <= 1 && results.query.returned.length === 0) {
+    } else if (
+        results.query.foundElems <= 1 &&
+        results.query.returned.length === 0 &&
+        !results.query.hasReturnArrow
+    ) {
         tabs.push(makeTab(0, "In Names", results.others, results.query, false, goToFirst));
         tabs.push(makeTab(1, "In Parameters", results.in_args, results.query, true, false));
         tabs.push(makeTab(2, "In Return Types", results.returned, results.query, true, false));
