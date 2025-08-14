@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_interface/src/passes.rs`."><title>passes.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_interface" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-1a4373a8.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_interface/</div>passes.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/any/trait.Any.html">std::any::Any</a>;
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_interface/src/passes.rs`."><title>passes.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-528d32ef.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_interface" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-e93015a6.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_interface/</div>passes.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/any/trait.Any.html">std::any::Any</a>;
 <a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span>std::ffi::{<a href="https://doc.rust-lang.org/nightly/std/ffi/os_str/struct.OsStr.html">OsStr</a>, <a href="https://doc.rust-lang.org/nightly/std/ffi/os_str/struct.OsString.html">OsString</a>};
 <a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>std::io::{<a class="self" href="https://doc.rust-lang.org/nightly/std/io/index.html">self</a>, <a href="https://doc.rust-lang.org/nightly/std/io/buffered/bufwriter/struct.BufWriter.html">BufWriter</a>, <a href="https://doc.rust-lang.org/nightly/std/io/trait.Write.html">Write</a>};
 <a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>std::path::{<a href="https://doc.rust-lang.org/nightly/std/path/struct.Path.html">Path</a>, <a href="https://doc.rust-lang.org/nightly/std/path/struct.PathBuf.html">PathBuf</a>};
@@ -6,7 +6,7 @@
 <a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>std::{<a href="https://doc.rust-lang.org/nightly/core/macro.env.html">env</a>, <a href="https://doc.rust-lang.org/nightly/std/fs/index.html">fs</a>, <a href="https://doc.rust-lang.org/nightly/core/iter/index.html">iter</a>};
 <a href=#7 id=7 data-nosnippet>7</a>
 <a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="../../rustc_ast/index.html">rustc_ast</a> <span class="kw">as </span>ast;
-<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="../../rustc_codegen_ssa/traits/backend/trait.CodegenBackend.html">rustc_codegen_ssa::traits::CodegenBackend</a>;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/backend/trait.CodegenBackend.html">rustc_codegen_ssa::traits::CodegenBackend</a>;
 <a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><a href="../../rustc_data_structures/jobserver/struct.Proxy.html">rustc_data_structures::jobserver::Proxy</a>;
 <a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><a href="../../rustc_data_structures/steal/struct.Steal.html">rustc_data_structures::steal::Steal</a>;
 <a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>rustc_data_structures::sync::{<a href="../../rustc_data_structures/sync/vec/struct.AppendOnlyIndexVec.html">AppendOnlyIndexVec</a>, <a href="../../rustc_data_structures/sync/freeze/struct.FreezeLock.html">FreezeLock</a>, <a href="../../rustc_data_structures/sync/worker_local/struct.WorkerLocal.html">WorkerLocal</a>};
@@ -17,8 +17,8 @@
 <a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span><a href="../../rustc_fs_util/fn.try_canonicalize.html">rustc_fs_util::try_canonicalize</a>;
 <a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span>rustc_hir::def_id::{<a href="../../rustc_span/def_id/constant.LOCAL_CRATE.html">LOCAL_CRATE</a>, <a href="../../rustc_span/def_id/struct.StableCrateId.html">StableCrateId</a>, <a href="../../rustc_span/def_id/type.StableCrateIdMap.html">StableCrateIdMap</a>};
 <a href=#19 id=19 data-nosnippet>19</a><span class="kw">use </span><a href="../../rustc_hir/definitions/struct.Definitions.html">rustc_hir::definitions::Definitions</a>;
-<a href=#20 id=20 data-nosnippet>20</a><span class="kw">use </span><a href="../../rustc_incremental/persist/load/fn.setup_dep_graph.html">rustc_incremental::setup_dep_graph</a>;
-<a href=#21 id=21 data-nosnippet>21</a><span class="kw">use </span>rustc_lint::{<a href="../../rustc_lint_defs/struct.BufferedEarlyLint.html">BufferedEarlyLint</a>, <a href="../../rustc_lint/early/trait.EarlyCheckNode.html">EarlyCheckNode</a>, <a href="../../rustc_lint/context/struct.LintStore.html">LintStore</a>, <a href="../../rustc_lint/late/fn.unerased_lint_store.html">unerased_lint_store</a>};
+<a href=#20 id=20 data-nosnippet>20</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_incremental/persist/load/fn.setup_dep_graph.html">rustc_incremental::setup_dep_graph</a>;
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">use </span>rustc_lint::{<a href="../../rustc_lint_defs/struct.BufferedEarlyLint.html">BufferedEarlyLint</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_lint/early/trait.EarlyCheckNode.html">EarlyCheckNode</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_lint/context/struct.LintStore.html">LintStore</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_lint/late/fn.unerased_lint_store.html">unerased_lint_store</a>};
 <a href=#22 id=22 data-nosnippet>22</a><span class="kw">use </span><a href="../../rustc_metadata/rmeta/encoder/struct.EncodedMetadata.html">rustc_metadata::EncodedMetadata</a>;
 <a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span><a href="../../rustc_metadata/creader/struct.CStore.html">rustc_metadata::creader::CStore</a>;
 <a href=#24 id=24 data-nosnippet>24</a><span class="kw">use </span><a href="../../rustc_middle/arena/struct.Arena.html">rustc_middle::arena::Arena</a>;
@@ -28,7 +28,7 @@
 <a href=#28 id=28 data-nosnippet>28</a><span class="kw">use </span>rustc_parse::{
 <a href=#29 id=29 data-nosnippet>29</a>    <a href="../../rustc_parse/fn.new_parser_from_file.html">new_parser_from_file</a>, <a href="../../rustc_parse/fn.new_parser_from_source_str.html">new_parser_from_source_str</a>, <a href="../../rustc_parse/fn.unwrap_or_emit_fatal.html">unwrap_or_emit_fatal</a>, <a href="../../rustc_parse/validate_attr/index.html">validate_attr</a>,
 <a href=#30 id=30 data-nosnippet>30</a>};
-<a href=#31 id=31 data-nosnippet>31</a><span class="kw">use </span>rustc_passes::{<a href="../../rustc_passes/abi_test/index.html">abi_test</a>, <a href="../../rustc_passes/input_stats/index.html">input_stats</a>, <a href="../../rustc_passes/layout_test/index.html">layout_test</a>};
+<a href=#31 id=31 data-nosnippet>31</a><span class="kw">use </span>rustc_passes::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_passes/abi_test/index.html">abi_test</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_passes/input_stats/index.html">input_stats</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_passes/layout_test/index.html">layout_test</a>};
 <a href=#32 id=32 data-nosnippet>32</a><span class="kw">use </span>rustc_resolve::{<a href="../../rustc_resolve/struct.Resolver.html">Resolver</a>, <a href="../../rustc_resolve/struct.ResolverOutputs.html">ResolverOutputs</a>};
 <a href=#33 id=33 data-nosnippet>33</a><span class="kw">use </span>rustc_session::config::{<a href="../../rustc_session/config/enum.CrateType.html">CrateType</a>, <a href="../../rustc_session/config/enum.Input.html">Input</a>, <a href="../../rustc_session/config/enum.OutFileName.html">OutFileName</a>, <a href="../../rustc_session/config/struct.OutputFilenames.html">OutputFilenames</a>, <a href="../../rustc_session/config/enum.OutputType.html">OutputType</a>};
 <a href=#34 id=34 data-nosnippet>34</a><span class="kw">use </span><a href="../../rustc_session/cstore/struct.Untracked.html">rustc_session::cstore::Untracked</a>;
@@ -75,14 +75,14 @@
 <a href=#75 id=75 data-nosnippet>75</a><span class="kw">fn </span><a href="../../rustc_interface/passes/fn.pre_expansion_lint.html">pre_expansion_lint</a>&lt;<span class="lifetime">'a</span>&gt;(
 <a href=#76 id=76 data-nosnippet>76</a>    sess: <span class="kw-2">&amp;</span><a href="../../rustc_session/session/struct.Session.html">Session</a>,
 <a href=#77 id=77 data-nosnippet>77</a>    features: <span class="kw-2">&amp;</span><a href="../../rustc_feature/unstable/struct.Features.html">Features</a>,
-<a href=#78 id=78 data-nosnippet>78</a>    lint_store: <span class="kw-2">&amp;</span><a href="../../rustc_lint/context/struct.LintStore.html">LintStore</a>,
+<a href=#78 id=78 data-nosnippet>78</a>    lint_store: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_lint/context/struct.LintStore.html">LintStore</a>,
 <a href=#79 id=79 data-nosnippet>79</a>    registered_tools: <span class="kw-2">&amp;</span><a href="../../rustc_lint_defs/type.RegisteredTools.html">RegisteredTools</a>,
-<a href=#80 id=80 data-nosnippet>80</a>    check_node: <span class="kw">impl </span><a href="../../rustc_lint/early/trait.EarlyCheckNode.html">EarlyCheckNode</a>&lt;<span class="lifetime">'a</span>&gt;,
+<a href=#80 id=80 data-nosnippet>80</a>    check_node: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_lint/early/trait.EarlyCheckNode.html">EarlyCheckNode</a>&lt;<span class="lifetime">'a</span>&gt;,
 <a href=#81 id=81 data-nosnippet>81</a>    node_name: <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>,
 <a href=#82 id=82 data-nosnippet>82</a>) {
 <a href=#83 id=83 data-nosnippet>83</a>    <a href="#76">sess</a>.prof.<a href="../../rustc_data_structures/profiling/struct.SelfProfilerRef.html#method.generic_activity_with_arg">generic_activity_with_arg</a>(<span class="string">"pre_AST_expansion_lint_checks"</span>, <a href="#81">node_name</a>.<a href="../../rustc_span/symbol/struct.Symbol.html#method.as_str">as_str</a>()).<a href="../../rustc_data_structures/profiling/struct.TimingGuard.html#method.run">run</a>(
 <a href=#84 id=84 data-nosnippet>84</a>        || {
-<a href=#85 id=85 data-nosnippet>85</a>            <a href="../../rustc_lint/early/fn.check_ast_node.html">rustc_lint::check_ast_node</a>(
+<a href=#85 id=85 data-nosnippet>85</a>            <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_lint/early/fn.check_ast_node.html">rustc_lint::check_ast_node</a>(
 <a href=#86 id=86 data-nosnippet>86</a>                <a href="#76">sess</a>,
 <a href=#87 id=87 data-nosnippet>87</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
 <a href=#88 id=88 data-nosnippet>88</a>                <a href="#77">features</a>,
@@ -90,7 +90,7 @@
 <a href=#90 id=90 data-nosnippet>90</a>                <a href="#78">lint_store</a>,
 <a href=#91 id=91 data-nosnippet>91</a>                <a href="#79">registered_tools</a>,
 <a href=#92 id=92 data-nosnippet>92</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
-<a href=#93 id=93 data-nosnippet>93</a>                <a href="../../rustc_lint/struct.BuiltinCombinedPreExpansionLintPass.html#method.new">rustc_lint::BuiltinCombinedPreExpansionLintPass::new</a>(),
+<a href=#93 id=93 data-nosnippet>93</a>                <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_lint/struct.BuiltinCombinedPreExpansionLintPass.html#method.new">rustc_lint::BuiltinCombinedPreExpansionLintPass::new</a>(),
 <a href=#94 id=94 data-nosnippet>94</a>                <a href="#80">check_node</a>,
 <a href=#95 id=95 data-nosnippet>95</a>            );
 <a href=#96 id=96 data-nosnippet>96</a>        },
@@ -98,7 +98,7 @@
 <a href=#98 id=98 data-nosnippet>98</a>}
 <a href=#99 id=99 data-nosnippet>99</a>
 <a href=#100 id=100 data-nosnippet>100</a><span class="comment">// Cannot implement directly for `LintStore` due to trait coherence.
-<a href=#101 id=101 data-nosnippet>101</a></span><span class="kw">struct </span><a href="../../rustc_interface/passes/struct.LintStoreExpandImpl.html">LintStoreExpandImpl</a>&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_lint/context/struct.LintStore.html">LintStore</a>);
+<a href=#101 id=101 data-nosnippet>101</a></span><span class="kw">struct </span><a href="../../rustc_interface/passes/struct.LintStoreExpandImpl.html">LintStoreExpandImpl</a>&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_lint/context/struct.LintStore.html">LintStore</a>);
 <a href=#102 id=102 data-nosnippet>102</a>
 <a href=#103 id=103 data-nosnippet>103</a><span class="kw">impl </span><a href="../../rustc_expand/base/trait.LintStoreExpand.html">LintStoreExpand</a> <span class="kw">for </span><a href="#101">LintStoreExpandImpl</a>&lt;<span class="lifetime">'_</span>&gt; {
 <a href=#104 id=104 data-nosnippet>104</a>    <span class="kw">fn </span>pre_expansion_lint(
@@ -395,7 +395,7 @@
 <a href=#395 id=395 data-nosnippet>395</a>    <span class="kw">let </span><span class="kw-2">mut </span>lint_buffer = <a href="#394">resolver</a>.lint_buffer.<a href="../../rustc_data_structures/steal/struct.Steal.html#method.steal">steal</a>();
 <a href=#396 id=396 data-nosnippet>396</a>
 <a href=#397 id=397 data-nosnippet>397</a>    <span class="kw">if </span><a href="#393">sess</a>.opts.unstable_opts.input_stats {
-<a href=#398 id=398 data-nosnippet>398</a>        <a href="../../rustc_passes/input_stats/fn.print_ast_stats.html">input_stats::print_ast_stats</a>(<a href="#392">tcx</a>, <a href="#394">krate</a>);
+<a href=#398 id=398 data-nosnippet>398</a>        <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_passes/input_stats/fn.print_ast_stats.html">input_stats::print_ast_stats</a>(<a href="#392">tcx</a>, <a href="#394">krate</a>);
 <a href=#399 id=399 data-nosnippet>399</a>    }
 <a href=#400 id=400 data-nosnippet>400</a>
 <a href=#401 id=401 data-nosnippet>401</a>    <span class="comment">// Needs to go *after* expansion to be able to check the results of macro expansion.
@@ -457,8 +457,8 @@
 <a href=#457 id=457 data-nosnippet>457</a>        }
 <a href=#458 id=458 data-nosnippet>458</a>    });
 <a href=#459 id=459 data-nosnippet>459</a>
-<a href=#460 id=460 data-nosnippet>460</a>    <span class="kw">let </span>lint_store = <a href="../../rustc_lint/late/fn.unerased_lint_store.html">unerased_lint_store</a>(<a href="#392">tcx</a>.sess);
-<a href=#461 id=461 data-nosnippet>461</a>    <a href="../../rustc_lint/early/fn.check_ast_node.html">rustc_lint::check_ast_node</a>(
+<a href=#460 id=460 data-nosnippet>460</a>    <span class="kw">let </span>lint_store = <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_lint/late/fn.unerased_lint_store.html">unerased_lint_store</a>(<a href="#392">tcx</a>.sess);
+<a href=#461 id=461 data-nosnippet>461</a>    <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_lint/early/fn.check_ast_node.html">rustc_lint::check_ast_node</a>(
 <a href=#462 id=462 data-nosnippet>462</a>        <a href="#393">sess</a>,
 <a href=#463 id=463 data-nosnippet>463</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#392">tcx</a>),
 <a href=#464 id=464 data-nosnippet>464</a>        <a href="#392">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.features">features</a>(),
@@ -466,7 +466,7 @@
 <a href=#466 id=466 data-nosnippet>466</a>        <a href="#460">lint_store</a>,
 <a href=#467 id=467 data-nosnippet>467</a>        <a href="#392">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.registered_tools">registered_tools</a>(()),
 <a href=#468 id=468 data-nosnippet>468</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#395">lint_buffer</a>),
-<a href=#469 id=469 data-nosnippet>469</a>        <a href="../../rustc_lint/struct.BuiltinCombinedEarlyLintPass.html#method.new">rustc_lint::BuiltinCombinedEarlyLintPass::new</a>(),
+<a href=#469 id=469 data-nosnippet>469</a>        <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_lint/struct.BuiltinCombinedEarlyLintPass.html#method.new">rustc_lint::BuiltinCombinedEarlyLintPass::new</a>(),
 <a href=#470 id=470 data-nosnippet>470</a>        (<span class="kw-2">&amp;**</span><a href="#394">krate</a>, <span class="kw-2">&amp;*</span><a href="#394">krate</a>.attrs),
 <a href=#471 id=471 data-nosnippet>471</a>    )
 <a href=#472 id=472 data-nosnippet>472</a>}
@@ -873,7 +873,7 @@
 <a href=#873 id=873 data-nosnippet>873</a><span class="kw">pub static </span><a href="../../rustc_interface/passes/static.DEFAULT_QUERY_PROVIDERS.html">DEFAULT_QUERY_PROVIDERS</a>: <a href="https://doc.rust-lang.org/nightly/std/sync/lazy_lock/struct.LazyLock.html">LazyLock</a>&lt;<a href="../../rustc_middle/util/struct.Providers.html">Providers</a>&gt; = <a href="https://doc.rust-lang.org/nightly/std/sync/lazy_lock/struct.LazyLock.html#method.new">LazyLock::new</a>(|| {
 <a href=#874 id=874 data-nosnippet>874</a>    <span class="kw">let </span>providers = <span class="kw-2">&amp;mut </span><a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">Providers::default</a>();
 <a href=#875 id=875 data-nosnippet>875</a>    <a href="#874">providers</a>.analysis = <a href="#1130-1191">analysis</a>;
-<a href=#876 id=876 data-nosnippet>876</a>    <a href="#874">providers</a>.hir_crate = <a href="../../rustc_ast_lowering/fn.lower_to_hir.html">rustc_ast_lowering::lower_to_hir</a>;
+<a href=#876 id=876 data-nosnippet>876</a>    <a href="#874">providers</a>.hir_crate = rustc_ast_lowering::lower_to_hir;
 <a href=#877 id=877 data-nosnippet>877</a>    <a href="#874">providers</a>.resolver_for_lowering_raw = <a href="#777-803">resolver_for_lowering_raw</a>;
 <a href=#878 id=878 data-nosnippet>878</a>    <a href="#874">providers</a>.stripped_cfg_items = |tcx, <span class="kw">_</span>| <span class="kw-2">&amp;</span><a href="#878">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.resolutions">resolutions</a>(()).stripped_cfg_items[..];
 <a href=#879 id=879 data-nosnippet>879</a>    <a href="#874">providers</a>.resolutions = |tcx, ()| <a href="#879">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.resolver_for_lowering_raw">resolver_for_lowering_raw</a>(()).<span class="number">1</span>;
@@ -881,27 +881,27 @@
 <a href=#881 id=881 data-nosnippet>881</a>    <a href="#874">providers</a>.env_var_os = <a href="#474-497">env_var_os</a>;
 <a href=#882 id=882 data-nosnippet>882</a>    <a href="limits.rs.html#21-43">limits::provide</a>(<a href="#874">providers</a>);
 <a href=#883 id=883 data-nosnippet>883</a>    <a href="proc_macro_decls.rs.html#20-22">proc_macro_decls::provide</a>(<a href="#874">providers</a>);
-<a href=#884 id=884 data-nosnippet>884</a>    <a href="../../rustc_const_eval/fn.provide.html">rustc_const_eval::provide</a>(<a href="#874">providers</a>);
+<a href=#884 id=884 data-nosnippet>884</a>    rustc_const_eval::provide(<a href="#874">providers</a>);
 <a href=#885 id=885 data-nosnippet>885</a>    <a href="../../rustc_middle/hir/fn.provide.html">rustc_middle::hir::provide</a>(<a href="#874">providers</a>);
-<a href=#886 id=886 data-nosnippet>886</a>    <a href="../../rustc_borrowck/fn.provide.html">rustc_borrowck::provide</a>(<a href="#874">providers</a>);
-<a href=#887 id=887 data-nosnippet>887</a>    <a href="../../rustc_incremental/fn.provide.html">rustc_incremental::provide</a>(<a href="#874">providers</a>);
+<a href=#886 id=886 data-nosnippet>886</a>    rustc_borrowck::provide(<a href="#874">providers</a>);
+<a href=#887 id=887 data-nosnippet>887</a>    <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_incremental/fn.provide.html">rustc_incremental::provide</a>(<a href="#874">providers</a>);
 <a href=#888 id=888 data-nosnippet>888</a>    <a href="../../rustc_mir_build/fn.provide.html">rustc_mir_build::provide</a>(<a href="#874">providers</a>);
 <a href=#889 id=889 data-nosnippet>889</a>    <a href="../../rustc_mir_transform/fn.provide.html">rustc_mir_transform::provide</a>(<a href="#874">providers</a>);
 <a href=#890 id=890 data-nosnippet>890</a>    <a href="../../rustc_monomorphize/fn.provide.html">rustc_monomorphize::provide</a>(<a href="#874">providers</a>);
-<a href=#891 id=891 data-nosnippet>891</a>    <a href="../../rustc_privacy/fn.provide.html">rustc_privacy::provide</a>(<a href="#874">providers</a>);
-<a href=#892 id=892 data-nosnippet>892</a>    <a href="../../rustc_query_impl/fn.provide.html">rustc_query_impl::provide</a>(<a href="#874">providers</a>);
+<a href=#891 id=891 data-nosnippet>891</a>    <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_privacy/fn.provide.html">rustc_privacy::provide</a>(<a href="#874">providers</a>);
+<a href=#892 id=892 data-nosnippet>892</a>    <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_query_impl/fn.provide.html">rustc_query_impl::provide</a>(<a href="#874">providers</a>);
 <a href=#893 id=893 data-nosnippet>893</a>    <a href="../../rustc_resolve/fn.provide.html">rustc_resolve::provide</a>(<a href="#874">providers</a>);
-<a href=#894 id=894 data-nosnippet>894</a>    <a href="../../rustc_hir_analysis/fn.provide.html">rustc_hir_analysis::provide</a>(<a href="#874">providers</a>);
-<a href=#895 id=895 data-nosnippet>895</a>    rustc_hir_typeck::provide(<a href="#874">providers</a>);
+<a href=#894 id=894 data-nosnippet>894</a>    <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_hir_analysis/fn.provide.html">rustc_hir_analysis::provide</a>(<a href="#874">providers</a>);
+<a href=#895 id=895 data-nosnippet>895</a>    <a href="../../rustc_hir_typeck/fn.provide.html">rustc_hir_typeck::provide</a>(<a href="#874">providers</a>);
 <a href=#896 id=896 data-nosnippet>896</a>    <a href="../../rustc_middle/ty/fn.provide.html">ty::provide</a>(<a href="#874">providers</a>);
 <a href=#897 id=897 data-nosnippet>897</a>    <a href="../../rustc_trait_selection/traits/fn.provide.html">traits::provide</a>(<a href="#874">providers</a>);
-<a href=#898 id=898 data-nosnippet>898</a>    <a href="../../rustc_passes/fn.provide.html">rustc_passes::provide</a>(<a href="#874">providers</a>);
-<a href=#899 id=899 data-nosnippet>899</a>    <a href="../../rustc_traits/fn.provide.html">rustc_traits::provide</a>(<a href="#874">providers</a>);
-<a href=#900 id=900 data-nosnippet>900</a>    <a href="../../rustc_ty_utils/fn.provide.html">rustc_ty_utils::provide</a>(<a href="#874">providers</a>);
+<a href=#898 id=898 data-nosnippet>898</a>    <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_passes/fn.provide.html">rustc_passes::provide</a>(<a href="#874">providers</a>);
+<a href=#899 id=899 data-nosnippet>899</a>    rustc_traits::provide(<a href="#874">providers</a>);
+<a href=#900 id=900 data-nosnippet>900</a>    <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ty_utils/fn.provide.html">rustc_ty_utils::provide</a>(<a href="#874">providers</a>);
 <a href=#901 id=901 data-nosnippet>901</a>    <a href="../../rustc_metadata/rmeta/fn.provide.html">rustc_metadata::provide</a>(<a href="#874">providers</a>);
-<a href=#902 id=902 data-nosnippet>902</a>    <a href="../../rustc_lint/fn.provide.html">rustc_lint::provide</a>(<a href="#874">providers</a>);
-<a href=#903 id=903 data-nosnippet>903</a>    <a href="../../rustc_symbol_mangling/fn.provide.html">rustc_symbol_mangling::provide</a>(<a href="#874">providers</a>);
-<a href=#904 id=904 data-nosnippet>904</a>    <a href="../../rustc_codegen_ssa/fn.provide.html">rustc_codegen_ssa::provide</a>(<a href="#874">providers</a>);
+<a href=#902 id=902 data-nosnippet>902</a>    <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_lint/fn.provide.html">rustc_lint::provide</a>(<a href="#874">providers</a>);
+<a href=#903 id=903 data-nosnippet>903</a>    <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_symbol_mangling/fn.provide.html">rustc_symbol_mangling::provide</a>(<a href="#874">providers</a>);
+<a href=#904 id=904 data-nosnippet>904</a>    <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/fn.provide.html">rustc_codegen_ssa::provide</a>(<a href="#874">providers</a>);
 <a href=#905 id=905 data-nosnippet>905</a>    <span class="kw-2">*</span><a href="#874">providers</a>
 <a href=#906 id=906 data-nosnippet>906</a>});
 <a href=#907 id=907 data-nosnippet>907</a>
@@ -925,11 +925,11 @@
 <a href=#925 id=925 data-nosnippet>925</a>
 <a href=#926 id=926 data-nosnippet>926</a>    <span class="kw">let </span>outputs = <a href="util.rs.html#514-578">util::build_output_filenames</a>(<span class="kw-2">&amp;</span><a href="#915">pre_configured_attrs</a>, <a href="#913">sess</a>);
 <a href=#927 id=927 data-nosnippet>927</a>
-<a href=#928 id=928 data-nosnippet>928</a>    <span class="kw">let </span>dep_type = <a href="../../rustc_middle/dep_graph/struct.DepsType.html">DepsType</a> { dep_names: <a href="../../rustc_query_impl/fn.dep_kind_names.html">rustc_query_impl::dep_kind_names</a>() };
-<a href=#929 id=929 data-nosnippet>929</a>    <span class="kw">let </span>dep_graph = <a href="../../rustc_incremental/persist/load/fn.setup_dep_graph.html">setup_dep_graph</a>(<a href="#913">sess</a>, <a href="#917">crate_name</a>, <span class="kw-2">&amp;</span><a href="#928">dep_type</a>);
+<a href=#928 id=928 data-nosnippet>928</a>    <span class="kw">let </span>dep_type = <a href="../../rustc_middle/dep_graph/struct.DepsType.html">DepsType</a> { dep_names: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_query_impl/fn.dep_kind_names.html">rustc_query_impl::dep_kind_names</a>() };
+<a href=#929 id=929 data-nosnippet>929</a>    <span class="kw">let </span>dep_graph = <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_incremental/persist/load/fn.setup_dep_graph.html">setup_dep_graph</a>(<a href="#913">sess</a>, <a href="#917">crate_name</a>, <span class="kw-2">&amp;</span><a href="#928">dep_type</a>);
 <a href=#930 id=930 data-nosnippet>930</a>
 <a href=#931 id=931 data-nosnippet>931</a>    <span class="kw">let </span>cstore =
-<a href=#932 id=932 data-nosnippet>932</a>        <a href="../../rustc_data_structures/sync/freeze/struct.FreezeLock.html#method.new">FreezeLock::new</a>(<a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html#method.new">Box::new</a>(<a href="../../rustc_metadata/creader/struct.CStore.html#method.new">CStore::new</a>(<a href="#909">compiler</a>.codegen_backend.<a href="../../rustc_codegen_ssa/traits/backend/trait.CodegenBackend.html#tymethod.metadata_loader">metadata_loader</a>())) <span class="kw">as _</span>);
+<a href=#932 id=932 data-nosnippet>932</a>        <a href="../../rustc_data_structures/sync/freeze/struct.FreezeLock.html#method.new">FreezeLock::new</a>(<a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html#method.new">Box::new</a>(<a href="../../rustc_metadata/creader/struct.CStore.html#method.new">CStore::new</a>(<a href="#909">compiler</a>.codegen_backend.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/backend/trait.CodegenBackend.html#tymethod.metadata_loader">metadata_loader</a>())) <span class="kw">as _</span>);
 <a href=#933 id=933 data-nosnippet>933</a>    <span class="kw">let </span>definitions = <a href="../../rustc_data_structures/sync/freeze/struct.FreezeLock.html#method.new">FreezeLock::new</a>(<a href="../../rustc_hir/definitions/struct.Definitions.html#method.new">Definitions::new</a>(<a href="#919">stable_crate_id</a>));
 <a href=#934 id=934 data-nosnippet>934</a>
 <a href=#935 id=935 data-nosnippet>935</a>    <span class="kw">let </span>stable_crate_ids = <a href="../../rustc_data_structures/sync/freeze/struct.FreezeLock.html#method.new">FreezeLock::new</a>(<a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">StableCrateIdMap::default</a>());
@@ -941,11 +941,11 @@
 <a href=#941 id=941 data-nosnippet>941</a>    // incr. comp. yet.
 <a href=#942 id=942 data-nosnippet>942</a>    </span><a href="#929">dep_graph</a>.<a href="../../rustc_query_system/dep_graph/graph/struct.DepGraph.html#method.assert_ignored">assert_ignored</a>();
 <a href=#943 id=943 data-nosnippet>943</a>
-<a href=#944 id=944 data-nosnippet>944</a>    <span class="kw">let </span>query_result_on_disk_cache = <a href="../../rustc_incremental/persist/load/fn.load_query_result_cache.html">rustc_incremental::load_query_result_cache</a>(<a href="#913">sess</a>);
+<a href=#944 id=944 data-nosnippet>944</a>    <span class="kw">let </span>query_result_on_disk_cache = <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_incremental/persist/load/fn.load_query_result_cache.html">rustc_incremental::load_query_result_cache</a>(<a href="#913">sess</a>);
 <a href=#945 id=945 data-nosnippet>945</a>
 <a href=#946 id=946 data-nosnippet>946</a>    <span class="kw">let </span>codegen_backend = <span class="kw-2">&amp;</span><a href="#909">compiler</a>.codegen_backend;
 <a href=#947 id=947 data-nosnippet>947</a>    <span class="kw">let </span><span class="kw-2">mut </span>providers = <span class="kw-2">*</span><a href="#873-906">DEFAULT_QUERY_PROVIDERS</a>;
-<a href=#948 id=948 data-nosnippet>948</a>    <a href="#946">codegen_backend</a>.<a href="../../rustc_codegen_ssa/traits/backend/trait.CodegenBackend.html#tymethod.provide">provide</a>(<span class="kw-2">&amp;mut </span><a href="#947">providers</a>);
+<a href=#948 id=948 data-nosnippet>948</a>    <a href="#946">codegen_backend</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/backend/trait.CodegenBackend.html#tymethod.provide">provide</a>(<span class="kw-2">&amp;mut </span><a href="#947">providers</a>);
 <a href=#949 id=949 data-nosnippet>949</a>
 <a href=#950 id=950 data-nosnippet>950</a>    <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(callback) = <a href="#909">compiler</a>.override_queries {
 <a href=#951 id=951 data-nosnippet>951</a>        <a href="#950">callback</a>(<a href="#913">sess</a>, <span class="kw-2">&amp;mut </span><a href="#947">providers</a>);
@@ -979,8 +979,8 @@
 <a href=#979 id=979 data-nosnippet>979</a>            <a href="#972">hir_arena</a>,
 <a href=#980 id=980 data-nosnippet>980</a>            <a href="#936">untracked</a>,
 <a href=#981 id=981 data-nosnippet>981</a>            <a href="#929">dep_graph</a>,
-<a href=#982 id=982 data-nosnippet>982</a>            <a href="../../rustc_query_impl/fn.query_callbacks.html">rustc_query_impl::query_callbacks</a>(<a href="#972">arena</a>),
-<a href=#983 id=983 data-nosnippet>983</a>            <a href="../../rustc_query_impl/fn.query_system.html">rustc_query_impl::query_system</a>(
+<a href=#982 id=982 data-nosnippet>982</a>            <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_query_impl/fn.query_callbacks.html">rustc_query_impl::query_callbacks</a>(<a href="#972">arena</a>),
+<a href=#983 id=983 data-nosnippet>983</a>            <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_query_impl/fn.query_system.html">rustc_query_impl::query_system</a>(
 <a href=#984 id=984 data-nosnippet>984</a>                <a href="#947">providers</a>.queries,
 <a href=#985 id=985 data-nosnippet>985</a>                <a href="#947">providers</a>.extern_queries,
 <a href=#986 id=986 data-nosnippet>986</a>                <a href="#944">query_result_on_disk_cache</a>,
@@ -1026,7 +1026,7 @@
 <a href=#1026 id=1026 data-nosnippet>1026</a>/// This function never fails.
 <a href=#1027 id=1027 data-nosnippet>1027</a></span><span class="kw">fn </span><a href="../../rustc_interface/passes/fn.run_required_analyses.html">run_required_analyses</a>(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;) {
 <a href=#1028 id=1028 data-nosnippet>1028</a>    <span class="kw">if </span><a href="#1027">tcx</a>.sess.opts.unstable_opts.input_stats {
-<a href=#1029 id=1029 data-nosnippet>1029</a>        <a href="../../rustc_passes/input_stats/fn.print_hir_stats.html">rustc_passes::input_stats::print_hir_stats</a>(<a href="#1027">tcx</a>);
+<a href=#1029 id=1029 data-nosnippet>1029</a>        <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_passes/input_stats/fn.print_hir_stats.html">rustc_passes::input_stats::print_hir_stats</a>(<a href="#1027">tcx</a>);
 <a href=#1030 id=1030 data-nosnippet>1030</a>    }
 <a href=#1031 id=1031 data-nosnippet>1031</a>    <span class="comment">// When using rustdoc's "jump to def" feature, it enters this code and `check_crate`
 <a href=#1032 id=1032 data-nosnippet>1032</a>    // is not defined. So we need to cfg it out.
@@ -1068,7 +1068,7 @@
 <a href=#1068 id=1068 data-nosnippet>1068</a>        );
 <a href=#1069 id=1069 data-nosnippet>1069</a>    });
 <a href=#1070 id=1070 data-nosnippet>1070</a>
-<a href=#1071 id=1071 data-nosnippet>1071</a>    <a href="../../rustc_hir_analysis/fn.check_crate.html">rustc_hir_analysis::check_crate</a>(<a href="#1027">tcx</a>);
+<a href=#1071 id=1071 data-nosnippet>1071</a>    <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_hir_analysis/fn.check_crate.html">rustc_hir_analysis::check_crate</a>(<a href="#1027">tcx</a>);
 <a href=#1072 id=1072 data-nosnippet>1072</a>    <span class="comment">// Freeze definitions as we don't add new ones at this point.
 <a href=#1073 id=1073 data-nosnippet>1073</a>    // We need to wait until now since we synthesize a by-move body
 <a href=#1074 id=1074 data-nosnippet>1074</a>    // for all coroutine-closures.
@@ -1109,8 +1109,8 @@
 <a href=#1109 id=1109 data-nosnippet>1109</a>        });
 <a href=#1110 id=1110 data-nosnippet>1110</a>    });
 <a href=#1111 id=1111 data-nosnippet>1111</a>
-<a href=#1112 id=1112 data-nosnippet>1112</a>    <a href="#1041">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.time">time</a>(<span class="string">"layout_testing"</span>, || <a href="../../rustc_passes/layout_test/fn.test_layout.html">layout_test::test_layout</a>(<a href="#1027">tcx</a>));
-<a href=#1113 id=1113 data-nosnippet>1113</a>    <a href="#1041">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.time">time</a>(<span class="string">"abi_testing"</span>, || <a href="../../rustc_passes/abi_test/fn.test_abi.html">abi_test::test_abi</a>(<a href="#1027">tcx</a>));
+<a href=#1112 id=1112 data-nosnippet>1112</a>    <a href="#1041">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.time">time</a>(<span class="string">"layout_testing"</span>, || <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_passes/layout_test/fn.test_layout.html">layout_test::test_layout</a>(<a href="#1027">tcx</a>));
+<a href=#1113 id=1113 data-nosnippet>1113</a>    <a href="#1041">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.time">time</a>(<span class="string">"abi_testing"</span>, || <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_passes/abi_test/fn.test_abi.html">abi_test::test_abi</a>(<a href="#1027">tcx</a>));
 <a href=#1114 id=1114 data-nosnippet>1114</a>
 <a href=#1115 id=1115 data-nosnippet>1115</a>    <span class="comment">// If `-Zvalidate-mir` is set, we also want to compute the final MIR for each item
 <a href=#1116 id=1116 data-nosnippet>1116</a>    // (either its `mir_for_ctfe` or `optimized_mir`) since that helps uncover any bugs
@@ -1193,7 +1193,7 @@
 <a href=#1193 id=1193 data-nosnippet>1193</a><span class="doccomment">/// Runs the codegen backend, after which the AST and analysis can
 <a href=#1194 id=1194 data-nosnippet>1194</a>/// be discarded.
 <a href=#1195 id=1195 data-nosnippet>1195</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span><a href="../../rustc_interface/passes/fn.start_codegen.html">start_codegen</a>&lt;<span class="lifetime">'tcx</span>&gt;(
-<a href=#1196 id=1196 data-nosnippet>1196</a>    codegen_backend: <span class="kw-2">&amp;</span><span class="kw">dyn </span><a href="../../rustc_codegen_ssa/traits/backend/trait.CodegenBackend.html">CodegenBackend</a>,
+<a href=#1196 id=1196 data-nosnippet>1196</a>    codegen_backend: <span class="kw-2">&amp;</span><span class="kw">dyn </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/backend/trait.CodegenBackend.html">CodegenBackend</a>,
 <a href=#1197 id=1197 data-nosnippet>1197</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#1198 id=1198 data-nosnippet>1198</a>) -&gt; (<a href="https://doc.rust-lang.org/nightly/alloc/boxed/struct.Box.html">Box</a>&lt;<span class="kw">dyn </span><a href="https://doc.rust-lang.org/nightly/core/any/trait.Any.html">Any</a>&gt;, <a href="../../rustc_metadata/rmeta/encoder/struct.EncodedMetadata.html">EncodedMetadata</a>) {
 <a href=#1199 id=1199 data-nosnippet>1199</a>    <a href="#1197">tcx</a>.sess.timings.<a href="../../rustc_errors/timings/struct.TimingSectionHandler.html#method.start_section">start_section</a>(<a href="#1197">tcx</a>.sess.<a href="../../rustc_session/session/struct.Session.html#method.dcx">dcx</a>(), <a href="../../rustc_errors/timings/enum.TimingSection.html#variant.Codegen">TimingSection::Codegen</a>);
@@ -1208,7 +1208,7 @@
 <a href=#1208 id=1208 data-nosnippet>1208</a>    <span class="comment">// Don't run this test assertions when not doing codegen. Compiletest tries to build
 <a href=#1209 id=1209 data-nosnippet>1209</a>    // build-fail tests in check mode first and expects it to not give an error in that case.
 <a href=#1210 id=1210 data-nosnippet>1210</a>    </span><span class="kw">if </span><a href="#1197">tcx</a>.sess.opts.output_types.<a href="../../rustc_session/config/struct.OutputTypes.html#method.should_codegen">should_codegen</a>() {
-<a href=#1211 id=1211 data-nosnippet>1211</a>        <a href="../../rustc_symbol_mangling/test/fn.report_symbol_names.html">rustc_symbol_mangling::test::report_symbol_names</a>(<a href="#1197">tcx</a>);
+<a href=#1211 id=1211 data-nosnippet>1211</a>        <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_symbol_mangling/test/fn.report_symbol_names.html">rustc_symbol_mangling::test::report_symbol_names</a>(<a href="#1197">tcx</a>);
 <a href=#1212 id=1212 data-nosnippet>1212</a>    }
 <a href=#1213 id=1213 data-nosnippet>1213</a>
 <a href=#1214 id=1214 data-nosnippet>1214</a>    <span class="comment">// Don't do code generation if there were any errors. Likewise if
@@ -1222,7 +1222,7 @@
 <a href=#1222 id=1222 data-nosnippet>1222</a>
 <a href=#1223 id=1223 data-nosnippet>1223</a>    <span class="kw">let </span>metadata = <a href="../../rustc_metadata/fs/fn.encode_and_write_metadata.html">rustc_metadata::fs::encode_and_write_metadata</a>(<a href="#1197">tcx</a>);
 <a href=#1224 id=1224 data-nosnippet>1224</a>
-<a href=#1225 id=1225 data-nosnippet>1225</a>    <span class="kw">let </span>codegen = <a href="#1197">tcx</a>.sess.<a href="../../rustc_session/session/struct.Session.html#method.time">time</a>(<span class="string">"codegen_crate"</span>, <span class="kw">move </span>|| <a href="#1196">codegen_backend</a>.<a href="../../rustc_codegen_ssa/traits/backend/CodegenBackend/method.codegen_crate.html">codegen_crate</a>(<a href="#1197">tcx</a>));
+<a href=#1225 id=1225 data-nosnippet>1225</a>    <span class="kw">let </span>codegen = <a href="#1197">tcx</a>.sess.<a href="../../rustc_session/session/struct.Session.html#method.time">time</a>(<span class="string">"codegen_crate"</span>, <span class="kw">move </span>|| <a href="#1196">codegen_backend</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/backend/CodegenBackend/method.codegen_crate.html">codegen_crate</a>(<a href="#1197">tcx</a>));
 <a href=#1226 id=1226 data-nosnippet>1226</a>
 <a href=#1227 id=1227 data-nosnippet>1227</a>    <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.info.html">info!</a>(<span class="string">"Post-codegen\n{:?}"</span>, tcx.debug_stats());
 <a href=#1228 id=1228 data-nosnippet>1228</a>

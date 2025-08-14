@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["type_name"],"struct":["AbsolutePathPrinter"]};
+window.SIDEBAR_ITEMS = {"fn":["type_name"],"struct":["TypeNamePrinter"]};

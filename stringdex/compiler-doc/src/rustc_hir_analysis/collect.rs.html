@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/collect.rs`."><title>collect.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-1a4373a8.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_analysis/</div>collect.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! "Collection" is the process of determining the type and other external
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/collect.rs`."><title>collect.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-528d32ef.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-e93015a6.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_analysis/</div>collect.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! "Collection" is the process of determining the type and other external
 <a href=#2 id=2 data-nosnippet>2</a>//! details of each item in Rust. Collection is specifically concerned
 <a href=#3 id=3 data-nosnippet>3</a>//! with *inter-procedural* things -- for example, for a function
 <a href=#4 id=4 data-nosnippet>4</a>//! definition, collection will figure out the type and signature of the
@@ -31,7 +31,7 @@
 <a href=#31 id=31 data-nosnippet>31</a><span class="kw">use </span>rustc_hir::def_id::{<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>, <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>};
 <a href=#32 id=32 data-nosnippet>32</a><span class="kw">use </span>rustc_hir::intravisit::{<a href="../../rustc_hir/intravisit/enum.InferKind.html">InferKind</a>, <a href="../../rustc_hir/intravisit/trait.Visitor.html">Visitor</a>, <a href="../../rustc_hir/intravisit/trait.VisitorExt.html">VisitorExt</a>};
 <a href=#33 id=33 data-nosnippet>33</a><span class="kw">use </span>rustc_hir::{<span class="self"><a href="../../rustc_hir/index.html">self</a> </span><span class="kw">as </span>hir, <a href="../../rustc_hir/hir/enum.GenericParamKind.html">GenericParamKind</a>, <a href="../../rustc_hir/hir_id/struct.HirId.html">HirId</a>, <a href="../../rustc_hir/hir/enum.Node.html">Node</a>, <a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html">PreciseCapturingArgKind</a>, <a href="../../rustc_hir/macro.find_attr.html">find_attr</a>};
-<a href=#34 id=34 data-nosnippet>34</a><span class="kw">use </span>rustc_infer::infer::{<a href="../../rustc_infer/infer/struct.InferCtxt.html">InferCtxt</a>, <a href="../../rustc_infer/infer/trait.TyCtxtInferExt.html">TyCtxtInferExt</a>};
+<a href=#34 id=34 data-nosnippet>34</a><span class="kw">use </span>rustc_infer::infer::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_infer/infer/struct.InferCtxt.html">InferCtxt</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_infer/infer/trait.TyCtxtInferExt.html">TyCtxtInferExt</a>};
 <a href=#35 id=35 data-nosnippet>35</a><span class="kw">use </span>rustc_infer::traits::{<a href="../../rustc_middle/traits/enum.DynCompatibilityViolation.html">DynCompatibilityViolation</a>, <a href="../../rustc_middle/traits/struct.ObligationCause.html">ObligationCause</a>};
 <a href=#36 id=36 data-nosnippet>36</a><span class="kw">use </span><a href="../../rustc_middle/query/struct.Providers.html">rustc_middle::query::Providers</a>;
 <a href=#37 id=37 data-nosnippet>37</a><span class="kw">use </span>rustc_middle::ty::util::{<a href="../../rustc_middle/ty/util/struct.Discr.html">Discr</a>, <a href="../../rustc_middle/ty/util/trait.IntTypeExt.html">IntTypeExt</a>};
@@ -55,8 +55,8 @@
 <a href=#55 id=55 data-nosnippet>55</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">mod </span><a href="collect/dump.rs.html#1-179">dump</a>;
 <a href=#56 id=56 data-nosnippet>56</a><span class="kw">mod </span><a href="collect/generics_of.rs.html#1-543">generics_of</a>;
 <a href=#57 id=57 data-nosnippet>57</a><span class="kw">mod </span><a href="collect/item_bounds.rs.html#1-533">item_bounds</a>;
-<a href=#58 id=58 data-nosnippet>58</a><span class="kw">mod </span><a href="collect/predicates_of.rs.html#1-1160">predicates_of</a>;
-<a href=#59 id=59 data-nosnippet>59</a><span class="kw">mod </span><a href="collect/resolve_bound_vars.rs.html#1-2503">resolve_bound_vars</a>;
+<a href=#58 id=58 data-nosnippet>58</a><span class="kw">mod </span><a href="collect/predicates_of.rs.html#1-1162">predicates_of</a>;
+<a href=#59 id=59 data-nosnippet>59</a><span class="kw">mod </span><a href="collect/resolve_bound_vars.rs.html#1-2500">resolve_bound_vars</a>;
 <a href=#60 id=60 data-nosnippet>60</a><span class="kw">mod </span><a href="collect/type_of.rs.html#1-540">type_of</a>;
 <a href=#61 id=61 data-nosnippet>61</a>
 <a href=#62 id=62 data-nosnippet>62</a><span class="comment">///////////////////////////////////////////////////////////////////////////
@@ -77,25 +77,25 @@
 <a href=#77 id=77 data-nosnippet>77</a>        impl_super_outlives: <a href="collect/item_bounds.rs.html#495-510">item_bounds::impl_super_outlives</a>,
 <a href=#78 id=78 data-nosnippet>78</a>        generics_of: <a href="collect/generics_of.rs.html#18-399">generics_of::generics_of</a>,
 <a href=#79 id=79 data-nosnippet>79</a>        predicates_of: <a href="collect/predicates_of.rs.html#27-76">predicates_of::predicates_of</a>,
-<a href=#80 id=80 data-nosnippet>80</a>        explicit_predicates_of: <a href="collect/predicates_of.rs.html#495-600">predicates_of::explicit_predicates_of</a>,
-<a href=#81 id=81 data-nosnippet>81</a>        explicit_super_predicates_of: <a href="collect/predicates_of.rs.html#605-610">predicates_of::explicit_super_predicates_of</a>,
-<a href=#82 id=82 data-nosnippet>82</a>        explicit_implied_predicates_of: <a href="collect/predicates_of.rs.html#623-636">predicates_of::explicit_implied_predicates_of</a>,
+<a href=#80 id=80 data-nosnippet>80</a>        explicit_predicates_of: <a href="collect/predicates_of.rs.html#497-602">predicates_of::explicit_predicates_of</a>,
+<a href=#81 id=81 data-nosnippet>81</a>        explicit_super_predicates_of: <a href="collect/predicates_of.rs.html#607-612">predicates_of::explicit_super_predicates_of</a>,
+<a href=#82 id=82 data-nosnippet>82</a>        explicit_implied_predicates_of: <a href="collect/predicates_of.rs.html#625-638">predicates_of::explicit_implied_predicates_of</a>,
 <a href=#83 id=83 data-nosnippet>83</a>        explicit_supertraits_containing_assoc_item:
-<a href=#84 id=84 data-nosnippet>84</a>            <a href="collect/predicates_of.rs.html#612-621">predicates_of::explicit_supertraits_containing_assoc_item</a>,
-<a href=#85 id=85 data-nosnippet>85</a>        trait_explicit_predicates_and_bounds: <a href="collect/predicates_of.rs.html#487-493">predicates_of::trait_explicit_predicates_and_bounds</a>,
-<a href=#86 id=86 data-nosnippet>86</a>        const_conditions: <a href="collect/predicates_of.rs.html#999-1109">predicates_of::const_conditions</a>,
-<a href=#87 id=87 data-nosnippet>87</a>        explicit_implied_const_bounds: <a href="collect/predicates_of.rs.html#1111-1160">predicates_of::explicit_implied_const_bounds</a>,
-<a href=#88 id=88 data-nosnippet>88</a>        type_param_predicates: <a href="collect/predicates_of.rs.html#864-946">predicates_of::type_param_predicates</a>,
+<a href=#84 id=84 data-nosnippet>84</a>            <a href="collect/predicates_of.rs.html#614-623">predicates_of::explicit_supertraits_containing_assoc_item</a>,
+<a href=#85 id=85 data-nosnippet>85</a>        trait_explicit_predicates_and_bounds: <a href="collect/predicates_of.rs.html#489-495">predicates_of::trait_explicit_predicates_and_bounds</a>,
+<a href=#86 id=86 data-nosnippet>86</a>        const_conditions: <a href="collect/predicates_of.rs.html#1001-1111">predicates_of::const_conditions</a>,
+<a href=#87 id=87 data-nosnippet>87</a>        explicit_implied_const_bounds: <a href="collect/predicates_of.rs.html#1113-1162">predicates_of::explicit_implied_const_bounds</a>,
+<a href=#88 id=88 data-nosnippet>88</a>        type_param_predicates: <a href="collect/predicates_of.rs.html#866-948">predicates_of::type_param_predicates</a>,
 <a href=#89 id=89 data-nosnippet>89</a>        <a href="#843-987">trait_def</a>,
 <a href=#90 id=90 data-nosnippet>90</a>        <a href="#783-841">adt_def</a>,
 <a href=#91 id=91 data-nosnippet>91</a>        <a href="#990-1076">fn_sig</a>,
-<a href=#92 id=92 data-nosnippet>92</a>        <a href="#1294-1312">impl_trait_header</a>,
-<a href=#93 id=93 data-nosnippet>93</a>        <a href="#1432-1444">coroutine_kind</a>,
-<a href=#94 id=94 data-nosnippet>94</a>        <a href="#1446-1467">coroutine_for_closure</a>,
-<a href=#95 id=95 data-nosnippet>95</a>        <a href="#1469-1481">opaque_ty_origin</a>,
-<a href=#96 id=96 data-nosnippet>96</a>        <a href="#1483-1504">rendered_precise_capturing_args</a>,
-<a href=#97 id=97 data-nosnippet>97</a>        <a href="#1506-1526">const_param_default</a>,
-<a href=#98 id=98 data-nosnippet>98</a>        <a href="#1528-1550">anon_const_kind</a>,
+<a href=#92 id=92 data-nosnippet>92</a>        <a href="#1294-1316">impl_trait_header</a>,
+<a href=#93 id=93 data-nosnippet>93</a>        <a href="#1428-1440">coroutine_kind</a>,
+<a href=#94 id=94 data-nosnippet>94</a>        <a href="#1442-1463">coroutine_for_closure</a>,
+<a href=#95 id=95 data-nosnippet>95</a>        <a href="#1465-1477">opaque_ty_origin</a>,
+<a href=#96 id=96 data-nosnippet>96</a>        <a href="#1479-1500">rendered_precise_capturing_args</a>,
+<a href=#97 id=97 data-nosnippet>97</a>        <a href="#1502-1522">const_param_default</a>,
+<a href=#98 id=98 data-nosnippet>98</a>        <a href="#1524-1546">anon_const_kind</a>,
 <a href=#99 id=99 data-nosnippet>99</a>        ..<span class="kw-2">*</span><a href="#65">providers</a>
 <a href=#100 id=100 data-nosnippet>100</a>    };
 <a href=#101 id=101 data-nosnippet>101</a>}
@@ -510,7 +510,7 @@
 <a href=#510 id=510 data-nosnippet>510</a>        <span class="comment">// There's no place to record types from signatures?
 <a href=#511 id=511 data-nosnippet>511</a>    </span>}
 <a href=#512 id=512 data-nosnippet>512</a>
-<a href=#513 id=513 data-nosnippet>513</a>    <span class="kw">fn </span>infcx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><a href="../../rustc_infer/infer/struct.InferCtxt.html">InferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#513 id=513 data-nosnippet>513</a>    <span class="kw">fn </span>infcx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_infer/infer/struct.InferCtxt.html">InferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
 <a href=#514 id=514 data-nosnippet>514</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
 <a href=#515 id=515 data-nosnippet>515</a>    </a>}
 <a href=#516 id=516 data-nosnippet>516</a>
@@ -1148,7 +1148,7 @@
 <a href=#1148 id=1148 data-nosnippet>1148</a>        );
 <a href=#1149 id=1149 data-nosnippet>1149</a>        <a href="#1141">recovered_ret_ty</a> = <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#1142">suggestable_ret_ty</a>);
 <a href=#1150 id=1150 data-nosnippet>1150</a>    } <span class="kw">else if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(sugg) = <a href="#1182-1292">suggest_impl_trait</a>(
-<a href=#1151 id=1151 data-nosnippet>1151</a>        <span class="kw-2">&amp;</span><a href="#1104">tcx</a>.<a href="../../rustc_infer/infer/trait.TyCtxtInferExt.html#tymethod.infer_ctxt">infer_ctxt</a>().<a href="../../rustc_infer/infer/struct.InferCtxtBuilder.html#method.build">build</a>(<a href="../../rustc_type_ir/infer_ctxt/enum.TypingMode.html#method.non_body_analysis">TypingMode::non_body_analysis</a>()),
+<a href=#1151 id=1151 data-nosnippet>1151</a>        <span class="kw-2">&amp;</span><a href="#1104">tcx</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_infer/infer/trait.TyCtxtInferExt.html#tymethod.infer_ctxt">infer_ctxt</a>().<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_infer/infer/struct.InferCtxtBuilder.html#method.build">build</a>(<a href="../../rustc_type_ir/infer_ctxt/enum.TypingMode.html#method.non_body_analysis">TypingMode::non_body_analysis</a>()),
 <a href=#1152 id=1152 data-nosnippet>1152</a>        <a href="#1104">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.param_env">param_env</a>(<a href="#1102">def_id</a>),
 <a href=#1153 id=1153 data-nosnippet>1153</a>        <a href="#1136">ret_ty</a>,
 <a href=#1154 id=1154 data-nosnippet>1154</a>    ) {
@@ -1180,7 +1180,7 @@
 <a href=#1180 id=1180 data-nosnippet>1180</a>}
 <a href=#1181 id=1181 data-nosnippet>1181</a>
 <a href=#1182 id=1182 data-nosnippet>1182</a><span class="kw">pub fn </span><a href="../../rustc_hir_analysis/fn.suggest_impl_trait.html">suggest_impl_trait</a>&lt;<span class="lifetime">'tcx</span>&gt;(
-<a href=#1183 id=1183 data-nosnippet>1183</a>    infcx: <span class="kw-2">&amp;</span><a href="../../rustc_infer/infer/struct.InferCtxt.html">InferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#1183 id=1183 data-nosnippet>1183</a>    infcx: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_infer/infer/struct.InferCtxt.html">InferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#1184 id=1184 data-nosnippet>1184</a>    param_env: <a href="../../rustc_middle/ty/struct.ParamEnv.html">ty::ParamEnv</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#1185 id=1185 data-nosnippet>1185</a>    ret_ty: <a href="../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
 <a href=#1186 id=1186 data-nosnippet>1186</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>&gt; {
@@ -1295,256 +1295,252 @@
 <a href=#1295 id=1295 data-nosnippet>1295</a>    <span class="kw">let </span>icx = <a href="#245-247">ItemCtxt::new</a>(<a href="#1294">tcx</a>, <a href="#1294">def_id</a>);
 <a href=#1296 id=1296 data-nosnippet>1296</a>    <span class="kw">let </span>item = <a href="#1294">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_expect_item">hir_expect_item</a>(<a href="#1294">def_id</a>);
 <a href=#1297 id=1297 data-nosnippet>1297</a>    <span class="kw">let </span>impl_ = <a href="#1296">item</a>.<a href="../../rustc_hir/hir/struct.Item.html#method.expect_impl">expect_impl</a>();
-<a href=#1298 id=1298 data-nosnippet>1298</a>    <a href="#1297">impl_</a>.of_trait.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.as_ref">as_ref</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|ast_trait_ref| {
-<a href=#1299 id=1299 data-nosnippet>1299</a>        <span class="kw">let </span>selfty = <a href="#1294">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.type_of">type_of</a>(<a href="#1294">def_id</a>).<a href="../../rustc_type_ir/binder/struct.EarlyBinder.html#method.instantiate_identity">instantiate_identity</a>();
-<a href=#1300 id=1300 data-nosnippet>1300</a>
-<a href=#1301 id=1301 data-nosnippet>1301</a>        <a href="#1314-1349">check_impl_constness</a>(<a href="#1294">tcx</a>, <a href="#1297">impl_</a>.constness, <a href="#1298">ast_trait_ref</a>);
-<a href=#1302 id=1302 data-nosnippet>1302</a>
-<a href=#1303 id=1303 data-nosnippet>1303</a>        <span class="kw">let </span>trait_ref = <a href="#1295">icx</a>.<a href="hir_ty_lowering/mod.rs.html#212-217">lowerer</a>().<a href="hir_ty_lowering/mod.rs.html#708-725">lower_impl_trait_ref</a>(<a href="#1298">ast_trait_ref</a>, <a href="#1299">selfty</a>);
+<a href=#1298 id=1298 data-nosnippet>1298</a>    <span class="kw">let </span>is_rustc_reservation = <a href="#1294">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.has_attr">has_attr</a>(<a href="#1294">def_id</a>, <a href="../../rustc_span/symbol/sym_generated/constant.rustc_reservation_impl.html">sym::rustc_reservation_impl</a>);
+<a href=#1299 id=1299 data-nosnippet>1299</a>    <span class="kw">if </span><a href="#1298">is_rustc_reservation</a> &amp;&amp; <a href="#1297">impl_</a>.of_trait.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_none">is_none</a>() {
+<a href=#1300 id=1300 data-nosnippet>1300</a>        <a href="#1294">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.span_err">span_err</a>(<a href="#1296">item</a>.span, <span class="string">"reservation impls can't be inherent"</span>);
+<a href=#1301 id=1301 data-nosnippet>1301</a>    }
+<a href=#1302 id=1302 data-nosnippet>1302</a>    <a href="#1297">impl_</a>.of_trait.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|of_trait| {
+<a href=#1303 id=1303 data-nosnippet>1303</a>        <span class="kw">let </span>selfty = <a href="#1294">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.type_of">type_of</a>(<a href="#1294">def_id</a>).<a href="../../rustc_type_ir/binder/struct.EarlyBinder.html#method.instantiate_identity">instantiate_identity</a>();
 <a href=#1304 id=1304 data-nosnippet>1304</a>
-<a href=#1305 id=1305 data-nosnippet>1305</a>        <a href="../../rustc_middle/ty/struct.ImplTraitHeader.html">ty::ImplTraitHeader</a> {
-<a href=#1306 id=1306 data-nosnippet>1306</a>            trait_ref: <a href="../../rustc_type_ir/binder/struct.EarlyBinder.html#method.bind">ty::EarlyBinder::bind</a>(<a href="#1303">trait_ref</a>),
-<a href=#1307 id=1307 data-nosnippet>1307</a>            safety: <a href="#1297">impl_</a>.safety,
-<a href=#1308 id=1308 data-nosnippet>1308</a>            polarity: <a href="#1351-1380">polarity_of_impl</a>(<a href="#1294">tcx</a>, <a href="#1294">def_id</a>, <a href="#1297">impl_</a>, <a href="#1296">item</a>.span),
-<a href=#1309 id=1309 data-nosnippet>1309</a>            constness: <a href="#1297">impl_</a>.constness,
-<a href=#1310 id=1310 data-nosnippet>1310</a>        }
-<a href=#1311 id=1311 data-nosnippet>1311</a>    })
-<a href=#1312 id=1312 data-nosnippet>1312</a>}
-<a href=#1313 id=1313 data-nosnippet>1313</a>
-<a href=#1314 id=1314 data-nosnippet>1314</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.check_impl_constness.html">check_impl_constness</a>(
-<a href=#1315 id=1315 data-nosnippet>1315</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;,
-<a href=#1316 id=1316 data-nosnippet>1316</a>    constness: <a href="../../rustc_hir/hir/enum.Constness.html">hir::Constness</a>,
-<a href=#1317 id=1317 data-nosnippet>1317</a>    hir_trait_ref: <span class="kw-2">&amp;</span><a href="../../rustc_hir/hir/struct.TraitRef.html">hir::TraitRef</a>&lt;<span class="lifetime">'_</span>&gt;,
-<a href=#1318 id=1318 data-nosnippet>1318</a>) {
-<a href=#1319 id=1319 data-nosnippet>1319</a>    <span class="kw">if let </span><a href="../../rustc_hir/hir/enum.Constness.html#variant.NotConst">hir::Constness::NotConst</a> = <a href="#1316">constness</a> {
-<a href=#1320 id=1320 data-nosnippet>1320</a>        <span class="kw">return</span>;
-<a href=#1321 id=1321 data-nosnippet>1321</a>    }
-<a href=#1322 id=1322 data-nosnippet>1322</a>
-<a href=#1323 id=1323 data-nosnippet>1323</a>    <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(trait_def_id) = <a href="#1317">hir_trait_ref</a>.<a href="../../rustc_hir/hir/struct.TraitRef.html#method.trait_def_id">trait_def_id</a>() <span class="kw">else </span>{ <span class="kw">return </span>};
-<a href=#1324 id=1324 data-nosnippet>1324</a>    <span class="kw">if </span><a href="#1315">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.is_const_trait">is_const_trait</a>(<a href="#1323">trait_def_id</a>) {
-<a href=#1325 id=1325 data-nosnippet>1325</a>        <span class="kw">return</span>;
-<a href=#1326 id=1326 data-nosnippet>1326</a>    }
-<a href=#1327 id=1327 data-nosnippet>1327</a>
-<a href=#1328 id=1328 data-nosnippet>1328</a>    <span class="kw">let </span>trait_name = <a href="#1315">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.item_name">item_name</a>(<a href="#1323">trait_def_id</a>).<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>();
-<a href=#1329 id=1329 data-nosnippet>1329</a>    <span class="kw">let </span>(local_trait_span, suggestion_pre) =
-<a href=#1330 id=1330 data-nosnippet>1330</a>        <span class="kw">match </span>(<a href="#1323">trait_def_id</a>.<a href="../../rustc_span/def_id/struct.DefId.html#method.is_local">is_local</a>(), <a href="#1315">tcx</a>.sess.<a href="../../rustc_session/session/struct.Session.html#method.is_nightly_build">is_nightly_build</a>()) {
-<a href=#1331 id=1331 data-nosnippet>1331</a>            (<span class="bool-val">true</span>, <span class="bool-val">true</span>) =&gt; (
-<a href=#1332 id=1332 data-nosnippet>1332</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#1315">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.def_span">def_span</a>(<a href="#1323">trait_def_id</a>).<a href="../../rustc_span/span_encoding/struct.Span.html#method.shrink_to_lo">shrink_to_lo</a>()),
-<a href=#1333 id=1333 data-nosnippet>1333</a>                <span class="kw">if </span><a href="#1315">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.features">features</a>().<a href="../../rustc_feature/unstable/struct.Features.html#method.const_trait_impl">const_trait_impl</a>() {
-<a href=#1334 id=1334 data-nosnippet>1334</a>                    <span class="string">""
-<a href=#1335 id=1335 data-nosnippet>1335</a>                </span>} <span class="kw">else </span>{
-<a href=#1336 id=1336 data-nosnippet>1336</a>                    <span class="string">"enable `#![feature(const_trait_impl)]` in your crate and "
-<a href=#1337 id=1337 data-nosnippet>1337</a>                </span>},
-<a href=#1338 id=1338 data-nosnippet>1338</a>            ),
-<a href=#1339 id=1339 data-nosnippet>1339</a>            (<span class="bool-val">false</span>, <span class="kw">_</span>) | (<span class="kw">_</span>, <span class="bool-val">false</span>) =&gt; (<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>, <span class="string">""</span>),
-<a href=#1340 id=1340 data-nosnippet>1340</a>        };
-<a href=#1341 id=1341 data-nosnippet>1341</a>    <a href="#1315">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#508-525">errors::ConstImplForNonConstTrait</a> {
-<a href=#1342 id=1342 data-nosnippet>1342</a>        trait_ref_span: <a href="#1317">hir_trait_ref</a>.path.span,
-<a href=#1343 id=1343 data-nosnippet>1343</a>        <a href="#1328">trait_name</a>,
-<a href=#1344 id=1344 data-nosnippet>1344</a>        <a href="#1329">local_trait_span</a>,
-<a href=#1345 id=1345 data-nosnippet>1345</a>        <a href="#1329">suggestion_pre</a>,
-<a href=#1346 id=1346 data-nosnippet>1346</a>        marking: (),
-<a href=#1347 id=1347 data-nosnippet>1347</a>        adding: (),
-<a href=#1348 id=1348 data-nosnippet>1348</a>    });
-<a href=#1349 id=1349 data-nosnippet>1349</a>}
-<a href=#1350 id=1350 data-nosnippet>1350</a>
-<a href=#1351 id=1351 data-nosnippet>1351</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.polarity_of_impl.html">polarity_of_impl</a>(
-<a href=#1352 id=1352 data-nosnippet>1352</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;,
-<a href=#1353 id=1353 data-nosnippet>1353</a>    def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
-<a href=#1354 id=1354 data-nosnippet>1354</a>    impl_: <span class="kw-2">&amp;</span><a href="../../rustc_hir/hir/struct.Impl.html">hir::Impl</a>&lt;<span class="lifetime">'_</span>&gt;,
-<a href=#1355 id=1355 data-nosnippet>1355</a>    span: <a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>,
-<a href=#1356 id=1356 data-nosnippet>1356</a>) -&gt; <a href="../../rustc_type_ir/predicate/enum.ImplPolarity.html">ty::ImplPolarity</a> {
-<a href=#1357 id=1357 data-nosnippet>1357</a>    <span class="kw">let </span>is_rustc_reservation = <a href="#1352">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.has_attr">has_attr</a>(<a href="#1353">def_id</a>, <a href="../../rustc_span/symbol/sym_generated/constant.rustc_reservation_impl.html">sym::rustc_reservation_impl</a>);
-<a href=#1358 id=1358 data-nosnippet>1358</a>    <span class="kw">match </span><span class="kw-2">&amp;</span><a href="#1354">impl_</a> {
-<a href=#1359 id=1359 data-nosnippet>1359</a>        <a href="../../rustc_hir/hir/struct.Impl.html">hir::Impl</a> { polarity: hir::ImplPolarity::Negative(span), of_trait, .. } =&gt; {
-<a href=#1360 id=1360 data-nosnippet>1360</a>            <span class="kw">if </span><a href="#1357">is_rustc_reservation</a> {
-<a href=#1361 id=1361 data-nosnippet>1361</a>                <span class="kw">let </span>span = <a href="#1359">span</a>.<a href="../../rustc_span/span_encoding/struct.Span.html#method.to">to</a>(<a href="#1359">of_trait</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.as_ref">as_ref</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map_or">map_or</a>(<span class="kw-2">*</span><a href="#1359">span</a>, |t| <a href="#1361">t</a>.path.span));
-<a href=#1362 id=1362 data-nosnippet>1362</a>                <a href="#1352">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.span_err">span_err</a>(<a href="#1361">span</a>, <span class="string">"reservation impls can't be negative"</span>);
-<a href=#1363 id=1363 data-nosnippet>1363</a>            }
-<a href=#1364 id=1364 data-nosnippet>1364</a>            <a href="../../rustc_type_ir/predicate/enum.ImplPolarity.html#variant.Negative">ty::ImplPolarity::Negative</a>
-<a href=#1365 id=1365 data-nosnippet>1365</a>        }
-<a href=#1366 id=1366 data-nosnippet>1366</a>        <a href="../../rustc_hir/hir/struct.Impl.html">hir::Impl</a> { polarity: hir::ImplPolarity::Positive, of_trait: <span class="prelude-val">None</span>, .. } =&gt; {
-<a href=#1367 id=1367 data-nosnippet>1367</a>            <span class="kw">if </span><a href="#1357">is_rustc_reservation</a> {
-<a href=#1368 id=1368 data-nosnippet>1368</a>                <a href="#1352">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.span_err">span_err</a>(<a href="#1355">span</a>, <span class="string">"reservation impls can't be inherent"</span>);
-<a href=#1369 id=1369 data-nosnippet>1369</a>            }
-<a href=#1370 id=1370 data-nosnippet>1370</a>            <a href="../../rustc_type_ir/predicate/enum.ImplPolarity.html#variant.Positive">ty::ImplPolarity::Positive</a>
-<a href=#1371 id=1371 data-nosnippet>1371</a>        }
-<a href=#1372 id=1372 data-nosnippet>1372</a>        <a href="../../rustc_hir/hir/struct.Impl.html">hir::Impl</a> { polarity: hir::ImplPolarity::Positive, of_trait: <span class="prelude-val">Some</span>(<span class="kw">_</span>), .. } =&gt; {
-<a href=#1373 id=1373 data-nosnippet>1373</a>            <span class="kw">if </span><a href="#1357">is_rustc_reservation</a> {
-<a href=#1374 id=1374 data-nosnippet>1374</a>                <a href="../../rustc_type_ir/predicate/enum.ImplPolarity.html#variant.Reservation">ty::ImplPolarity::Reservation</a>
-<a href=#1375 id=1375 data-nosnippet>1375</a>            } <span class="kw">else </span>{
-<a href=#1376 id=1376 data-nosnippet>1376</a>                <a href="../../rustc_type_ir/predicate/enum.ImplPolarity.html#variant.Positive">ty::ImplPolarity::Positive</a>
-<a href=#1377 id=1377 data-nosnippet>1377</a>            }
-<a href=#1378 id=1378 data-nosnippet>1378</a>        }
-<a href=#1379 id=1379 data-nosnippet>1379</a>    }
-<a href=#1380 id=1380 data-nosnippet>1380</a>}
-<a href=#1381 id=1381 data-nosnippet>1381</a>
-<a href=#1382 id=1382 data-nosnippet>1382</a><span class="doccomment">/// Returns the early-bound lifetimes declared in this generics
-<a href=#1383 id=1383 data-nosnippet>1383</a>/// listing. For anything other than fns/methods, this is just all
-<a href=#1384 id=1384 data-nosnippet>1384</a>/// the lifetimes that are declared. For fns or methods, we have to
-<a href=#1385 id=1385 data-nosnippet>1385</a>/// screen out those that do not appear in any where-clauses etc using
-<a href=#1386 id=1386 data-nosnippet>1386</a>/// `resolve_lifetime::early_bound_lifetimes`.
-<a href=#1387 id=1387 data-nosnippet>1387</a></span><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.early_bound_lifetimes_from_generics.html">early_bound_lifetimes_from_generics</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;(
-<a href=#1388 id=1388 data-nosnippet>1388</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#1389 id=1389 data-nosnippet>1389</a>    generics: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_hir/hir/struct.Generics.html">hir::Generics</a>&lt;<span class="lifetime">'a</span>&gt;,
-<a href=#1390 id=1390 data-nosnippet>1390</a>) -&gt; <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_hir/hir/struct.GenericParam.html">hir::GenericParam</a>&lt;<span class="lifetime">'a</span>&gt;&gt; {
-<a href=#1391 id=1391 data-nosnippet>1391</a>    <a href="#1389">generics</a>.params.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter">filter</a>(<span class="kw">move </span>|param| <span class="kw">match </span><a href="#1391">param</a>.kind {
-<a href=#1392 id=1392 data-nosnippet>1392</a>        <a href="../../rustc_hir/hir/enum.GenericParamKind.html#variant.Lifetime">GenericParamKind::Lifetime</a> { .. } =&gt; !<a href="#1388">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.is_late_bound">is_late_bound</a>(<a href="#1391">param</a>.hir_id),
-<a href=#1393 id=1393 data-nosnippet>1393</a>        <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
-<a href=#1394 id=1394 data-nosnippet>1394</a>    })
-<a href=#1395 id=1395 data-nosnippet>1395</a>}
-<a href=#1396 id=1396 data-nosnippet>1396</a>
-<a href=#1397 id=1397 data-nosnippet>1397</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.compute_sig_of_foreign_fn_decl.html">compute_sig_of_foreign_fn_decl</a>&lt;<span class="lifetime">'tcx</span>&gt;(
-<a href=#1398 id=1398 data-nosnippet>1398</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#1399 id=1399 data-nosnippet>1399</a>    def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
-<a href=#1400 id=1400 data-nosnippet>1400</a>    decl: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../rustc_hir/hir/struct.FnDecl.html">hir::FnDecl</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#1401 id=1401 data-nosnippet>1401</a>    abi: <a href="../../rustc_abi/extern_abi/enum.ExternAbi.html">ExternAbi</a>,
-<a href=#1402 id=1402 data-nosnippet>1402</a>    safety: <a href="../../rustc_hir/hir/enum.Safety.html">hir::Safety</a>,
-<a href=#1403 id=1403 data-nosnippet>1403</a>) -&gt; <a href="../../rustc_middle/ty/sty/type.PolyFnSig.html">ty::PolyFnSig</a>&lt;<span class="lifetime">'tcx</span>&gt; {
-<a href=#1404 id=1404 data-nosnippet>1404</a>    <span class="kw">let </span>hir_id = <a href="#1398">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.local_def_id_to_hir_id">local_def_id_to_hir_id</a>(<a href="#1399">def_id</a>);
-<a href=#1405 id=1405 data-nosnippet>1405</a>    <span class="kw">let </span>fty =
-<a href=#1406 id=1406 data-nosnippet>1406</a>        <a href="#245-247">ItemCtxt::new</a>(<a href="#1398">tcx</a>, <a href="#1399">def_id</a>).<a href="hir_ty_lowering/mod.rs.html#212-217">lowerer</a>().<a href="hir_ty_lowering/mod.rs.html#2662-2716">lower_fn_ty</a>(<a href="#1404">hir_id</a>, <a href="#1402">safety</a>, <a href="#1401">abi</a>, <a href="#1400">decl</a>, <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>, <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>);
-<a href=#1407 id=1407 data-nosnippet>1407</a>
-<a href=#1408 id=1408 data-nosnippet>1408</a>    <span class="comment">// Feature gate SIMD types in FFI, since I am not sure that the
-<a href=#1409 id=1409 data-nosnippet>1409</a>    // ABIs are handled at all correctly. -huonw
-<a href=#1410 id=1410 data-nosnippet>1410</a>    </span><span class="kw">if </span>!<a href="#1398">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.features">features</a>().<a href="../../rustc_feature/unstable/struct.Features.html#method.simd_ffi">simd_ffi</a>() {
-<a href=#1411 id=1411 data-nosnippet>1411</a>        <span class="kw">let </span>check = |hir_ty: <span class="kw-2">&amp;</span><a href="../../rustc_hir/hir/struct.Ty.html">hir::Ty</a>&lt;<span class="lifetime">'_</span>&gt;, ty: <a href="../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'_</span>&gt;| {
-<a href=#1412 id=1412 data-nosnippet>1412</a>            <span class="kw">if </span><a href="#1411">ty</a>.<a href="../../rustc_middle/ty/struct.Ty.html#method.is_simd">is_simd</a>() {
-<a href=#1413 id=1413 data-nosnippet>1413</a>                <span class="kw">let </span>snip = <a href="#1398">tcx</a>
-<a href=#1414 id=1414 data-nosnippet>1414</a>                    .sess
-<a href=#1415 id=1415 data-nosnippet>1415</a>                    .<a href="../../rustc_session/session/struct.Session.html#method.source_map">source_map</a>()
-<a href=#1416 id=1416 data-nosnippet>1416</a>                    .<a href="../../rustc_span/source_map/struct.SourceMap.html#method.span_to_snippet">span_to_snippet</a>(<a href="#1411">hir_ty</a>.span)
-<a href=#1417 id=1417 data-nosnippet>1417</a>                    .<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.map_or_else">map_or_else</a>(|<span class="kw">_</span>| <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html#method.new">String::new</a>(), |s| <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">" `{s}`"</span>));
-<a href=#1418 id=1418 data-nosnippet>1418</a>                <a href="#1398">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#838-842">errors::SIMDFFIHighlyExperimental</a> { span: <a href="#1411">hir_ty</a>.span, <a href="#1413">snip</a> });
-<a href=#1419 id=1419 data-nosnippet>1419</a>            }
-<a href=#1420 id=1420 data-nosnippet>1420</a>        };
-<a href=#1421 id=1421 data-nosnippet>1421</a>        <span class="kw">for </span>(input, ty) <span class="kw">in </span>iter::zip(decl.inputs, fty.inputs().skip_binder()) {
-<a href=#1422 id=1422 data-nosnippet>1422</a>            check(input, <span class="kw-2">*</span>ty)
-<a href=#1423 id=1423 data-nosnippet>1423</a>        }
-<a href=#1424 id=1424 data-nosnippet>1424</a>        <span class="kw">if let </span><a href="../../rustc_hir/hir/enum.FnRetTy.html#variant.Return">hir::FnRetTy::Return</a>(ty) = <a href="#1400">decl</a>.output {
-<a href=#1425 id=1425 data-nosnippet>1425</a>            <a href="#1411">check</a>(<a href="#1424">ty</a>, <a href="#1405">fty</a>.<a href="../../rustc_type_ir/binder/struct.Binder.html#method.output">output</a>().<a href="../../rustc_type_ir/binder/struct.Binder.html#method.skip_binder">skip_binder</a>())
-<a href=#1426 id=1426 data-nosnippet>1426</a>        }
-<a href=#1427 id=1427 data-nosnippet>1427</a>    }
-<a href=#1428 id=1428 data-nosnippet>1428</a>
-<a href=#1429 id=1429 data-nosnippet>1429</a>    <a href="#1405">fty</a>
-<a href=#1430 id=1430 data-nosnippet>1430</a>}
-<a href=#1431 id=1431 data-nosnippet>1431</a>
-<a href=#1432 id=1432 data-nosnippet>1432</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.coroutine_kind.html">coroutine_kind</a>(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;, def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_hir/hir/enum.CoroutineKind.html">hir::CoroutineKind</a>&gt; {
-<a href=#1433 id=1433 data-nosnippet>1433</a>    <span class="kw">match </span><a href="#1432">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node_by_def_id">hir_node_by_def_id</a>(<a href="#1432">def_id</a>) {
-<a href=#1434 id=1434 data-nosnippet>1434</a>        <a href="../../rustc_hir/hir/enum.Node.html#variant.Expr">Node::Expr</a>(<span class="kw-2">&amp;</span>hir::Expr {
-<a href=#1435 id=1435 data-nosnippet>1435</a>            kind:
-<a href=#1436 id=1436 data-nosnippet>1436</a>                hir::ExprKind::Closure(<span class="kw-2">&amp;</span>rustc_hir::Closure {
-<a href=#1437 id=1437 data-nosnippet>1437</a>                    kind: hir::ClosureKind::Coroutine(kind),
-<a href=#1438 id=1438 data-nosnippet>1438</a>                    ..
-<a href=#1439 id=1439 data-nosnippet>1439</a>                }),
-<a href=#1440 id=1440 data-nosnippet>1440</a>            ..
-<a href=#1441 id=1441 data-nosnippet>1441</a>        }) =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#1437">kind</a>),
-<a href=#1442 id=1442 data-nosnippet>1442</a>        <span class="kw">_ </span>=&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
-<a href=#1443 id=1443 data-nosnippet>1443</a>    }
-<a href=#1444 id=1444 data-nosnippet>1444</a>}
-<a href=#1445 id=1445 data-nosnippet>1445</a>
-<a href=#1446 id=1446 data-nosnippet>1446</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.coroutine_for_closure.html">coroutine_for_closure</a>(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;, def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a href="../../rustc_span/def_id/struct.DefId.html">DefId</a> {
-<a href=#1447 id=1447 data-nosnippet>1447</a>    <span class="kw">let </span><span class="kw-2">&amp;</span>rustc_hir::Closure { kind: hir::ClosureKind::CoroutineClosure(<span class="kw">_</span>), body, .. } =
-<a href=#1448 id=1448 data-nosnippet>1448</a>        <a href="#1446">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node_by_def_id">hir_node_by_def_id</a>(<a href="#1446">def_id</a>).<a href="../../rustc_hir/hir/enum.Node.html#method.expect_closure">expect_closure</a>()
-<a href=#1449 id=1449 data-nosnippet>1449</a>    <span class="kw">else </span>{
-<a href=#1450 id=1450 data-nosnippet>1450</a>        <a class="macro" href="../../rustc_middle/macro.bug.html">bug!</a>()
-<a href=#1451 id=1451 data-nosnippet>1451</a>    };
-<a href=#1452 id=1452 data-nosnippet>1452</a>
-<a href=#1453 id=1453 data-nosnippet>1453</a>    <span class="kw">let </span><span class="kw-2">&amp;</span>hir::Expr {
-<a href=#1454 id=1454 data-nosnippet>1454</a>        kind:
-<a href=#1455 id=1455 data-nosnippet>1455</a>            hir::ExprKind::Closure(<span class="kw-2">&amp;</span>rustc_hir::Closure {
-<a href=#1456 id=1456 data-nosnippet>1456</a>                def_id,
-<a href=#1457 id=1457 data-nosnippet>1457</a>                kind: hir::ClosureKind::Coroutine(<span class="kw">_</span>),
-<a href=#1458 id=1458 data-nosnippet>1458</a>                ..
-<a href=#1459 id=1459 data-nosnippet>1459</a>            }),
-<a href=#1460 id=1460 data-nosnippet>1460</a>        ..
-<a href=#1461 id=1461 data-nosnippet>1461</a>    } = <a href="#1446">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_body">hir_body</a>(<a href="#1447">body</a>).value
-<a href=#1462 id=1462 data-nosnippet>1462</a>    <span class="kw">else </span>{
-<a href=#1463 id=1463 data-nosnippet>1463</a>        <a class="macro" href="../../rustc_middle/macro.bug.html">bug!</a>()
-<a href=#1464 id=1464 data-nosnippet>1464</a>    };
-<a href=#1465 id=1465 data-nosnippet>1465</a>
-<a href=#1466 id=1466 data-nosnippet>1466</a>    <a href="#1456">def_id</a>.<a href="../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>()
-<a href=#1467 id=1467 data-nosnippet>1467</a>}
-<a href=#1468 id=1468 data-nosnippet>1468</a>
-<a href=#1469 id=1469 data-nosnippet>1469</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.opaque_ty_origin.html">opaque_ty_origin</a>&lt;<span class="lifetime">'tcx</span>&gt;(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;, def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html">hir::OpaqueTyOrigin</a>&lt;<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt; {
-<a href=#1470 id=1470 data-nosnippet>1470</a>    <span class="kw">match </span><a href="#1469">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node_by_def_id">hir_node_by_def_id</a>(<a href="#1469">def_id</a>).<a href="../../rustc_hir/hir/enum.Node.html#method.expect_opaque_ty">expect_opaque_ty</a>().origin {
-<a href=#1471 id=1471 data-nosnippet>1471</a>        <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html#variant.FnReturn">hir::OpaqueTyOrigin::FnReturn</a> { parent, in_trait_or_impl } =&gt; {
-<a href=#1472 id=1472 data-nosnippet>1472</a>            <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html#variant.FnReturn">hir::OpaqueTyOrigin::FnReturn</a> { parent: <a href="#1471">parent</a>.<a href="../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>(), <a href="#1471">in_trait_or_impl</a> }
-<a href=#1473 id=1473 data-nosnippet>1473</a>        }
-<a href=#1474 id=1474 data-nosnippet>1474</a>        <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html#variant.AsyncFn">hir::OpaqueTyOrigin::AsyncFn</a> { parent, in_trait_or_impl } =&gt; {
-<a href=#1475 id=1475 data-nosnippet>1475</a>            <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html#variant.AsyncFn">hir::OpaqueTyOrigin::AsyncFn</a> { parent: <a href="#1474">parent</a>.<a href="../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>(), <a href="#1474">in_trait_or_impl</a> }
-<a href=#1476 id=1476 data-nosnippet>1476</a>        }
-<a href=#1477 id=1477 data-nosnippet>1477</a>        <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html#variant.TyAlias">hir::OpaqueTyOrigin::TyAlias</a> { parent, in_assoc_ty } =&gt; {
-<a href=#1478 id=1478 data-nosnippet>1478</a>            <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html#variant.TyAlias">hir::OpaqueTyOrigin::TyAlias</a> { parent: <a href="#1477">parent</a>.<a href="../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>(), <a href="#1477">in_assoc_ty</a> }
-<a href=#1479 id=1479 data-nosnippet>1479</a>        }
-<a href=#1480 id=1480 data-nosnippet>1480</a>    }
-<a href=#1481 id=1481 data-nosnippet>1481</a>}
-<a href=#1482 id=1482 data-nosnippet>1482</a>
-<a href=#1483 id=1483 data-nosnippet>1483</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.rendered_precise_capturing_args.html">rendered_precise_capturing_args</a>&lt;<span class="lifetime">'tcx</span>&gt;(
-<a href=#1484 id=1484 data-nosnippet>1484</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#1485 id=1485 data-nosnippet>1485</a>    def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
-<a href=#1486 id=1486 data-nosnippet>1486</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>[<a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html">PreciseCapturingArgKind</a>&lt;<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>, <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>&gt;]&gt; {
-<a href=#1487 id=1487 data-nosnippet>1487</a>    <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(ty::ImplTraitInTraitData::Trait { opaque_def_id, .. }) =
-<a href=#1488 id=1488 data-nosnippet>1488</a>        <a href="#1484">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.opt_rpitit_info">opt_rpitit_info</a>(<a href="#1485">def_id</a>.<a href="../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>())
-<a href=#1489 id=1489 data-nosnippet>1489</a>    {
-<a href=#1490 id=1490 data-nosnippet>1490</a>        <span class="kw">return </span><a href="#1484">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.rendered_precise_capturing_args">rendered_precise_capturing_args</a>(<a href="#1487">opaque_def_id</a>);
-<a href=#1491 id=1491 data-nosnippet>1491</a>    }
-<a href=#1492 id=1492 data-nosnippet>1492</a>
-<a href=#1493 id=1493 data-nosnippet>1493</a>    <a href="#1484">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node_by_def_id">hir_node_by_def_id</a>(<a href="#1485">def_id</a>).<a href="../../rustc_hir/hir/enum.Node.html#method.expect_opaque_ty">expect_opaque_ty</a>().bounds.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.find_map">find_map</a>(|bound| <span class="kw">match </span><a href="#1493">bound</a> {
-<a href=#1494 id=1494 data-nosnippet>1494</a>        <a href="../../rustc_hir/hir/enum.GenericBound.html#variant.Use">hir::GenericBound::Use</a>(args, ..) =&gt; {
-<a href=#1495 id=1495 data-nosnippet>1495</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<span class="kw-2">&amp;*</span><a href="#1484">tcx</a>.arena.<a href="../../rustc_middle/arena/struct.Arena.html#method.alloc_from_iter">alloc_from_iter</a>(<a href="#1494">args</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|arg| <span class="kw">match </span><a href="#1495">arg</a> {
-<a href=#1496 id=1496 data-nosnippet>1496</a>                <a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html#variant.Lifetime">PreciseCapturingArgKind::Lifetime</a>(<span class="kw">_</span>) =&gt; {
-<a href=#1497 id=1497 data-nosnippet>1497</a>                    <a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html#variant.Lifetime">PreciseCapturingArgKind::Lifetime</a>(<a href="#1495">arg</a>.<a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html#method.name">name</a>())
-<a href=#1498 id=1498 data-nosnippet>1498</a>                }
-<a href=#1499 id=1499 data-nosnippet>1499</a>                <a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html#variant.Param">PreciseCapturingArgKind::Param</a>(<span class="kw">_</span>) =&gt; <a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html#variant.Param">PreciseCapturingArgKind::Param</a>(<a href="#1495">arg</a>.<a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html#method.name">name</a>()),
-<a href=#1500 id=1500 data-nosnippet>1500</a>            })))
-<a href=#1501 id=1501 data-nosnippet>1501</a>        }
-<a href=#1502 id=1502 data-nosnippet>1502</a>        <span class="kw">_ </span>=&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
-<a href=#1503 id=1503 data-nosnippet>1503</a>    })
-<a href=#1504 id=1504 data-nosnippet>1504</a>}
-<a href=#1505 id=1505 data-nosnippet>1505</a>
-<a href=#1506 id=1506 data-nosnippet>1506</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.const_param_default.html">const_param_default</a>&lt;<span class="lifetime">'tcx</span>&gt;(
-<a href=#1507 id=1507 data-nosnippet>1507</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
-<a href=#1508 id=1508 data-nosnippet>1508</a>    def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
-<a href=#1509 id=1509 data-nosnippet>1509</a>) -&gt; <a href="../../rustc_middle/ty/sty/type.EarlyBinder.html">ty::EarlyBinder</a>&lt;<span class="lifetime">'tcx</span>, <a href="../../rustc_middle/ty/consts/struct.Const.html">Const</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
-<a href=#1510 id=1510 data-nosnippet>1510</a>    <span class="kw">let </span>default_ct = <span class="kw">match </span><a href="#1507">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node_by_def_id">hir_node_by_def_id</a>(<a href="#1508">def_id</a>) {
-<a href=#1511 id=1511 data-nosnippet>1511</a>        <a href="../../rustc_hir/hir/enum.Node.html#variant.GenericParam">hir::Node::GenericParam</a>(hir::GenericParam {
-<a href=#1512 id=1512 data-nosnippet>1512</a>            kind: hir::GenericParamKind::Const { default: <span class="prelude-val">Some</span>(ct), .. },
-<a href=#1513 id=1513 data-nosnippet>1513</a>            ..
-<a href=#1514 id=1514 data-nosnippet>1514</a>        }) =&gt; <a href="#1512">ct</a>,
-<a href=#1515 id=1515 data-nosnippet>1515</a>        <span class="kw">_ </span>=&gt; <a class="macro" href="../../rustc_middle/macro.span_bug.html">span_bug!</a>(
-<a href=#1516 id=1516 data-nosnippet>1516</a>            <a href="#1507">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.def_span">def_span</a>(<a href="#1508">def_id</a>),
-<a href=#1517 id=1517 data-nosnippet>1517</a>            <span class="string">"`const_param_default` expected a generic parameter with a constant"
-<a href=#1518 id=1518 data-nosnippet>1518</a>        </span>),
-<a href=#1519 id=1519 data-nosnippet>1519</a>    };
-<a href=#1520 id=1520 data-nosnippet>1520</a>    <span class="kw">let </span>icx = <a href="#245-247">ItemCtxt::new</a>(<a href="#1507">tcx</a>, <a href="#1508">def_id</a>);
-<a href=#1521 id=1521 data-nosnippet>1521</a>    <span class="kw">let </span>identity_args = <a href="../../rustc_middle/ty/list/struct.RawList.html#method.identity_for_item">ty::GenericArgs::identity_for_item</a>(<a href="#1507">tcx</a>, <a href="#1508">def_id</a>);
-<a href=#1522 id=1522 data-nosnippet>1522</a>    <span class="kw">let </span>ct = <a href="#1520">icx</a>
-<a href=#1523 id=1523 data-nosnippet>1523</a>        .<a href="hir_ty_lowering/mod.rs.html#212-217">lowerer</a>()
-<a href=#1524 id=1524 data-nosnippet>1524</a>        .<a href="hir_ty_lowering/mod.rs.html#2123-2210">lower_const_arg</a>(<a href="#1510">default_ct</a>, <a href="hir_ty_lowering/mod.rs.html#258">FeedConstTy::Param</a>(<a href="#1508">def_id</a>.<a href="../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>(), <a href="#1521">identity_args</a>));
-<a href=#1525 id=1525 data-nosnippet>1525</a>    <a href="../../rustc_type_ir/binder/struct.EarlyBinder.html#method.bind">ty::EarlyBinder::bind</a>(<a href="#1522">ct</a>)
-<a href=#1526 id=1526 data-nosnippet>1526</a>}
-<a href=#1527 id=1527 data-nosnippet>1527</a>
-<a href=#1528 id=1528 data-nosnippet>1528</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.anon_const_kind.html">anon_const_kind</a>&lt;<span class="lifetime">'tcx</span>&gt;(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;, def: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a href="../../rustc_middle/ty/consts/enum.AnonConstKind.html">ty::AnonConstKind</a> {
-<a href=#1529 id=1529 data-nosnippet>1529</a>    <span class="kw">let </span>hir_id = <a href="#1528">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.local_def_id_to_hir_id">local_def_id_to_hir_id</a>(<a href="#1528">def</a>);
-<a href=#1530 id=1530 data-nosnippet>1530</a>    <span class="kw">let </span>const_arg_id = <a href="#1528">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.parent_hir_id">parent_hir_id</a>(<a href="#1529">hir_id</a>);
-<a href=#1531 id=1531 data-nosnippet>1531</a>    <span class="kw">match </span><a href="#1528">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node">hir_node</a>(<a href="#1530">const_arg_id</a>) {
-<a href=#1532 id=1532 data-nosnippet>1532</a>        <a href="../../rustc_hir/hir/enum.Node.html#variant.ConstArg">hir::Node::ConstArg</a>(<span class="kw">_</span>) =&gt; {
-<a href=#1533 id=1533 data-nosnippet>1533</a>            <span class="kw">if </span><a href="#1528">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.features">features</a>().<a href="../../rustc_feature/unstable/struct.Features.html#method.generic_const_exprs">generic_const_exprs</a>() {
-<a href=#1534 id=1534 data-nosnippet>1534</a>                <a href="../../rustc_middle/ty/consts/enum.AnonConstKind.html#variant.GCE">ty::AnonConstKind::GCE</a>
-<a href=#1535 id=1535 data-nosnippet>1535</a>            } <span class="kw">else if </span><a href="#1528">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.features">features</a>().<a href="../../rustc_feature/unstable/struct.Features.html#method.min_generic_const_args">min_generic_const_args</a>() {
-<a href=#1536 id=1536 data-nosnippet>1536</a>                <a href="../../rustc_middle/ty/consts/enum.AnonConstKind.html#variant.MCG">ty::AnonConstKind::MCG</a>
-<a href=#1537 id=1537 data-nosnippet>1537</a>            } <span class="kw">else if let </span><a href="../../rustc_hir/hir/enum.Node.html#variant.Expr">hir::Node::Expr</a>(hir::Expr {
-<a href=#1538 id=1538 data-nosnippet>1538</a>                kind: hir::ExprKind::Repeat(<span class="kw">_</span>, repeat_count),
-<a href=#1539 id=1539 data-nosnippet>1539</a>                ..
-<a href=#1540 id=1540 data-nosnippet>1540</a>            }) = <a href="#1528">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node">hir_node</a>(<a href="#1528">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.parent_hir_id">parent_hir_id</a>(<a href="#1530">const_arg_id</a>))
-<a href=#1541 id=1541 data-nosnippet>1541</a>                &amp;&amp; <a href="#1538">repeat_count</a>.hir_id == <a href="#1530">const_arg_id</a>
-<a href=#1542 id=1542 data-nosnippet>1542</a>            {
-<a href=#1543 id=1543 data-nosnippet>1543</a>                <a href="../../rustc_middle/ty/consts/enum.AnonConstKind.html#variant.RepeatExprCount">ty::AnonConstKind::RepeatExprCount</a>
-<a href=#1544 id=1544 data-nosnippet>1544</a>            } <span class="kw">else </span>{
-<a href=#1545 id=1545 data-nosnippet>1545</a>                <a href="../../rustc_middle/ty/consts/enum.AnonConstKind.html#variant.MCG">ty::AnonConstKind::MCG</a>
-<a href=#1546 id=1546 data-nosnippet>1546</a>            }
-<a href=#1547 id=1547 data-nosnippet>1547</a>        }
-<a href=#1548 id=1548 data-nosnippet>1548</a>        <span class="kw">_ </span>=&gt; <a href="../../rustc_middle/ty/consts/enum.AnonConstKind.html#variant.NonTypeSystem">ty::AnonConstKind::NonTypeSystem</a>,
-<a href=#1549 id=1549 data-nosnippet>1549</a>    }
-<a href=#1550 id=1550 data-nosnippet>1550</a>}</code></pre></div></section></main></body></html>
+<a href=#1305 id=1305 data-nosnippet>1305</a>        <a href="#1318-1353">check_impl_constness</a>(<a href="#1294">tcx</a>, <a href="#1302">of_trait</a>.constness, <span class="kw-2">&amp;</span><a href="#1302">of_trait</a>.trait_ref);
+<a href=#1306 id=1306 data-nosnippet>1306</a>
+<a href=#1307 id=1307 data-nosnippet>1307</a>        <span class="kw">let </span>trait_ref = <a href="#1295">icx</a>.<a href="hir_ty_lowering/mod.rs.html#212-217">lowerer</a>().<a href="hir_ty_lowering/mod.rs.html#708-725">lower_impl_trait_ref</a>(<span class="kw-2">&amp;</span><a href="#1302">of_trait</a>.trait_ref, <a href="#1303">selfty</a>);
+<a href=#1308 id=1308 data-nosnippet>1308</a>
+<a href=#1309 id=1309 data-nosnippet>1309</a>        <a href="../../rustc_middle/ty/struct.ImplTraitHeader.html">ty::ImplTraitHeader</a> {
+<a href=#1310 id=1310 data-nosnippet>1310</a>            trait_ref: <a href="../../rustc_type_ir/binder/struct.EarlyBinder.html#method.bind">ty::EarlyBinder::bind</a>(<a href="#1307">trait_ref</a>),
+<a href=#1311 id=1311 data-nosnippet>1311</a>            safety: <a href="#1302">of_trait</a>.safety,
+<a href=#1312 id=1312 data-nosnippet>1312</a>            polarity: <a href="#1355-1376">polarity_of_impl</a>(<a href="#1294">tcx</a>, <a href="#1302">of_trait</a>, <a href="#1298">is_rustc_reservation</a>),
+<a href=#1313 id=1313 data-nosnippet>1313</a>            constness: <a href="#1302">of_trait</a>.constness,
+<a href=#1314 id=1314 data-nosnippet>1314</a>        }
+<a href=#1315 id=1315 data-nosnippet>1315</a>    })
+<a href=#1316 id=1316 data-nosnippet>1316</a>}
+<a href=#1317 id=1317 data-nosnippet>1317</a>
+<a href=#1318 id=1318 data-nosnippet>1318</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.check_impl_constness.html">check_impl_constness</a>(
+<a href=#1319 id=1319 data-nosnippet>1319</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#1320 id=1320 data-nosnippet>1320</a>    constness: <a href="../../rustc_hir/hir/enum.Constness.html">hir::Constness</a>,
+<a href=#1321 id=1321 data-nosnippet>1321</a>    hir_trait_ref: <span class="kw-2">&amp;</span><a href="../../rustc_hir/hir/struct.TraitRef.html">hir::TraitRef</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#1322 id=1322 data-nosnippet>1322</a>) {
+<a href=#1323 id=1323 data-nosnippet>1323</a>    <span class="kw">if let </span><a href="../../rustc_hir/hir/enum.Constness.html#variant.NotConst">hir::Constness::NotConst</a> = <a href="#1320">constness</a> {
+<a href=#1324 id=1324 data-nosnippet>1324</a>        <span class="kw">return</span>;
+<a href=#1325 id=1325 data-nosnippet>1325</a>    }
+<a href=#1326 id=1326 data-nosnippet>1326</a>
+<a href=#1327 id=1327 data-nosnippet>1327</a>    <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(trait_def_id) = <a href="#1321">hir_trait_ref</a>.<a href="../../rustc_hir/hir/struct.TraitRef.html#method.trait_def_id">trait_def_id</a>() <span class="kw">else </span>{ <span class="kw">return </span>};
+<a href=#1328 id=1328 data-nosnippet>1328</a>    <span class="kw">if </span><a href="#1319">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.is_const_trait">is_const_trait</a>(<a href="#1327">trait_def_id</a>) {
+<a href=#1329 id=1329 data-nosnippet>1329</a>        <span class="kw">return</span>;
+<a href=#1330 id=1330 data-nosnippet>1330</a>    }
+<a href=#1331 id=1331 data-nosnippet>1331</a>
+<a href=#1332 id=1332 data-nosnippet>1332</a>    <span class="kw">let </span>trait_name = <a href="#1319">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.item_name">item_name</a>(<a href="#1327">trait_def_id</a>).<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>();
+<a href=#1333 id=1333 data-nosnippet>1333</a>    <span class="kw">let </span>(local_trait_span, suggestion_pre) =
+<a href=#1334 id=1334 data-nosnippet>1334</a>        <span class="kw">match </span>(<a href="#1327">trait_def_id</a>.<a href="../../rustc_span/def_id/struct.DefId.html#method.is_local">is_local</a>(), <a href="#1319">tcx</a>.sess.<a href="../../rustc_session/session/struct.Session.html#method.is_nightly_build">is_nightly_build</a>()) {
+<a href=#1335 id=1335 data-nosnippet>1335</a>            (<span class="bool-val">true</span>, <span class="bool-val">true</span>) =&gt; (
+<a href=#1336 id=1336 data-nosnippet>1336</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#1319">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.def_span">def_span</a>(<a href="#1327">trait_def_id</a>).<a href="../../rustc_span/span_encoding/struct.Span.html#method.shrink_to_lo">shrink_to_lo</a>()),
+<a href=#1337 id=1337 data-nosnippet>1337</a>                <span class="kw">if </span><a href="#1319">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.features">features</a>().<a href="../../rustc_feature/unstable/struct.Features.html#method.const_trait_impl">const_trait_impl</a>() {
+<a href=#1338 id=1338 data-nosnippet>1338</a>                    <span class="string">""
+<a href=#1339 id=1339 data-nosnippet>1339</a>                </span>} <span class="kw">else </span>{
+<a href=#1340 id=1340 data-nosnippet>1340</a>                    <span class="string">"enable `#![feature(const_trait_impl)]` in your crate and "
+<a href=#1341 id=1341 data-nosnippet>1341</a>                </span>},
+<a href=#1342 id=1342 data-nosnippet>1342</a>            ),
+<a href=#1343 id=1343 data-nosnippet>1343</a>            (<span class="bool-val">false</span>, <span class="kw">_</span>) | (<span class="kw">_</span>, <span class="bool-val">false</span>) =&gt; (<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>, <span class="string">""</span>),
+<a href=#1344 id=1344 data-nosnippet>1344</a>        };
+<a href=#1345 id=1345 data-nosnippet>1345</a>    <a href="#1319">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#508-525">errors::ConstImplForNonConstTrait</a> {
+<a href=#1346 id=1346 data-nosnippet>1346</a>        trait_ref_span: <a href="#1321">hir_trait_ref</a>.path.span,
+<a href=#1347 id=1347 data-nosnippet>1347</a>        <a href="#1332">trait_name</a>,
+<a href=#1348 id=1348 data-nosnippet>1348</a>        <a href="#1333">local_trait_span</a>,
+<a href=#1349 id=1349 data-nosnippet>1349</a>        <a href="#1333">suggestion_pre</a>,
+<a href=#1350 id=1350 data-nosnippet>1350</a>        marking: (),
+<a href=#1351 id=1351 data-nosnippet>1351</a>        adding: (),
+<a href=#1352 id=1352 data-nosnippet>1352</a>    });
+<a href=#1353 id=1353 data-nosnippet>1353</a>}
+<a href=#1354 id=1354 data-nosnippet>1354</a>
+<a href=#1355 id=1355 data-nosnippet>1355</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.polarity_of_impl.html">polarity_of_impl</a>(
+<a href=#1356 id=1356 data-nosnippet>1356</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#1357 id=1357 data-nosnippet>1357</a>    of_trait: <span class="kw-2">&amp;</span><a href="../../rustc_hir/hir/struct.TraitImplHeader.html">hir::TraitImplHeader</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#1358 id=1358 data-nosnippet>1358</a>    is_rustc_reservation: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
+<a href=#1359 id=1359 data-nosnippet>1359</a>) -&gt; <a href="../../rustc_type_ir/predicate/enum.ImplPolarity.html">ty::ImplPolarity</a> {
+<a href=#1360 id=1360 data-nosnippet>1360</a>    <span class="kw">match </span><a href="#1357">of_trait</a>.polarity {
+<a href=#1361 id=1361 data-nosnippet>1361</a>        <a href="../../rustc_ast/ast/enum.ImplPolarity.html#variant.Negative">hir::ImplPolarity::Negative</a>(span) =&gt; {
+<a href=#1362 id=1362 data-nosnippet>1362</a>            <span class="kw">if </span><a href="#1358">is_rustc_reservation</a> {
+<a href=#1363 id=1363 data-nosnippet>1363</a>                <span class="kw">let </span>span = <a href="#1361">span</a>.<a href="../../rustc_span/span_encoding/struct.Span.html#method.to">to</a>(<a href="#1357">of_trait</a>.trait_ref.path.span);
+<a href=#1364 id=1364 data-nosnippet>1364</a>                <a href="#1356">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.span_err">span_err</a>(<a href="#1363">span</a>, <span class="string">"reservation impls can't be negative"</span>);
+<a href=#1365 id=1365 data-nosnippet>1365</a>            }
+<a href=#1366 id=1366 data-nosnippet>1366</a>            <a href="../../rustc_type_ir/predicate/enum.ImplPolarity.html#variant.Negative">ty::ImplPolarity::Negative</a>
+<a href=#1367 id=1367 data-nosnippet>1367</a>        }
+<a href=#1368 id=1368 data-nosnippet>1368</a>        <a href="../../rustc_ast/ast/enum.ImplPolarity.html#variant.Positive">hir::ImplPolarity::Positive</a> =&gt; {
+<a href=#1369 id=1369 data-nosnippet>1369</a>            <span class="kw">if </span><a href="#1358">is_rustc_reservation</a> {
+<a href=#1370 id=1370 data-nosnippet>1370</a>                <a href="../../rustc_type_ir/predicate/enum.ImplPolarity.html#variant.Reservation">ty::ImplPolarity::Reservation</a>
+<a href=#1371 id=1371 data-nosnippet>1371</a>            } <span class="kw">else </span>{
+<a href=#1372 id=1372 data-nosnippet>1372</a>                <a href="../../rustc_type_ir/predicate/enum.ImplPolarity.html#variant.Positive">ty::ImplPolarity::Positive</a>
+<a href=#1373 id=1373 data-nosnippet>1373</a>            }
+<a href=#1374 id=1374 data-nosnippet>1374</a>        }
+<a href=#1375 id=1375 data-nosnippet>1375</a>    }
+<a href=#1376 id=1376 data-nosnippet>1376</a>}
+<a href=#1377 id=1377 data-nosnippet>1377</a>
+<a href=#1378 id=1378 data-nosnippet>1378</a><span class="doccomment">/// Returns the early-bound lifetimes declared in this generics
+<a href=#1379 id=1379 data-nosnippet>1379</a>/// listing. For anything other than fns/methods, this is just all
+<a href=#1380 id=1380 data-nosnippet>1380</a>/// the lifetimes that are declared. For fns or methods, we have to
+<a href=#1381 id=1381 data-nosnippet>1381</a>/// screen out those that do not appear in any where-clauses etc using
+<a href=#1382 id=1382 data-nosnippet>1382</a>/// `resolve_lifetime::early_bound_lifetimes`.
+<a href=#1383 id=1383 data-nosnippet>1383</a></span><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.early_bound_lifetimes_from_generics.html">early_bound_lifetimes_from_generics</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;(
+<a href=#1384 id=1384 data-nosnippet>1384</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#1385 id=1385 data-nosnippet>1385</a>    generics: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_hir/hir/struct.Generics.html">hir::Generics</a>&lt;<span class="lifetime">'a</span>&gt;,
+<a href=#1386 id=1386 data-nosnippet>1386</a>) -&gt; <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_hir/hir/struct.GenericParam.html">hir::GenericParam</a>&lt;<span class="lifetime">'a</span>&gt;&gt; {
+<a href=#1387 id=1387 data-nosnippet>1387</a>    <a href="#1385">generics</a>.params.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter">filter</a>(<span class="kw">move </span>|param| <span class="kw">match </span><a href="#1387">param</a>.kind {
+<a href=#1388 id=1388 data-nosnippet>1388</a>        <a href="../../rustc_hir/hir/enum.GenericParamKind.html#variant.Lifetime">GenericParamKind::Lifetime</a> { .. } =&gt; !<a href="#1384">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.is_late_bound">is_late_bound</a>(<a href="#1387">param</a>.hir_id),
+<a href=#1389 id=1389 data-nosnippet>1389</a>        <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
+<a href=#1390 id=1390 data-nosnippet>1390</a>    })
+<a href=#1391 id=1391 data-nosnippet>1391</a>}
+<a href=#1392 id=1392 data-nosnippet>1392</a>
+<a href=#1393 id=1393 data-nosnippet>1393</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.compute_sig_of_foreign_fn_decl.html">compute_sig_of_foreign_fn_decl</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#1394 id=1394 data-nosnippet>1394</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#1395 id=1395 data-nosnippet>1395</a>    def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
+<a href=#1396 id=1396 data-nosnippet>1396</a>    decl: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../rustc_hir/hir/struct.FnDecl.html">hir::FnDecl</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#1397 id=1397 data-nosnippet>1397</a>    abi: <a href="../../rustc_abi/extern_abi/enum.ExternAbi.html">ExternAbi</a>,
+<a href=#1398 id=1398 data-nosnippet>1398</a>    safety: <a href="../../rustc_hir/hir/enum.Safety.html">hir::Safety</a>,
+<a href=#1399 id=1399 data-nosnippet>1399</a>) -&gt; <a href="../../rustc_middle/ty/sty/type.PolyFnSig.html">ty::PolyFnSig</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#1400 id=1400 data-nosnippet>1400</a>    <span class="kw">let </span>hir_id = <a href="#1394">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.local_def_id_to_hir_id">local_def_id_to_hir_id</a>(<a href="#1395">def_id</a>);
+<a href=#1401 id=1401 data-nosnippet>1401</a>    <span class="kw">let </span>fty =
+<a href=#1402 id=1402 data-nosnippet>1402</a>        <a href="#245-247">ItemCtxt::new</a>(<a href="#1394">tcx</a>, <a href="#1395">def_id</a>).<a href="hir_ty_lowering/mod.rs.html#212-217">lowerer</a>().<a href="hir_ty_lowering/mod.rs.html#2662-2716">lower_fn_ty</a>(<a href="#1400">hir_id</a>, <a href="#1398">safety</a>, <a href="#1397">abi</a>, <a href="#1396">decl</a>, <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>, <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>);
+<a href=#1403 id=1403 data-nosnippet>1403</a>
+<a href=#1404 id=1404 data-nosnippet>1404</a>    <span class="comment">// Feature gate SIMD types in FFI, since I am not sure that the
+<a href=#1405 id=1405 data-nosnippet>1405</a>    // ABIs are handled at all correctly. -huonw
+<a href=#1406 id=1406 data-nosnippet>1406</a>    </span><span class="kw">if </span>!<a href="#1394">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.features">features</a>().<a href="../../rustc_feature/unstable/struct.Features.html#method.simd_ffi">simd_ffi</a>() {
+<a href=#1407 id=1407 data-nosnippet>1407</a>        <span class="kw">let </span>check = |hir_ty: <span class="kw-2">&amp;</span><a href="../../rustc_hir/hir/struct.Ty.html">hir::Ty</a>&lt;<span class="lifetime">'_</span>&gt;, ty: <a href="../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'_</span>&gt;| {
+<a href=#1408 id=1408 data-nosnippet>1408</a>            <span class="kw">if </span><a href="#1407">ty</a>.<a href="../../rustc_middle/ty/struct.Ty.html#method.is_simd">is_simd</a>() {
+<a href=#1409 id=1409 data-nosnippet>1409</a>                <span class="kw">let </span>snip = <a href="#1394">tcx</a>
+<a href=#1410 id=1410 data-nosnippet>1410</a>                    .sess
+<a href=#1411 id=1411 data-nosnippet>1411</a>                    .<a href="../../rustc_session/session/struct.Session.html#method.source_map">source_map</a>()
+<a href=#1412 id=1412 data-nosnippet>1412</a>                    .<a href="../../rustc_span/source_map/struct.SourceMap.html#method.span_to_snippet">span_to_snippet</a>(<a href="#1407">hir_ty</a>.span)
+<a href=#1413 id=1413 data-nosnippet>1413</a>                    .<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.map_or_else">map_or_else</a>(|<span class="kw">_</span>| <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html#method.new">String::new</a>(), |s| <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">" `{s}`"</span>));
+<a href=#1414 id=1414 data-nosnippet>1414</a>                <a href="#1394">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="errors.rs.html#838-842">errors::SIMDFFIHighlyExperimental</a> { span: <a href="#1407">hir_ty</a>.span, <a href="#1409">snip</a> });
+<a href=#1415 id=1415 data-nosnippet>1415</a>            }
+<a href=#1416 id=1416 data-nosnippet>1416</a>        };
+<a href=#1417 id=1417 data-nosnippet>1417</a>        <span class="kw">for </span>(input, ty) <span class="kw">in </span>iter::zip(decl.inputs, fty.inputs().skip_binder()) {
+<a href=#1418 id=1418 data-nosnippet>1418</a>            check(input, <span class="kw-2">*</span>ty)
+<a href=#1419 id=1419 data-nosnippet>1419</a>        }
+<a href=#1420 id=1420 data-nosnippet>1420</a>        <span class="kw">if let </span><a href="../../rustc_hir/hir/enum.FnRetTy.html#variant.Return">hir::FnRetTy::Return</a>(ty) = <a href="#1396">decl</a>.output {
+<a href=#1421 id=1421 data-nosnippet>1421</a>            <a href="#1407">check</a>(<a href="#1420">ty</a>, <a href="#1401">fty</a>.<a href="../../rustc_type_ir/binder/struct.Binder.html#method.output">output</a>().<a href="../../rustc_type_ir/binder/struct.Binder.html#method.skip_binder">skip_binder</a>())
+<a href=#1422 id=1422 data-nosnippet>1422</a>        }
+<a href=#1423 id=1423 data-nosnippet>1423</a>    }
+<a href=#1424 id=1424 data-nosnippet>1424</a>
+<a href=#1425 id=1425 data-nosnippet>1425</a>    <a href="#1401">fty</a>
+<a href=#1426 id=1426 data-nosnippet>1426</a>}
+<a href=#1427 id=1427 data-nosnippet>1427</a>
+<a href=#1428 id=1428 data-nosnippet>1428</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.coroutine_kind.html">coroutine_kind</a>(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;, def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../rustc_hir/hir/enum.CoroutineKind.html">hir::CoroutineKind</a>&gt; {
+<a href=#1429 id=1429 data-nosnippet>1429</a>    <span class="kw">match </span><a href="#1428">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node_by_def_id">hir_node_by_def_id</a>(<a href="#1428">def_id</a>) {
+<a href=#1430 id=1430 data-nosnippet>1430</a>        <a href="../../rustc_hir/hir/enum.Node.html#variant.Expr">Node::Expr</a>(<span class="kw-2">&amp;</span>hir::Expr {
+<a href=#1431 id=1431 data-nosnippet>1431</a>            kind:
+<a href=#1432 id=1432 data-nosnippet>1432</a>                hir::ExprKind::Closure(<span class="kw-2">&amp;</span>rustc_hir::Closure {
+<a href=#1433 id=1433 data-nosnippet>1433</a>                    kind: hir::ClosureKind::Coroutine(kind),
+<a href=#1434 id=1434 data-nosnippet>1434</a>                    ..
+<a href=#1435 id=1435 data-nosnippet>1435</a>                }),
+<a href=#1436 id=1436 data-nosnippet>1436</a>            ..
+<a href=#1437 id=1437 data-nosnippet>1437</a>        }) =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#1433">kind</a>),
+<a href=#1438 id=1438 data-nosnippet>1438</a>        <span class="kw">_ </span>=&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#1439 id=1439 data-nosnippet>1439</a>    }
+<a href=#1440 id=1440 data-nosnippet>1440</a>}
+<a href=#1441 id=1441 data-nosnippet>1441</a>
+<a href=#1442 id=1442 data-nosnippet>1442</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.coroutine_for_closure.html">coroutine_for_closure</a>(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;, def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a href="../../rustc_span/def_id/struct.DefId.html">DefId</a> {
+<a href=#1443 id=1443 data-nosnippet>1443</a>    <span class="kw">let </span><span class="kw-2">&amp;</span>rustc_hir::Closure { kind: hir::ClosureKind::CoroutineClosure(<span class="kw">_</span>), body, .. } =
+<a href=#1444 id=1444 data-nosnippet>1444</a>        <a href="#1442">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node_by_def_id">hir_node_by_def_id</a>(<a href="#1442">def_id</a>).<a href="../../rustc_hir/hir/enum.Node.html#method.expect_closure">expect_closure</a>()
+<a href=#1445 id=1445 data-nosnippet>1445</a>    <span class="kw">else </span>{
+<a href=#1446 id=1446 data-nosnippet>1446</a>        <a class="macro" href="../../rustc_middle/macro.bug.html">bug!</a>()
+<a href=#1447 id=1447 data-nosnippet>1447</a>    };
+<a href=#1448 id=1448 data-nosnippet>1448</a>
+<a href=#1449 id=1449 data-nosnippet>1449</a>    <span class="kw">let </span><span class="kw-2">&amp;</span>hir::Expr {
+<a href=#1450 id=1450 data-nosnippet>1450</a>        kind:
+<a href=#1451 id=1451 data-nosnippet>1451</a>            hir::ExprKind::Closure(<span class="kw-2">&amp;</span>rustc_hir::Closure {
+<a href=#1452 id=1452 data-nosnippet>1452</a>                def_id,
+<a href=#1453 id=1453 data-nosnippet>1453</a>                kind: hir::ClosureKind::Coroutine(<span class="kw">_</span>),
+<a href=#1454 id=1454 data-nosnippet>1454</a>                ..
+<a href=#1455 id=1455 data-nosnippet>1455</a>            }),
+<a href=#1456 id=1456 data-nosnippet>1456</a>        ..
+<a href=#1457 id=1457 data-nosnippet>1457</a>    } = <a href="#1442">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_body">hir_body</a>(<a href="#1443">body</a>).value
+<a href=#1458 id=1458 data-nosnippet>1458</a>    <span class="kw">else </span>{
+<a href=#1459 id=1459 data-nosnippet>1459</a>        <a class="macro" href="../../rustc_middle/macro.bug.html">bug!</a>()
+<a href=#1460 id=1460 data-nosnippet>1460</a>    };
+<a href=#1461 id=1461 data-nosnippet>1461</a>
+<a href=#1462 id=1462 data-nosnippet>1462</a>    <a href="#1452">def_id</a>.<a href="../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>()
+<a href=#1463 id=1463 data-nosnippet>1463</a>}
+<a href=#1464 id=1464 data-nosnippet>1464</a>
+<a href=#1465 id=1465 data-nosnippet>1465</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.opaque_ty_origin.html">opaque_ty_origin</a>&lt;<span class="lifetime">'tcx</span>&gt;(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;, def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html">hir::OpaqueTyOrigin</a>&lt;<a href="../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt; {
+<a href=#1466 id=1466 data-nosnippet>1466</a>    <span class="kw">match </span><a href="#1465">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node_by_def_id">hir_node_by_def_id</a>(<a href="#1465">def_id</a>).<a href="../../rustc_hir/hir/enum.Node.html#method.expect_opaque_ty">expect_opaque_ty</a>().origin {
+<a href=#1467 id=1467 data-nosnippet>1467</a>        <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html#variant.FnReturn">hir::OpaqueTyOrigin::FnReturn</a> { parent, in_trait_or_impl } =&gt; {
+<a href=#1468 id=1468 data-nosnippet>1468</a>            <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html#variant.FnReturn">hir::OpaqueTyOrigin::FnReturn</a> { parent: <a href="#1467">parent</a>.<a href="../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>(), <a href="#1467">in_trait_or_impl</a> }
+<a href=#1469 id=1469 data-nosnippet>1469</a>        }
+<a href=#1470 id=1470 data-nosnippet>1470</a>        <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html#variant.AsyncFn">hir::OpaqueTyOrigin::AsyncFn</a> { parent, in_trait_or_impl } =&gt; {
+<a href=#1471 id=1471 data-nosnippet>1471</a>            <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html#variant.AsyncFn">hir::OpaqueTyOrigin::AsyncFn</a> { parent: <a href="#1470">parent</a>.<a href="../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>(), <a href="#1470">in_trait_or_impl</a> }
+<a href=#1472 id=1472 data-nosnippet>1472</a>        }
+<a href=#1473 id=1473 data-nosnippet>1473</a>        <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html#variant.TyAlias">hir::OpaqueTyOrigin::TyAlias</a> { parent, in_assoc_ty } =&gt; {
+<a href=#1474 id=1474 data-nosnippet>1474</a>            <a href="../../rustc_hir/hir/enum.OpaqueTyOrigin.html#variant.TyAlias">hir::OpaqueTyOrigin::TyAlias</a> { parent: <a href="#1473">parent</a>.<a href="../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>(), <a href="#1473">in_assoc_ty</a> }
+<a href=#1475 id=1475 data-nosnippet>1475</a>        }
+<a href=#1476 id=1476 data-nosnippet>1476</a>    }
+<a href=#1477 id=1477 data-nosnippet>1477</a>}
+<a href=#1478 id=1478 data-nosnippet>1478</a>
+<a href=#1479 id=1479 data-nosnippet>1479</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.rendered_precise_capturing_args.html">rendered_precise_capturing_args</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#1480 id=1480 data-nosnippet>1480</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#1481 id=1481 data-nosnippet>1481</a>    def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
+<a href=#1482 id=1482 data-nosnippet>1482</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>[<a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html">PreciseCapturingArgKind</a>&lt;<a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>, <a href="../../rustc_span/symbol/struct.Symbol.html">Symbol</a>&gt;]&gt; {
+<a href=#1483 id=1483 data-nosnippet>1483</a>    <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(ty::ImplTraitInTraitData::Trait { opaque_def_id, .. }) =
+<a href=#1484 id=1484 data-nosnippet>1484</a>        <a href="#1480">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.opt_rpitit_info">opt_rpitit_info</a>(<a href="#1481">def_id</a>.<a href="../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>())
+<a href=#1485 id=1485 data-nosnippet>1485</a>    {
+<a href=#1486 id=1486 data-nosnippet>1486</a>        <span class="kw">return </span><a href="#1480">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.rendered_precise_capturing_args">rendered_precise_capturing_args</a>(<a href="#1483">opaque_def_id</a>);
+<a href=#1487 id=1487 data-nosnippet>1487</a>    }
+<a href=#1488 id=1488 data-nosnippet>1488</a>
+<a href=#1489 id=1489 data-nosnippet>1489</a>    <a href="#1480">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node_by_def_id">hir_node_by_def_id</a>(<a href="#1481">def_id</a>).<a href="../../rustc_hir/hir/enum.Node.html#method.expect_opaque_ty">expect_opaque_ty</a>().bounds.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.find_map">find_map</a>(|bound| <span class="kw">match </span><a href="#1489">bound</a> {
+<a href=#1490 id=1490 data-nosnippet>1490</a>        <a href="../../rustc_hir/hir/enum.GenericBound.html#variant.Use">hir::GenericBound::Use</a>(args, ..) =&gt; {
+<a href=#1491 id=1491 data-nosnippet>1491</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<span class="kw-2">&amp;*</span><a href="#1480">tcx</a>.arena.<a href="../../rustc_middle/arena/struct.Arena.html#method.alloc_from_iter">alloc_from_iter</a>(<a href="#1490">args</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|arg| <span class="kw">match </span><a href="#1491">arg</a> {
+<a href=#1492 id=1492 data-nosnippet>1492</a>                <a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html#variant.Lifetime">PreciseCapturingArgKind::Lifetime</a>(<span class="kw">_</span>) =&gt; {
+<a href=#1493 id=1493 data-nosnippet>1493</a>                    <a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html#variant.Lifetime">PreciseCapturingArgKind::Lifetime</a>(<a href="#1491">arg</a>.<a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html#method.name">name</a>())
+<a href=#1494 id=1494 data-nosnippet>1494</a>                }
+<a href=#1495 id=1495 data-nosnippet>1495</a>                <a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html#variant.Param">PreciseCapturingArgKind::Param</a>(<span class="kw">_</span>) =&gt; <a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html#variant.Param">PreciseCapturingArgKind::Param</a>(<a href="#1491">arg</a>.<a href="../../rustc_hir/hir/enum.PreciseCapturingArgKind.html#method.name">name</a>()),
+<a href=#1496 id=1496 data-nosnippet>1496</a>            })))
+<a href=#1497 id=1497 data-nosnippet>1497</a>        }
+<a href=#1498 id=1498 data-nosnippet>1498</a>        <span class="kw">_ </span>=&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#1499 id=1499 data-nosnippet>1499</a>    })
+<a href=#1500 id=1500 data-nosnippet>1500</a>}
+<a href=#1501 id=1501 data-nosnippet>1501</a>
+<a href=#1502 id=1502 data-nosnippet>1502</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.const_param_default.html">const_param_default</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#1503 id=1503 data-nosnippet>1503</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#1504 id=1504 data-nosnippet>1504</a>    def_id: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
+<a href=#1505 id=1505 data-nosnippet>1505</a>) -&gt; <a href="../../rustc_middle/ty/sty/type.EarlyBinder.html">ty::EarlyBinder</a>&lt;<span class="lifetime">'tcx</span>, <a href="../../rustc_middle/ty/consts/struct.Const.html">Const</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#1506 id=1506 data-nosnippet>1506</a>    <span class="kw">let </span>default_ct = <span class="kw">match </span><a href="#1503">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node_by_def_id">hir_node_by_def_id</a>(<a href="#1504">def_id</a>) {
+<a href=#1507 id=1507 data-nosnippet>1507</a>        <a href="../../rustc_hir/hir/enum.Node.html#variant.GenericParam">hir::Node::GenericParam</a>(hir::GenericParam {
+<a href=#1508 id=1508 data-nosnippet>1508</a>            kind: hir::GenericParamKind::Const { default: <span class="prelude-val">Some</span>(ct), .. },
+<a href=#1509 id=1509 data-nosnippet>1509</a>            ..
+<a href=#1510 id=1510 data-nosnippet>1510</a>        }) =&gt; <a href="#1508">ct</a>,
+<a href=#1511 id=1511 data-nosnippet>1511</a>        <span class="kw">_ </span>=&gt; <a class="macro" href="../../rustc_middle/macro.span_bug.html">span_bug!</a>(
+<a href=#1512 id=1512 data-nosnippet>1512</a>            <a href="#1503">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.def_span">def_span</a>(<a href="#1504">def_id</a>),
+<a href=#1513 id=1513 data-nosnippet>1513</a>            <span class="string">"`const_param_default` expected a generic parameter with a constant"
+<a href=#1514 id=1514 data-nosnippet>1514</a>        </span>),
+<a href=#1515 id=1515 data-nosnippet>1515</a>    };
+<a href=#1516 id=1516 data-nosnippet>1516</a>    <span class="kw">let </span>icx = <a href="#245-247">ItemCtxt::new</a>(<a href="#1503">tcx</a>, <a href="#1504">def_id</a>);
+<a href=#1517 id=1517 data-nosnippet>1517</a>    <span class="kw">let </span>identity_args = <a href="../../rustc_middle/ty/list/struct.RawList.html#method.identity_for_item">ty::GenericArgs::identity_for_item</a>(<a href="#1503">tcx</a>, <a href="#1504">def_id</a>);
+<a href=#1518 id=1518 data-nosnippet>1518</a>    <span class="kw">let </span>ct = <a href="#1516">icx</a>
+<a href=#1519 id=1519 data-nosnippet>1519</a>        .<a href="hir_ty_lowering/mod.rs.html#212-217">lowerer</a>()
+<a href=#1520 id=1520 data-nosnippet>1520</a>        .<a href="hir_ty_lowering/mod.rs.html#2123-2210">lower_const_arg</a>(<a href="#1506">default_ct</a>, <a href="hir_ty_lowering/mod.rs.html#258">FeedConstTy::Param</a>(<a href="#1504">def_id</a>.<a href="../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>(), <a href="#1517">identity_args</a>));
+<a href=#1521 id=1521 data-nosnippet>1521</a>    <a href="../../rustc_type_ir/binder/struct.EarlyBinder.html#method.bind">ty::EarlyBinder::bind</a>(<a href="#1518">ct</a>)
+<a href=#1522 id=1522 data-nosnippet>1522</a>}
+<a href=#1523 id=1523 data-nosnippet>1523</a>
+<a href=#1524 id=1524 data-nosnippet>1524</a><span class="kw">fn </span><a href="../../rustc_hir_analysis/collect/fn.anon_const_kind.html">anon_const_kind</a>&lt;<span class="lifetime">'tcx</span>&gt;(tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;, def: <a href="../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a href="../../rustc_middle/ty/consts/enum.AnonConstKind.html">ty::AnonConstKind</a> {
+<a href=#1525 id=1525 data-nosnippet>1525</a>    <span class="kw">let </span>hir_id = <a href="#1524">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.local_def_id_to_hir_id">local_def_id_to_hir_id</a>(<a href="#1524">def</a>);
+<a href=#1526 id=1526 data-nosnippet>1526</a>    <span class="kw">let </span>const_arg_id = <a href="#1524">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.parent_hir_id">parent_hir_id</a>(<a href="#1525">hir_id</a>);
+<a href=#1527 id=1527 data-nosnippet>1527</a>    <span class="kw">match </span><a href="#1524">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node">hir_node</a>(<a href="#1526">const_arg_id</a>) {
+<a href=#1528 id=1528 data-nosnippet>1528</a>        <a href="../../rustc_hir/hir/enum.Node.html#variant.ConstArg">hir::Node::ConstArg</a>(<span class="kw">_</span>) =&gt; {
+<a href=#1529 id=1529 data-nosnippet>1529</a>            <span class="kw">if </span><a href="#1524">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.features">features</a>().<a href="../../rustc_feature/unstable/struct.Features.html#method.generic_const_exprs">generic_const_exprs</a>() {
+<a href=#1530 id=1530 data-nosnippet>1530</a>                <a href="../../rustc_middle/ty/consts/enum.AnonConstKind.html#variant.GCE">ty::AnonConstKind::GCE</a>
+<a href=#1531 id=1531 data-nosnippet>1531</a>            } <span class="kw">else if </span><a href="#1524">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.features">features</a>().<a href="../../rustc_feature/unstable/struct.Features.html#method.min_generic_const_args">min_generic_const_args</a>() {
+<a href=#1532 id=1532 data-nosnippet>1532</a>                <a href="../../rustc_middle/ty/consts/enum.AnonConstKind.html#variant.MCG">ty::AnonConstKind::MCG</a>
+<a href=#1533 id=1533 data-nosnippet>1533</a>            } <span class="kw">else if let </span><a href="../../rustc_hir/hir/enum.Node.html#variant.Expr">hir::Node::Expr</a>(hir::Expr {
+<a href=#1534 id=1534 data-nosnippet>1534</a>                kind: hir::ExprKind::Repeat(<span class="kw">_</span>, repeat_count),
+<a href=#1535 id=1535 data-nosnippet>1535</a>                ..
+<a href=#1536 id=1536 data-nosnippet>1536</a>            }) = <a href="#1524">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node">hir_node</a>(<a href="#1524">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.parent_hir_id">parent_hir_id</a>(<a href="#1526">const_arg_id</a>))
+<a href=#1537 id=1537 data-nosnippet>1537</a>                &amp;&amp; <a href="#1534">repeat_count</a>.hir_id == <a href="#1526">const_arg_id</a>
+<a href=#1538 id=1538 data-nosnippet>1538</a>            {
+<a href=#1539 id=1539 data-nosnippet>1539</a>                <a href="../../rustc_middle/ty/consts/enum.AnonConstKind.html#variant.RepeatExprCount">ty::AnonConstKind::RepeatExprCount</a>
+<a href=#1540 id=1540 data-nosnippet>1540</a>            } <span class="kw">else </span>{
+<a href=#1541 id=1541 data-nosnippet>1541</a>                <a href="../../rustc_middle/ty/consts/enum.AnonConstKind.html#variant.MCG">ty::AnonConstKind::MCG</a>
+<a href=#1542 id=1542 data-nosnippet>1542</a>            }
+<a href=#1543 id=1543 data-nosnippet>1543</a>        }
+<a href=#1544 id=1544 data-nosnippet>1544</a>        <span class="kw">_ </span>=&gt; <a href="../../rustc_middle/ty/consts/enum.AnonConstKind.html#variant.NonTypeSystem">ty::AnonConstKind::NonTypeSystem</a>,
+<a href=#1545 id=1545 data-nosnippet>1545</a>    }
+<a href=#1546 id=1546 data-nosnippet>1546</a>}</code></pre></div></section></main></body></html>

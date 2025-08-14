@@ -1,15 +1,15 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/middle/privacy.rs`."><title>privacy.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-1a4373a8.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_middle/middle/</div>privacy.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! A pass that checks to make sure private fields and methods aren't used
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/middle/privacy.rs`."><title>privacy.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-528d32ef.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-e93015a6.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_middle/middle/</div>privacy.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! A pass that checks to make sure private fields and methods aren't used
 <a href=#2 id=2 data-nosnippet>2</a>//! outside their scopes. This pass will also generate a set of exported items
 <a href=#3 id=3 data-nosnippet>3</a>//! which are available for use externally when compiled as a library.
 <a href=#4 id=4 data-nosnippet>4</a>
 <a href=#5 id=5 data-nosnippet>5</a></span><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/hash/macros/derive.Hash.html">std::hash::Hash</a>;
 <a href=#6 id=6 data-nosnippet>6</a>
-<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>rustc_data_structures::fx::{<a href="../../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>, <a href="../../../rustc_data_structures/fx/type.IndexEntry.html">IndexEntry</a>};
-<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span>rustc_data_structures::stable_hasher::{<a href="../../../rustc_data_structures/stable_hasher/trait.HashStable.html">HashStable</a>, <a href="https://docs.rs/rustc-stable-hash/0.1.2/rustc_stable_hash/hashers/type.StableSipHasher128.html">StableHasher</a>};
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>rustc_data_structures::fx::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/fx/type.IndexEntry.html">IndexEntry</a>};
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span>rustc_data_structures::stable_hasher::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/trait.HashStable.html">HashStable</a>, <a href="https://docs.rs/rustc-stable-hash/0.1.2/rustc_stable_hash/hashers/type.StableSipHasher128.html">StableHasher</a>};
 <a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="../../../rustc_hir/def/enum.DefKind.html">rustc_hir::def::DefKind</a>;
 <a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><a href="../../../rustc_macros/derive.HashStable.html">rustc_macros::HashStable</a>;
 <a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><a href="../../../rustc_query_system/ich/hcx/struct.StableHashingContext.html">rustc_query_system::ich::StableHashingContext</a>;
-<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>rustc_span::def_id::{<a href="../../../rustc_span/def_id/constant.CRATE_DEF_ID.html">CRATE_DEF_ID</a>, <a href="../../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>};
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>rustc_span::def_id::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/constant.CRATE_DEF_ID.html">CRATE_DEF_ID</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>};
 <a href=#13 id=13 data-nosnippet>13</a>
 <a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span><span class="kw">crate</span>::ty::{<a href="../ty/context.rs.html#1416-1418">TyCtxt</a>, <a href="../ty/mod.rs.html#279-284">Visibility</a>};
 <a href=#15 id=15 data-nosnippet>15</a>
@@ -92,44 +92,44 @@
 <a href=#92 id=92 data-nosnippet>92</a>
 <a href=#93 id=93 data-nosnippet>93</a><span class="doccomment">/// Holds a map of effective visibilities for reachable HIR nodes.
 <a href=#94 id=94 data-nosnippet>94</a></span><span class="attr">#[derive(Clone, Debug)]
-<a href=#95 id=95 data-nosnippet>95</a></span><span class="kw">pub struct </span><a href="../../../rustc_middle/middle/privacy/struct.EffectiveVisibilities.html">EffectiveVisibilities</a>&lt;Id = <a href="../../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>&gt; {
-<a href=#96 id=96 data-nosnippet>96</a>    map: <a href="../../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;Id, <a href="#41-46">EffectiveVisibility</a>&gt;,
+<a href=#95 id=95 data-nosnippet>95</a></span><span class="kw">pub struct </span><a href="../../../rustc_middle/middle/privacy/struct.EffectiveVisibilities.html">EffectiveVisibilities</a>&lt;Id = <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>&gt; {
+<a href=#96 id=96 data-nosnippet>96</a>    map: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;Id, <a href="#41-46">EffectiveVisibility</a>&gt;,
 <a href=#97 id=97 data-nosnippet>97</a>}
 <a href=#98 id=98 data-nosnippet>98</a>
 <a href=#99 id=99 data-nosnippet>99</a><span class="kw">impl </span><a href="#95-97">EffectiveVisibilities</a> {
-<a href=#100 id=100 data-nosnippet>100</a>    <span class="kw">pub fn </span>is_public_at_level(<span class="kw-2">&amp;</span><span class="self">self</span>, id: <a href="../../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>, level: <a href="#20-32">Level</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
-<a href=#101 id=101 data-nosnippet>101</a>        <a class="self" href="#100">self</a>.<a href="#209-211">effective_vis</a>(<a href="#100">id</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_some_and">is_some_and</a>(|effective_vis| <a href="#101">effective_vis</a>.<a href="#67-69">is_public_at_level</a>(<a href="#100">level</a>))
+<a href=#100 id=100 data-nosnippet>100</a>    <span class="kw">pub fn </span>is_public_at_level(<span class="kw-2">&amp;</span><span class="self">self</span>, id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>, level: <a href="#20-32">Level</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#101 id=101 data-nosnippet>101</a>        <a class="self" href="#100">self</a>.<a href="#205-207">effective_vis</a>(<a href="#100">id</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_some_and">is_some_and</a>(|effective_vis| <a href="#101">effective_vis</a>.<a href="#67-69">is_public_at_level</a>(<a href="#100">level</a>))
 <a href=#102 id=102 data-nosnippet>102</a>    }
 <a href=#103 id=103 data-nosnippet>103</a>
 <a href=#104 id=104 data-nosnippet>104</a>    <span class="doccomment">/// See `Level::Reachable`.
-<a href=#105 id=105 data-nosnippet>105</a>    </span><span class="kw">pub fn </span>is_reachable(<span class="kw-2">&amp;</span><span class="self">self</span>, id: <a href="../../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#105 id=105 data-nosnippet>105</a>    </span><span class="kw">pub fn </span>is_reachable(<span class="kw-2">&amp;</span><span class="self">self</span>, id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
 <a href=#106 id=106 data-nosnippet>106</a>        <a class="self" href="#105">self</a>.<a href="#100-102">is_public_at_level</a>(<a href="#105">id</a>, <a href="#27">Level::Reachable</a>)
 <a href=#107 id=107 data-nosnippet>107</a>    }
 <a href=#108 id=108 data-nosnippet>108</a>
 <a href=#109 id=109 data-nosnippet>109</a>    <span class="doccomment">/// See `Level::Reexported`.
-<a href=#110 id=110 data-nosnippet>110</a>    </span><span class="kw">pub fn </span>is_exported(<span class="kw-2">&amp;</span><span class="self">self</span>, id: <a href="../../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#110 id=110 data-nosnippet>110</a>    </span><span class="kw">pub fn </span>is_exported(<span class="kw-2">&amp;</span><span class="self">self</span>, id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
 <a href=#111 id=111 data-nosnippet>111</a>        <a class="self" href="#110">self</a>.<a href="#100-102">is_public_at_level</a>(<a href="#110">id</a>, <a href="#29">Level::Reexported</a>)
 <a href=#112 id=112 data-nosnippet>112</a>    }
 <a href=#113 id=113 data-nosnippet>113</a>
 <a href=#114 id=114 data-nosnippet>114</a>    <span class="doccomment">/// See `Level::Direct`.
-<a href=#115 id=115 data-nosnippet>115</a>    </span><span class="kw">pub fn </span>is_directly_public(<span class="kw-2">&amp;</span><span class="self">self</span>, id: <a href="../../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#115 id=115 data-nosnippet>115</a>    </span><span class="kw">pub fn </span>is_directly_public(<span class="kw-2">&amp;</span><span class="self">self</span>, id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
 <a href=#116 id=116 data-nosnippet>116</a>        <a class="self" href="#115">self</a>.<a href="#100-102">is_public_at_level</a>(<a href="#115">id</a>, <a href="#31">Level::Direct</a>)
 <a href=#117 id=117 data-nosnippet>117</a>    }
 <a href=#118 id=118 data-nosnippet>118</a>
-<a href=#119 id=119 data-nosnippet>119</a>    <span class="kw">pub fn </span>public_at_level(<span class="kw-2">&amp;</span><span class="self">self</span>, id: <a href="../../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="#20-32">Level</a>&gt; {
-<a href=#120 id=120 data-nosnippet>120</a>        <a class="self" href="#119">self</a>.<a href="#209-211">effective_vis</a>(<a href="#119">id</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.and_then">and_then</a>(|effective_vis| {
+<a href=#119 id=119 data-nosnippet>119</a>    <span class="kw">pub fn </span>public_at_level(<span class="kw-2">&amp;</span><span class="self">self</span>, id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="#20-32">Level</a>&gt; {
+<a href=#120 id=120 data-nosnippet>120</a>        <a class="self" href="#119">self</a>.<a href="#205-207">effective_vis</a>(<a href="#119">id</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.and_then">and_then</a>(|effective_vis| {
 <a href=#121 id=121 data-nosnippet>121</a>            <a href="#35-37">Level::all_levels</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.find">find</a>(|<span class="kw-2">&amp;</span>level| <a href="#120">effective_vis</a>.<a href="#67-69">is_public_at_level</a>(<a href="#121">level</a>))
 <a href=#122 id=122 data-nosnippet>122</a>        })
 <a href=#123 id=123 data-nosnippet>123</a>    }
 <a href=#124 id=124 data-nosnippet>124</a>
 <a href=#125 id=125 data-nosnippet>125</a>    <span class="kw">pub fn </span>update_root(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
-<a href=#126 id=126 data-nosnippet>126</a>        <a class="self" href="#125">self</a>.map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.insert">insert</a>(<a href="../../../rustc_span/def_id/constant.CRATE_DEF_ID.html">CRATE_DEF_ID</a>, <a href="#71-78">EffectiveVisibility::from_vis</a>(<a href="../ty/mod.rs.html#281">Visibility::Public</a>));
+<a href=#126 id=126 data-nosnippet>126</a>        <a class="self" href="#125">self</a>.map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.insert">insert</a>(<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/constant.CRATE_DEF_ID.html">CRATE_DEF_ID</a>, <a href="#71-78">EffectiveVisibility::from_vis</a>(<a href="../ty/mod.rs.html#281">Visibility::Public</a>));
 <a href=#127 id=127 data-nosnippet>127</a>    }
 <a href=#128 id=128 data-nosnippet>128</a>
 <a href=#129 id=129 data-nosnippet>129</a>    <span class="comment">// FIXME: Share code with `fn update`.
 <a href=#130 id=130 data-nosnippet>130</a>    </span><span class="kw">pub fn </span>update_eff_vis(
 <a href=#131 id=131 data-nosnippet>131</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-<a href=#132 id=132 data-nosnippet>132</a>        def_id: <a href="../../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
+<a href=#132 id=132 data-nosnippet>132</a>        def_id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
 <a href=#133 id=133 data-nosnippet>133</a>        eff_vis: <span class="kw-2">&amp;</span><a href="#41-46">EffectiveVisibility</a>,
 <a href=#134 id=134 data-nosnippet>134</a>        tcx: <a href="../ty/context.rs.html#1416-1418">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;,
 <a href=#135 id=135 data-nosnippet>135</a>    ) {
@@ -181,105 +181,101 @@
 <a href=#181 id=181 data-nosnippet>181</a>            // nominal visibility. For some items nominal visibility doesn't make sense so we
 <a href=#182 id=182 data-nosnippet>182</a>            // don't check this condition for them.
 <a href=#183 id=183 data-nosnippet>183</a>            </span><span class="kw">let </span>is_impl = <span class="macro">matches!</span>(tcx.def_kind(def_id), DefKind::Impl { .. });
-<a href=#184 id=184 data-nosnippet>184</a>            <span class="kw">let </span>is_associated_item_in_trait_impl = tcx
-<a href=#185 id=185 data-nosnippet>185</a>                .impl_of_assoc(def_id.to_def_id())
-<a href=#186 id=186 data-nosnippet>186</a>                .and_then(|impl_id| tcx.trait_id_of_impl(impl_id))
-<a href=#187 id=187 data-nosnippet>187</a>                .is_some();
-<a href=#188 id=188 data-nosnippet>188</a>            <span class="kw">if </span>!is_impl &amp;&amp; !is_associated_item_in_trait_impl {
-<a href=#189 id=189 data-nosnippet>189</a>                <span class="kw">let </span>nominal_vis = tcx.visibility(def_id);
-<a href=#190 id=190 data-nosnippet>190</a>                <span class="kw">if </span>!nominal_vis.is_at_least(ev.reachable, tcx) {
-<a href=#191 id=191 data-nosnippet>191</a>                    <span class="macro">span_bug!</span>(
-<a href=#192 id=192 data-nosnippet>192</a>                        span,
-<a href=#193 id=193 data-nosnippet>193</a>                        <span class="string">"{:?}: reachable {:?} &gt; nominal {:?}"</span>,
-<a href=#194 id=194 data-nosnippet>194</a>                        def_id,
-<a href=#195 id=195 data-nosnippet>195</a>                        ev.reachable,
-<a href=#196 id=196 data-nosnippet>196</a>                        nominal_vis,
-<a href=#197 id=197 data-nosnippet>197</a>                    );
-<a href=#198 id=198 data-nosnippet>198</a>                }
-<a href=#199 id=199 data-nosnippet>199</a>            }
-<a href=#200 id=200 data-nosnippet>200</a>        }
-<a href=#201 id=201 data-nosnippet>201</a>    }
-<a href=#202 id=202 data-nosnippet>202</a>}
-<a href=#203 id=203 data-nosnippet>203</a>
-<a href=#204 id=204 data-nosnippet>204</a><span class="kw">impl</span>&lt;Id: <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Eq.html">Eq</a> + <a href="https://doc.rust-lang.org/nightly/core/hash/trait.Hash.html">Hash</a>&gt; <a href="#95-97">EffectiveVisibilities</a>&lt;Id&gt; {
-<a href=#205 id=205 data-nosnippet>205</a>    <span class="kw">pub fn </span>iter(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = (<span class="kw-2">&amp;</span>Id, <span class="kw-2">&amp;</span><a href="#41-46">EffectiveVisibility</a>)&gt; {
-<a href=#206 id=206 data-nosnippet>206</a>        <a class="self" href="#205">self</a>.map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.iter">iter</a>()
+<a href=#184 id=184 data-nosnippet>184</a>            <span class="kw">if </span>!is_impl &amp;&amp; tcx.trait_impl_of_assoc(def_id.to_def_id()).is_none() {
+<a href=#185 id=185 data-nosnippet>185</a>                <span class="kw">let </span>nominal_vis = tcx.visibility(def_id);
+<a href=#186 id=186 data-nosnippet>186</a>                <span class="kw">if </span>!nominal_vis.is_at_least(ev.reachable, tcx) {
+<a href=#187 id=187 data-nosnippet>187</a>                    <span class="macro">span_bug!</span>(
+<a href=#188 id=188 data-nosnippet>188</a>                        span,
+<a href=#189 id=189 data-nosnippet>189</a>                        <span class="string">"{:?}: reachable {:?} &gt; nominal {:?}"</span>,
+<a href=#190 id=190 data-nosnippet>190</a>                        def_id,
+<a href=#191 id=191 data-nosnippet>191</a>                        ev.reachable,
+<a href=#192 id=192 data-nosnippet>192</a>                        nominal_vis,
+<a href=#193 id=193 data-nosnippet>193</a>                    );
+<a href=#194 id=194 data-nosnippet>194</a>                }
+<a href=#195 id=195 data-nosnippet>195</a>            }
+<a href=#196 id=196 data-nosnippet>196</a>        }
+<a href=#197 id=197 data-nosnippet>197</a>    }
+<a href=#198 id=198 data-nosnippet>198</a>}
+<a href=#199 id=199 data-nosnippet>199</a>
+<a href=#200 id=200 data-nosnippet>200</a><span class="kw">impl</span>&lt;Id: <a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Eq.html">Eq</a> + <a href="https://doc.rust-lang.org/nightly/core/hash/trait.Hash.html">Hash</a>&gt; <a href="#95-97">EffectiveVisibilities</a>&lt;Id&gt; {
+<a href=#201 id=201 data-nosnippet>201</a>    <span class="kw">pub fn </span>iter(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = (<span class="kw-2">&amp;</span>Id, <span class="kw-2">&amp;</span><a href="#41-46">EffectiveVisibility</a>)&gt; {
+<a href=#202 id=202 data-nosnippet>202</a>        <a class="self" href="#201">self</a>.map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.iter">iter</a>()
+<a href=#203 id=203 data-nosnippet>203</a>    }
+<a href=#204 id=204 data-nosnippet>204</a>
+<a href=#205 id=205 data-nosnippet>205</a>    <span class="kw">pub fn </span>effective_vis(<span class="kw-2">&amp;</span><span class="self">self</span>, id: Id) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><a href="#41-46">EffectiveVisibility</a>&gt; {
+<a href=#206 id=206 data-nosnippet>206</a>        <a class="self" href="#205">self</a>.map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#205">id</a>)
 <a href=#207 id=207 data-nosnippet>207</a>    }
 <a href=#208 id=208 data-nosnippet>208</a>
-<a href=#209 id=209 data-nosnippet>209</a>    <span class="kw">pub fn </span>effective_vis(<span class="kw-2">&amp;</span><span class="self">self</span>, id: Id) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><a href="#41-46">EffectiveVisibility</a>&gt; {
-<a href=#210 id=210 data-nosnippet>210</a>        <a class="self" href="#209">self</a>.map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#209">id</a>)
-<a href=#211 id=211 data-nosnippet>211</a>    }
-<a href=#212 id=212 data-nosnippet>212</a>
-<a href=#213 id=213 data-nosnippet>213</a>    <span class="comment">// FIXME: Share code with `fn update`.
-<a href=#214 id=214 data-nosnippet>214</a>    </span><span class="kw">pub fn </span>effective_vis_or_private(
-<a href=#215 id=215 data-nosnippet>215</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-<a href=#216 id=216 data-nosnippet>216</a>        id: Id,
-<a href=#217 id=217 data-nosnippet>217</a>        lazy_private_vis: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>() -&gt; <a href="../ty/mod.rs.html#279-284">Visibility</a>,
-<a href=#218 id=218 data-nosnippet>218</a>    ) -&gt; <span class="kw-2">&amp;</span><a href="#41-46">EffectiveVisibility</a> {
-<a href=#219 id=219 data-nosnippet>219</a>        <a class="self" href="#215">self</a>.map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.entry">entry</a>(<a href="#216">id</a>).<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/core/entry/enum.Entry.html#method.or_insert_with">or_insert_with</a>(|| <a href="#71-78">EffectiveVisibility::from_vis</a>(<a href="#217">lazy_private_vis</a>()))
-<a href=#220 id=220 data-nosnippet>220</a>    }
-<a href=#221 id=221 data-nosnippet>221</a>
-<a href=#222 id=222 data-nosnippet>222</a>    <span class="kw">pub fn </span>update(
-<a href=#223 id=223 data-nosnippet>223</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
-<a href=#224 id=224 data-nosnippet>224</a>        id: Id,
-<a href=#225 id=225 data-nosnippet>225</a>        max_vis: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../ty/mod.rs.html#279-284">Visibility</a>&gt;,
-<a href=#226 id=226 data-nosnippet>226</a>        lazy_private_vis: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>() -&gt; <a href="../ty/mod.rs.html#279-284">Visibility</a>,
-<a href=#227 id=227 data-nosnippet>227</a>        inherited_effective_vis: <a href="#41-46">EffectiveVisibility</a>,
-<a href=#228 id=228 data-nosnippet>228</a>        level: <a href="#20-32">Level</a>,
-<a href=#229 id=229 data-nosnippet>229</a>        tcx: <a href="../ty/context.rs.html#1416-1418">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;,
-<a href=#230 id=230 data-nosnippet>230</a>    ) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
-<a href=#231 id=231 data-nosnippet>231</a>        <span class="kw">let </span><span class="kw-2">mut </span>changed = <span class="bool-val">false</span>;
-<a href=#232 id=232 data-nosnippet>232</a>        <span class="kw">let </span><span class="kw-2">mut </span>current_effective_vis = <span class="self"><a href="#223">self</a>
-<a href=#233 id=233 data-nosnippet>233</a>            </span>.map
-<a href=#234 id=234 data-nosnippet>234</a>            .<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#224">id</a>)
-<a href=#235 id=235 data-nosnippet>235</a>            .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.copied">copied</a>()
-<a href=#236 id=236 data-nosnippet>236</a>            .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or_else">unwrap_or_else</a>(|| <a href="#71-78">EffectiveVisibility::from_vis</a>(<a href="#226">lazy_private_vis</a>()));
-<a href=#237 id=237 data-nosnippet>237</a>
-<a href=#238 id=238 data-nosnippet>238</a>        <span class="kw">let </span><span class="kw-2">mut </span>inherited_effective_vis_at_prev_level = <span class="kw-2">*</span><a href="#227">inherited_effective_vis</a>.<a href="#49-56">at_level</a>(<a href="#228">level</a>);
-<a href=#239 id=239 data-nosnippet>239</a>        <span class="kw">let </span><span class="kw-2">mut </span>calculated_effective_vis = <a href="#238">inherited_effective_vis_at_prev_level</a>;
-<a href=#240 id=240 data-nosnippet>240</a>        <span class="kw">for </span>l <span class="kw">in </span>Level::all_levels() {
-<a href=#241 id=241 data-nosnippet>241</a>            <span class="kw">if </span>level &gt;= l {
-<a href=#242 id=242 data-nosnippet>242</a>                <span class="kw">let </span>inherited_effective_vis_at_level = <span class="kw-2">*</span>inherited_effective_vis.at_level(l);
-<a href=#243 id=243 data-nosnippet>243</a>                <span class="kw">let </span>current_effective_vis_at_level = current_effective_vis.at_level_mut(l);
-<a href=#244 id=244 data-nosnippet>244</a>                <span class="comment">// effective visibility for id shouldn't be recalculated if
-<a href=#245 id=245 data-nosnippet>245</a>                // inherited from parent_id effective visibility isn't changed at next level
-<a href=#246 id=246 data-nosnippet>246</a>                </span><span class="kw">if </span>!(inherited_effective_vis_at_prev_level == inherited_effective_vis_at_level
-<a href=#247 id=247 data-nosnippet>247</a>                    &amp;&amp; level != l)
-<a href=#248 id=248 data-nosnippet>248</a>                {
-<a href=#249 id=249 data-nosnippet>249</a>                    calculated_effective_vis = <span class="kw">if let </span><span class="prelude-val">Some</span>(max_vis) = max_vis
-<a href=#250 id=250 data-nosnippet>250</a>                        &amp;&amp; !max_vis.is_at_least(inherited_effective_vis_at_level, tcx)
-<a href=#251 id=251 data-nosnippet>251</a>                    {
-<a href=#252 id=252 data-nosnippet>252</a>                        max_vis
-<a href=#253 id=253 data-nosnippet>253</a>                    } <span class="kw">else </span>{
-<a href=#254 id=254 data-nosnippet>254</a>                        inherited_effective_vis_at_level
-<a href=#255 id=255 data-nosnippet>255</a>                    }
-<a href=#256 id=256 data-nosnippet>256</a>                }
-<a href=#257 id=257 data-nosnippet>257</a>                <span class="comment">// effective visibility can't be decreased at next update call for the
-<a href=#258 id=258 data-nosnippet>258</a>                // same id
-<a href=#259 id=259 data-nosnippet>259</a>                </span><span class="kw">if </span><span class="kw-2">*</span>current_effective_vis_at_level != calculated_effective_vis
-<a href=#260 id=260 data-nosnippet>260</a>                    &amp;&amp; calculated_effective_vis.is_at_least(<span class="kw-2">*</span>current_effective_vis_at_level, tcx)
-<a href=#261 id=261 data-nosnippet>261</a>                {
-<a href=#262 id=262 data-nosnippet>262</a>                    changed = <span class="bool-val">true</span>;
-<a href=#263 id=263 data-nosnippet>263</a>                    <span class="kw-2">*</span>current_effective_vis_at_level = calculated_effective_vis;
-<a href=#264 id=264 data-nosnippet>264</a>                }
-<a href=#265 id=265 data-nosnippet>265</a>                inherited_effective_vis_at_prev_level = inherited_effective_vis_at_level;
-<a href=#266 id=266 data-nosnippet>266</a>            }
-<a href=#267 id=267 data-nosnippet>267</a>        }
-<a href=#268 id=268 data-nosnippet>268</a>
-<a href=#269 id=269 data-nosnippet>269</a>        <a class="self" href="#223">self</a>.map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.insert">insert</a>(<a href="#224">id</a>, <a href="#232">current_effective_vis</a>);
-<a href=#270 id=270 data-nosnippet>270</a>        <a href="#231">changed</a>
-<a href=#271 id=271 data-nosnippet>271</a>    }
-<a href=#272 id=272 data-nosnippet>272</a>}
-<a href=#273 id=273 data-nosnippet>273</a>
-<a href=#274 id=274 data-nosnippet>274</a><span class="kw">impl</span>&lt;Id&gt; <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html">Default</a> <span class="kw">for </span><a href="#95-97">EffectiveVisibilities</a>&lt;Id&gt; {
-<a href=#275 id=275 data-nosnippet>275</a>    <span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
-<a href=#276 id=276 data-nosnippet>276</a>        <a href="#95-97">EffectiveVisibilities</a> { map: <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">Default::default</a>() }
-<a href=#277 id=277 data-nosnippet>277</a>    }
-<a href=#278 id=278 data-nosnippet>278</a>}
-<a href=#279 id=279 data-nosnippet>279</a>
-<a href=#280 id=280 data-nosnippet>280</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>&gt; <a href="../../../rustc_data_structures/stable_hasher/trait.HashStable.html">HashStable</a>&lt;<a href="../../../rustc_query_system/ich/hcx/struct.StableHashingContext.html">StableHashingContext</a>&lt;<span class="lifetime">'a</span>&gt;&gt; <span class="kw">for </span><a href="#95-97">EffectiveVisibilities</a> {
-<a href=#281 id=281 data-nosnippet>281</a>    <span class="kw">fn </span>hash_stable(<span class="kw-2">&amp;</span><span class="self">self</span>, hcx: <span class="kw-2">&amp;mut </span><a href="../../../rustc_query_system/ich/hcx/struct.StableHashingContext.html">StableHashingContext</a>&lt;<span class="lifetime">'a</span>&gt;, hasher: <span class="kw-2">&amp;mut </span><a href="https://docs.rs/rustc-stable-hash/0.1.2/rustc_stable_hash/hashers/type.StableSipHasher128.html">StableHasher</a>) {
-<a href=#282 id=282 data-nosnippet>282</a>        <span class="kw">let </span><a href="#95-97">EffectiveVisibilities</a> { <span class="kw-2">ref </span>map } = <span class="kw-2">*</span><a class="self" href="#281">self</a>;
-<a href=#283 id=283 data-nosnippet>283</a>        <a href="#282">map</a>.<a href="../../../rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#281">hcx</a>, <a href="#281">hasher</a>);
-<a href=#284 id=284 data-nosnippet>284</a>    }
-<a href=#285 id=285 data-nosnippet>285</a>}</code></pre></div></section></main></body></html>
+<a href=#209 id=209 data-nosnippet>209</a>    <span class="comment">// FIXME: Share code with `fn update`.
+<a href=#210 id=210 data-nosnippet>210</a>    </span><span class="kw">pub fn </span>effective_vis_or_private(
+<a href=#211 id=211 data-nosnippet>211</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#212 id=212 data-nosnippet>212</a>        id: Id,
+<a href=#213 id=213 data-nosnippet>213</a>        lazy_private_vis: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>() -&gt; <a href="../ty/mod.rs.html#279-284">Visibility</a>,
+<a href=#214 id=214 data-nosnippet>214</a>    ) -&gt; <span class="kw-2">&amp;</span><a href="#41-46">EffectiveVisibility</a> {
+<a href=#215 id=215 data-nosnippet>215</a>        <a class="self" href="#211">self</a>.map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.entry">entry</a>(<a href="#212">id</a>).<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/core/entry/enum.Entry.html#method.or_insert_with">or_insert_with</a>(|| <a href="#71-78">EffectiveVisibility::from_vis</a>(<a href="#213">lazy_private_vis</a>()))
+<a href=#216 id=216 data-nosnippet>216</a>    }
+<a href=#217 id=217 data-nosnippet>217</a>
+<a href=#218 id=218 data-nosnippet>218</a>    <span class="kw">pub fn </span>update(
+<a href=#219 id=219 data-nosnippet>219</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#220 id=220 data-nosnippet>220</a>        id: Id,
+<a href=#221 id=221 data-nosnippet>221</a>        max_vis: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../ty/mod.rs.html#279-284">Visibility</a>&gt;,
+<a href=#222 id=222 data-nosnippet>222</a>        lazy_private_vis: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>() -&gt; <a href="../ty/mod.rs.html#279-284">Visibility</a>,
+<a href=#223 id=223 data-nosnippet>223</a>        inherited_effective_vis: <a href="#41-46">EffectiveVisibility</a>,
+<a href=#224 id=224 data-nosnippet>224</a>        level: <a href="#20-32">Level</a>,
+<a href=#225 id=225 data-nosnippet>225</a>        tcx: <a href="../ty/context.rs.html#1416-1418">TyCtxt</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#226 id=226 data-nosnippet>226</a>    ) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#227 id=227 data-nosnippet>227</a>        <span class="kw">let </span><span class="kw-2">mut </span>changed = <span class="bool-val">false</span>;
+<a href=#228 id=228 data-nosnippet>228</a>        <span class="kw">let </span><span class="kw-2">mut </span>current_effective_vis = <span class="self"><a href="#219">self</a>
+<a href=#229 id=229 data-nosnippet>229</a>            </span>.map
+<a href=#230 id=230 data-nosnippet>230</a>            .<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#220">id</a>)
+<a href=#231 id=231 data-nosnippet>231</a>            .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.copied">copied</a>()
+<a href=#232 id=232 data-nosnippet>232</a>            .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or_else">unwrap_or_else</a>(|| <a href="#71-78">EffectiveVisibility::from_vis</a>(<a href="#222">lazy_private_vis</a>()));
+<a href=#233 id=233 data-nosnippet>233</a>
+<a href=#234 id=234 data-nosnippet>234</a>        <span class="kw">let </span><span class="kw-2">mut </span>inherited_effective_vis_at_prev_level = <span class="kw-2">*</span><a href="#223">inherited_effective_vis</a>.<a href="#49-56">at_level</a>(<a href="#224">level</a>);
+<a href=#235 id=235 data-nosnippet>235</a>        <span class="kw">let </span><span class="kw-2">mut </span>calculated_effective_vis = <a href="#234">inherited_effective_vis_at_prev_level</a>;
+<a href=#236 id=236 data-nosnippet>236</a>        <span class="kw">for </span>l <span class="kw">in </span>Level::all_levels() {
+<a href=#237 id=237 data-nosnippet>237</a>            <span class="kw">if </span>level &gt;= l {
+<a href=#238 id=238 data-nosnippet>238</a>                <span class="kw">let </span>inherited_effective_vis_at_level = <span class="kw-2">*</span>inherited_effective_vis.at_level(l);
+<a href=#239 id=239 data-nosnippet>239</a>                <span class="kw">let </span>current_effective_vis_at_level = current_effective_vis.at_level_mut(l);
+<a href=#240 id=240 data-nosnippet>240</a>                <span class="comment">// effective visibility for id shouldn't be recalculated if
+<a href=#241 id=241 data-nosnippet>241</a>                // inherited from parent_id effective visibility isn't changed at next level
+<a href=#242 id=242 data-nosnippet>242</a>                </span><span class="kw">if </span>!(inherited_effective_vis_at_prev_level == inherited_effective_vis_at_level
+<a href=#243 id=243 data-nosnippet>243</a>                    &amp;&amp; level != l)
+<a href=#244 id=244 data-nosnippet>244</a>                {
+<a href=#245 id=245 data-nosnippet>245</a>                    calculated_effective_vis = <span class="kw">if let </span><span class="prelude-val">Some</span>(max_vis) = max_vis
+<a href=#246 id=246 data-nosnippet>246</a>                        &amp;&amp; !max_vis.is_at_least(inherited_effective_vis_at_level, tcx)
+<a href=#247 id=247 data-nosnippet>247</a>                    {
+<a href=#248 id=248 data-nosnippet>248</a>                        max_vis
+<a href=#249 id=249 data-nosnippet>249</a>                    } <span class="kw">else </span>{
+<a href=#250 id=250 data-nosnippet>250</a>                        inherited_effective_vis_at_level
+<a href=#251 id=251 data-nosnippet>251</a>                    }
+<a href=#252 id=252 data-nosnippet>252</a>                }
+<a href=#253 id=253 data-nosnippet>253</a>                <span class="comment">// effective visibility can't be decreased at next update call for the
+<a href=#254 id=254 data-nosnippet>254</a>                // same id
+<a href=#255 id=255 data-nosnippet>255</a>                </span><span class="kw">if </span><span class="kw-2">*</span>current_effective_vis_at_level != calculated_effective_vis
+<a href=#256 id=256 data-nosnippet>256</a>                    &amp;&amp; calculated_effective_vis.is_at_least(<span class="kw-2">*</span>current_effective_vis_at_level, tcx)
+<a href=#257 id=257 data-nosnippet>257</a>                {
+<a href=#258 id=258 data-nosnippet>258</a>                    changed = <span class="bool-val">true</span>;
+<a href=#259 id=259 data-nosnippet>259</a>                    <span class="kw-2">*</span>current_effective_vis_at_level = calculated_effective_vis;
+<a href=#260 id=260 data-nosnippet>260</a>                }
+<a href=#261 id=261 data-nosnippet>261</a>                inherited_effective_vis_at_prev_level = inherited_effective_vis_at_level;
+<a href=#262 id=262 data-nosnippet>262</a>            }
+<a href=#263 id=263 data-nosnippet>263</a>        }
+<a href=#264 id=264 data-nosnippet>264</a>
+<a href=#265 id=265 data-nosnippet>265</a>        <a class="self" href="#219">self</a>.map.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.insert">insert</a>(<a href="#220">id</a>, <a href="#228">current_effective_vis</a>);
+<a href=#266 id=266 data-nosnippet>266</a>        <a href="#227">changed</a>
+<a href=#267 id=267 data-nosnippet>267</a>    }
+<a href=#268 id=268 data-nosnippet>268</a>}
+<a href=#269 id=269 data-nosnippet>269</a>
+<a href=#270 id=270 data-nosnippet>270</a><span class="kw">impl</span>&lt;Id&gt; <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html">Default</a> <span class="kw">for </span><a href="#95-97">EffectiveVisibilities</a>&lt;Id&gt; {
+<a href=#271 id=271 data-nosnippet>271</a>    <span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
+<a href=#272 id=272 data-nosnippet>272</a>        <a href="#95-97">EffectiveVisibilities</a> { map: <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">Default::default</a>() }
+<a href=#273 id=273 data-nosnippet>273</a>    }
+<a href=#274 id=274 data-nosnippet>274</a>}
+<a href=#275 id=275 data-nosnippet>275</a>
+<a href=#276 id=276 data-nosnippet>276</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>&gt; <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/trait.HashStable.html">HashStable</a>&lt;<a href="../../../rustc_query_system/ich/hcx/struct.StableHashingContext.html">StableHashingContext</a>&lt;<span class="lifetime">'a</span>&gt;&gt; <span class="kw">for </span><a href="#95-97">EffectiveVisibilities</a> {
+<a href=#277 id=277 data-nosnippet>277</a>    <span class="kw">fn </span>hash_stable(<span class="kw-2">&amp;</span><span class="self">self</span>, hcx: <span class="kw-2">&amp;mut </span><a href="../../../rustc_query_system/ich/hcx/struct.StableHashingContext.html">StableHashingContext</a>&lt;<span class="lifetime">'a</span>&gt;, hasher: <span class="kw-2">&amp;mut </span><a href="https://docs.rs/rustc-stable-hash/0.1.2/rustc_stable_hash/hashers/type.StableSipHasher128.html">StableHasher</a>) {
+<a href=#278 id=278 data-nosnippet>278</a>        <span class="kw">let </span><a href="#95-97">EffectiveVisibilities</a> { <span class="kw-2">ref </span>map } = <span class="kw-2">*</span><a class="self" href="#277">self</a>;
+<a href=#279 id=279 data-nosnippet>279</a>        <a href="#278">map</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#277">hcx</a>, <a href="#277">hasher</a>);
+<a href=#280 id=280 data-nosnippet>280</a>    }
+<a href=#281 id=281 data-nosnippet>281</a>}</code></pre></div></section></main></body></html>

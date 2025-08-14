@@ -1,9 +1,9 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/builder/autodiff.rs`."><title>autodiff.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-1a4373a8.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_codegen_llvm/builder/</div>autodiff.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/ptr/index.html">std::ptr</a>;
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/builder/autodiff.rs`."><title>autodiff.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-528d32ef.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-e93015a6.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_codegen_llvm/builder/</div>autodiff.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/ptr/index.html">std::ptr</a>;
 <a href=#2 id=2 data-nosnippet>2</a>
 <a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>rustc_ast::expand::autodiff_attrs::{<a href="../../../rustc_ast/expand/autodiff_attrs/struct.AutoDiffAttrs.html">AutoDiffAttrs</a>, <a href="../../../rustc_ast/expand/autodiff_attrs/struct.AutoDiffItem.html">AutoDiffItem</a>, <a href="../../../rustc_ast/expand/autodiff_attrs/enum.DiffActivity.html">DiffActivity</a>, <a href="../../../rustc_ast/expand/autodiff_attrs/enum.DiffMode.html">DiffMode</a>};
-<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><a href="../../../rustc_codegen_ssa/struct.ModuleCodegen.html">rustc_codegen_ssa::ModuleCodegen</a>;
-<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="../../../rustc_codegen_ssa/common/enum.TypeKind.html">rustc_codegen_ssa::common::TypeKind</a>;
-<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html">rustc_codegen_ssa::traits::BaseTypeCodegenMethods</a>;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/struct.ModuleCodegen.html">rustc_codegen_ssa::ModuleCodegen</a>;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/common/enum.TypeKind.html">rustc_codegen_ssa::common::TypeKind</a>;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html">rustc_codegen_ssa::traits::BaseTypeCodegenMethods</a>;
 <a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span><a href="../../../rustc_span/fatal_error/struct.FatalError.html">rustc_errors::FatalError</a>;
 <a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="../../../rustc_middle/macro.bug.html">rustc_middle::bug</a>;
 <a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug</a>, <a href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace</a>};
@@ -14,13 +14,13 @@
 <a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span><a href="../declare.rs.html#38-56"><span class="kw">crate</span>::declare::declare_simple_fn</a>;
 <a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span><span class="kw">crate</span>::errors::{<a href="../errors.rs.html#37">AutoDiffWithoutEnable</a>, <a href="../errors.rs.html#46-69">LlvmError</a>};
 <a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span><a href="../llvm/mod.rs.html#160"><span class="kw">crate</span>::llvm::AttributePlace::Function</a>;
-<a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span><span class="kw">crate</span>::llvm::{<a href="../llvm/ffi.rs.html#761">Metadata</a>, <a href="../llvm/ffi.rs.html#38">True</a>};
-<a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span><a href="../llvm/ffi.rs.html#758"><span class="kw">crate</span>::value::Value</a>;
-<a href=#19 id=19 data-nosnippet>19</a><span class="kw">use crate</span>::{<a href="../../../rustc_codegen_ssa/back/write/struct.CodegenContext.html">CodegenContext</a>, <a href="../lib.rs.html#84">LlvmCodegenBackend</a>, <a href="../lib.rs.html#382-389">ModuleLlvm</a>, <a href="../lib.rs.html#61">attributes</a>, <a href="../lib.rs.html#73">llvm</a>};
+<a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span><span class="kw">crate</span>::llvm::{<a href="../llvm/ffi.rs.html#762">Metadata</a>, <a href="../llvm/ffi.rs.html#38">True</a>};
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span><a href="../llvm/ffi.rs.html#759"><span class="kw">crate</span>::value::Value</a>;
+<a href=#19 id=19 data-nosnippet>19</a><span class="kw">use crate</span>::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/back/write/struct.CodegenContext.html">CodegenContext</a>, <a href="../lib.rs.html#84">LlvmCodegenBackend</a>, <a href="../lib.rs.html#382-389">ModuleLlvm</a>, <a href="../lib.rs.html#61">attributes</a>, <a href="../lib.rs.html#73">llvm</a>};
 <a href=#20 id=20 data-nosnippet>20</a>
-<a href=#21 id=21 data-nosnippet>21</a><span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/autodiff/fn.get_params.html">get_params</a>(fnc: <span class="kw-2">&amp;</span><a href="../llvm/ffi.rs.html#758">Value</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw-2">&amp;</span><a href="../llvm/ffi.rs.html#758">Value</a>&gt; {
-<a href=#22 id=22 data-nosnippet>22</a>    <span class="kw">let </span>param_num = <a href="../llvm/ffi.rs.html#1224">llvm::LLVMCountParams</a>(<a href="#21">fnc</a>) <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>;
-<a href=#23 id=23 data-nosnippet>23</a>    <span class="kw">let </span><span class="kw-2">mut </span>fnc_args: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw-2">&amp;</span><a href="../llvm/ffi.rs.html#758">Value</a>&gt; = <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[];
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/autodiff/fn.get_params.html">get_params</a>(fnc: <span class="kw-2">&amp;</span><a href="../llvm/ffi.rs.html#759">Value</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw-2">&amp;</span><a href="../llvm/ffi.rs.html#759">Value</a>&gt; {
+<a href=#22 id=22 data-nosnippet>22</a>    <span class="kw">let </span>param_num = <a href="../llvm/ffi.rs.html#1225">llvm::LLVMCountParams</a>(<a href="#21">fnc</a>) <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>;
+<a href=#23 id=23 data-nosnippet>23</a>    <span class="kw">let </span><span class="kw-2">mut </span>fnc_args: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw-2">&amp;</span><a href="../llvm/ffi.rs.html#759">Value</a>&gt; = <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[];
 <a href=#24 id=24 data-nosnippet>24</a>    <a href="#23">fnc_args</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.reserve">reserve</a>(<a href="#22">param_num</a>);
 <a href=#25 id=25 data-nosnippet>25</a>    <span class="kw">unsafe </span>{
 <a href=#26 id=26 data-nosnippet>26</a>        <a href="../llvm/enzyme_ffi.rs.html#50">llvm::LLVMGetParams</a>(<a href="#21">fnc</a>, <a href="#23">fnc_args</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.as_mut_ptr">as_mut_ptr</a>());
@@ -29,8 +29,8 @@
 <a href=#29 id=29 data-nosnippet>29</a>    <a href="#23">fnc_args</a>
 <a href=#30 id=30 data-nosnippet>30</a>}
 <a href=#31 id=31 data-nosnippet>31</a>
-<a href=#32 id=32 data-nosnippet>32</a><span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/autodiff/fn.has_sret.html">has_sret</a>(fnc: <span class="kw-2">&amp;</span><a href="../llvm/ffi.rs.html#758">Value</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
-<a href=#33 id=33 data-nosnippet>33</a>    <span class="kw">let </span>num_args = <a href="../llvm/ffi.rs.html#1224">llvm::LLVMCountParams</a>(<a href="#32">fnc</a>) <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>;
+<a href=#32 id=32 data-nosnippet>32</a><span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/autodiff/fn.has_sret.html">has_sret</a>(fnc: <span class="kw-2">&amp;</span><a href="../llvm/ffi.rs.html#759">Value</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#33 id=33 data-nosnippet>33</a>    <span class="kw">let </span>num_args = <a href="../llvm/ffi.rs.html#1225">llvm::LLVMCountParams</a>(<a href="#32">fnc</a>) <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>;
 <a href=#34 id=34 data-nosnippet>34</a>    <span class="kw">if </span><a href="#33">num_args</a> == <span class="number">0 </span>{
 <a href=#35 id=35 data-nosnippet>35</a>        <span class="bool-val">false
 <a href=#36 id=36 data-nosnippet>36</a>    </span>} <span class="kw">else </span>{
@@ -52,9 +52,9 @@
 <a href=#52 id=52 data-nosnippet>52</a>    cx: <span class="kw-2">&amp;</span><a href="../context.rs.html#86">SimpleCx</a>&lt;<span class="lifetime">'ll</span>&gt;,
 <a href=#53 id=53 data-nosnippet>53</a>    builder: <span class="kw-2">&amp;</span><a href="../builder.rs.html#50">SBuilder</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'ll</span>&gt;,
 <a href=#54 id=54 data-nosnippet>54</a>    width: <a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>,
-<a href=#55 id=55 data-nosnippet>55</a>    args: <span class="kw-2">&amp;mut </span><a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#758">llvm::Value</a>&gt;,
+<a href=#55 id=55 data-nosnippet>55</a>    args: <span class="kw-2">&amp;mut </span><a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#759">llvm::Value</a>&gt;,
 <a href=#56 id=56 data-nosnippet>56</a>    inputs: <span class="kw-2">&amp;</span>[<a href="../../../rustc_ast/expand/autodiff_attrs/enum.DiffActivity.html">DiffActivity</a>],
-<a href=#57 id=57 data-nosnippet>57</a>    outer_args: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#758">llvm::Value</a>],
+<a href=#57 id=57 data-nosnippet>57</a>    outer_args: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#759">llvm::Value</a>],
 <a href=#58 id=58 data-nosnippet>58</a>    has_sret: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
 <a href=#59 id=59 data-nosnippet>59</a>) {
 <a href=#60 id=60 data-nosnippet>60</a>    <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"matching autodiff arguments"</span>);
@@ -75,12 +75,12 @@
 <a href=#75 id=75 data-nosnippet>75</a>        </span><a href="#67">outer_pos</a> = <span class="number">1</span>;
 <a href=#76 id=76 data-nosnippet>76</a>    }
 <a href=#77 id=77 data-nosnippet>77</a>
-<a href=#78 id=78 data-nosnippet>78</a>    <span class="kw">let </span>enzyme_const = <a href="#52">cx</a>.<a href="../context.rs.html#719-723">create_metadata</a>(<span class="string">b"enzyme_const"</span>);
-<a href=#79 id=79 data-nosnippet>79</a>    <span class="kw">let </span>enzyme_out = <a href="#52">cx</a>.<a href="../context.rs.html#719-723">create_metadata</a>(<span class="string">b"enzyme_out"</span>);
-<a href=#80 id=80 data-nosnippet>80</a>    <span class="kw">let </span>enzyme_dup = <a href="#52">cx</a>.<a href="../context.rs.html#719-723">create_metadata</a>(<span class="string">b"enzyme_dup"</span>);
-<a href=#81 id=81 data-nosnippet>81</a>    <span class="kw">let </span>enzyme_dupv = <a href="#52">cx</a>.<a href="../context.rs.html#719-723">create_metadata</a>(<span class="string">b"enzyme_dupv"</span>);
-<a href=#82 id=82 data-nosnippet>82</a>    <span class="kw">let </span>enzyme_dupnoneed = <a href="#52">cx</a>.<a href="../context.rs.html#719-723">create_metadata</a>(<span class="string">b"enzyme_dupnoneed"</span>);
-<a href=#83 id=83 data-nosnippet>83</a>    <span class="kw">let </span>enzyme_dupnoneedv = <a href="#52">cx</a>.<a href="../context.rs.html#719-723">create_metadata</a>(<span class="string">b"enzyme_dupnoneedv"</span>);
+<a href=#78 id=78 data-nosnippet>78</a>    <span class="kw">let </span>enzyme_const = <a href="#52">cx</a>.<a href="../context.rs.html#725-729">create_metadata</a>(<span class="string">b"enzyme_const"</span>);
+<a href=#79 id=79 data-nosnippet>79</a>    <span class="kw">let </span>enzyme_out = <a href="#52">cx</a>.<a href="../context.rs.html#725-729">create_metadata</a>(<span class="string">b"enzyme_out"</span>);
+<a href=#80 id=80 data-nosnippet>80</a>    <span class="kw">let </span>enzyme_dup = <a href="#52">cx</a>.<a href="../context.rs.html#725-729">create_metadata</a>(<span class="string">b"enzyme_dup"</span>);
+<a href=#81 id=81 data-nosnippet>81</a>    <span class="kw">let </span>enzyme_dupv = <a href="#52">cx</a>.<a href="../context.rs.html#725-729">create_metadata</a>(<span class="string">b"enzyme_dupv"</span>);
+<a href=#82 id=82 data-nosnippet>82</a>    <span class="kw">let </span>enzyme_dupnoneed = <a href="#52">cx</a>.<a href="../context.rs.html#725-729">create_metadata</a>(<span class="string">b"enzyme_dupnoneed"</span>);
+<a href=#83 id=83 data-nosnippet>83</a>    <span class="kw">let </span>enzyme_dupnoneedv = <a href="#52">cx</a>.<a href="../context.rs.html#725-729">create_metadata</a>(<span class="string">b"enzyme_dupnoneedv"</span>);
 <a href=#84 id=84 data-nosnippet>84</a>
 <a href=#85 id=85 data-nosnippet>85</a>    <span class="kw">while </span>activity_pos &lt; inputs.len() {
 <a href=#86 id=86 data-nosnippet>86</a>        <span class="kw">let </span>diff_activity = inputs[activity_pos <span class="kw">as </span>usize];
@@ -203,21 +203,21 @@
 <a href=#203 id=203 data-nosnippet>203</a></span><span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/autodiff/fn.compute_enzyme_fn_ty.html">compute_enzyme_fn_ty</a>&lt;<span class="lifetime">'ll</span>&gt;(
 <a href=#204 id=204 data-nosnippet>204</a>    cx: <span class="kw-2">&amp;</span><a href="../context.rs.html#86">SimpleCx</a>&lt;<span class="lifetime">'ll</span>&gt;,
 <a href=#205 id=205 data-nosnippet>205</a>    attrs: <span class="kw-2">&amp;</span><a href="../../../rustc_ast/expand/autodiff_attrs/struct.AutoDiffAttrs.html">AutoDiffAttrs</a>,
-<a href=#206 id=206 data-nosnippet>206</a>    fn_to_diff: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#758">Value</a>,
-<a href=#207 id=207 data-nosnippet>207</a>    outer_fn: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#758">Value</a>,
-<a href=#208 id=208 data-nosnippet>208</a>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#757">llvm::Type</a> {
-<a href=#209 id=209 data-nosnippet>209</a>    <span class="kw">let </span>fn_ty = <a href="#204">cx</a>.<a href="../context.rs.html#661-663">get_type_of_global</a>(<a href="#207">outer_fn</a>);
-<a href=#210 id=210 data-nosnippet>210</a>    <span class="kw">let </span><span class="kw-2">mut </span>ret_ty = <a href="#204">cx</a>.<a href="../context.rs.html#657-660">get_return_type</a>(<a href="#209">fn_ty</a>);
+<a href=#206 id=206 data-nosnippet>206</a>    fn_to_diff: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#759">Value</a>,
+<a href=#207 id=207 data-nosnippet>207</a>    outer_fn: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#759">Value</a>,
+<a href=#208 id=208 data-nosnippet>208</a>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#758">llvm::Type</a> {
+<a href=#209 id=209 data-nosnippet>209</a>    <span class="kw">let </span>fn_ty = <a href="#204">cx</a>.<a href="../context.rs.html#667-669">get_type_of_global</a>(<a href="#207">outer_fn</a>);
+<a href=#210 id=210 data-nosnippet>210</a>    <span class="kw">let </span><span class="kw-2">mut </span>ret_ty = <a href="#204">cx</a>.<a href="../context.rs.html#663-666">get_return_type</a>(<a href="#209">fn_ty</a>);
 <a href=#211 id=211 data-nosnippet>211</a>
 <a href=#212 id=212 data-nosnippet>212</a>    <span class="kw">let </span>has_sret = <a href="#32-39">has_sret</a>(<a href="#207">outer_fn</a>);
 <a href=#213 id=213 data-nosnippet>213</a>
 <a href=#214 id=214 data-nosnippet>214</a>    <span class="kw">if </span><a href="#212">has_sret</a> {
 <a href=#215 id=215 data-nosnippet>215</a>        <span class="comment">// Now we don't just forward the return type, so we have to figure it out based on the
 <a href=#216 id=216 data-nosnippet>216</a>        // primal return type, in combination with the autodiff settings.
-<a href=#217 id=217 data-nosnippet>217</a>        </span><span class="kw">let </span>fn_ty = <a href="#204">cx</a>.<a href="../context.rs.html#661-663">get_type_of_global</a>(<a href="#206">fn_to_diff</a>);
-<a href=#218 id=218 data-nosnippet>218</a>        <span class="kw">let </span>inner_ret_ty = <a href="#204">cx</a>.<a href="../context.rs.html#657-660">get_return_type</a>(<a href="#217">fn_ty</a>);
+<a href=#217 id=217 data-nosnippet>217</a>        </span><span class="kw">let </span>fn_ty = <a href="#204">cx</a>.<a href="../context.rs.html#667-669">get_type_of_global</a>(<a href="#206">fn_to_diff</a>);
+<a href=#218 id=218 data-nosnippet>218</a>        <span class="kw">let </span>inner_ret_ty = <a href="#204">cx</a>.<a href="../context.rs.html#663-666">get_return_type</a>(<a href="#217">fn_ty</a>);
 <a href=#219 id=219 data-nosnippet>219</a>
-<a href=#220 id=220 data-nosnippet>220</a>        <span class="kw">let </span>void_ty = <span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#1090">llvm::LLVMVoidTypeInContext</a>(<a href="#204">cx</a>.llcx) };
+<a href=#220 id=220 data-nosnippet>220</a>        <span class="kw">let </span>void_ty = <span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#1091">llvm::LLVMVoidTypeInContext</a>(<a href="#204">cx</a>.llcx) };
 <a href=#221 id=221 data-nosnippet>221</a>        <span class="kw">if </span><a href="#218">inner_ret_ty</a> == <a href="#220">void_ty</a> {
 <a href=#222 id=222 data-nosnippet>222</a>            <span class="comment">// This indicates that even the inner function has an sret.
 <a href=#223 id=223 data-nosnippet>223</a>            // Right now I only look for an sret in the outer function.
@@ -250,12 +250,12 @@
 <a href=#250 id=250 data-nosnippet>250</a>                <a href="../../../rustc_ast/expand/autodiff_attrs/enum.DiffMode.html#variant.Forward">DiffMode::Forward</a> =&gt; <span class="kw">match </span><a href="#205">attrs</a>.ret_activity {
 <a href=#251 id=251 data-nosnippet>251</a>                    <a href="../../../rustc_ast/expand/autodiff_attrs/enum.DiffActivity.html#variant.Dual">DiffActivity::Dual</a> =&gt; {
 <a href=#252 id=252 data-nosnippet>252</a>                        <span class="kw">let </span>arr_ty =
-<a href=#253 id=253 data-nosnippet>253</a>                            <span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#1138">llvm::LLVMArrayType2</a>(<a href="#218">inner_ret_ty</a>, <a href="#205">attrs</a>.width <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a> + <span class="number">1</span>) };
+<a href=#253 id=253 data-nosnippet>253</a>                            <span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#1139">llvm::LLVMArrayType2</a>(<a href="#218">inner_ret_ty</a>, <a href="#205">attrs</a>.width <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a> + <span class="number">1</span>) };
 <a href=#254 id=254 data-nosnippet>254</a>                        <a href="#210">ret_ty</a> = <a href="#252">arr_ty</a>;
 <a href=#255 id=255 data-nosnippet>255</a>                    }
 <a href=#256 id=256 data-nosnippet>256</a>                    <a href="../../../rustc_ast/expand/autodiff_attrs/enum.DiffActivity.html#variant.DualOnly">DiffActivity::DualOnly</a> =&gt; {
 <a href=#257 id=257 data-nosnippet>257</a>                        <span class="kw">let </span>arr_ty =
-<a href=#258 id=258 data-nosnippet>258</a>                            <span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#1138">llvm::LLVMArrayType2</a>(<a href="#218">inner_ret_ty</a>, <a href="#205">attrs</a>.width <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>) };
+<a href=#258 id=258 data-nosnippet>258</a>                            <span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#1139">llvm::LLVMArrayType2</a>(<a href="#218">inner_ret_ty</a>, <a href="#205">attrs</a>.width <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>) };
 <a href=#259 id=259 data-nosnippet>259</a>                        <a href="#210">ret_ty</a> = <a href="#257">arr_ty</a>;
 <a href=#260 id=260 data-nosnippet>260</a>                    }
 <a href=#261 id=261 data-nosnippet>261</a>                    <a href="../../../rustc_ast/expand/autodiff_attrs/enum.DiffActivity.html#variant.Const">DiffActivity::Const</a> =&gt; {
@@ -276,7 +276,7 @@
 <a href=#276 id=276 data-nosnippet>276</a>    }
 <a href=#277 id=277 data-nosnippet>277</a>
 <a href=#278 id=278 data-nosnippet>278</a>    <span class="comment">// LLVM can figure out the input types on it's own, so we take a shortcut here.
-<a href=#279 id=279 data-nosnippet>279</a>    </span><span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#1065-1070">llvm::LLVMFunctionType</a>(<a href="#210">ret_ty</a>, <a href="https://doc.rust-lang.org/nightly/core/ptr/fn.null.html">ptr::null</a>(), <span class="number">0</span>, <a href="../llvm/ffi.rs.html#38">True</a>) }
+<a href=#279 id=279 data-nosnippet>279</a>    </span><span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#1066-1071">llvm::LLVMFunctionType</a>(<a href="#210">ret_ty</a>, <a href="https://doc.rust-lang.org/nightly/core/ptr/fn.null.html">ptr::null</a>(), <span class="number">0</span>, <a href="../llvm/ffi.rs.html#38">True</a>) }
 <a href=#280 id=280 data-nosnippet>280</a>}
 <a href=#281 id=281 data-nosnippet>281</a>
 <a href=#282 id=282 data-nosnippet>282</a><span class="doccomment">/// When differentiating `fn_to_diff`, take a `outer_fn` and generate another
@@ -290,8 +290,8 @@
 <a href=#290 id=290 data-nosnippet>290</a>// cover some assumptions of enzyme/autodiff, which could lead to UB otherwise.
 <a href=#291 id=291 data-nosnippet>291</a></span><span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/autodiff/fn.generate_enzyme_call.html">generate_enzyme_call</a>&lt;<span class="lifetime">'ll</span>&gt;(
 <a href=#292 id=292 data-nosnippet>292</a>    cx: <span class="kw-2">&amp;</span><a href="../context.rs.html#86">SimpleCx</a>&lt;<span class="lifetime">'ll</span>&gt;,
-<a href=#293 id=293 data-nosnippet>293</a>    fn_to_diff: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#758">Value</a>,
-<a href=#294 id=294 data-nosnippet>294</a>    outer_fn: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#758">Value</a>,
+<a href=#293 id=293 data-nosnippet>293</a>    fn_to_diff: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#759">Value</a>,
+<a href=#294 id=294 data-nosnippet>294</a>    outer_fn: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#759">Value</a>,
 <a href=#295 id=295 data-nosnippet>295</a>    attrs: <a href="../../../rustc_ast/expand/autodiff_attrs/struct.AutoDiffAttrs.html">AutoDiffAttrs</a>,
 <a href=#296 id=296 data-nosnippet>296</a>) {
 <a href=#297 id=297 data-nosnippet>297</a>    <span class="comment">// We have to pick the name depending on whether we want forward or reverse mode autodiff.
@@ -366,29 +366,29 @@
 <a href=#366 id=366 data-nosnippet>366</a>        <a href="../attributes.rs.html#19-23">attributes::apply_to_llfn</a>(<a href="#294">outer_fn</a>, <a href="../llvm/mod.rs.html#160">Function</a>, <span class="kw-2">&amp;</span>[<a href="#365">enzyme_marker_attr</a>]);
 <a href=#367 id=367 data-nosnippet>367</a>
 <a href=#368 id=368 data-nosnippet>368</a>        <span class="comment">// first, remove all calls from fnc
-<a href=#369 id=369 data-nosnippet>369</a>        </span><span class="kw">let </span>entry = <a href="../llvm/ffi.rs.html#1239">llvm::LLVMGetFirstBasicBlock</a>(<a href="#294">outer_fn</a>);
+<a href=#369 id=369 data-nosnippet>369</a>        </span><span class="kw">let </span>entry = <a href="../llvm/ffi.rs.html#1240">llvm::LLVMGetFirstBasicBlock</a>(<a href="#294">outer_fn</a>);
 <a href=#370 id=370 data-nosnippet>370</a>        <span class="kw">let </span>br = <a href="../llvm/enzyme_ffi.rs.html#17">llvm::LLVMRustGetTerminator</a>(<a href="#369">entry</a>);
 <a href=#371 id=371 data-nosnippet>371</a>        <a href="../llvm/enzyme_ffi.rs.html#16">llvm::LLVMRustEraseInstFromParent</a>(<a href="#370">br</a>);
 <a href=#372 id=372 data-nosnippet>372</a>
 <a href=#373 id=373 data-nosnippet>373</a>        <span class="kw">let </span>last_inst = <a href="../llvm/enzyme_ffi.rs.html#14">llvm::LLVMRustGetLastInstruction</a>(<a href="#369">entry</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>();
 <a href=#374 id=374 data-nosnippet>374</a>        <span class="kw">let </span><span class="kw-2">mut </span>builder = <a href="../builder.rs.html#115-121">SBuilder::build</a>(<a href="#292">cx</a>, <a href="#369">entry</a>);
 <a href=#375 id=375 data-nosnippet>375</a>
-<a href=#376 id=376 data-nosnippet>376</a>        <span class="kw">let </span>num_args = <a href="../llvm/ffi.rs.html#1224">llvm::LLVMCountParams</a>(<span class="kw-2">&amp;</span><a href="#293">fn_to_diff</a>);
+<a href=#376 id=376 data-nosnippet>376</a>        <span class="kw">let </span>num_args = <a href="../llvm/ffi.rs.html#1225">llvm::LLVMCountParams</a>(<span class="kw-2">&amp;</span><a href="#293">fn_to_diff</a>);
 <a href=#377 id=377 data-nosnippet>377</a>        <span class="kw">let </span><span class="kw-2">mut </span>args = <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.with_capacity">Vec::with_capacity</a>(<a href="#376">num_args</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> + <span class="number">1</span>);
 <a href=#378 id=378 data-nosnippet>378</a>        <a href="#377">args</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#293">fn_to_diff</a>);
 <a href=#379 id=379 data-nosnippet>379</a>
-<a href=#380 id=380 data-nosnippet>380</a>        <span class="kw">let </span>enzyme_primal_ret = <a href="#292">cx</a>.<a href="../context.rs.html#719-723">create_metadata</a>(<span class="string">b"enzyme_primal_return"</span>);
+<a href=#380 id=380 data-nosnippet>380</a>        <span class="kw">let </span>enzyme_primal_ret = <a href="#292">cx</a>.<a href="../context.rs.html#725-729">create_metadata</a>(<span class="string">b"enzyme_primal_return"</span>);
 <a href=#381 id=381 data-nosnippet>381</a>        <span class="kw">if </span><a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.matches.html">matches!</a>(attrs.ret_activity, DiffActivity::Dual | DiffActivity::Active) {
-<a href=#382 id=382 data-nosnippet>382</a>            <a href="#377">args</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#292">cx</a>.<a href="../context.rs.html#680-682">get_metadata_value</a>(<a href="#380">enzyme_primal_ret</a>));
+<a href=#382 id=382 data-nosnippet>382</a>            <a href="#377">args</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#292">cx</a>.<a href="../context.rs.html#686-688">get_metadata_value</a>(<a href="#380">enzyme_primal_ret</a>));
 <a href=#383 id=383 data-nosnippet>383</a>        }
 <a href=#384 id=384 data-nosnippet>384</a>        <span class="kw">if </span><a href="#295">attrs</a>.width &gt; <span class="number">1 </span>{
-<a href=#385 id=385 data-nosnippet>385</a>            <span class="kw">let </span>enzyme_width = <a href="#292">cx</a>.<a href="../context.rs.html#719-723">create_metadata</a>(<span class="string">b"enzyme_width"</span>);
-<a href=#386 id=386 data-nosnippet>386</a>            <a href="#377">args</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#292">cx</a>.<a href="../context.rs.html#680-682">get_metadata_value</a>(<a href="#385">enzyme_width</a>));
-<a href=#387 id=387 data-nosnippet>387</a>            <a href="#377">args</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#292">cx</a>.<a href="../context.rs.html#684-686">get_const_int</a>(<a href="#292">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_i64">type_i64</a>(), <a href="#295">attrs</a>.width <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>));
+<a href=#385 id=385 data-nosnippet>385</a>            <span class="kw">let </span>enzyme_width = <a href="#292">cx</a>.<a href="../context.rs.html#725-729">create_metadata</a>(<span class="string">b"enzyme_width"</span>);
+<a href=#386 id=386 data-nosnippet>386</a>            <a href="#377">args</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#292">cx</a>.<a href="../context.rs.html#686-688">get_metadata_value</a>(<a href="#385">enzyme_width</a>));
+<a href=#387 id=387 data-nosnippet>387</a>            <a href="#377">args</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#292">cx</a>.<a href="../context.rs.html#690-692">get_const_int</a>(<a href="#292">cx</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_i64">type_i64</a>(), <a href="#295">attrs</a>.width <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>));
 <a href=#388 id=388 data-nosnippet>388</a>        }
 <a href=#389 id=389 data-nosnippet>389</a>
 <a href=#390 id=390 data-nosnippet>390</a>        <span class="kw">let </span>has_sret = <a href="#32-39">has_sret</a>(<a href="#294">outer_fn</a>);
-<a href=#391 id=391 data-nosnippet>391</a>        <span class="kw">let </span>outer_args: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw-2">&amp;</span><a href="../llvm/ffi.rs.html#758">llvm::Value</a>&gt; = <a href="#21-30">get_params</a>(<a href="#294">outer_fn</a>);
+<a href=#391 id=391 data-nosnippet>391</a>        <span class="kw">let </span>outer_args: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw-2">&amp;</span><a href="../llvm/ffi.rs.html#759">llvm::Value</a>&gt; = <a href="#21-30">get_params</a>(<a href="#294">outer_fn</a>);
 <a href=#392 id=392 data-nosnippet>392</a>        <a href="#51-194">match_args_from_caller_to_enzyme</a>(
 <a href=#393 id=393 data-nosnippet>393</a>            <span class="kw-2">&amp;</span><a href="#292">cx</a>,
 <a href=#394 id=394 data-nosnippet>394</a>            <span class="kw-2">&amp;</span><a href="#374">builder</a>,
@@ -408,12 +408,12 @@
 <a href=#408 id=408 data-nosnippet>408</a>        // dummy code which we inserted at a higher level.
 <a href=#409 id=409 data-nosnippet>409</a>        // FIXME(ZuseZ4): Work with Enzyme core devs to clarify what debug metadata issues we have,
 <a href=#410 id=410 data-nosnippet>410</a>        // and how to best improve it for enzyme core and rust-enzyme.
-<a href=#411 id=411 data-nosnippet>411</a>        </span><span class="kw">let </span>md_ty = <a href="#292">cx</a>.<a href="../context.rs.html#709-717">get_md_kind_id</a>(<span class="string">"dbg"</span>);
+<a href=#411 id=411 data-nosnippet>411</a>        </span><span class="kw">let </span>md_ty = <a href="#292">cx</a>.<a href="../context.rs.html#715-723">get_md_kind_id</a>(<span class="string">"dbg"</span>);
 <a href=#412 id=412 data-nosnippet>412</a>        <span class="kw">if </span><a href="../llvm/enzyme_ffi.rs.html#12">llvm::LLVMRustHasMetadata</a>(<a href="#373">last_inst</a>, <a href="#411">md_ty</a>) {
 <a href=#413 id=413 data-nosnippet>413</a>            <span class="kw">let </span>md = <a href="../llvm/enzyme_ffi.rs.html#15">llvm::LLVMRustDIGetInstMetadata</a>(<a href="#373">last_inst</a>)
 <a href=#414 id=414 data-nosnippet>414</a>                .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.expect">expect</a>(<span class="string">"failed to get instruction metadata"</span>);
-<a href=#415 id=415 data-nosnippet>415</a>            <span class="kw">let </span>md_todiff = <a href="#292">cx</a>.<a href="../context.rs.html#680-682">get_metadata_value</a>(<a href="#413">md</a>);
-<a href=#416 id=416 data-nosnippet>416</a>            <a href="../llvm/ffi.rs.html#1097">llvm::LLVMSetMetadata</a>(<a href="#402">call</a>, <a href="#411">md_ty</a>, <a href="#415">md_todiff</a>);
+<a href=#415 id=415 data-nosnippet>415</a>            <span class="kw">let </span>md_todiff = <a href="#292">cx</a>.<a href="../context.rs.html#686-688">get_metadata_value</a>(<a href="#413">md</a>);
+<a href=#416 id=416 data-nosnippet>416</a>            <a href="../llvm/ffi.rs.html#1098">llvm::LLVMSetMetadata</a>(<a href="#402">call</a>, <a href="#411">md_ty</a>, <a href="#415">md_todiff</a>);
 <a href=#417 id=417 data-nosnippet>417</a>        } <span class="kw">else </span>{
 <a href=#418 id=418 data-nosnippet>418</a>            <span class="comment">// We don't panic, since depending on whether we are in debug or release mode, we might
 <a href=#419 id=419 data-nosnippet>419</a>            // have no debug info to copy, which would then be ok.
@@ -423,7 +423,7 @@
 <a href=#423 id=423 data-nosnippet>423</a>        <span class="comment">// Now that we copied the metadata, get rid of dummy code.
 <a href=#424 id=424 data-nosnippet>424</a>        </span><a href="../llvm/enzyme_ffi.rs.html#13">llvm::LLVMRustEraseInstUntilInclusive</a>(<a href="#369">entry</a>, <a href="#373">last_inst</a>);
 <a href=#425 id=425 data-nosnippet>425</a>
-<a href=#426 id=426 data-nosnippet>426</a>        <span class="kw">if </span><a href="#292">cx</a>.<a href="../context.rs.html#664-666">val_ty</a>(<a href="#402">call</a>) == <a href="#292">cx</a>.<a href="../type_.rs.html#58-60">type_void</a>() || <a href="#390">has_sret</a> {
+<a href=#426 id=426 data-nosnippet>426</a>        <span class="kw">if </span><a href="#292">cx</a>.<a href="../context.rs.html#670-672">val_ty</a>(<a href="#402">call</a>) == <a href="#292">cx</a>.<a href="../type_.rs.html#58-60">type_void</a>() || <a href="#390">has_sret</a> {
 <a href=#427 id=427 data-nosnippet>427</a>            <span class="kw">if </span><a href="#390">has_sret</a> {
 <a href=#428 id=428 data-nosnippet>428</a>                <span class="comment">// This is what we already have in our outer_fn (shortened):
 <a href=#429 id=429 data-nosnippet>429</a>                // define void @_foo(ptr &lt;..&gt; sret([32 x i8]) initializes((0, 32)) %0, &lt;...&gt;) {
@@ -435,13 +435,13 @@
 <a href=#435 id=435 data-nosnippet>435</a>
 <a href=#436 id=436 data-nosnippet>436</a>                // now store the result of the enzyme call into the sret pointer.
 <a href=#437 id=437 data-nosnippet>437</a>                </span><span class="kw">let </span>sret_ptr = <a href="#391">outer_args</a>[<span class="number">0</span>];
-<a href=#438 id=438 data-nosnippet>438</a>                <span class="kw">let </span>call_ty = <a href="#292">cx</a>.<a href="../context.rs.html#664-666">val_ty</a>(<a href="#402">call</a>);
+<a href=#438 id=438 data-nosnippet>438</a>                <span class="kw">let </span>call_ty = <a href="#292">cx</a>.<a href="../context.rs.html#670-672">val_ty</a>(<a href="#402">call</a>);
 <a href=#439 id=439 data-nosnippet>439</a>                <span class="kw">if </span><a href="#295">attrs</a>.width == <span class="number">1 </span>{
 <a href=#440 id=440 data-nosnippet>440</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(cx.type_kind(call_ty), TypeKind::Struct);
 <a href=#441 id=441 data-nosnippet>441</a>                } <span class="kw">else </span>{
 <a href=#442 id=442 data-nosnippet>442</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(cx.type_kind(call_ty), TypeKind::Array);
 <a href=#443 id=443 data-nosnippet>443</a>                }
-<a href=#444 id=444 data-nosnippet>444</a>                <a href="../llvm/ffi.rs.html#1520">llvm::LLVMBuildStore</a>(<span class="kw-2">&amp;</span><a href="#374">builder</a>.llbuilder, <a href="#402">call</a>, <a href="#437">sret_ptr</a>);
+<a href=#444 id=444 data-nosnippet>444</a>                <a href="../llvm/ffi.rs.html#1521">llvm::LLVMBuildStore</a>(<span class="kw-2">&amp;</span><a href="#374">builder</a>.llbuilder, <a href="#402">call</a>, <a href="#437">sret_ptr</a>);
 <a href=#445 id=445 data-nosnippet>445</a>            }
 <a href=#446 id=446 data-nosnippet>446</a>            <a href="#374">builder</a>.<a href="../builder.rs.html#105-107">ret_void</a>();
 <a href=#447 id=447 data-nosnippet>447</a>        } <span class="kw">else </span>{
@@ -457,17 +457,17 @@
 <a href=#457 id=457 data-nosnippet>457</a>}
 <a href=#458 id=458 data-nosnippet>458</a>
 <a href=#459 id=459 data-nosnippet>459</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/autodiff/fn.differentiate.html">differentiate</a>&lt;<span class="lifetime">'ll</span>&gt;(
-<a href=#460 id=460 data-nosnippet>460</a>    module: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../rustc_codegen_ssa/struct.ModuleCodegen.html">ModuleCodegen</a>&lt;<a href="../lib.rs.html#382-389">ModuleLlvm</a>&gt;,
-<a href=#461 id=461 data-nosnippet>461</a>    cgcx: <span class="kw-2">&amp;</span><a href="../../../rustc_codegen_ssa/back/write/struct.CodegenContext.html">CodegenContext</a>&lt;<a href="../lib.rs.html#84">LlvmCodegenBackend</a>&gt;,
+<a href=#460 id=460 data-nosnippet>460</a>    module: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/struct.ModuleCodegen.html">ModuleCodegen</a>&lt;<a href="../lib.rs.html#382-389">ModuleLlvm</a>&gt;,
+<a href=#461 id=461 data-nosnippet>461</a>    cgcx: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/back/write/struct.CodegenContext.html">CodegenContext</a>&lt;<a href="../lib.rs.html#84">LlvmCodegenBackend</a>&gt;,
 <a href=#462 id=462 data-nosnippet>462</a>    diff_items: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../../rustc_ast/expand/autodiff_attrs/struct.AutoDiffItem.html">AutoDiffItem</a>&gt;,
 <a href=#463 id=463 data-nosnippet>463</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;(), <a href="../../../rustc_span/fatal_error/struct.FatalError.html">FatalError</a>&gt; {
 <a href=#464 id=464 data-nosnippet>464</a>    <span class="kw">for </span>item <span class="kw">in </span><span class="kw-2">&amp;</span>diff_items {
 <a href=#465 id=465 data-nosnippet>465</a>        <span class="macro">trace!</span>(<span class="string">"{}"</span>, item);
 <a href=#466 id=466 data-nosnippet>466</a>    }
 <a href=#467 id=467 data-nosnippet>467</a>
-<a href=#468 id=468 data-nosnippet>468</a>    <span class="kw">let </span>diag_handler = <a href="#461">cgcx</a>.<a href="../../../rustc_codegen_ssa/back/write/struct.CodegenContext.html#method.create_dcx">create_dcx</a>();
+<a href=#468 id=468 data-nosnippet>468</a>    <span class="kw">let </span>diag_handler = <a href="#461">cgcx</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/back/write/struct.CodegenContext.html#method.create_dcx">create_dcx</a>();
 <a href=#469 id=469 data-nosnippet>469</a>
-<a href=#470 id=470 data-nosnippet>470</a>    <span class="kw">let </span>cx = <a href="../context.rs.html#669-676">SimpleCx::new</a>(<a href="#460">module</a>.module_llvm.<a href="../lib.rs.html#448-450">llmod</a>(), <a href="#460">module</a>.module_llvm.llcx, <a href="#461">cgcx</a>.pointer_size);
+<a href=#470 id=470 data-nosnippet>470</a>    <span class="kw">let </span>cx = <a href="../context.rs.html#675-682">SimpleCx::new</a>(<a href="#460">module</a>.module_llvm.<a href="../lib.rs.html#448-450">llmod</a>(), <a href="#460">module</a>.module_llvm.llcx, <a href="#461">cgcx</a>.pointer_size);
 <a href=#471 id=471 data-nosnippet>471</a>
 <a href=#472 id=472 data-nosnippet>472</a>    <span class="comment">// First of all, did the user try to use autodiff without using the -Zautodiff=Enable flag?
 <a href=#473 id=473 data-nosnippet>473</a>    </span><span class="kw">if </span>!<a href="#462">diff_items</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.is_empty">is_empty</a>()

@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["CollectionMode","InstantiationMode","Linkage","MonoItem","Visibility"],"fn":["opt_incr_drop_glue_mode"],"struct":["CodegenUnit","CodegenUnitNameBuilder","MonoItemData","MonoItemPartitions"]};
+window.SIDEBAR_ITEMS = {"enum":["CollectionMode","InstantiationMode","MonoItem","Visibility"],"fn":["opt_incr_drop_glue_mode"],"struct":["CodegenUnit","CodegenUnitNameBuilder","MonoItemData","MonoItemPartitions"]};

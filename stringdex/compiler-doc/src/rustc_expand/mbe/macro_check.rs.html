@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_expand/src/mbe/macro_check.rs`."><title>macro_check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_expand" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-1a4373a8.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_expand/mbe/</div>macro_check.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Checks that meta-variables in macro definition are correctly declared and used.
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_expand/src/mbe/macro_check.rs`."><title>macro_check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-528d32ef.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_expand" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-e93015a6.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-1b37d467.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_expand/mbe/</div>macro_check.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Checks that meta-variables in macro definition are correctly declared and used.
 <a href=#2 id=2 data-nosnippet>2</a>//!
 <a href=#3 id=3 data-nosnippet>3</a>//! # What is checked
 <a href=#4 id=4 data-nosnippet>4</a>//!
@@ -105,14 +105,14 @@
 <a href=#105 id=105 data-nosnippet>105</a>//! stored when entering a macro definition starting from the state in which the meta-variable is
 <a href=#106 id=106 data-nosnippet>106</a>//! bound.
 <a href=#107 id=107 data-nosnippet>107</a>
-<a href=#108 id=108 data-nosnippet>108</a></span><span class="kw">use </span>rustc_ast::token::{<a href="../../../rustc_ast/token/enum.Delimiter.html">Delimiter</a>, <a href="../../../rustc_ast/token/enum.IdentIsRaw.html">IdentIsRaw</a>, <a href="../../../rustc_ast/token/struct.Token.html">Token</a>, <a href="../../../rustc_ast/token/enum.TokenKind.html">TokenKind</a>};
-<a href=#109 id=109 data-nosnippet>109</a><span class="kw">use </span>rustc_ast::{<a href="../../../rustc_ast/node_id/constant.DUMMY_NODE_ID.html">DUMMY_NODE_ID</a>, <a href="../../../rustc_ast/node_id/struct.NodeId.html">NodeId</a>};
+<a href=#108 id=108 data-nosnippet>108</a></span><span class="kw">use </span>rustc_ast::token::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/enum.Delimiter.html">Delimiter</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/enum.IdentIsRaw.html">IdentIsRaw</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/struct.Token.html">Token</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/enum.TokenKind.html">TokenKind</a>};
+<a href=#109 id=109 data-nosnippet>109</a><span class="kw">use </span>rustc_ast::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/node_id/constant.DUMMY_NODE_ID.html">DUMMY_NODE_ID</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/node_id/struct.NodeId.html">NodeId</a>};
 <a href=#110 id=110 data-nosnippet>110</a><span class="kw">use </span><a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">rustc_data_structures::fx::FxHashMap</a>;
-<a href=#111 id=111 data-nosnippet>111</a><span class="kw">use </span><a href="../../../rustc_error_messages/struct.MultiSpan.html">rustc_errors::MultiSpan</a>;
+<a href=#111 id=111 data-nosnippet>111</a><span class="kw">use </span>rustc_errors::MultiSpan;
 <a href=#112 id=112 data-nosnippet>112</a><span class="kw">use </span><a href="../../../rustc_lint_defs/enum.BuiltinLintDiag.html">rustc_lint_defs::BuiltinLintDiag</a>;
 <a href=#113 id=113 data-nosnippet>113</a><span class="kw">use </span><a href="../../../rustc_lint_defs/builtin/static.META_VARIABLE_MISUSE.html">rustc_session::lint::builtin::META_VARIABLE_MISUSE</a>;
 <a href=#114 id=114 data-nosnippet>114</a><span class="kw">use </span><a href="../../../rustc_session/parse/struct.ParseSess.html">rustc_session::parse::ParseSess</a>;
-<a href=#115 id=115 data-nosnippet>115</a><span class="kw">use </span>rustc_span::{<a href="../../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>, <a href="../../../rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>, <a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a>, <a href="../../../rustc_span/symbol/kw/index.html">kw</a>};
+<a href=#115 id=115 data-nosnippet>115</a><span class="kw">use </span>rustc_span::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html">Span</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/kw/index.html">kw</a>};
 <a href=#116 id=116 data-nosnippet>116</a><span class="kw">use </span><a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html">smallvec::SmallVec</a>;
 <a href=#117 id=117 data-nosnippet>117</a>
 <a href=#118 id=118 data-nosnippet>118</a><span class="kw">use </span><a href="../lib.rs.html#17"><span class="kw">crate</span>::errors</a>;
@@ -172,13 +172,13 @@
 <a href=#172 id=172 data-nosnippet>172</a><span class="doccomment">/// Information attached to a meta-variable binder in LHS.
 <a href=#173 id=173 data-nosnippet>173</a></span><span class="kw">struct </span><a href="../../../rustc_expand/mbe/macro_check/struct.BinderInfo.html">BinderInfo</a> {
 <a href=#174 id=174 data-nosnippet>174</a>    <span class="doccomment">/// The span of the meta-variable in LHS.
-<a href=#175 id=175 data-nosnippet>175</a>    </span>span: <a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#175 id=175 data-nosnippet>175</a>    </span>span: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html">Span</a>,
 <a href=#176 id=176 data-nosnippet>176</a>    <span class="doccomment">/// The stack of Kleene operators (outermost first).
 <a href=#177 id=177 data-nosnippet>177</a>    </span>ops: <a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html">SmallVec</a>&lt;[<a href="../mbe.rs.html#43-46">KleeneToken</a>; <span class="number">1</span>]&gt;,
 <a href=#178 id=178 data-nosnippet>178</a>}
 <a href=#179 id=179 data-nosnippet>179</a>
 <a href=#180 id=180 data-nosnippet>180</a><span class="doccomment">/// An environment of meta-variables to their binder information.
-<a href=#181 id=181 data-nosnippet>181</a></span><span class="kw">type </span><a href="../../../rustc_expand/mbe/macro_check/type.Binders.html">Binders</a> = <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<a href="../../../rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>, <a href="#173-178">BinderInfo</a>&gt;;
+<a href=#181 id=181 data-nosnippet>181</a></span><span class="kw">type </span><a href="../../../rustc_expand/mbe/macro_check/type.Binders.html">Binders</a> = <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>, <a href="#173-178">BinderInfo</a>&gt;;
 <a href=#182 id=182 data-nosnippet>182</a>
 <a href=#183 id=183 data-nosnippet>183</a><span class="doccomment">/// The state at which we entered a macro definition in the RHS of another macro definition.
 <a href=#184 id=184 data-nosnippet>184</a></span><span class="kw">struct </span><a href="../../../rustc_expand/mbe/macro_check/struct.MacroState.html">MacroState</a>&lt;<span class="lifetime">'a</span>&gt; {
@@ -196,11 +196,11 @@
 <a href=#196 id=196 data-nosnippet>196</a>/// - `args`, `lhs`, and `rhs` represent the rule
 <a href=#197 id=197 data-nosnippet>197</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../rustc_expand/mbe/macro_check/fn.check_meta_variables.html">check_meta_variables</a>(
 <a href=#198 id=198 data-nosnippet>198</a>    psess: <span class="kw-2">&amp;</span><a href="../../../rustc_session/parse/struct.ParseSess.html">ParseSess</a>,
-<a href=#199 id=199 data-nosnippet>199</a>    node_id: <a href="../../../rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
+<a href=#199 id=199 data-nosnippet>199</a>    node_id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
 <a href=#200 id=200 data-nosnippet>200</a>    args: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><a href="../mbe.rs.html#69-90">TokenTree</a>&gt;,
 <a href=#201 id=201 data-nosnippet>201</a>    lhs: <span class="kw-2">&amp;</span><a href="../mbe.rs.html#69-90">TokenTree</a>,
 <a href=#202 id=202 data-nosnippet>202</a>    rhs: <span class="kw-2">&amp;</span><a href="../mbe.rs.html#69-90">TokenTree</a>,
-<a href=#203 id=203 data-nosnippet>203</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;(), <a href="../../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt; {
+<a href=#203 id=203 data-nosnippet>203</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;(), <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt; {
 <a href=#204 id=204 data-nosnippet>204</a>    <span class="kw">let </span><span class="kw-2">mut </span>guar = <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>;
 <a href=#205 id=205 data-nosnippet>205</a>    <span class="kw">let </span><span class="kw-2">mut </span>binders = <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">Binders::default</a>();
 <a href=#206 id=206 data-nosnippet>206</a>    <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(args) = <a href="#200">args</a> {
@@ -224,12 +224,12 @@
 <a href=#224 id=224 data-nosnippet>224</a>/// - `guar` is set in case of errors
 <a href=#225 id=225 data-nosnippet>225</a></span><span class="kw">fn </span><a href="../../../rustc_expand/mbe/macro_check/fn.check_binders.html">check_binders</a>(
 <a href=#226 id=226 data-nosnippet>226</a>    psess: <span class="kw-2">&amp;</span><a href="../../../rustc_session/parse/struct.ParseSess.html">ParseSess</a>,
-<a href=#227 id=227 data-nosnippet>227</a>    node_id: <a href="../../../rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
+<a href=#227 id=227 data-nosnippet>227</a>    node_id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
 <a href=#228 id=228 data-nosnippet>228</a>    lhs: <span class="kw-2">&amp;</span><a href="../mbe.rs.html#69-90">TokenTree</a>,
 <a href=#229 id=229 data-nosnippet>229</a>    macros: <span class="kw-2">&amp;</span><a href="#124-134">Stack</a>&lt;<span class="lifetime">'_</span>, <a href="#184-189">MacroState</a>&lt;<span class="lifetime">'_</span>&gt;&gt;,
 <a href=#230 id=230 data-nosnippet>230</a>    binders: <span class="kw-2">&amp;mut </span><a href="#181">Binders</a>,
 <a href=#231 id=231 data-nosnippet>231</a>    ops: <span class="kw-2">&amp;</span><a href="#124-134">Stack</a>&lt;<span class="lifetime">'_</span>, <a href="../mbe.rs.html#43-46">KleeneToken</a>&gt;,
-<a href=#232 id=232 data-nosnippet>232</a>    guar: <span class="kw-2">&amp;mut </span><a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt;,
+<a href=#232 id=232 data-nosnippet>232</a>    guar: <span class="kw-2">&amp;mut </span><a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt;,
 <a href=#233 id=233 data-nosnippet>233</a>) {
 <a href=#234 id=234 data-nosnippet>234</a>    <span class="kw">match </span><span class="kw-2">*</span><a href="#228">lhs</a> {
 <a href=#235 id=235 data-nosnippet>235</a>        <a href="../mbe.rs.html#72">TokenTree::Token</a>(..) =&gt; {}
@@ -241,12 +241,12 @@
 <a href=#241 id=241 data-nosnippet>241</a>            <span class="kw">if </span><a href="#229">macros</a>.<a href="#138-140">is_empty</a>() {
 <a href=#242 id=242 data-nosnippet>242</a>                <a href="#226">psess</a>.<a href="../../../rustc_session/parse/struct.ParseSess.html#method.dcx">dcx</a>().<a href="../../../rustc_errors/struct.DiagCtxtHandle.html#method.span_bug">span_bug</a>(<a href="#240">span</a>, <span class="string">"unexpected MetaVar in lhs"</span>);
 <a href=#243 id=243 data-nosnippet>243</a>            }
-<a href=#244 id=244 data-nosnippet>244</a>            <span class="kw">let </span>name = <a href="../../../rustc_span/symbol/struct.MacroRulesNormalizedIdent.html#method.new">MacroRulesNormalizedIdent::new</a>(<a href="#240">name</a>);
+<a href=#244 id=244 data-nosnippet>244</a>            <span class="kw">let </span>name = <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.MacroRulesNormalizedIdent.html#method.new">MacroRulesNormalizedIdent::new</a>(<a href="#240">name</a>);
 <a href=#245 id=245 data-nosnippet>245</a>            <span class="comment">// There are 3 possibilities:
 <a href=#246 id=246 data-nosnippet>246</a>            </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(prev_info) = <a href="#230">binders</a>.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#244">name</a>) {
 <a href=#247 id=247 data-nosnippet>247</a>                <span class="comment">// 1. The meta-variable is already bound in the current LHS: This is an error.
-<a href=#248 id=248 data-nosnippet>248</a>                </span><span class="kw">let </span><span class="kw-2">mut </span>span = <a href="../../../rustc_error_messages/struct.MultiSpan.html#method.from_span">MultiSpan::from_span</a>(<a href="#240">span</a>);
-<a href=#249 id=249 data-nosnippet>249</a>                <a href="#248">span</a>.<a href="../../../rustc_error_messages/struct.MultiSpan.html#method.push_span_label">push_span_label</a>(<a href="#246">prev_info</a>.span, <span class="string">"previous declaration"</span>);
+<a href=#248 id=248 data-nosnippet>248</a>                </span><span class="kw">let </span><span class="kw-2">mut </span>span = MultiSpan::from_span(<a href="#240">span</a>);
+<a href=#249 id=249 data-nosnippet>249</a>                <a href="#248">span</a>.push_span_label(<a href="#246">prev_info</a>.span, <span class="string">"previous declaration"</span>);
 <a href=#250 id=250 data-nosnippet>250</a>                <a href="#629-634">buffer_lint</a>(<a href="#226">psess</a>, <a href="#248">span</a>, <a href="#227">node_id</a>, <a href="../../../rustc_lint_defs/enum.BuiltinLintDiag.html#variant.DuplicateMatcherBinding">BuiltinLintDiag::DuplicateMatcherBinding</a>);
 <a href=#251 id=251 data-nosnippet>251</a>            } <span class="kw">else if </span><a href="#299-305">get_binder_info</a>(<a href="#229">macros</a>, <a href="#230">binders</a>, <a href="#244">name</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_none">is_none</a>() {
 <a href=#252 id=252 data-nosnippet>252</a>                <span class="comment">// 2. The meta-variable is free: This is a binder.
@@ -261,7 +261,7 @@
 <a href=#261 id=261 data-nosnippet>261</a>            <span class="kw">if </span>!<a href="#229">macros</a>.<a href="#138-140">is_empty</a>() {
 <a href=#262 id=262 data-nosnippet>262</a>                <a href="#226">psess</a>.<a href="../../../rustc_session/parse/struct.ParseSess.html#method.dcx">dcx</a>().<a href="../../../rustc_errors/struct.DiagCtxtHandle.html#method.span_bug">span_bug</a>(<a href="#260">span</a>, <span class="string">"unexpected MetaVarDecl in nested lhs"</span>);
 <a href=#263 id=263 data-nosnippet>263</a>            }
-<a href=#264 id=264 data-nosnippet>264</a>            <span class="kw">let </span>name = <a href="../../../rustc_span/symbol/struct.MacroRulesNormalizedIdent.html#method.new">MacroRulesNormalizedIdent::new</a>(<a href="#260">name</a>);
+<a href=#264 id=264 data-nosnippet>264</a>            <span class="kw">let </span>name = <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.MacroRulesNormalizedIdent.html#method.new">MacroRulesNormalizedIdent::new</a>(<a href="#260">name</a>);
 <a href=#265 id=265 data-nosnippet>265</a>            <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(prev_info) = <a href="#299-305">get_binder_info</a>(<a href="#229">macros</a>, <a href="#230">binders</a>, <a href="#264">name</a>) {
 <a href=#266 id=266 data-nosnippet>266</a>                <span class="comment">// Duplicate binders at the top-level macro definition are errors. The lint is only
 <a href=#267 id=267 data-nosnippet>267</a>                // for nested macro definitions.
@@ -299,7 +299,7 @@
 <a href=#299 id=299 data-nosnippet>299</a></span><span class="kw">fn </span><a href="../../../rustc_expand/mbe/macro_check/fn.get_binder_info.html">get_binder_info</a>&lt;<span class="lifetime">'a</span>&gt;(
 <a href=#300 id=300 data-nosnippet>300</a>    <span class="kw-2">mut </span>macros: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="#124-134">Stack</a>&lt;<span class="lifetime">'a</span>, <a href="#184-189">MacroState</a>&lt;<span class="lifetime">'a</span>&gt;&gt;,
 <a href=#301 id=301 data-nosnippet>301</a>    binders: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="#181">Binders</a>,
-<a href=#302 id=302 data-nosnippet>302</a>    name: <a href="../../../rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>,
+<a href=#302 id=302 data-nosnippet>302</a>    name: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>,
 <a href=#303 id=303 data-nosnippet>303</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="#173-178">BinderInfo</a>&gt; {
 <a href=#304 id=304 data-nosnippet>304</a>    <a href="#301">binders</a>.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#302">name</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.or_else">or_else</a>(|| <a href="#300">macros</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.find_map">find_map</a>(|state| <a href="#304">state</a>.binders.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#302">name</a>)))
 <a href=#305 id=305 data-nosnippet>305</a>}
@@ -317,12 +317,12 @@
 <a href=#317 id=317 data-nosnippet>317</a>/// - `guar` is set in case of errors
 <a href=#318 id=318 data-nosnippet>318</a></span><span class="kw">fn </span><a href="../../../rustc_expand/mbe/macro_check/fn.check_occurrences.html">check_occurrences</a>(
 <a href=#319 id=319 data-nosnippet>319</a>    psess: <span class="kw-2">&amp;</span><a href="../../../rustc_session/parse/struct.ParseSess.html">ParseSess</a>,
-<a href=#320 id=320 data-nosnippet>320</a>    node_id: <a href="../../../rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
+<a href=#320 id=320 data-nosnippet>320</a>    node_id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
 <a href=#321 id=321 data-nosnippet>321</a>    rhs: <span class="kw-2">&amp;</span><a href="../mbe.rs.html#69-90">TokenTree</a>,
 <a href=#322 id=322 data-nosnippet>322</a>    macros: <span class="kw-2">&amp;</span><a href="#124-134">Stack</a>&lt;<span class="lifetime">'_</span>, <a href="#184-189">MacroState</a>&lt;<span class="lifetime">'_</span>&gt;&gt;,
 <a href=#323 id=323 data-nosnippet>323</a>    binders: <span class="kw-2">&amp;</span><a href="#181">Binders</a>,
 <a href=#324 id=324 data-nosnippet>324</a>    ops: <span class="kw-2">&amp;</span><a href="#124-134">Stack</a>&lt;<span class="lifetime">'_</span>, <a href="../mbe.rs.html#43-46">KleeneToken</a>&gt;,
-<a href=#325 id=325 data-nosnippet>325</a>    guar: <span class="kw-2">&amp;mut </span><a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt;,
+<a href=#325 id=325 data-nosnippet>325</a>    guar: <span class="kw-2">&amp;mut </span><a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt;,
 <a href=#326 id=326 data-nosnippet>326</a>) {
 <a href=#327 id=327 data-nosnippet>327</a>    <span class="kw">match </span><span class="kw-2">*</span><a href="#321">rhs</a> {
 <a href=#328 id=328 data-nosnippet>328</a>        <a href="../mbe.rs.html#72">TokenTree::Token</a>(..) =&gt; {}
@@ -330,13 +330,13 @@
 <a href=#330 id=330 data-nosnippet>330</a>            <a href="#319">psess</a>.<a href="../../../rustc_session/parse/struct.ParseSess.html#method.dcx">dcx</a>().<a href="../../../rustc_errors/struct.DiagCtxtHandle.html#method.span_bug">span_bug</a>(<a href="#329">span</a>, <span class="string">"unexpected MetaVarDecl in rhs"</span>)
 <a href=#331 id=331 data-nosnippet>331</a>        }
 <a href=#332 id=332 data-nosnippet>332</a>        <a href="../mbe.rs.html#79">TokenTree::MetaVar</a>(span, name) =&gt; {
-<a href=#333 id=333 data-nosnippet>333</a>            <span class="kw">let </span>name = <a href="../../../rustc_span/symbol/struct.MacroRulesNormalizedIdent.html#method.new">MacroRulesNormalizedIdent::new</a>(<a href="#332">name</a>);
+<a href=#333 id=333 data-nosnippet>333</a>            <span class="kw">let </span>name = <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.MacroRulesNormalizedIdent.html#method.new">MacroRulesNormalizedIdent::new</a>(<a href="#332">name</a>);
 <a href=#334 id=334 data-nosnippet>334</a>            <a href="#554-583">check_ops_is_prefix</a>(<a href="#319">psess</a>, <a href="#320">node_id</a>, <a href="#322">macros</a>, <a href="#323">binders</a>, <a href="#324">ops</a>, <a href="#332">span</a>, <a href="#333">name</a>);
 <a href=#335 id=335 data-nosnippet>335</a>        }
 <a href=#336 id=336 data-nosnippet>336</a>        <a href="../mbe.rs.html#89">TokenTree::MetaVarExpr</a>(dl, <span class="kw-2">ref </span>mve) =&gt; {
 <a href=#337 id=337 data-nosnippet>337</a>            <a href="#336">mve</a>.<a href="metavar_expr.rs.html#93-106">for_each_metavar</a>((), |<span class="kw">_</span>, ident| {
-<a href=#338 id=338 data-nosnippet>338</a>                <span class="kw">let </span>name = <a href="../../../rustc_span/symbol/struct.MacroRulesNormalizedIdent.html#method.new">MacroRulesNormalizedIdent::new</a>(<span class="kw-2">*</span><a href="#337">ident</a>);
-<a href=#339 id=339 data-nosnippet>339</a>                <a href="#554-583">check_ops_is_prefix</a>(<a href="#319">psess</a>, <a href="#320">node_id</a>, <a href="#322">macros</a>, <a href="#323">binders</a>, <a href="#324">ops</a>, <a href="#336">dl</a>.<a href="../../../rustc_ast/tokenstream/struct.DelimSpan.html#method.entire">entire</a>(), <a href="#338">name</a>);
+<a href=#338 id=338 data-nosnippet>338</a>                <span class="kw">let </span>name = <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.MacroRulesNormalizedIdent.html#method.new">MacroRulesNormalizedIdent::new</a>(<span class="kw-2">*</span><a href="#337">ident</a>);
+<a href=#339 id=339 data-nosnippet>339</a>                <a href="#554-583">check_ops_is_prefix</a>(<a href="#319">psess</a>, <a href="#320">node_id</a>, <a href="#322">macros</a>, <a href="#323">binders</a>, <a href="#324">ops</a>, <a href="#336">dl</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/tokenstream/struct.DelimSpan.html#method.entire">entire</a>(), <a href="#338">name</a>);
 <a href=#340 id=340 data-nosnippet>340</a>            });
 <a href=#341 id=341 data-nosnippet>341</a>        }
 <a href=#342 id=342 data-nosnippet>342</a>        <a href="../mbe.rs.html#74">TokenTree::Delimited</a>(.., <span class="kw-2">ref </span>del) =&gt; {
@@ -357,10 +357,10 @@
 <a href=#357 id=357 data-nosnippet>357</a>    <span class="doccomment">/// The token `macro_rules` was processed.
 <a href=#358 id=358 data-nosnippet>358</a>    </span>MacroRules,
 <a href=#359 id=359 data-nosnippet>359</a>    <span class="doccomment">/// The tokens `macro_rules!` were processed.
-<a href=#360 id=360 data-nosnippet>360</a>    </span>MacroRulesNot,
+<a href=#360 id=360 data-nosnippet>360</a>    </span>MacroRulesBang,
 <a href=#361 id=361 data-nosnippet>361</a>    <span class="doccomment">/// The tokens `macro_rules!` followed by a name were processed. The name may be either directly
 <a href=#362 id=362 data-nosnippet>362</a>    /// an identifier or a meta-variable (that hopefully would be instantiated by an identifier).
-<a href=#363 id=363 data-nosnippet>363</a>    </span>MacroRulesNotName,
+<a href=#363 id=363 data-nosnippet>363</a>    </span>MacroRulesBangName,
 <a href=#364 id=364 data-nosnippet>364</a>    <span class="doccomment">/// The keyword `macro` was processed.
 <a href=#365 id=365 data-nosnippet>365</a>    </span>Macro,
 <a href=#366 id=366 data-nosnippet>366</a>    <span class="doccomment">/// The keyword `macro` followed by a name was processed.
@@ -382,12 +382,12 @@
 <a href=#382 id=382 data-nosnippet>382</a>/// - `guar` is set in case of errors
 <a href=#383 id=383 data-nosnippet>383</a></span><span class="kw">fn </span><a href="../../../rustc_expand/mbe/macro_check/fn.check_nested_occurrences.html">check_nested_occurrences</a>(
 <a href=#384 id=384 data-nosnippet>384</a>    psess: <span class="kw-2">&amp;</span><a href="../../../rustc_session/parse/struct.ParseSess.html">ParseSess</a>,
-<a href=#385 id=385 data-nosnippet>385</a>    node_id: <a href="../../../rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
+<a href=#385 id=385 data-nosnippet>385</a>    node_id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
 <a href=#386 id=386 data-nosnippet>386</a>    tts: <span class="kw-2">&amp;</span>[<a href="../mbe.rs.html#69-90">TokenTree</a>],
 <a href=#387 id=387 data-nosnippet>387</a>    macros: <span class="kw-2">&amp;</span><a href="#124-134">Stack</a>&lt;<span class="lifetime">'_</span>, <a href="#184-189">MacroState</a>&lt;<span class="lifetime">'_</span>&gt;&gt;,
 <a href=#388 id=388 data-nosnippet>388</a>    binders: <span class="kw-2">&amp;</span><a href="#181">Binders</a>,
 <a href=#389 id=389 data-nosnippet>389</a>    ops: <span class="kw-2">&amp;</span><a href="#124-134">Stack</a>&lt;<span class="lifetime">'_</span>, <a href="../mbe.rs.html#43-46">KleeneToken</a>&gt;,
-<a href=#390 id=390 data-nosnippet>390</a>    guar: <span class="kw-2">&amp;mut </span><a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt;,
+<a href=#390 id=390 data-nosnippet>390</a>    guar: <span class="kw-2">&amp;mut </span><a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt;,
 <a href=#391 id=391 data-nosnippet>391</a>) {
 <a href=#392 id=392 data-nosnippet>392</a>    <span class="kw">let </span><span class="kw-2">mut </span>state = <a href="#356">NestedMacroState::Empty</a>;
 <a href=#393 id=393 data-nosnippet>393</a>    <span class="kw">let </span>nested_macros = <a href="#387">macros</a>.<a href="#143-145">push</a>(<a href="#184-189">MacroState</a> { <a href="#388">binders</a>, ops: <a href="#389">ops</a>.<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>() });
@@ -408,24 +408,24 @@
 <a href=#408 id=408 data-nosnippet>408</a>                NestedMacroState::MacroRules,
 <a href=#409 id=409 data-nosnippet>409</a>                <span class="kw-2">&amp;</span>TokenTree::Token(Token { kind: TokenKind::Bang, .. }),
 <a href=#410 id=410 data-nosnippet>410</a>            ) =&gt; {
-<a href=#411 id=411 data-nosnippet>411</a>                state = NestedMacroState::MacroRulesNot;
+<a href=#411 id=411 data-nosnippet>411</a>                state = NestedMacroState::MacroRulesBang;
 <a href=#412 id=412 data-nosnippet>412</a>            }
 <a href=#413 id=413 data-nosnippet>413</a>            (
-<a href=#414 id=414 data-nosnippet>414</a>                NestedMacroState::MacroRulesNot,
+<a href=#414 id=414 data-nosnippet>414</a>                NestedMacroState::MacroRulesBang,
 <a href=#415 id=415 data-nosnippet>415</a>                <span class="kw-2">&amp;</span>TokenTree::Token(Token { kind: TokenKind::Ident(..), .. }),
 <a href=#416 id=416 data-nosnippet>416</a>            ) =&gt; {
-<a href=#417 id=417 data-nosnippet>417</a>                state = NestedMacroState::MacroRulesNotName;
+<a href=#417 id=417 data-nosnippet>417</a>                state = NestedMacroState::MacroRulesBangName;
 <a href=#418 id=418 data-nosnippet>418</a>            }
-<a href=#419 id=419 data-nosnippet>419</a>            (NestedMacroState::MacroRulesNot, <span class="kw-2">&amp;</span>TokenTree::MetaVar(..)) =&gt; {
-<a href=#420 id=420 data-nosnippet>420</a>                state = NestedMacroState::MacroRulesNotName;
+<a href=#419 id=419 data-nosnippet>419</a>            (NestedMacroState::MacroRulesBang, <span class="kw-2">&amp;</span>TokenTree::MetaVar(..)) =&gt; {
+<a href=#420 id=420 data-nosnippet>420</a>                state = NestedMacroState::MacroRulesBangName;
 <a href=#421 id=421 data-nosnippet>421</a>                <span class="comment">// We check that the meta-variable is correctly used.
 <a href=#422 id=422 data-nosnippet>422</a>                </span>check_occurrences(psess, node_id, tt, macros, binders, ops, guar);
 <a href=#423 id=423 data-nosnippet>423</a>            }
-<a href=#424 id=424 data-nosnippet>424</a>            (NestedMacroState::MacroRulesNotName, TokenTree::Delimited(.., del))
+<a href=#424 id=424 data-nosnippet>424</a>            (NestedMacroState::MacroRulesBangName, TokenTree::Delimited(.., del))
 <a href=#425 id=425 data-nosnippet>425</a>            | (NestedMacroState::MacroName, TokenTree::Delimited(.., del))
 <a href=#426 id=426 data-nosnippet>426</a>                <span class="kw">if </span>del.delim == Delimiter::Brace =&gt;
 <a href=#427 id=427 data-nosnippet>427</a>            {
-<a href=#428 id=428 data-nosnippet>428</a>                <span class="kw">let </span>macro_rules = state == NestedMacroState::MacroRulesNotName;
+<a href=#428 id=428 data-nosnippet>428</a>                <span class="kw">let </span>macro_rules = state == NestedMacroState::MacroRulesBangName;
 <a href=#429 id=429 data-nosnippet>429</a>                state = NestedMacroState::Empty;
 <a href=#430 id=430 data-nosnippet>430</a>                <span class="kw">let </span>rest =
 <a href=#431 id=431 data-nosnippet>431</a>                    check_nested_macro(psess, node_id, macro_rules, <span class="kw-2">&amp;</span>del.tts, <span class="kw-2">&amp;</span>nested_macros, guar);
@@ -505,20 +505,20 @@
 <a href=#505 id=505 data-nosnippet>505</a>/// - `guar` is set in case of errors
 <a href=#506 id=506 data-nosnippet>506</a></span><span class="kw">fn </span><a href="../../../rustc_expand/mbe/macro_check/fn.check_nested_macro.html">check_nested_macro</a>(
 <a href=#507 id=507 data-nosnippet>507</a>    psess: <span class="kw-2">&amp;</span><a href="../../../rustc_session/parse/struct.ParseSess.html">ParseSess</a>,
-<a href=#508 id=508 data-nosnippet>508</a>    node_id: <a href="../../../rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
+<a href=#508 id=508 data-nosnippet>508</a>    node_id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
 <a href=#509 id=509 data-nosnippet>509</a>    macro_rules: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
 <a href=#510 id=510 data-nosnippet>510</a>    tts: <span class="kw-2">&amp;</span>[<a href="../mbe.rs.html#69-90">TokenTree</a>],
 <a href=#511 id=511 data-nosnippet>511</a>    macros: <span class="kw-2">&amp;</span><a href="#124-134">Stack</a>&lt;<span class="lifetime">'_</span>, <a href="#184-189">MacroState</a>&lt;<span class="lifetime">'_</span>&gt;&gt;,
-<a href=#512 id=512 data-nosnippet>512</a>    guar: <span class="kw-2">&amp;mut </span><a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt;,
+<a href=#512 id=512 data-nosnippet>512</a>    guar: <span class="kw-2">&amp;mut </span><a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt;,
 <a href=#513 id=513 data-nosnippet>513</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> {
 <a href=#514 id=514 data-nosnippet>514</a>    <span class="kw">let </span>n = <a href="#510">tts</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.len">len</a>();
 <a href=#515 id=515 data-nosnippet>515</a>    <span class="kw">let </span><span class="kw-2">mut </span>i = <span class="number">0</span>;
-<a href=#516 id=516 data-nosnippet>516</a>    <span class="kw">let </span>separator = <span class="kw">if </span><a href="#509">macro_rules</a> { <a href="../../../rustc_ast/token/enum.TokenKind.html#variant.Semi">TokenKind::Semi</a> } <span class="kw">else </span>{ <a href="../../../rustc_ast/token/enum.TokenKind.html#variant.Comma">TokenKind::Comma</a> };
+<a href=#516 id=516 data-nosnippet>516</a>    <span class="kw">let </span>separator = <span class="kw">if </span><a href="#509">macro_rules</a> { <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/enum.TokenKind.html#variant.Semi">TokenKind::Semi</a> } <span class="kw">else </span>{ <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/enum.TokenKind.html#variant.Comma">TokenKind::Comma</a> };
 <a href=#517 id=517 data-nosnippet>517</a>    <span class="kw">loop </span>{
 <a href=#518 id=518 data-nosnippet>518</a>        <span class="comment">// We expect 3 token trees: `(LHS) =&gt; {RHS}`. The separator is checked after.
 <a href=#519 id=519 data-nosnippet>519</a>        </span><span class="kw">if </span><a href="#515">i</a> + <span class="number">2 </span>&gt;= <a href="#514">n</a>
 <a href=#520 id=520 data-nosnippet>520</a>            || !<a href="#510">tts</a>[<a href="#515">i</a>].<a href="../mbe.rs.html#94-96">is_delimited</a>()
-<a href=#521 id=521 data-nosnippet>521</a>            || !<a href="#510">tts</a>[<a href="#515">i</a> + <span class="number">1</span>].<a href="../mbe.rs.html#99-104">is_token</a>(<span class="kw-2">&amp;</span><a href="../../../rustc_ast/token/enum.TokenKind.html#variant.FatArrow">TokenKind::FatArrow</a>)
+<a href=#521 id=521 data-nosnippet>521</a>            || !<a href="#510">tts</a>[<a href="#515">i</a> + <span class="number">1</span>].<a href="../mbe.rs.html#99-104">is_token</a>(<span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/token/enum.TokenKind.html#variant.FatArrow">TokenKind::FatArrow</a>)
 <a href=#522 id=522 data-nosnippet>522</a>            || !<a href="#510">tts</a>[<a href="#515">i</a> + <span class="number">2</span>].<a href="../mbe.rs.html#94-96">is_delimited</a>()
 <a href=#523 id=523 data-nosnippet>523</a>        {
 <a href=#524 id=524 data-nosnippet>524</a>            <span class="kw">break</span>;
@@ -553,12 +553,12 @@
 <a href=#553 id=553 data-nosnippet>553</a>/// - `name` is the name of the meta-variable to check
 <a href=#554 id=554 data-nosnippet>554</a></span><span class="kw">fn </span><a href="../../../rustc_expand/mbe/macro_check/fn.check_ops_is_prefix.html">check_ops_is_prefix</a>(
 <a href=#555 id=555 data-nosnippet>555</a>    psess: <span class="kw-2">&amp;</span><a href="../../../rustc_session/parse/struct.ParseSess.html">ParseSess</a>,
-<a href=#556 id=556 data-nosnippet>556</a>    node_id: <a href="../../../rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
+<a href=#556 id=556 data-nosnippet>556</a>    node_id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
 <a href=#557 id=557 data-nosnippet>557</a>    macros: <span class="kw-2">&amp;</span><a href="#124-134">Stack</a>&lt;<span class="lifetime">'_</span>, <a href="#184-189">MacroState</a>&lt;<span class="lifetime">'_</span>&gt;&gt;,
 <a href=#558 id=558 data-nosnippet>558</a>    binders: <span class="kw-2">&amp;</span><a href="#181">Binders</a>,
 <a href=#559 id=559 data-nosnippet>559</a>    ops: <span class="kw-2">&amp;</span><a href="#124-134">Stack</a>&lt;<span class="lifetime">'_</span>, <a href="../mbe.rs.html#43-46">KleeneToken</a>&gt;,
-<a href=#560 id=560 data-nosnippet>560</a>    span: <a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
-<a href=#561 id=561 data-nosnippet>561</a>    name: <a href="../../../rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>,
+<a href=#560 id=560 data-nosnippet>560</a>    span: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#561 id=561 data-nosnippet>561</a>    name: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>,
 <a href=#562 id=562 data-nosnippet>562</a>) {
 <a href=#563 id=563 data-nosnippet>563</a>    <span class="kw">let </span>macros = <a href="#557">macros</a>.<a href="#143-145">push</a>(<a href="#184-189">MacroState</a> { <a href="#558">binders</a>, ops: <a href="#559">ops</a>.<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>() });
 <a href=#564 id=564 data-nosnippet>564</a>    <span class="comment">// Accumulates the stacks the operators of each state until (and including when) the
@@ -602,9 +602,9 @@
 <a href=#602 id=602 data-nosnippet>602</a>/// - `occurrence_ops` is the stack of Kleene operators for the occurrence
 <a href=#603 id=603 data-nosnippet>603</a></span><span class="kw">fn </span><a href="../../../rustc_expand/mbe/macro_check/fn.ops_is_prefix.html">ops_is_prefix</a>(
 <a href=#604 id=604 data-nosnippet>604</a>    psess: <span class="kw-2">&amp;</span><a href="../../../rustc_session/parse/struct.ParseSess.html">ParseSess</a>,
-<a href=#605 id=605 data-nosnippet>605</a>    node_id: <a href="../../../rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
-<a href=#606 id=606 data-nosnippet>606</a>    span: <a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
-<a href=#607 id=607 data-nosnippet>607</a>    name: <a href="../../../rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>,
+<a href=#605 id=605 data-nosnippet>605</a>    node_id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/node_id/struct.NodeId.html">NodeId</a>,
+<a href=#606 id=606 data-nosnippet>606</a>    span: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#607 id=607 data-nosnippet>607</a>    name: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_span/symbol/struct.MacroRulesNormalizedIdent.html">MacroRulesNormalizedIdent</a>,
 <a href=#608 id=608 data-nosnippet>608</a>    binder_ops: <span class="kw-2">&amp;</span>[<a href="../mbe.rs.html#43-46">KleeneToken</a>],
 <a href=#609 id=609 data-nosnippet>609</a>    occurrence_ops: <span class="kw-2">&amp;</span>[<a href="../mbe.rs.html#43-46">KleeneToken</a>],
 <a href=#610 id=610 data-nosnippet>610</a>) {
@@ -626,9 +626,9 @@
 <a href=#626 id=626 data-nosnippet>626</a>    }
 <a href=#627 id=627 data-nosnippet>627</a>}
 <a href=#628 id=628 data-nosnippet>628</a>
-<a href=#629 id=629 data-nosnippet>629</a><span class="kw">fn </span><a href="../../../rustc_expand/mbe/macro_check/fn.buffer_lint.html">buffer_lint</a>(psess: <span class="kw-2">&amp;</span><a href="../../../rustc_session/parse/struct.ParseSess.html">ParseSess</a>, span: <a href="../../../rustc_error_messages/struct.MultiSpan.html">MultiSpan</a>, node_id: <a href="../../../rustc_ast/node_id/struct.NodeId.html">NodeId</a>, diag: <a href="../../../rustc_lint_defs/enum.BuiltinLintDiag.html">BuiltinLintDiag</a>) {
+<a href=#629 id=629 data-nosnippet>629</a><span class="kw">fn </span><a href="../../../rustc_expand/mbe/macro_check/fn.buffer_lint.html">buffer_lint</a>(psess: <span class="kw-2">&amp;</span><a href="../../../rustc_session/parse/struct.ParseSess.html">ParseSess</a>, span: MultiSpan, node_id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/node_id/struct.NodeId.html">NodeId</a>, diag: <a href="../../../rustc_lint_defs/enum.BuiltinLintDiag.html">BuiltinLintDiag</a>) {
 <a href=#630 id=630 data-nosnippet>630</a>    <span class="comment">// Macros loaded from other crates have dummy node ids.
-<a href=#631 id=631 data-nosnippet>631</a>    </span><span class="kw">if </span><a href="#629">node_id</a> != <a href="../../../rustc_ast/node_id/constant.DUMMY_NODE_ID.html">DUMMY_NODE_ID</a> {
+<a href=#631 id=631 data-nosnippet>631</a>    </span><span class="kw">if </span><a href="#629">node_id</a> != <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_ast/node_id/constant.DUMMY_NODE_ID.html">DUMMY_NODE_ID</a> {
 <a href=#632 id=632 data-nosnippet>632</a>        <a href="#629">psess</a>.<a href="../../../rustc_session/parse/struct.ParseSess.html#method.buffer_lint">buffer_lint</a>(<a href="../../../rustc_lint_defs/builtin/static.META_VARIABLE_MISUSE.html">META_VARIABLE_MISUSE</a>, <a href="#629">span</a>, <a href="#629">node_id</a>, <a href="#629">diag</a>);
 <a href=#633 id=633 data-nosnippet>633</a>    }
 <a href=#634 id=634 data-nosnippet>634</a>}</code></pre></div></section></main></body></html>

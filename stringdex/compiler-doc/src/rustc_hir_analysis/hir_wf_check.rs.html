@@ -1,7 +1,7 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/hir_wf_check.rs`."><title>hir_wf_check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-1a4373a8.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_analysis/</div>hir_wf_check.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="../../rustc_hir/def/enum.DefKind.html">rustc_hir::def::DefKind</a>;
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_hir_analysis/src/hir_wf_check.rs`."><title>hir_wf_check.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-528d32ef.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_hir_analysis" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-e93015a6.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_hir_analysis/</div>hir_wf_check.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="../../rustc_hir/def/enum.DefKind.html">rustc_hir::def::DefKind</a>;
 <a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span>rustc_hir::intravisit::{<a class="self" href="../../rustc_hir/intravisit/index.html">self</a>, <a href="../../rustc_hir/intravisit/trait.Visitor.html">Visitor</a>, <a href="../../rustc_hir/intravisit/trait.VisitorExt.html">VisitorExt</a>};
 <a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>rustc_hir::{<span class="self"><a href="../../rustc_hir/index.html">self</a> </span><span class="kw">as </span>hir, <a href="../../rustc_hir/hir/enum.AmbigArg.html">AmbigArg</a>, <a href="../../rustc_hir/hir/struct.ForeignItem.html">ForeignItem</a>, <a href="../../rustc_hir/hir/enum.ForeignItemKind.html">ForeignItemKind</a>};
-<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><a href="../../rustc_infer/infer/trait.TyCtxtInferExt.html">rustc_infer::infer::TyCtxtInferExt</a>;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_infer/infer/trait.TyCtxtInferExt.html">rustc_infer::infer::TyCtxtInferExt</a>;
 <a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>rustc_infer::traits::{<a href="../../rustc_middle/traits/struct.ObligationCause.html">ObligationCause</a>, <a href="../../rustc_middle/traits/enum.ObligationCauseCode.html">ObligationCauseCode</a>, <a href="../../rustc_middle/traits/enum.WellFormedLoc.html">WellFormedLoc</a>};
 <a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="../../rustc_middle/macro.bug.html">rustc_middle::bug</a>;
 <a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>rustc_middle::ty::{<a class="self" href="../../rustc_middle/ty/index.html">self</a>, <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>, <a href="../../rustc_type_ir/visit/trait.TypeVisitableExt.html">TypeVisitableExt</a>, <a href="../../rustc_middle/ty/sty/type.TypingMode.html">TypingMode</a>, <a href="../../rustc_type_ir/fold/fn.fold_regions.html">fold_regions</a>};
@@ -61,7 +61,7 @@
 <a href=#61 id=61 data-nosnippet>61</a>
 <a href=#62 id=62 data-nosnippet>62</a>    <span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="../../rustc_hir/intravisit/trait.Visitor.html">Visitor</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#51-60">HirWfCheck</a>&lt;<span class="lifetime">'tcx</span>&gt; {
 <a href=#63 id=63 data-nosnippet>63</a>        <span class="kw">fn </span>visit_ty(<span class="kw-2">&amp;mut </span><span class="self">self</span>, ty: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../rustc_hir/hir/struct.Ty.html">hir::Ty</a>&lt;<span class="lifetime">'tcx</span>, <a href="../../rustc_hir/hir/enum.AmbigArg.html">AmbigArg</a>&gt;) {
-<a href=#64 id=64 data-nosnippet>64</a>            <span class="kw">let </span>infcx = <a class="self" href="#63">self</a>.tcx.<a href="../../rustc_infer/infer/trait.TyCtxtInferExt.html#tymethod.infer_ctxt">infer_ctxt</a>().<a href="../../rustc_infer/infer/struct.InferCtxtBuilder.html#method.build">build</a>(<a href="../../rustc_type_ir/infer_ctxt/enum.TypingMode.html#method.non_body_analysis">TypingMode::non_body_analysis</a>());
+<a href=#64 id=64 data-nosnippet>64</a>            <span class="kw">let </span>infcx = <a class="self" href="#63">self</a>.tcx.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_infer/infer/trait.TyCtxtInferExt.html#tymethod.infer_ctxt">infer_ctxt</a>().<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_infer/infer/struct.InferCtxtBuilder.html#method.build">build</a>(<a href="../../rustc_type_ir/infer_ctxt/enum.TypingMode.html#method.non_body_analysis">TypingMode::non_body_analysis</a>());
 <a href=#65 id=65 data-nosnippet>65</a>            <span class="kw">let </span>ocx = <a href="../../rustc_trait_selection/traits/engine/struct.ObligationCtxt.html#method.new_with_diagnostics">ObligationCtxt::new_with_diagnostics</a>(<span class="kw-2">&amp;</span><a href="#64">infcx</a>);
 <a href=#66 id=66 data-nosnippet>66</a>
 <a href=#67 id=67 data-nosnippet>67</a>            <span class="comment">// We don't handle infer vars but we wouldn't handle them anyway as we're creating a
@@ -88,7 +88,7 @@
 <a href=#88 id=88 data-nosnippet>88</a>                <a href="../../rustc_middle/traits/enum.ObligationCauseCode.html#variant.WellFormed">traits::ObligationCauseCode::WellFormed</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>),
 <a href=#89 id=89 data-nosnippet>89</a>            );
 <a href=#90 id=90 data-nosnippet>90</a>
-<a href=#91 id=91 data-nosnippet>91</a>            <a href="#65">ocx</a>.<a href="../../rustc_trait_selection/traits/engine/struct.ObligationCtxt.html#method.register_obligation">register_obligation</a>(<a href="../../rustc_infer/traits/struct.Obligation.html#method.new">traits::Obligation::new</a>(
+<a href=#91 id=91 data-nosnippet>91</a>            <a href="#65">ocx</a>.<a href="../../rustc_trait_selection/traits/engine/struct.ObligationCtxt.html#method.register_obligation">register_obligation</a>(<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_infer/traits/struct.Obligation.html#method.new">traits::Obligation::new</a>(
 <a href=#92 id=92 data-nosnippet>92</a>                <a class="self" href="#63">self</a>.tcx,
 <a href=#93 id=93 data-nosnippet>93</a>                <a href="#85">cause</a>,
 <a href=#94 id=94 data-nosnippet>94</a>                <a class="self" href="#63">self</a>.param_env,
@@ -154,66 +154,67 @@
 <a href=#154 id=154 data-nosnippet>154</a>                <a href="../../rustc_hir/hir/enum.ItemKind.html#variant.TyAlias">hir::ItemKind::TyAlias</a>(<span class="kw">_</span>, <span class="kw">_</span>, ty)
 <a href=#155 id=155 data-nosnippet>155</a>                | <a href="../../rustc_hir/hir/enum.ItemKind.html#variant.Static">hir::ItemKind::Static</a>(<span class="kw">_</span>, <span class="kw">_</span>, ty, <span class="kw">_</span>)
 <a href=#156 id=156 data-nosnippet>156</a>                | <a href="../../rustc_hir/hir/enum.ItemKind.html#variant.Const">hir::ItemKind::Const</a>(<span class="kw">_</span>, <span class="kw">_</span>, ty, <span class="kw">_</span>) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[ty],
-<a href=#157 id=157 data-nosnippet>157</a>                <a href="../../rustc_hir/hir/enum.ItemKind.html#variant.Impl">hir::ItemKind::Impl</a>(impl_) =&gt; <span class="kw">match </span><span class="kw-2">&amp;</span><a href="#157">impl_</a>.of_trait {
-<a href=#158 id=158 data-nosnippet>158</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(t) =&gt; <a href="#158">t</a>
-<a href=#159 id=159 data-nosnippet>159</a>                        .path
-<a href=#160 id=160 data-nosnippet>160</a>                        .segments
-<a href=#161 id=161 data-nosnippet>161</a>                        .<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.last">last</a>()
-<a href=#162 id=162 data-nosnippet>162</a>                        .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.iter">iter</a>()
-<a href=#163 id=163 data-nosnippet>163</a>                        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.flat_map">flat_map</a>(|seg| <a href="#163">seg</a>.<a href="../../rustc_hir/hir/struct.PathSegment.html#method.args">args</a>().args)
-<a href=#164 id=164 data-nosnippet>164</a>                        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter_map">filter_map</a>(|arg| {
-<a href=#165 id=165 data-nosnippet>165</a>                            <span class="kw">if let </span><a href="../../rustc_hir/hir/enum.GenericArg.html#variant.Type">hir::GenericArg::Type</a>(ty) = <a href="#164">arg</a> {
-<a href=#166 id=166 data-nosnippet>166</a>                                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#165">ty</a>.<a href="../../rustc_hir/hir/struct.Ty.html#method.as_unambig_ty">as_unambig_ty</a>())
-<a href=#167 id=167 data-nosnippet>167</a>                            } <span class="kw">else </span>{
-<a href=#168 id=168 data-nosnippet>168</a>                                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
-<a href=#169 id=169 data-nosnippet>169</a>                            </a>}
-<a href=#170 id=170 data-nosnippet>170</a>                        })
-<a href=#171 id=171 data-nosnippet>171</a>                        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.chain">chain</a>([<a href="#157">impl_</a>.self_ty])
-<a href=#172 id=172 data-nosnippet>172</a>                        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>(),
-<a href=#173 id=173 data-nosnippet>173</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a> </a>=&gt; {
-<a href=#174 id=174 data-nosnippet>174</a>                        <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[impl_.self_ty]
-<a href=#175 id=175 data-nosnippet>175</a>                    }
-<a href=#176 id=176 data-nosnippet>176</a>                },
-<a href=#177 id=177 data-nosnippet>177</a>                <span class="kw-2">ref </span>item =&gt; <a class="macro" href="../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"Unexpected item {:?}"</span>, item),
-<a href=#178 id=178 data-nosnippet>178</a>            },
-<a href=#179 id=179 data-nosnippet>179</a>            <a href="../../rustc_hir/hir/enum.Node.html#variant.Field">hir::Node::Field</a>(field) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[field.ty],
-<a href=#180 id=180 data-nosnippet>180</a>            <a href="../../rustc_hir/hir/enum.Node.html#variant.ForeignItem">hir::Node::ForeignItem</a>(ForeignItem {
-<a href=#181 id=181 data-nosnippet>181</a>                kind: ForeignItemKind::Static(ty, <span class="kw">_</span>, <span class="kw">_</span>), ..
-<a href=#182 id=182 data-nosnippet>182</a>            }) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[<span class="kw-2">*</span>ty],
-<a href=#183 id=183 data-nosnippet>183</a>            <a href="../../rustc_hir/hir/enum.Node.html#variant.GenericParam">hir::Node::GenericParam</a>(hir::GenericParam {
-<a href=#184 id=184 data-nosnippet>184</a>                kind: hir::GenericParamKind::Type { default: <span class="prelude-val">Some</span>(ty), .. },
-<a href=#185 id=185 data-nosnippet>185</a>                ..
-<a href=#186 id=186 data-nosnippet>186</a>            }) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[<span class="kw-2">*</span>ty],
-<a href=#187 id=187 data-nosnippet>187</a>            <a href="../../rustc_hir/hir/enum.Node.html#variant.AnonConst">hir::Node::AnonConst</a>(<span class="kw">_</span>) =&gt; {
-<a href=#188 id=188 data-nosnippet>188</a>                <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(const_param_id) = <a href="#17">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_opt_const_param_default_param_def_id">hir_opt_const_param_default_param_def_id</a>(<a href="#24">hir_id</a>)
-<a href=#189 id=189 data-nosnippet>189</a>                    &amp;&amp; <span class="kw">let </span><a href="../../rustc_hir/hir/enum.Node.html#variant.GenericParam">hir::Node::GenericParam</a>(hir::GenericParam {
-<a href=#190 id=190 data-nosnippet>190</a>                        kind: hir::GenericParamKind::Const { ty, .. },
-<a href=#191 id=191 data-nosnippet>191</a>                        ..
-<a href=#192 id=192 data-nosnippet>192</a>                    }) = <a href="#17">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node_by_def_id">hir_node_by_def_id</a>(<a href="#188">const_param_id</a>)
-<a href=#193 id=193 data-nosnippet>193</a>                {
-<a href=#194 id=194 data-nosnippet>194</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[<span class="kw-2">*</span>ty]
-<a href=#195 id=195 data-nosnippet>195</a>                } <span class="kw">else </span>{
-<a href=#196 id=196 data-nosnippet>196</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[]
-<a href=#197 id=197 data-nosnippet>197</a>                }
-<a href=#198 id=198 data-nosnippet>198</a>            }
-<a href=#199 id=199 data-nosnippet>199</a>            <span class="kw-2">ref </span>node =&gt; <a class="macro" href="../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"Unexpected node {:?}"</span>, node),
-<a href=#200 id=200 data-nosnippet>200</a>        },
-<a href=#201 id=201 data-nosnippet>201</a>        <a href="../../rustc_middle/traits/enum.WellFormedLoc.html#variant.Param">WellFormedLoc::Param</a> { function: <span class="kw">_</span>, param_idx } =&gt; {
-<a href=#202 id=202 data-nosnippet>202</a>            <span class="kw">let </span>fn_decl = <a href="#17">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_fn_decl_by_hir_id">hir_fn_decl_by_hir_id</a>(<a href="#24">hir_id</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>();
-<a href=#203 id=203 data-nosnippet>203</a>            <span class="comment">// Get return type
-<a href=#204 id=204 data-nosnippet>204</a>            </span><span class="kw">if </span><a href="#201">param_idx</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> == <a href="#202">fn_decl</a>.inputs.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.len">len</a>() {
-<a href=#205 id=205 data-nosnippet>205</a>                <span class="kw">match </span><a href="#202">fn_decl</a>.output {
-<a href=#206 id=206 data-nosnippet>206</a>                    <a href="../../rustc_hir/hir/enum.FnRetTy.html#variant.Return">hir::FnRetTy::Return</a>(ty) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[ty],
-<a href=#207 id=207 data-nosnippet>207</a>                    <span class="comment">// The unit type `()` is always well-formed
-<a href=#208 id=208 data-nosnippet>208</a>                    </span><a href="../../rustc_hir/hir/enum.FnRetTy.html#variant.DefaultReturn">hir::FnRetTy::DefaultReturn</a>(_span) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[],
-<a href=#209 id=209 data-nosnippet>209</a>                }
-<a href=#210 id=210 data-nosnippet>210</a>            } <span class="kw">else </span>{
-<a href=#211 id=211 data-nosnippet>211</a>                <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[<span class="kw-2">&amp;</span>fn_decl.inputs[param_idx <span class="kw">as </span>usize]]
-<a href=#212 id=212 data-nosnippet>212</a>            }
-<a href=#213 id=213 data-nosnippet>213</a>        }
-<a href=#214 id=214 data-nosnippet>214</a>    };
-<a href=#215 id=215 data-nosnippet>215</a>    <span class="kw">for </span>ty <span class="kw">in </span>tys {
-<a href=#216 id=216 data-nosnippet>216</a>        visitor.visit_ty_unambig(ty);
-<a href=#217 id=217 data-nosnippet>217</a>    }
-<a href=#218 id=218 data-nosnippet>218</a>    <a href="#127">visitor</a>.cause
-<a href=#219 id=219 data-nosnippet>219</a>}</code></pre></div></section></main></body></html>
+<a href=#157 id=157 data-nosnippet>157</a>                <a href="../../rustc_hir/hir/enum.ItemKind.html#variant.Impl">hir::ItemKind::Impl</a>(impl_) =&gt; <span class="kw">match </span><a href="#157">impl_</a>.of_trait {
+<a href=#158 id=158 data-nosnippet>158</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(of_trait) =&gt; <a href="#158">of_trait</a>
+<a href=#159 id=159 data-nosnippet>159</a>                        .trait_ref
+<a href=#160 id=160 data-nosnippet>160</a>                        .path
+<a href=#161 id=161 data-nosnippet>161</a>                        .segments
+<a href=#162 id=162 data-nosnippet>162</a>                        .<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.last">last</a>()
+<a href=#163 id=163 data-nosnippet>163</a>                        .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.iter">iter</a>()
+<a href=#164 id=164 data-nosnippet>164</a>                        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.flat_map">flat_map</a>(|seg| <a href="#164">seg</a>.<a href="../../rustc_hir/hir/struct.PathSegment.html#method.args">args</a>().args)
+<a href=#165 id=165 data-nosnippet>165</a>                        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter_map">filter_map</a>(|arg| {
+<a href=#166 id=166 data-nosnippet>166</a>                            <span class="kw">if let </span><a href="../../rustc_hir/hir/enum.GenericArg.html#variant.Type">hir::GenericArg::Type</a>(ty) = <a href="#165">arg</a> {
+<a href=#167 id=167 data-nosnippet>167</a>                                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#166">ty</a>.<a href="../../rustc_hir/hir/struct.Ty.html#method.as_unambig_ty">as_unambig_ty</a>())
+<a href=#168 id=168 data-nosnippet>168</a>                            } <span class="kw">else </span>{
+<a href=#169 id=169 data-nosnippet>169</a>                                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
+<a href=#170 id=170 data-nosnippet>170</a>                            </a>}
+<a href=#171 id=171 data-nosnippet>171</a>                        })
+<a href=#172 id=172 data-nosnippet>172</a>                        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.chain">chain</a>([<a href="#157">impl_</a>.self_ty])
+<a href=#173 id=173 data-nosnippet>173</a>                        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>(),
+<a href=#174 id=174 data-nosnippet>174</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a> </a>=&gt; {
+<a href=#175 id=175 data-nosnippet>175</a>                        <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[impl_.self_ty]
+<a href=#176 id=176 data-nosnippet>176</a>                    }
+<a href=#177 id=177 data-nosnippet>177</a>                },
+<a href=#178 id=178 data-nosnippet>178</a>                <span class="kw-2">ref </span>item =&gt; <a class="macro" href="../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"Unexpected item {:?}"</span>, item),
+<a href=#179 id=179 data-nosnippet>179</a>            },
+<a href=#180 id=180 data-nosnippet>180</a>            <a href="../../rustc_hir/hir/enum.Node.html#variant.Field">hir::Node::Field</a>(field) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[field.ty],
+<a href=#181 id=181 data-nosnippet>181</a>            <a href="../../rustc_hir/hir/enum.Node.html#variant.ForeignItem">hir::Node::ForeignItem</a>(ForeignItem {
+<a href=#182 id=182 data-nosnippet>182</a>                kind: ForeignItemKind::Static(ty, <span class="kw">_</span>, <span class="kw">_</span>), ..
+<a href=#183 id=183 data-nosnippet>183</a>            }) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[<span class="kw-2">*</span>ty],
+<a href=#184 id=184 data-nosnippet>184</a>            <a href="../../rustc_hir/hir/enum.Node.html#variant.GenericParam">hir::Node::GenericParam</a>(hir::GenericParam {
+<a href=#185 id=185 data-nosnippet>185</a>                kind: hir::GenericParamKind::Type { default: <span class="prelude-val">Some</span>(ty), .. },
+<a href=#186 id=186 data-nosnippet>186</a>                ..
+<a href=#187 id=187 data-nosnippet>187</a>            }) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[<span class="kw-2">*</span>ty],
+<a href=#188 id=188 data-nosnippet>188</a>            <a href="../../rustc_hir/hir/enum.Node.html#variant.AnonConst">hir::Node::AnonConst</a>(<span class="kw">_</span>) =&gt; {
+<a href=#189 id=189 data-nosnippet>189</a>                <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(const_param_id) = <a href="#17">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_opt_const_param_default_param_def_id">hir_opt_const_param_default_param_def_id</a>(<a href="#24">hir_id</a>)
+<a href=#190 id=190 data-nosnippet>190</a>                    &amp;&amp; <span class="kw">let </span><a href="../../rustc_hir/hir/enum.Node.html#variant.GenericParam">hir::Node::GenericParam</a>(hir::GenericParam {
+<a href=#191 id=191 data-nosnippet>191</a>                        kind: hir::GenericParamKind::Const { ty, .. },
+<a href=#192 id=192 data-nosnippet>192</a>                        ..
+<a href=#193 id=193 data-nosnippet>193</a>                    }) = <a href="#17">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_node_by_def_id">hir_node_by_def_id</a>(<a href="#189">const_param_id</a>)
+<a href=#194 id=194 data-nosnippet>194</a>                {
+<a href=#195 id=195 data-nosnippet>195</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[<span class="kw-2">*</span>ty]
+<a href=#196 id=196 data-nosnippet>196</a>                } <span class="kw">else </span>{
+<a href=#197 id=197 data-nosnippet>197</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[]
+<a href=#198 id=198 data-nosnippet>198</a>                }
+<a href=#199 id=199 data-nosnippet>199</a>            }
+<a href=#200 id=200 data-nosnippet>200</a>            <span class="kw-2">ref </span>node =&gt; <a class="macro" href="../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"Unexpected node {:?}"</span>, node),
+<a href=#201 id=201 data-nosnippet>201</a>        },
+<a href=#202 id=202 data-nosnippet>202</a>        <a href="../../rustc_middle/traits/enum.WellFormedLoc.html#variant.Param">WellFormedLoc::Param</a> { function: <span class="kw">_</span>, param_idx } =&gt; {
+<a href=#203 id=203 data-nosnippet>203</a>            <span class="kw">let </span>fn_decl = <a href="#17">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.hir_fn_decl_by_hir_id">hir_fn_decl_by_hir_id</a>(<a href="#24">hir_id</a>).<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>();
+<a href=#204 id=204 data-nosnippet>204</a>            <span class="comment">// Get return type
+<a href=#205 id=205 data-nosnippet>205</a>            </span><span class="kw">if </span><a href="#202">param_idx</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> == <a href="#203">fn_decl</a>.inputs.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.len">len</a>() {
+<a href=#206 id=206 data-nosnippet>206</a>                <span class="kw">match </span><a href="#203">fn_decl</a>.output {
+<a href=#207 id=207 data-nosnippet>207</a>                    <a href="../../rustc_hir/hir/enum.FnRetTy.html#variant.Return">hir::FnRetTy::Return</a>(ty) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[ty],
+<a href=#208 id=208 data-nosnippet>208</a>                    <span class="comment">// The unit type `()` is always well-formed
+<a href=#209 id=209 data-nosnippet>209</a>                    </span><a href="../../rustc_hir/hir/enum.FnRetTy.html#variant.DefaultReturn">hir::FnRetTy::DefaultReturn</a>(_span) =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[],
+<a href=#210 id=210 data-nosnippet>210</a>                }
+<a href=#211 id=211 data-nosnippet>211</a>            } <span class="kw">else </span>{
+<a href=#212 id=212 data-nosnippet>212</a>                <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[<span class="kw-2">&amp;</span>fn_decl.inputs[param_idx <span class="kw">as </span>usize]]
+<a href=#213 id=213 data-nosnippet>213</a>            }
+<a href=#214 id=214 data-nosnippet>214</a>        }
+<a href=#215 id=215 data-nosnippet>215</a>    };
+<a href=#216 id=216 data-nosnippet>216</a>    <span class="kw">for </span>ty <span class="kw">in </span>tys {
+<a href=#217 id=217 data-nosnippet>217</a>        visitor.visit_ty_unambig(ty);
+<a href=#218 id=218 data-nosnippet>218</a>    }
+<a href=#219 id=219 data-nosnippet>219</a>    <a href="#127">visitor</a>.cause
+<a href=#220 id=220 data-nosnippet>220</a>}</code></pre></div></section></main></body></html>

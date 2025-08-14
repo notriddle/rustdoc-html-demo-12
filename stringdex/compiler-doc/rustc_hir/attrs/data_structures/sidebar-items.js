@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["AttributeKind","CfgEntry","CoverageAttrKind","DeprecatedSince","InlineAttr","InstructionSetAttr","IntType","MacroUseArgs","OptimizeAttr","ReprAttr","TransparencyError","UsedBy"],"struct":["Deprecation","StrippedCfgItem"]};
+window.SIDEBAR_ITEMS = {"enum":["AttributeKind","CfgEntry","CoverageAttrKind","DeprecatedSince","InlineAttr","InstructionSetAttr","IntType","Linkage","MacroUseArgs","OptimizeAttr","ReprAttr","TransparencyError","UsedBy"],"struct":["Deprecation","StrippedCfgItem"]};

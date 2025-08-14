@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["decode_interleaved","encode_interleaved","trailing_zeros"],"macro":["fixed_size_enum"],"struct":["TableBuilder"],"trait":["FixedSizeEncoding","IsDefault"]};
+window.SIDEBAR_ITEMS = {"constant":["MACRO_KINDS_ATTR_BANG","MACRO_KINDS_DERIVE_ATTR","MACRO_KINDS_DERIVE_ATTR_BANG","MACRO_KINDS_DERIVE_BANG"],"fn":["decode_interleaved","encode_interleaved","trailing_zeros"],"macro":["const_macro_kinds","fixed_size_enum"],"struct":["TableBuilder"],"trait":["FixedSizeEncoding","IsDefault"]};

@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_span/src/hygiene.rs`."><title>hygiene.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-b5d4dc93.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_span" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-1a4373a8.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_span/</div>hygiene.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Machinery for hygienic macros.
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_span/src/hygiene.rs`."><title>hygiene.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-528d32ef.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_span" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-e93015a6.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-1b37d467.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-c7770cbf.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_span/</div>hygiene.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Machinery for hygienic macros.
 <a href=#2 id=2 data-nosnippet>2</a>//!
 <a href=#3 id=3 data-nosnippet>3</a>//! Inspired by Matthew Flatt et al., “Macros That Work Together: Compile-Time Bindings, Partial
 <a href=#4 id=4 data-nosnippet>4</a>//! Expansion, and Definition Contexts,” *Journal of Functional Programming* 22, no. 2
@@ -28,21 +28,21 @@
 <a href=#28 id=28 data-nosnippet>28</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">std::sync::Arc</a>;
 <a href=#29 id=29 data-nosnippet>29</a><span class="kw">use </span>std::{<a href="https://doc.rust-lang.org/nightly/alloc/fmt/index.html">fmt</a>, <a href="https://doc.rust-lang.org/nightly/core/iter/index.html">iter</a>, <a href="https://doc.rust-lang.org/nightly/core/mem/index.html">mem</a>};
 <a href=#30 id=30 data-nosnippet>30</a>
-<a href=#31 id=31 data-nosnippet>31</a><span class="kw">use </span><a href="../../rustc_data_structures/fingerprint/struct.Fingerprint.html">rustc_data_structures::fingerprint::Fingerprint</a>;
+<a href=#31 id=31 data-nosnippet>31</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/fingerprint/struct.Fingerprint.html">rustc_data_structures::fingerprint::Fingerprint</a>;
 <a href=#32 id=32 data-nosnippet>32</a><span class="kw">use </span>rustc_data_structures::fx::{<a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>, <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>};
-<a href=#33 id=33 data-nosnippet>33</a><span class="kw">use </span>rustc_data_structures::stable_hasher::{<a href="../../rustc_data_structures/stable_hasher/trait.HashStable.html">HashStable</a>, <a href="../../rustc_data_structures/stable_hasher/struct.HashingControls.html">HashingControls</a>, <a href="https://docs.rs/rustc-stable-hash/0.1.2/rustc_stable_hash/hashers/type.StableSipHasher128.html">StableHasher</a>};
-<a href=#34 id=34 data-nosnippet>34</a><span class="kw">use </span><a href="../../rustc_data_structures/sync/lock/struct.Lock.html">rustc_data_structures::sync::Lock</a>;
-<a href=#35 id=35 data-nosnippet>35</a><span class="kw">use </span><a href="../../rustc_data_structures/unhash/type.UnhashMap.html">rustc_data_structures::unhash::UnhashMap</a>;
-<a href=#36 id=36 data-nosnippet>36</a><span class="kw">use </span><a href="../../rustc_hashes/struct.Hash64.html">rustc_hashes::Hash64</a>;
-<a href=#37 id=37 data-nosnippet>37</a><span class="kw">use </span><a href="../../rustc_index/vec/struct.IndexVec.html">rustc_index::IndexVec</a>;
+<a href=#33 id=33 data-nosnippet>33</a><span class="kw">use </span>rustc_data_structures::stable_hasher::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/trait.HashStable.html">HashStable</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/struct.HashingControls.html">HashingControls</a>, <a href="https://docs.rs/rustc-stable-hash/0.1.2/rustc_stable_hash/hashers/type.StableSipHasher128.html">StableHasher</a>};
+<a href=#34 id=34 data-nosnippet>34</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/lock/struct.Lock.html">rustc_data_structures::sync::Lock</a>;
+<a href=#35 id=35 data-nosnippet>35</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/unhash/type.UnhashMap.html">rustc_data_structures::unhash::UnhashMap</a>;
+<a href=#36 id=36 data-nosnippet>36</a><span class="kw">use </span>rustc_hashes::Hash64;
+<a href=#37 id=37 data-nosnippet>37</a><span class="kw">use </span>rustc_index::IndexVec;
 <a href=#38 id=38 data-nosnippet>38</a><span class="kw">use </span>rustc_macros::{<a href="../../rustc_macros/derive.Decodable.html">Decodable</a>, <a href="../../rustc_macros/derive.Encodable.html">Encodable</a>, <a href="../../rustc_macros/derive.HashStable_Generic.html">HashStable_Generic</a>};
-<a href=#39 id=39 data-nosnippet>39</a><span class="kw">use </span>rustc_serialize::{<a href="../../rustc_serialize/serialize/trait.Decodable.html">Decodable</a>, <a href="../../rustc_serialize/serialize/trait.Decoder.html">Decoder</a>, <a href="../../rustc_serialize/serialize/trait.Encodable.html">Encodable</a>, <a href="../../rustc_serialize/serialize/trait.Encoder.html">Encoder</a>};
+<a href=#39 id=39 data-nosnippet>39</a><span class="kw">use </span>rustc_serialize::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_serialize/serialize/trait.Decodable.html">Decodable</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_serialize/serialize/trait.Decoder.html">Decoder</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_serialize/serialize/trait.Encodable.html">Encodable</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_serialize/serialize/trait.Encoder.html">Encoder</a>};
 <a href=#40 id=40 data-nosnippet>40</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug</a>, <a href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace</a>};
 <a href=#41 id=41 data-nosnippet>41</a>
 <a href=#42 id=42 data-nosnippet>42</a><span class="kw">use </span><span class="kw">crate</span>::def_id::{<a href="def_id.rs.html#355">CRATE_DEF_ID</a>, <a href="def_id.rs.html#18-22">CrateNum</a>, <a href="def_id.rs.html#230-239">DefId</a>, <a href="def_id.rs.html#26">LOCAL_CRATE</a>, <a href="def_id.rs.html#145">StableCrateId</a>};
 <a href=#43 id=43 data-nosnippet>43</a><span class="kw">use </span><a href="edition.rs.html#9-37"><span class="kw">crate</span>::edition::Edition</a>;
 <a href=#44 id=44 data-nosnippet>44</a><span class="kw">use </span><a href="source_map.rs.html#187-203"><span class="kw">crate</span>::source_map::SourceMap</a>;
-<a href=#45 id=45 data-nosnippet>45</a><span class="kw">use </span><span class="kw">crate</span>::symbol::{<a href="symbol.rs.html#2647">Symbol</a>, <a href="symbol.rs.html#2867-2869">kw</a>, <a href="symbol.rs.html#2876-2897">sym</a>};
+<a href=#45 id=45 data-nosnippet>45</a><span class="kw">use </span><span class="kw">crate</span>::symbol::{<a href="symbol.rs.html#2655">Symbol</a>, <a href="symbol.rs.html#2875-2877">kw</a>, <a href="symbol.rs.html#2884-2905">sym</a>};
 <a href=#46 id=46 data-nosnippet>46</a><span class="kw">use crate</span>::{<a href="span_encoding.rs.html#243-244">DUMMY_SP</a>, <a href="lib.rs.html#2628-2640">HashStableContext</a>, <a href="span_encoding.rs.html#82-86">Span</a>, <a href="lib.rs.html#1304-1314">SpanDecoder</a>, <a href="lib.rs.html#1198-1209">SpanEncoder</a>, <a href="lib.rs.html#172-177">with_session_globals</a>};
 <a href=#47 id=47 data-nosnippet>47</a>
 <a href=#48 id=48 data-nosnippet>48</a><span class="doccomment">/// A `SyntaxContext` represents a chain of pairs `(ExpnId, Transparency)` named "marks".
@@ -69,7 +69,7 @@
 <a href=#69 id=69 data-nosnippet>69</a>    <span class="doccomment">/// This context, but with all transparent expansions filtered away.
 <a href=#70 id=70 data-nosnippet>70</a>    </span>opaque_and_semiopaque: <a href="#50">SyntaxContext</a>,
 <a href=#71 id=71 data-nosnippet>71</a>    <span class="doccomment">/// Name of the crate to which `$crate` with this context would resolve.
-<a href=#72 id=72 data-nosnippet>72</a>    </span>dollar_crate_name: <a href="symbol.rs.html#2647">Symbol</a>,
+<a href=#72 id=72 data-nosnippet>72</a>    </span>dollar_crate_name: <a href="symbol.rs.html#2655">Symbol</a>,
 <a href=#73 id=73 data-nosnippet>73</a>}
 <a href=#74 id=74 data-nosnippet>74</a>
 <a href=#75 id=75 data-nosnippet>75</a><span class="kw">impl </span><a href="#63-73">SyntaxContextData</a> {
@@ -80,7 +80,7 @@
 <a href=#80 id=80 data-nosnippet>80</a>            parent: <a href="#705-707">SyntaxContext::root</a>(),
 <a href=#81 id=81 data-nosnippet>81</a>            opaque: <a href="#705-707">SyntaxContext::root</a>(),
 <a href=#82 id=82 data-nosnippet>82</a>            opaque_and_semiopaque: <a href="#705-707">SyntaxContext::root</a>(),
-<a href=#83 id=83 data-nosnippet>83</a>            dollar_crate_name: <a href="symbol.rs.html#23-2400">kw::DollarCrate</a>,
+<a href=#83 id=83 data-nosnippet>83</a>            dollar_crate_name: <a href="symbol.rs.html#23-2408">kw::DollarCrate</a>,
 <a href=#84 id=84 data-nosnippet>84</a>        }
 <a href=#85 id=85 data-nosnippet>85</a>    }
 <a href=#86 id=86 data-nosnippet>86</a>
@@ -136,7 +136,7 @@
 <a href=#136 id=136 data-nosnippet>136</a>        // Span hashing can also be disabled without `-Z incremental-ignore-spans`.
 <a href=#137 id=137 data-nosnippet>137</a>        // This is the case for instance when building a hash for name mangling.
 <a href=#138 id=138 data-nosnippet>138</a>        // Such configuration must not be used for metadata.
-<a href=#139 id=139 data-nosnippet>139</a>        </span><a href="../../rustc_data_structures/stable_hasher/struct.HashingControls.html">HashingControls</a> { hash_spans }
+<a href=#139 id=139 data-nosnippet>139</a>        </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/struct.HashingControls.html">HashingControls</a> { hash_spans }
 <a href=#140 id=140 data-nosnippet>140</a>            <span class="kw">if </span><a href="#139">hash_spans</a> != <a href="#129">ctx</a>.<a href="lib.rs.html#2633">unstable_opts_incremental_ignore_spans</a>() =&gt; {}
 <a href=#141 id=141 data-nosnippet>141</a>        other =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/std/macro.panic.html">panic!</a>(<span class="string">"Attempted hashing of {msg} with non-default HashingControls: {other:?}"</span>),
 <a href=#142 id=142 data-nosnippet>142</a>    }
@@ -144,22 +144,22 @@
 <a href=#144 id=144 data-nosnippet>144</a>
 <a href=#145 id=145 data-nosnippet>145</a><span class="doccomment">/// A unique hash value associated to an expansion.
 <a href=#146 id=146 data-nosnippet>146</a></span><span class="attr">#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Encodable, Decodable, HashStable_Generic)]
-<a href=#147 id=147 data-nosnippet>147</a></span><span class="kw">pub struct </span><a href="../../rustc_span/hygiene/struct.ExpnHash.html">ExpnHash</a>(<a href="../../rustc_data_structures/fingerprint/struct.Fingerprint.html">Fingerprint</a>);
+<a href=#147 id=147 data-nosnippet>147</a></span><span class="kw">pub struct </span><a href="../../rustc_span/hygiene/struct.ExpnHash.html">ExpnHash</a>(<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/fingerprint/struct.Fingerprint.html">Fingerprint</a>);
 <a href=#148 id=148 data-nosnippet>148</a>
 <a href=#149 id=149 data-nosnippet>149</a><span class="kw">impl </span><a href="#147">ExpnHash</a> {
 <a href=#150 id=150 data-nosnippet>150</a>    <span class="doccomment">/// Returns the [StableCrateId] identifying the crate this [ExpnHash]
 <a href=#151 id=151 data-nosnippet>151</a>    /// originates from.
 <a href=#152 id=152 data-nosnippet>152</a>    </span><span class="attr">#[inline]
 <a href=#153 id=153 data-nosnippet>153</a>    </span><span class="kw">pub fn </span>stable_crate_id(<span class="self">self</span>) -&gt; <a href="def_id.rs.html#145">StableCrateId</a> {
-<a href=#154 id=154 data-nosnippet>154</a>        <a href="def_id.rs.html#145">StableCrateId</a>(<a class="self" href="#153">self</a>.<span class="number">0</span>.<a href="../../rustc_data_structures/fingerprint/struct.Fingerprint.html#method.split">split</a>().<span class="number">0</span>)
+<a href=#154 id=154 data-nosnippet>154</a>        <a href="def_id.rs.html#145">StableCrateId</a>(<a class="self" href="#153">self</a>.<span class="number">0</span>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/fingerprint/struct.Fingerprint.html#method.split">split</a>().<span class="number">0</span>)
 <a href=#155 id=155 data-nosnippet>155</a>    }
 <a href=#156 id=156 data-nosnippet>156</a>
 <a href=#157 id=157 data-nosnippet>157</a>    <span class="doccomment">/// Returns the crate-local part of the [ExpnHash].
 <a href=#158 id=158 data-nosnippet>158</a>    ///
 <a href=#159 id=159 data-nosnippet>159</a>    /// Used for assertions.
 <a href=#160 id=160 data-nosnippet>160</a>    </span><span class="attr">#[inline]
-<a href=#161 id=161 data-nosnippet>161</a>    </span><span class="kw">pub fn </span>local_hash(<span class="self">self</span>) -&gt; <a href="../../rustc_hashes/struct.Hash64.html">Hash64</a> {
-<a href=#162 id=162 data-nosnippet>162</a>        <a class="self" href="#161">self</a>.<span class="number">0</span>.<a href="../../rustc_data_structures/fingerprint/struct.Fingerprint.html#method.split">split</a>().<span class="number">1
+<a href=#161 id=161 data-nosnippet>161</a>    </span><span class="kw">pub fn </span>local_hash(<span class="self">self</span>) -&gt; Hash64 {
+<a href=#162 id=162 data-nosnippet>162</a>        <a class="self" href="#161">self</a>.<span class="number">0</span>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/fingerprint/struct.Fingerprint.html#method.split">split</a>().<span class="number">1
 <a href=#163 id=163 data-nosnippet>163</a>    </span>}
 <a href=#164 id=164 data-nosnippet>164</a>
 <a href=#165 id=165 data-nosnippet>165</a>    <span class="attr">#[inline]
@@ -169,8 +169,8 @@
 <a href=#169 id=169 data-nosnippet>169</a>
 <a href=#170 id=170 data-nosnippet>170</a>    <span class="doccomment">/// Builds a new [ExpnHash] with the given [StableCrateId] and
 <a href=#171 id=171 data-nosnippet>171</a>    /// `local_hash`, where `local_hash` must be unique within its crate.
-<a href=#172 id=172 data-nosnippet>172</a>    </span><span class="kw">fn </span>new(stable_crate_id: <a href="def_id.rs.html#145">StableCrateId</a>, local_hash: <a href="../../rustc_hashes/struct.Hash64.html">Hash64</a>) -&gt; <a href="#147">ExpnHash</a> {
-<a href=#173 id=173 data-nosnippet>173</a>        <a href="#147">ExpnHash</a>(<a href="../../rustc_data_structures/fingerprint/struct.Fingerprint.html#method.new">Fingerprint::new</a>(<a href="#172">stable_crate_id</a>.<span class="number">0</span>, <a href="#172">local_hash</a>))
+<a href=#172 id=172 data-nosnippet>172</a>    </span><span class="kw">fn </span>new(stable_crate_id: <a href="def_id.rs.html#145">StableCrateId</a>, local_hash: Hash64) -&gt; <a href="#147">ExpnHash</a> {
+<a href=#173 id=173 data-nosnippet>173</a>        <a href="#147">ExpnHash</a>(<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/fingerprint/struct.Fingerprint.html#method.new">Fingerprint::new</a>(<a href="#172">stable_crate_id</a>.<span class="number">0</span>, <a href="#172">local_hash</a>))
 <a href=#174 id=174 data-nosnippet>174</a>    }
 <a href=#175 id=175 data-nosnippet>175</a>}
 <a href=#176 id=176 data-nosnippet>176</a>
@@ -216,8 +216,8 @@
 <a href=#216 id=216 data-nosnippet>216</a>
 <a href=#217 id=217 data-nosnippet>217</a>    <span class="kw">pub fn </span>fresh_empty() -&gt; <a href="#112-116">LocalExpnId</a> {
 <a href=#218 id=218 data-nosnippet>218</a>        <a href="#399-401">HygieneData::with</a>(|data| {
-<a href=#219 id=219 data-nosnippet>219</a>            <span class="kw">let </span>expn_id = <a href="#218">data</a>.local_expn_data.<a href="../../rustc_index/vec/struct.IndexVec.html#method.push">push</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>);
-<a href=#220 id=220 data-nosnippet>220</a>            <span class="kw">let </span>_eid = <a href="#218">data</a>.local_expn_hashes.<a href="../../rustc_index/vec/struct.IndexVec.html#method.push">push</a>(<a href="#147">ExpnHash</a>(Fingerprint::ZERO));
+<a href=#219 id=219 data-nosnippet>219</a>            <span class="kw">let </span>expn_id = <a href="#218">data</a>.local_expn_data.push(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>);
+<a href=#220 id=220 data-nosnippet>220</a>            <span class="kw">let </span>_eid = <a href="#218">data</a>.local_expn_hashes.push(<a href="#147">ExpnHash</a>(Fingerprint::ZERO));
 <a href=#221 id=221 data-nosnippet>221</a>            <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.debug_assert_eq.html">debug_assert_eq!</a>(expn_id, _eid);
 <a href=#222 id=222 data-nosnippet>222</a>            <a href="#219">expn_id</a>
 <a href=#223 id=223 data-nosnippet>223</a>        })
@@ -227,8 +227,8 @@
 <a href=#227 id=227 data-nosnippet>227</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.debug_assert_eq.html">debug_assert_eq!</a>(expn_data.parent.krate, LOCAL_CRATE);
 <a href=#228 id=228 data-nosnippet>228</a>        <span class="kw">let </span>expn_hash = <a href="#1497-1530">update_disambiguator</a>(<span class="kw-2">&amp;mut </span><a href="#226">expn_data</a>, <a href="#226">ctx</a>);
 <a href=#229 id=229 data-nosnippet>229</a>        <a href="#399-401">HygieneData::with</a>(|data| {
-<a href=#230 id=230 data-nosnippet>230</a>            <span class="kw">let </span>expn_id = <a href="#229">data</a>.local_expn_data.<a href="../../rustc_index/vec/struct.IndexVec.html#method.push">push</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#226">expn_data</a>));
-<a href=#231 id=231 data-nosnippet>231</a>            <span class="kw">let </span>_eid = <a href="#229">data</a>.local_expn_hashes.<a href="../../rustc_index/vec/struct.IndexVec.html#method.push">push</a>(<a href="#228">expn_hash</a>);
+<a href=#230 id=230 data-nosnippet>230</a>            <span class="kw">let </span>expn_id = <a href="#229">data</a>.local_expn_data.push(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#226">expn_data</a>));
+<a href=#231 id=231 data-nosnippet>231</a>            <span class="kw">let </span>_eid = <a href="#229">data</a>.local_expn_hashes.push(<a href="#228">expn_hash</a>);
 <a href=#232 id=232 data-nosnippet>232</a>            <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.debug_assert_eq.html">debug_assert_eq!</a>(expn_id, _eid);
 <a href=#233 id=233 data-nosnippet>233</a>            <span class="kw">let </span>_old_id = <a href="#229">data</a>.expn_hash_to_expn_id.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.insert">insert</a>(<a href="#228">expn_hash</a>, <a href="#230">expn_id</a>.<a href="#245-247">to_expn_id</a>());
 <a href=#234 id=234 data-nosnippet>234</a>            <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.debug_assert.html">debug_assert!</a>(_old_id.is_none());
@@ -339,7 +339,7 @@
 <a href=#339 id=339 data-nosnippet>339</a>            }
 <a href=#340 id=340 data-nosnippet>340</a>            <span class="kw">let </span>expn_data = <a class="self" href="#333">self</a>.<a href="#307-309">expn_data</a>();
 <a href=#341 id=341 data-nosnippet>341</a>            <span class="comment">// Stop going up the backtrace once include! is encountered
-<a href=#342 id=342 data-nosnippet>342</a>            </span><span class="kw">if </span><a href="#340">expn_data</a>.kind == <a href="#1133">ExpnKind::Macro</a>(<a href="#1160">MacroKind::Bang</a>, <a href="symbol.rs.html#23-2400">sym::include</a>) {
+<a href=#342 id=342 data-nosnippet>342</a>            </span><span class="kw">if </span><a href="#340">expn_data</a>.kind == <a href="#1133">ExpnKind::Macro</a>(<a href="#1160">MacroKind::Bang</a>, <a href="symbol.rs.html#23-2408">sym::include</a>) {
 <a href=#343 id=343 data-nosnippet>343</a>                <span class="kw">break</span>;
 <a href=#344 id=344 data-nosnippet>344</a>            }
 <a href=#345 id=345 data-nosnippet>345</a>            <span class="self"><a href="#333">self</a> </span>= <a href="#340">expn_data</a>.call_site.<a href="span_encoding.rs.html#384-387">ctxt</a>().<a href="#904-906">outer_expn</a>();
@@ -354,13 +354,13 @@
 <a href=#354 id=354 data-nosnippet>354</a>    <span class="doccomment">/// Each expansion should have an associated expansion data, but sometimes there's a delay
 <a href=#355 id=355 data-nosnippet>355</a>    /// between creation of an expansion ID and obtaining its data (e.g. macros are collected
 <a href=#356 id=356 data-nosnippet>356</a>    /// first and then resolved later), so we use an `Option` here.
-<a href=#357 id=357 data-nosnippet>357</a>    </span>local_expn_data: <a href="../../rustc_index/vec/struct.IndexVec.html">IndexVec</a>&lt;<a href="#112-116">LocalExpnId</a>, <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="#983-1038">ExpnData</a>&gt;&gt;,
-<a href=#358 id=358 data-nosnippet>358</a>    local_expn_hashes: <a href="../../rustc_index/vec/struct.IndexVec.html">IndexVec</a>&lt;<a href="#112-116">LocalExpnId</a>, <a href="#147">ExpnHash</a>&gt;,
+<a href=#357 id=357 data-nosnippet>357</a>    </span>local_expn_data: IndexVec&lt;<a href="#112-116">LocalExpnId</a>, <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="#983-1038">ExpnData</a>&gt;&gt;,
+<a href=#358 id=358 data-nosnippet>358</a>    local_expn_hashes: IndexVec&lt;<a href="#112-116">LocalExpnId</a>, <a href="#147">ExpnHash</a>&gt;,
 <a href=#359 id=359 data-nosnippet>359</a>    <span class="doccomment">/// Data and hash information from external crates. We may eventually want to remove these
 <a href=#360 id=360 data-nosnippet>360</a>    /// maps, and fetch the information directly from the other crate's metadata like DefIds do.
 <a href=#361 id=361 data-nosnippet>361</a>    </span>foreign_expn_data: <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<a href="#100-103">ExpnId</a>, <a href="#983-1038">ExpnData</a>&gt;,
 <a href=#362 id=362 data-nosnippet>362</a>    foreign_expn_hashes: <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<a href="#100-103">ExpnId</a>, <a href="#147">ExpnHash</a>&gt;,
-<a href=#363 id=363 data-nosnippet>363</a>    expn_hash_to_expn_id: <a href="../../rustc_data_structures/unhash/type.UnhashMap.html">UnhashMap</a>&lt;<a href="#147">ExpnHash</a>, <a href="#100-103">ExpnId</a>&gt;,
+<a href=#363 id=363 data-nosnippet>363</a>    expn_hash_to_expn_id: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/unhash/type.UnhashMap.html">UnhashMap</a>&lt;<a href="#147">ExpnHash</a>, <a href="#100-103">ExpnId</a>&gt;,
 <a href=#364 id=364 data-nosnippet>364</a>    syntax_context_data: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="#63-73">SyntaxContextData</a>&gt;,
 <a href=#365 id=365 data-nosnippet>365</a>    syntax_context_map: <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<a href="#60">SyntaxContextKey</a>, <a href="#50">SyntaxContext</a>&gt;,
 <a href=#366 id=366 data-nosnippet>366</a>    <span class="doccomment">/// Maps the `local_hash` of an `ExpnData` to the next disambiguator value.
@@ -368,7 +368,7 @@
 <a href=#368 id=368 data-nosnippet>368</a>    /// would have collisions without a disambiguator.
 <a href=#369 id=369 data-nosnippet>369</a>    /// The keys of this map are always computed with `ExpnData.disambiguator`
 <a href=#370 id=370 data-nosnippet>370</a>    /// set to 0.
-<a href=#371 id=371 data-nosnippet>371</a>    </span>expn_data_disambiguators: <a href="../../rustc_data_structures/unhash/type.UnhashMap.html">UnhashMap</a>&lt;<a href="../../rustc_hashes/struct.Hash64.html">Hash64</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>&gt;,
+<a href=#371 id=371 data-nosnippet>371</a>    </span>expn_data_disambiguators: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/unhash/type.UnhashMap.html">UnhashMap</a>&lt;Hash64, <a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>&gt;,
 <a href=#372 id=372 data-nosnippet>372</a>}
 <a href=#373 id=373 data-nosnippet>373</a>
 <a href=#374 id=374 data-nosnippet>374</a><span class="kw">impl </span><a href="#353-372">HygieneData</a> {
@@ -383,8 +383,8 @@
 <a href=#383 id=383 data-nosnippet>383</a>
 <a href=#384 id=384 data-nosnippet>384</a>        <span class="kw">let </span>root_ctxt_data = <a href="#76-85">SyntaxContextData::root</a>();
 <a href=#385 id=385 data-nosnippet>385</a>        <a href="#353-372">HygieneData</a> {
-<a href=#386 id=386 data-nosnippet>386</a>            local_expn_data: <a href="../../rustc_index/vec/struct.IndexVec.html#method.from_elem_n">IndexVec::from_elem_n</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#376">root_data</a>), <span class="number">1</span>),
-<a href=#387 id=387 data-nosnippet>387</a>            local_expn_hashes: <a href="../../rustc_index/vec/struct.IndexVec.html#method.from_elem_n">IndexVec::from_elem_n</a>(<a href="#147">ExpnHash</a>(Fingerprint::ZERO), <span class="number">1</span>),
+<a href=#386 id=386 data-nosnippet>386</a>            local_expn_data: IndexVec::from_elem_n(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#376">root_data</a>), <span class="number">1</span>),
+<a href=#387 id=387 data-nosnippet>387</a>            local_expn_hashes: IndexVec::from_elem_n(<a href="#147">ExpnHash</a>(Fingerprint::ZERO), <span class="number">1</span>),
 <a href=#388 id=388 data-nosnippet>388</a>            foreign_expn_data: <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxHashMap::default</a>(),
 <a href=#389 id=389 data-nosnippet>389</a>            foreign_expn_hashes: <a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">FxHashMap::default</a>(),
 <a href=#390 id=390 data-nosnippet>390</a>            expn_hash_to_expn_id: <a href="https://doc.rust-lang.org/nightly/core/iter/sources/once/fn.once.html">iter::once</a>((<a href="#147">ExpnHash</a>(Fingerprint::ZERO), <a href="#281-283">ExpnId::root</a>()))
@@ -397,7 +397,7 @@
 <a href=#397 id=397 data-nosnippet>397</a>
 <a href=#398 id=398 data-nosnippet>398</a>    <span class="attr">#[inline]
 <a href=#399 id=399 data-nosnippet>399</a>    </span><span class="kw">fn </span>with&lt;R&gt;(f: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>(<span class="kw-2">&amp;mut </span><a href="#353-372">HygieneData</a>) -&gt; R) -&gt; R {
-<a href=#400 id=400 data-nosnippet>400</a>        <a href="lib.rs.html#172-177">with_session_globals</a>(|session_globals| <a href="#399">f</a>(<span class="kw-2">&amp;mut </span><a href="#400">session_globals</a>.hygiene_data.<a href="../../rustc_data_structures/sync/lock/struct.Lock.html#method.borrow_mut">borrow_mut</a>()))
+<a href=#400 id=400 data-nosnippet>400</a>        <a href="lib.rs.html#172-177">with_session_globals</a>(|session_globals| <a href="#399">f</a>(<span class="kw-2">&amp;mut </span><a href="#400">session_globals</a>.hygiene_data.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/lock/struct.Lock.html#method.borrow_mut">borrow_mut</a>()))
 <a href=#401 id=401 data-nosnippet>401</a>    }
 <a href=#402 id=402 data-nosnippet>402</a>
 <a href=#403 id=403 data-nosnippet>403</a>    <span class="attr">#[inline]
@@ -584,7 +584,7 @@
 <a href=#584 id=584 data-nosnippet>584</a>        // the assert below ensures that it doesn't happen.
 <a href=#585 id=585 data-nosnippet>585</a>        </span><span class="kw">let </span>ctxt = <a href="#730-732">SyntaxContext::from_usize</a>(<a class="self" href="#571">self</a>.syntax_context_data.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.len">len</a>());
 <a href=#586 id=586 data-nosnippet>586</a>        <a class="self" href="#571">self</a>.syntax_context_data
-<a href=#587 id=587 data-nosnippet>587</a>            .<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#63-73">SyntaxContextData</a> { dollar_crate_name: <a href="symbol.rs.html#23-2400">sym::dummy</a>, ..<a href="#76-85">SyntaxContextData::root</a>() });
+<a href=#587 id=587 data-nosnippet>587</a>            .<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#63-73">SyntaxContextData</a> { dollar_crate_name: <a href="symbol.rs.html#23-2408">sym::dummy</a>, ..<a href="#76-85">SyntaxContextData::root</a>() });
 <a href=#588 id=588 data-nosnippet>588</a>        <a class="self" href="#571">self</a>.syntax_context_map.<a href="https://doc.rust-lang.org/nightly/std/collections/hash/map/struct.HashMap.html#method.insert">insert</a>(<a href="#577">key</a>, <a href="#585">ctxt</a>);
 <a href=#589 id=589 data-nosnippet>589</a>
 <a href=#590 id=590 data-nosnippet>590</a>        <span class="comment">// Opaque and semi-opaque versions of the parent. Note that they may be equal to the
@@ -618,7 +618,7 @@
 <a href=#618 id=618 data-nosnippet>618</a>            <a href="#572">parent</a>,
 <a href=#619 id=619 data-nosnippet>619</a>            <a href="#599">opaque</a>,
 <a href=#620 id=620 data-nosnippet>620</a>            <a href="#599">opaque_and_semiopaque</a>,
-<a href=#621 id=621 data-nosnippet>621</a>            dollar_crate_name: <a href="symbol.rs.html#23-2400">kw::DollarCrate</a>,
+<a href=#621 id=621 data-nosnippet>621</a>            dollar_crate_name: <a href="symbol.rs.html#23-2408">kw::DollarCrate</a>,
 <a href=#622 id=622 data-nosnippet>622</a>        };
 <a href=#623 id=623 data-nosnippet>623</a>        <a href="#585">ctxt</a>
 <a href=#624 id=624 data-nosnippet>624</a>    }
@@ -637,7 +637,7 @@
 <a href=#637 id=637 data-nosnippet>637</a>    <a href="#399-401">HygieneData::with</a>(|data| <a href="#637">data</a>.<a href="#501-521">walk_chain_collapsed</a>(<a href="#636">span</a>, <a href="#636">to</a>))
 <a href=#638 id=638 data-nosnippet>638</a>}
 <a href=#639 id=639 data-nosnippet>639</a>
-<a href=#640 id=640 data-nosnippet>640</a><span class="kw">pub fn </span><a href="../../rustc_span/hygiene/fn.update_dollar_crate_names.html">update_dollar_crate_names</a>(<span class="kw-2">mut </span>get_name: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnMut.html">FnMut</a>(<a href="#50">SyntaxContext</a>) -&gt; <a href="symbol.rs.html#2647">Symbol</a>) {
+<a href=#640 id=640 data-nosnippet>640</a><span class="kw">pub fn </span><a href="../../rustc_span/hygiene/fn.update_dollar_crate_names.html">update_dollar_crate_names</a>(<span class="kw-2">mut </span>get_name: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnMut.html">FnMut</a>(<a href="#50">SyntaxContext</a>) -&gt; <a href="symbol.rs.html#2655">Symbol</a>) {
 <a href=#641 id=641 data-nosnippet>641</a>    <span class="comment">// The new contexts that need updating are at the end of the list and have `$crate` as a name.
 <a href=#642 id=642 data-nosnippet>642</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>to_update = <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[];
 <a href=#643 id=643 data-nosnippet>643</a>    <a href="#399-401">HygieneData::with</a>(|data| {
@@ -677,7 +677,7 @@
 <a href=#677 id=677 data-nosnippet>677</a>                    expn_data.kind,
 <a href=#678 id=678 data-nosnippet>678</a>                ))
 <a href=#679 id=679 data-nosnippet>679</a>            };
-<a href=#680 id=680 data-nosnippet>680</a>            <a href="#665">data</a>.local_expn_data.<a href="../../rustc_index/slice/struct.IndexSlice.html#method.iter_enumerated">iter_enumerated</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.for_each">for_each</a>(|(id, expn_data)| {
+<a href=#680 id=680 data-nosnippet>680</a>            <a href="#665">data</a>.local_expn_data.iter_enumerated().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.for_each">for_each</a>(|(id, expn_data)| {
 <a href=#681 id=681 data-nosnippet>681</a>                <span class="kw">let </span>expn_data = <a href="#680">expn_data</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.as_ref">as_ref</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.expect">expect</a>(<span class="string">"no expansion data for an expansion ID"</span>);
 <a href=#682 id=682 data-nosnippet>682</a>                <a href="#670">debug_expn_data</a>((<span class="kw-2">&amp;</span><a href="#680">id</a>.<a href="#245-247">to_expn_id</a>(), <a href="#681">expn_data</a>))
 <a href=#683 id=683 data-nosnippet>683</a>            });
@@ -918,7 +918,7 @@
 <a href=#918 id=918 data-nosnippet>918</a>    }
 <a href=#919 id=919 data-nosnippet>919</a>
 <a href=#920 id=920 data-nosnippet>920</a>    <span class="attr">#[inline]
-<a href=#921 id=921 data-nosnippet>921</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>dollar_crate_name(<span class="self">self</span>) -&gt; <a href="symbol.rs.html#2647">Symbol</a> {
+<a href=#921 id=921 data-nosnippet>921</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>dollar_crate_name(<span class="self">self</span>) -&gt; <a href="symbol.rs.html#2655">Symbol</a> {
 <a href=#922 id=922 data-nosnippet>922</a>        <a href="#399-401">HygieneData::with</a>(|data| <a href="#922">data</a>.syntax_context_data[<a class="self" href="#921">self</a>.<span class="number">0 </span><span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a>].dollar_crate_name)
 <a href=#923 id=923 data-nosnippet>923</a>    }
 <a href=#924 id=924 data-nosnippet>924</a>
@@ -963,7 +963,7 @@
 <a href=#963 id=963 data-nosnippet>963</a>    /// allowed inside this span.
 <a href=#964 id=964 data-nosnippet>964</a>    </span><span class="kw">pub fn </span>mark_with_reason(
 <a href=#965 id=965 data-nosnippet>965</a>        <span class="self">self</span>,
-<a href=#966 id=966 data-nosnippet>966</a>        allow_internal_unstable: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;[<a href="symbol.rs.html#2647">Symbol</a>]&gt;&gt;,
+<a href=#966 id=966 data-nosnippet>966</a>        allow_internal_unstable: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;[<a href="symbol.rs.html#2655">Symbol</a>]&gt;&gt;,
 <a href=#967 id=967 data-nosnippet>967</a>        reason: <a href="#1211-1240">DesugaringKind</a>,
 <a href=#968 id=968 data-nosnippet>968</a>        edition: <a href="edition.rs.html#9-37">Edition</a>,
 <a href=#969 id=969 data-nosnippet>969</a>        ctx: <span class="kw">impl </span><a href="lib.rs.html#2628-2640">HashStableContext</a>,
@@ -1018,7 +1018,7 @@
 <a href=#1018 id=1018 data-nosnippet>1018</a>    <span class="doccomment">/// List of `#[unstable]`/feature-gated features that the macro is allowed to use
 <a href=#1019 id=1019 data-nosnippet>1019</a>    /// internally without forcing the whole crate to opt-in
 <a href=#1020 id=1020 data-nosnippet>1020</a>    /// to them.
-<a href=#1021 id=1021 data-nosnippet>1021</a>    </span><span class="kw">pub </span>allow_internal_unstable: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;[<a href="symbol.rs.html#2647">Symbol</a>]&gt;&gt;,
+<a href=#1021 id=1021 data-nosnippet>1021</a>    </span><span class="kw">pub </span>allow_internal_unstable: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;[<a href="symbol.rs.html#2655">Symbol</a>]&gt;&gt;,
 <a href=#1022 id=1022 data-nosnippet>1022</a>    <span class="doccomment">/// Edition of the crate in which the macro is defined.
 <a href=#1023 id=1023 data-nosnippet>1023</a>    </span><span class="kw">pub </span>edition: <a href="edition.rs.html#9-37">Edition</a>,
 <a href=#1024 id=1024 data-nosnippet>1024</a>    <span class="doccomment">/// The `DefId` of the macro being invoked,
@@ -1046,7 +1046,7 @@
 <a href=#1046 id=1046 data-nosnippet>1046</a>        parent: <a href="#100-103">ExpnId</a>,
 <a href=#1047 id=1047 data-nosnippet>1047</a>        call_site: <a href="span_encoding.rs.html#82-86">Span</a>,
 <a href=#1048 id=1048 data-nosnippet>1048</a>        def_site: <a href="span_encoding.rs.html#82-86">Span</a>,
-<a href=#1049 id=1049 data-nosnippet>1049</a>        allow_internal_unstable: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;[<a href="symbol.rs.html#2647">Symbol</a>]&gt;&gt;,
+<a href=#1049 id=1049 data-nosnippet>1049</a>        allow_internal_unstable: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;[<a href="symbol.rs.html#2655">Symbol</a>]&gt;&gt;,
 <a href=#1050 id=1050 data-nosnippet>1050</a>        edition: <a href="edition.rs.html#9-37">Edition</a>,
 <a href=#1051 id=1051 data-nosnippet>1051</a>        macro_def_id: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="def_id.rs.html#230-239">DefId</a>&gt;,
 <a href=#1052 id=1052 data-nosnippet>1052</a>        parent_module: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="def_id.rs.html#230-239">DefId</a>&gt;,
@@ -1101,7 +1101,7 @@
 <a href=#1101 id=1101 data-nosnippet>1101</a>        kind: <a href="#1129-1138">ExpnKind</a>,
 <a href=#1102 id=1102 data-nosnippet>1102</a>        call_site: <a href="span_encoding.rs.html#82-86">Span</a>,
 <a href=#1103 id=1103 data-nosnippet>1103</a>        edition: <a href="edition.rs.html#9-37">Edition</a>,
-<a href=#1104 id=1104 data-nosnippet>1104</a>        allow_internal_unstable: <a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;[<a href="symbol.rs.html#2647">Symbol</a>]&gt;,
+<a href=#1104 id=1104 data-nosnippet>1104</a>        allow_internal_unstable: <a href="https://doc.rust-lang.org/nightly/alloc/sync/struct.Arc.html">Arc</a>&lt;[<a href="symbol.rs.html#2655">Symbol</a>]&gt;,
 <a href=#1105 id=1105 data-nosnippet>1105</a>        macro_def_id: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="def_id.rs.html#230-239">DefId</a>&gt;,
 <a href=#1106 id=1106 data-nosnippet>1106</a>        parent_module: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="def_id.rs.html#230-239">DefId</a>&gt;,
 <a href=#1107 id=1107 data-nosnippet>1107</a>    ) -&gt; <a href="#983-1038">ExpnData</a> {
@@ -1117,9 +1117,9 @@
 <a href=#1117 id=1117 data-nosnippet>1117</a>    }
 <a href=#1118 id=1118 data-nosnippet>1118</a>
 <a href=#1119 id=1119 data-nosnippet>1119</a>    <span class="attr">#[inline]
-<a href=#1120 id=1120 data-nosnippet>1120</a>    </span><span class="kw">fn </span>hash_expn(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;mut </span><span class="kw">impl </span><a href="lib.rs.html#2628-2640">HashStableContext</a>) -&gt; <a href="../../rustc_hashes/struct.Hash64.html">Hash64</a> {
+<a href=#1120 id=1120 data-nosnippet>1120</a>    </span><span class="kw">fn </span>hash_expn(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;mut </span><span class="kw">impl </span><a href="lib.rs.html#2628-2640">HashStableContext</a>) -&gt; Hash64 {
 <a href=#1121 id=1121 data-nosnippet>1121</a>        <span class="kw">let </span><span class="kw-2">mut </span>hasher = <a href="https://docs.rs/rustc-stable-hash/0.1.2/rustc_stable_hash/stable_hasher/struct.StableHasher.html#method.new">StableHasher::new</a>();
-<a href=#1122 id=1122 data-nosnippet>1122</a>        <a class="self" href="#1120">self</a>.<a href="../../rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#1120">ctx</a>, <span class="kw-2">&amp;mut </span><a href="#1121">hasher</a>);
+<a href=#1122 id=1122 data-nosnippet>1122</a>        <a class="self" href="#1120">self</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#1120">ctx</a>, <span class="kw-2">&amp;mut </span><a href="#1121">hasher</a>);
 <a href=#1123 id=1123 data-nosnippet>1123</a>        <a href="#1121">hasher</a>.<a href="https://docs.rs/rustc-stable-hash/0.1.2/rustc_stable_hash/stable_hasher/struct.StableHasher.html#method.finish">finish</a>()
 <a href=#1124 id=1124 data-nosnippet>1124</a>    }
 <a href=#1125 id=1125 data-nosnippet>1125</a>}
@@ -1130,7 +1130,7 @@
 <a href=#1130 id=1130 data-nosnippet>1130</a>    <span class="doccomment">/// No expansion, aka root expansion. Only `ExpnId::root()` has this kind.
 <a href=#1131 id=1131 data-nosnippet>1131</a>    </span>Root,
 <a href=#1132 id=1132 data-nosnippet>1132</a>    <span class="doccomment">/// Expansion produced by a macro.
-<a href=#1133 id=1133 data-nosnippet>1133</a>    </span>Macro(<a href="#1158-1165">MacroKind</a>, <a href="symbol.rs.html#2647">Symbol</a>),
+<a href=#1133 id=1133 data-nosnippet>1133</a>    </span>Macro(<a href="#1158-1165">MacroKind</a>, <a href="symbol.rs.html#2655">Symbol</a>),
 <a href=#1134 id=1134 data-nosnippet>1134</a>    <span class="doccomment">/// Transform done by the compiler on the AST.
 <a href=#1135 id=1135 data-nosnippet>1135</a>    </span>AstPass(<a href="#1193-1197">AstPass</a>),
 <a href=#1136 id=1136 data-nosnippet>1136</a>    <span class="doccomment">/// Desugaring done by the compiler during AST lowering.
@@ -1140,7 +1140,7 @@
 <a href=#1140 id=1140 data-nosnippet>1140</a><span class="kw">impl </span><a href="#1129-1138">ExpnKind</a> {
 <a href=#1141 id=1141 data-nosnippet>1141</a>    <span class="kw">pub fn </span>descr(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a> {
 <a href=#1142 id=1142 data-nosnippet>1142</a>        <span class="kw">match </span><span class="kw-2">*</span><span class="self"><a href="#1141">self</a> </span>{
-<a href=#1143 id=1143 data-nosnippet>1143</a>            <a href="#1131">ExpnKind::Root</a> =&gt; <a href="symbol.rs.html#23-2400">kw::PathRoot</a>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>(),
+<a href=#1143 id=1143 data-nosnippet>1143</a>            <a href="#1131">ExpnKind::Root</a> =&gt; <a href="symbol.rs.html#23-2408">kw::PathRoot</a>.<a href="https://doc.rust-lang.org/nightly/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>(),
 <a href=#1144 id=1144 data-nosnippet>1144</a>            <a href="#1133">ExpnKind::Macro</a>(macro_kind, name) =&gt; <span class="kw">match </span><a href="#1144">macro_kind</a> {
 <a href=#1145 id=1145 data-nosnippet>1145</a>                <a href="#1160">MacroKind::Bang</a> =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"{name}!"</span>),
 <a href=#1146 id=1146 data-nosnippet>1146</a>                <a href="#1162">MacroKind::Attr</a> =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"#[{name}]"</span>),
@@ -1286,23 +1286,23 @@
 <a href=#1286 id=1286 data-nosnippet>1286</a>    <span class="doccomment">/// All `SyntaxContexts` for which we have written `SyntaxContextData` into crate metadata.
 <a href=#1287 id=1287 data-nosnippet>1287</a>    /// This is `None` after we finish encoding `SyntaxContexts`, to ensure
 <a href=#1288 id=1288 data-nosnippet>1288</a>    /// that we don't accidentally try to encode any more `SyntaxContexts`
-<a href=#1289 id=1289 data-nosnippet>1289</a>    </span>serialized_ctxts: <a href="../../rustc_data_structures/sync/lock/struct.Lock.html">Lock</a>&lt;<a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>&lt;<a href="#50">SyntaxContext</a>&gt;&gt;,
+<a href=#1289 id=1289 data-nosnippet>1289</a>    </span>serialized_ctxts: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/lock/struct.Lock.html">Lock</a>&lt;<a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>&lt;<a href="#50">SyntaxContext</a>&gt;&gt;,
 <a href=#1290 id=1290 data-nosnippet>1290</a>    <span class="doccomment">/// The `SyntaxContexts` that we have serialized (e.g. as a result of encoding `Spans`)
 <a href=#1291 id=1291 data-nosnippet>1291</a>    /// in the most recent 'round' of serializing. Serializing `SyntaxContextData`
 <a href=#1292 id=1292 data-nosnippet>1292</a>    /// may cause us to serialize more `SyntaxContext`s, so serialize in a loop
 <a href=#1293 id=1293 data-nosnippet>1293</a>    /// until we reach a fixed point.
-<a href=#1294 id=1294 data-nosnippet>1294</a>    </span>latest_ctxts: <a href="../../rustc_data_structures/sync/lock/struct.Lock.html">Lock</a>&lt;<a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>&lt;<a href="#50">SyntaxContext</a>&gt;&gt;,
+<a href=#1294 id=1294 data-nosnippet>1294</a>    </span>latest_ctxts: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/lock/struct.Lock.html">Lock</a>&lt;<a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>&lt;<a href="#50">SyntaxContext</a>&gt;&gt;,
 <a href=#1295 id=1295 data-nosnippet>1295</a>
-<a href=#1296 id=1296 data-nosnippet>1296</a>    serialized_expns: <a href="../../rustc_data_structures/sync/lock/struct.Lock.html">Lock</a>&lt;<a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>&lt;<a href="#100-103">ExpnId</a>&gt;&gt;,
+<a href=#1296 id=1296 data-nosnippet>1296</a>    serialized_expns: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/lock/struct.Lock.html">Lock</a>&lt;<a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>&lt;<a href="#100-103">ExpnId</a>&gt;&gt;,
 <a href=#1297 id=1297 data-nosnippet>1297</a>
-<a href=#1298 id=1298 data-nosnippet>1298</a>    latest_expns: <a href="../../rustc_data_structures/sync/lock/struct.Lock.html">Lock</a>&lt;<a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>&lt;<a href="#100-103">ExpnId</a>&gt;&gt;,
+<a href=#1298 id=1298 data-nosnippet>1298</a>    latest_expns: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/lock/struct.Lock.html">Lock</a>&lt;<a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>&lt;<a href="#100-103">ExpnId</a>&gt;&gt;,
 <a href=#1299 id=1299 data-nosnippet>1299</a>}
 <a href=#1300 id=1300 data-nosnippet>1300</a>
 <a href=#1301 id=1301 data-nosnippet>1301</a><span class="kw">impl </span><a href="#1285-1299">HygieneEncodeContext</a> {
 <a href=#1302 id=1302 data-nosnippet>1302</a>    <span class="doccomment">/// Record the fact that we need to serialize the corresponding `ExpnData`.
 <a href=#1303 id=1303 data-nosnippet>1303</a>    </span><span class="kw">pub fn </span>schedule_expn_data_for_encoding(<span class="kw-2">&amp;</span><span class="self">self</span>, expn: <a href="#100-103">ExpnId</a>) {
-<a href=#1304 id=1304 data-nosnippet>1304</a>        <span class="kw">if </span>!<a class="self" href="#1303">self</a>.serialized_expns.<a href="../../rustc_data_structures/sync/lock/struct.Lock.html#method.lock">lock</a>().<a href="https://doc.rust-lang.org/nightly/std/collections/hash/set/struct.HashSet.html#method.contains">contains</a>(<span class="kw-2">&amp;</span><a href="#1303">expn</a>) {
-<a href=#1305 id=1305 data-nosnippet>1305</a>            <a class="self" href="#1303">self</a>.latest_expns.<a href="../../rustc_data_structures/sync/lock/struct.Lock.html#method.lock">lock</a>().<a href="https://doc.rust-lang.org/nightly/std/collections/hash/set/struct.HashSet.html#method.insert">insert</a>(<a href="#1303">expn</a>);
+<a href=#1304 id=1304 data-nosnippet>1304</a>        <span class="kw">if </span>!<a class="self" href="#1303">self</a>.serialized_expns.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/lock/struct.Lock.html#method.lock">lock</a>().<a href="https://doc.rust-lang.org/nightly/std/collections/hash/set/struct.HashSet.html#method.contains">contains</a>(<span class="kw-2">&amp;</span><a href="#1303">expn</a>) {
+<a href=#1305 id=1305 data-nosnippet>1305</a>            <a class="self" href="#1303">self</a>.latest_expns.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/lock/struct.Lock.html#method.lock">lock</a>().<a href="https://doc.rust-lang.org/nightly/std/collections/hash/set/struct.HashSet.html#method.insert">insert</a>(<a href="#1303">expn</a>);
 <a href=#1306 id=1306 data-nosnippet>1306</a>        }
 <a href=#1307 id=1307 data-nosnippet>1307</a>    }
 <a href=#1308 id=1308 data-nosnippet>1308</a>
@@ -1361,15 +1361,15 @@
 <a href=#1361 id=1361 data-nosnippet>1361</a></span><span class="kw">pub struct </span><a href="../../rustc_span/hygiene/struct.HygieneDecodeContext.html">HygieneDecodeContext</a> {
 <a href=#1362 id=1362 data-nosnippet>1362</a>    <span class="comment">// A cache mapping raw serialized per-crate syntax context ids to corresponding decoded
 <a href=#1363 id=1363 data-nosnippet>1363</a>    // `SyntaxContext`s in the current global `HygieneData`.
-<a href=#1364 id=1364 data-nosnippet>1364</a>    </span>remapped_ctxts: <a href="../../rustc_data_structures/sync/lock/struct.Lock.html">Lock</a>&lt;<a href="../../rustc_index/vec/struct.IndexVec.html">IndexVec</a>&lt;<a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>, <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="#50">SyntaxContext</a>&gt;&gt;&gt;,
+<a href=#1364 id=1364 data-nosnippet>1364</a>    </span>remapped_ctxts: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/lock/struct.Lock.html">Lock</a>&lt;IndexVec&lt;<a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>, <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="#50">SyntaxContext</a>&gt;&gt;&gt;,
 <a href=#1365 id=1365 data-nosnippet>1365</a>}
 <a href=#1366 id=1366 data-nosnippet>1366</a>
 <a href=#1367 id=1367 data-nosnippet>1367</a><span class="doccomment">/// Register an expansion which has been decoded from the on-disk-cache for the local crate.
 <a href=#1368 id=1368 data-nosnippet>1368</a></span><span class="kw">pub fn </span><a href="../../rustc_span/hygiene/fn.register_local_expn_id.html">register_local_expn_id</a>(data: <a href="#983-1038">ExpnData</a>, hash: <a href="#147">ExpnHash</a>) -&gt; <a href="#100-103">ExpnId</a> {
 <a href=#1369 id=1369 data-nosnippet>1369</a>    <a href="#399-401">HygieneData::with</a>(|hygiene_data| {
-<a href=#1370 id=1370 data-nosnippet>1370</a>        <span class="kw">let </span>expn_id = <a href="#1369">hygiene_data</a>.local_expn_data.<a href="../../rustc_index/slice/struct.IndexSlice.html#method.next_index">next_index</a>();
-<a href=#1371 id=1371 data-nosnippet>1371</a>        <a href="#1369">hygiene_data</a>.local_expn_data.<a href="../../rustc_index/vec/struct.IndexVec.html#method.push">push</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#1368">data</a>));
-<a href=#1372 id=1372 data-nosnippet>1372</a>        <span class="kw">let </span>_eid = <a href="#1369">hygiene_data</a>.local_expn_hashes.<a href="../../rustc_index/vec/struct.IndexVec.html#method.push">push</a>(<a href="#1368">hash</a>);
+<a href=#1370 id=1370 data-nosnippet>1370</a>        <span class="kw">let </span>expn_id = <a href="#1369">hygiene_data</a>.local_expn_data.next_index();
+<a href=#1371 id=1371 data-nosnippet>1371</a>        <a href="#1369">hygiene_data</a>.local_expn_data.push(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#1368">data</a>));
+<a href=#1372 id=1372 data-nosnippet>1372</a>        <span class="kw">let </span>_eid = <a href="#1369">hygiene_data</a>.local_expn_hashes.push(<a href="#1368">hash</a>);
 <a href=#1373 id=1373 data-nosnippet>1373</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.debug_assert_eq.html">debug_assert_eq!</a>(expn_id, _eid);
 <a href=#1374 id=1374 data-nosnippet>1374</a>
 <a href=#1375 id=1375 data-nosnippet>1375</a>        <span class="kw">let </span>expn_id = <a href="#1370">expn_id</a>.<a href="#245-247">to_expn_id</a>();
@@ -1432,12 +1432,12 @@
 <a href=#1432 id=1432 data-nosnippet>1432</a>// to track which `SyntaxContext`s we have already decoded.
 <a href=#1433 id=1433 data-nosnippet>1433</a>// The provided closure will be invoked to deserialize a `SyntaxContextData`
 <a href=#1434 id=1434 data-nosnippet>1434</a>// if we haven't already seen the id of the `SyntaxContext` we are deserializing.
-<a href=#1435 id=1435 data-nosnippet>1435</a></span><span class="kw">pub fn </span><a href="../../rustc_span/hygiene/fn.decode_syntax_context.html">decode_syntax_context</a>&lt;D: <a href="../../rustc_serialize/serialize/trait.Decoder.html">Decoder</a>&gt;(
+<a href=#1435 id=1435 data-nosnippet>1435</a></span><span class="kw">pub fn </span><a href="../../rustc_span/hygiene/fn.decode_syntax_context.html">decode_syntax_context</a>&lt;D: <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_serialize/serialize/trait.Decoder.html">Decoder</a>&gt;(
 <a href=#1436 id=1436 data-nosnippet>1436</a>    d: <span class="kw-2">&amp;mut </span>D,
 <a href=#1437 id=1437 data-nosnippet>1437</a>    context: <span class="kw-2">&amp;</span><a href="#1361-1365">HygieneDecodeContext</a>,
 <a href=#1438 id=1438 data-nosnippet>1438</a>    decode_data: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>(<span class="kw-2">&amp;mut </span>D, <a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>) -&gt; <a href="#60">SyntaxContextKey</a>,
 <a href=#1439 id=1439 data-nosnippet>1439</a>) -&gt; <a href="#50">SyntaxContext</a> {
-<a href=#1440 id=1440 data-nosnippet>1440</a>    <span class="kw">let </span>raw_id: <a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a> = <a href="../../rustc_serialize/serialize/trait.Decodable.html#tymethod.decode">Decodable::decode</a>(<a href="#1436">d</a>);
+<a href=#1440 id=1440 data-nosnippet>1440</a>    <span class="kw">let </span>raw_id: <a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a> = <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_serialize/serialize/trait.Decodable.html#tymethod.decode">Decodable::decode</a>(<a href="#1436">d</a>);
 <a href=#1441 id=1441 data-nosnippet>1441</a>    <span class="kw">if </span><a href="#1440">raw_id</a> == <span class="number">0 </span>{
 <a href=#1442 id=1442 data-nosnippet>1442</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"decode_syntax_context: deserialized root"</span>);
 <a href=#1443 id=1443 data-nosnippet>1443</a>        <span class="comment">// The root is special
@@ -1447,7 +1447,7 @@
 <a href=#1447 id=1447 data-nosnippet>1447</a>    <span class="comment">// Look into the cache first.
 <a href=#1448 id=1448 data-nosnippet>1448</a>    // Reminder: `HygieneDecodeContext` is per-crate, so there are no collisions between
 <a href=#1449 id=1449 data-nosnippet>1449</a>    // raw ids from different crate metadatas.
-<a href=#1450 id=1450 data-nosnippet>1450</a>    </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<span class="prelude-val">Some</span>(ctxt)) = <a href="#1437">context</a>.remapped_ctxts.<a href="../../rustc_data_structures/sync/lock/struct.Lock.html#method.lock">lock</a>().<a href="../../rustc_index/slice/struct.IndexSlice.html#method.get">get</a>(<a href="#1440">raw_id</a>) {
+<a href=#1450 id=1450 data-nosnippet>1450</a>    </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<span class="prelude-val">Some</span>(ctxt)) = <a href="#1437">context</a>.remapped_ctxts.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/lock/struct.Lock.html#method.lock">lock</a>().get(<a href="#1440">raw_id</a>) {
 <a href=#1451 id=1451 data-nosnippet>1451</a>        <span class="kw">return </span><span class="kw-2">*</span><a href="#1450">ctxt</a>;
 <a href=#1452 id=1452 data-nosnippet>1452</a>    }
 <a href=#1453 id=1453 data-nosnippet>1453</a>
@@ -1457,32 +1457,32 @@
 <a href=#1457 id=1457 data-nosnippet>1457</a>    <span class="kw">let </span>ctxt =
 <a href=#1458 id=1458 data-nosnippet>1458</a>        <a href="#399-401">HygieneData::with</a>(|hygiene_data| <a href="#1458">hygiene_data</a>.<a href="#570-624">alloc_ctxt</a>(<a href="#1456">parent</a>, <a href="#1456">expn_id</a>, <a href="#1456">transparency</a>));
 <a href=#1459 id=1459 data-nosnippet>1459</a>
-<a href=#1460 id=1460 data-nosnippet>1460</a>    <a href="#1437">context</a>.remapped_ctxts.<a href="../../rustc_data_structures/sync/lock/struct.Lock.html#method.lock">lock</a>().<a href="../../rustc_index/vec/struct.IndexVec.html#method.insert">insert</a>(<a href="#1440">raw_id</a>, <a href="#1457">ctxt</a>);
+<a href=#1460 id=1460 data-nosnippet>1460</a>    <a href="#1437">context</a>.remapped_ctxts.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/lock/struct.Lock.html#method.lock">lock</a>().insert(<a href="#1440">raw_id</a>, <a href="#1457">ctxt</a>);
 <a href=#1461 id=1461 data-nosnippet>1461</a>
 <a href=#1462 id=1462 data-nosnippet>1462</a>    <a href="#1457">ctxt</a>
 <a href=#1463 id=1463 data-nosnippet>1463</a>}
 <a href=#1464 id=1464 data-nosnippet>1464</a>
-<a href=#1465 id=1465 data-nosnippet>1465</a><span class="kw">impl</span>&lt;E: <a href="lib.rs.html#1198-1209">SpanEncoder</a>&gt; <a href="../../rustc_serialize/serialize/trait.Encodable.html">Encodable</a>&lt;E&gt; <span class="kw">for </span><a href="#112-116">LocalExpnId</a> {
+<a href=#1465 id=1465 data-nosnippet>1465</a><span class="kw">impl</span>&lt;E: <a href="lib.rs.html#1198-1209">SpanEncoder</a>&gt; <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_serialize/serialize/trait.Encodable.html">Encodable</a>&lt;E&gt; <span class="kw">for </span><a href="#112-116">LocalExpnId</a> {
 <a href=#1466 id=1466 data-nosnippet>1466</a>    <span class="kw">fn </span>encode(<span class="kw-2">&amp;</span><span class="self">self</span>, e: <span class="kw-2">&amp;mut </span>E) {
-<a href=#1467 id=1467 data-nosnippet>1467</a>        <a class="self" href="#1466">self</a>.<a href="#245-247">to_expn_id</a>().<a href="../../rustc_serialize/serialize/trait.Encodable.html#tymethod.encode">encode</a>(<a href="#1466">e</a>);
+<a href=#1467 id=1467 data-nosnippet>1467</a>        <a class="self" href="#1466">self</a>.<a href="#245-247">to_expn_id</a>().<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_serialize/serialize/trait.Encodable.html#tymethod.encode">encode</a>(<a href="#1466">e</a>);
 <a href=#1468 id=1468 data-nosnippet>1468</a>    }
 <a href=#1469 id=1469 data-nosnippet>1469</a>}
 <a href=#1470 id=1470 data-nosnippet>1470</a>
-<a href=#1471 id=1471 data-nosnippet>1471</a><span class="kw">impl</span>&lt;D: <a href="lib.rs.html#1304-1314">SpanDecoder</a>&gt; <a href="../../rustc_serialize/serialize/trait.Decodable.html">Decodable</a>&lt;D&gt; <span class="kw">for </span><a href="#112-116">LocalExpnId</a> {
+<a href=#1471 id=1471 data-nosnippet>1471</a><span class="kw">impl</span>&lt;D: <a href="lib.rs.html#1304-1314">SpanDecoder</a>&gt; <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_serialize/serialize/trait.Decodable.html">Decodable</a>&lt;D&gt; <span class="kw">for </span><a href="#112-116">LocalExpnId</a> {
 <a href=#1472 id=1472 data-nosnippet>1472</a>    <span class="kw">fn </span>decode(d: <span class="kw-2">&amp;mut </span>D) -&gt; <span class="self">Self </span>{
-<a href=#1473 id=1473 data-nosnippet>1473</a>        <a href="#302-304">ExpnId::expect_local</a>(<a href="../../rustc_serialize/serialize/trait.Decodable.html#tymethod.decode">ExpnId::decode</a>(<a href="#1472">d</a>))
+<a href=#1473 id=1473 data-nosnippet>1473</a>        <a href="#302-304">ExpnId::expect_local</a>(<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_serialize/serialize/trait.Decodable.html#tymethod.decode">ExpnId::decode</a>(<a href="#1472">d</a>))
 <a href=#1474 id=1474 data-nosnippet>1474</a>    }
 <a href=#1475 id=1475 data-nosnippet>1475</a>}
 <a href=#1476 id=1476 data-nosnippet>1476</a>
 <a href=#1477 id=1477 data-nosnippet>1477</a><span class="kw">pub fn </span><a href="../../rustc_span/hygiene/fn.raw_encode_syntax_context.html">raw_encode_syntax_context</a>(
 <a href=#1478 id=1478 data-nosnippet>1478</a>    ctxt: <a href="#50">SyntaxContext</a>,
 <a href=#1479 id=1479 data-nosnippet>1479</a>    context: <span class="kw-2">&amp;</span><a href="#1285-1299">HygieneEncodeContext</a>,
-<a href=#1480 id=1480 data-nosnippet>1480</a>    e: <span class="kw-2">&amp;mut </span><span class="kw">impl </span><a href="../../rustc_serialize/serialize/trait.Encoder.html">Encoder</a>,
+<a href=#1480 id=1480 data-nosnippet>1480</a>    e: <span class="kw-2">&amp;mut </span><span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_serialize/serialize/trait.Encoder.html">Encoder</a>,
 <a href=#1481 id=1481 data-nosnippet>1481</a>) {
-<a href=#1482 id=1482 data-nosnippet>1482</a>    <span class="kw">if </span>!<a href="#1479">context</a>.serialized_ctxts.<a href="../../rustc_data_structures/sync/lock/struct.Lock.html#method.lock">lock</a>().<a href="https://doc.rust-lang.org/nightly/std/collections/hash/set/struct.HashSet.html#method.contains">contains</a>(<span class="kw-2">&amp;</span><a href="#1478">ctxt</a>) {
-<a href=#1483 id=1483 data-nosnippet>1483</a>        <a href="#1479">context</a>.latest_ctxts.<a href="../../rustc_data_structures/sync/lock/struct.Lock.html#method.lock">lock</a>().<a href="https://doc.rust-lang.org/nightly/std/collections/hash/set/struct.HashSet.html#method.insert">insert</a>(<a href="#1478">ctxt</a>);
+<a href=#1482 id=1482 data-nosnippet>1482</a>    <span class="kw">if </span>!<a href="#1479">context</a>.serialized_ctxts.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/lock/struct.Lock.html#method.lock">lock</a>().<a href="https://doc.rust-lang.org/nightly/std/collections/hash/set/struct.HashSet.html#method.contains">contains</a>(<span class="kw-2">&amp;</span><a href="#1478">ctxt</a>) {
+<a href=#1483 id=1483 data-nosnippet>1483</a>        <a href="#1479">context</a>.latest_ctxts.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/sync/lock/struct.Lock.html#method.lock">lock</a>().<a href="https://doc.rust-lang.org/nightly/std/collections/hash/set/struct.HashSet.html#method.insert">insert</a>(<a href="#1478">ctxt</a>);
 <a href=#1484 id=1484 data-nosnippet>1484</a>    }
-<a href=#1485 id=1485 data-nosnippet>1485</a>    <a href="#1478">ctxt</a>.<span class="number">0</span>.<a href="../../rustc_serialize/serialize/trait.Encodable.html#tymethod.encode">encode</a>(<a href="#1480">e</a>);
+<a href=#1485 id=1485 data-nosnippet>1485</a>    <a href="#1478">ctxt</a>.<span class="number">0</span>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_serialize/serialize/trait.Encodable.html#tymethod.encode">encode</a>(<a href="#1480">e</a>);
 <a href=#1486 id=1486 data-nosnippet>1486</a>}
 <a href=#1487 id=1487 data-nosnippet>1487</a>
 <a href=#1488 id=1488 data-nosnippet>1488</a><span class="doccomment">/// Updates the `disambiguator` field of the corresponding `ExpnData`
@@ -1529,23 +1529,23 @@
 <a href=#1529 id=1529 data-nosnippet>1529</a>    <a href="#172-174">ExpnHash::new</a>(<a href="#1497">ctx</a>.<a href="lib.rs.html#2629">def_path_hash</a>(<a href="def_id.rs.html#26">LOCAL_CRATE</a>.<a href="def_id.rs.html#36-38">as_def_id</a>()).<a href="def_id.rs.html#101-103">stable_crate_id</a>(), <a href="#1501">expn_hash</a>)
 <a href=#1530 id=1530 data-nosnippet>1530</a>}
 <a href=#1531 id=1531 data-nosnippet>1531</a>
-<a href=#1532 id=1532 data-nosnippet>1532</a><span class="kw">impl</span>&lt;CTX: <a href="lib.rs.html#2628-2640">HashStableContext</a>&gt; <a href="../../rustc_data_structures/stable_hasher/trait.HashStable.html">HashStable</a>&lt;CTX&gt; <span class="kw">for </span><a href="#50">SyntaxContext</a> {
+<a href=#1532 id=1532 data-nosnippet>1532</a><span class="kw">impl</span>&lt;CTX: <a href="lib.rs.html#2628-2640">HashStableContext</a>&gt; <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/trait.HashStable.html">HashStable</a>&lt;CTX&gt; <span class="kw">for </span><a href="#50">SyntaxContext</a> {
 <a href=#1533 id=1533 data-nosnippet>1533</a>    <span class="kw">fn </span>hash_stable(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;mut </span>CTX, hasher: <span class="kw-2">&amp;mut </span><a href="https://docs.rs/rustc-stable-hash/0.1.2/rustc_stable_hash/hashers/type.StableSipHasher128.html">StableHasher</a>) {
 <a href=#1534 id=1534 data-nosnippet>1534</a>        <span class="kw">const </span>TAG_EXPANSION: <a href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a> = <span class="number">0</span>;
 <a href=#1535 id=1535 data-nosnippet>1535</a>        <span class="kw">const </span>TAG_NO_EXPANSION: <a href="https://doc.rust-lang.org/nightly/std/primitive.u8.html">u8</a> = <span class="number">1</span>;
 <a href=#1536 id=1536 data-nosnippet>1536</a>
 <a href=#1537 id=1537 data-nosnippet>1537</a>        <span class="kw">if </span><a class="self" href="#1533">self</a>.<a href="#710-712">is_root</a>() {
-<a href=#1538 id=1538 data-nosnippet>1538</a>            <a href="#1535">TAG_NO_EXPANSION</a>.<a href="../../rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#1533">ctx</a>, <a href="#1533">hasher</a>);
+<a href=#1538 id=1538 data-nosnippet>1538</a>            <a href="#1535">TAG_NO_EXPANSION</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#1533">ctx</a>, <a href="#1533">hasher</a>);
 <a href=#1539 id=1539 data-nosnippet>1539</a>        } <span class="kw">else </span>{
-<a href=#1540 id=1540 data-nosnippet>1540</a>            <a href="#1534">TAG_EXPANSION</a>.<a href="../../rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#1533">ctx</a>, <a href="#1533">hasher</a>);
+<a href=#1540 id=1540 data-nosnippet>1540</a>            <a href="#1534">TAG_EXPANSION</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#1533">ctx</a>, <a href="#1533">hasher</a>);
 <a href=#1541 id=1541 data-nosnippet>1541</a>            <span class="kw">let </span>(expn_id, transparency) = <a class="self" href="#1533">self</a>.<a href="#916-918">outer_mark</a>();
-<a href=#1542 id=1542 data-nosnippet>1542</a>            <a href="#1541">expn_id</a>.<a href="../../rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#1533">ctx</a>, <a href="#1533">hasher</a>);
-<a href=#1543 id=1543 data-nosnippet>1543</a>            <a href="#1541">transparency</a>.<a href="../../rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#1533">ctx</a>, <a href="#1533">hasher</a>);
+<a href=#1542 id=1542 data-nosnippet>1542</a>            <a href="#1541">expn_id</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#1533">ctx</a>, <a href="#1533">hasher</a>);
+<a href=#1543 id=1543 data-nosnippet>1543</a>            <a href="#1541">transparency</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#1533">ctx</a>, <a href="#1533">hasher</a>);
 <a href=#1544 id=1544 data-nosnippet>1544</a>        }
 <a href=#1545 id=1545 data-nosnippet>1545</a>    }
 <a href=#1546 id=1546 data-nosnippet>1546</a>}
 <a href=#1547 id=1547 data-nosnippet>1547</a>
-<a href=#1548 id=1548 data-nosnippet>1548</a><span class="kw">impl</span>&lt;CTX: <a href="lib.rs.html#2628-2640">HashStableContext</a>&gt; <a href="../../rustc_data_structures/stable_hasher/trait.HashStable.html">HashStable</a>&lt;CTX&gt; <span class="kw">for </span><a href="#100-103">ExpnId</a> {
+<a href=#1548 id=1548 data-nosnippet>1548</a><span class="kw">impl</span>&lt;CTX: <a href="lib.rs.html#2628-2640">HashStableContext</a>&gt; <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/trait.HashStable.html">HashStable</a>&lt;CTX&gt; <span class="kw">for </span><a href="#100-103">ExpnId</a> {
 <a href=#1549 id=1549 data-nosnippet>1549</a>    <span class="kw">fn </span>hash_stable(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;mut </span>CTX, hasher: <span class="kw-2">&amp;mut </span><a href="https://docs.rs/rustc-stable-hash/0.1.2/rustc_stable_hash/hashers/type.StableSipHasher128.html">StableHasher</a>) {
 <a href=#1550 id=1550 data-nosnippet>1550</a>        <a href="#129-143">assert_default_hashing_controls</a>(<a href="#1549">ctx</a>, <span class="string">"ExpnId"</span>);
 <a href=#1551 id=1551 data-nosnippet>1551</a>        <span class="kw">let </span>hash = <span class="kw">if </span><span class="kw-2">*</span><span class="self"><a href="#1549">self</a> </span>== <a href="#281-283">ExpnId::root</a>() {
@@ -1555,6 +1555,6 @@
 <a href=#1555 id=1555 data-nosnippet>1555</a>            <a class="self" href="#1549">self</a>.<a href="#286-288">expn_hash</a>().<span class="number">0
 <a href=#1556 id=1556 data-nosnippet>1556</a>        </span>};
 <a href=#1557 id=1557 data-nosnippet>1557</a>
-<a href=#1558 id=1558 data-nosnippet>1558</a>        <a href="#1551">hash</a>.<a href="../../rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#1549">ctx</a>, <a href="#1549">hasher</a>);
+<a href=#1558 id=1558 data-nosnippet>1558</a>        <a href="#1551">hash</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_data_structures/stable_hasher/trait.HashStable.html#tymethod.hash_stable">hash_stable</a>(<a href="#1549">ctx</a>, <a href="#1549">hasher</a>);
 <a href=#1559 id=1559 data-nosnippet>1559</a>    }
 <a href=#1560 id=1560 data-nosnippet>1560</a>}</code></pre></div></section></main></body></html>

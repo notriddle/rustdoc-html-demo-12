@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["get_symbol_hash","mangle"],"struct":["SymbolPath","SymbolPrinter"]};
+window.SIDEBAR_ITEMS = {"fn":["get_symbol_hash","mangle"],"struct":["LegacySymbolMangler","SymbolPath"]};

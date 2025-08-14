@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["GccBuildStatus"],"fn":["add_cg_gcc_cargo_flags","build_gcc","ci_gcc_root","create_lib_alias","detect_gcc_freshness","get_gcc_build_status","libgccjit_built_path","try_download_gcc"],"struct":["Gcc","GccOutput","Meta"]};
+window.SIDEBAR_ITEMS = {"enum":["GccBuildStatus"],"fn":["add_cg_gcc_cargo_flags","build_gcc","ci_gcc_root","detect_gcc_freshness","get_gcc_build_status","libgccjit_built_path","try_download_gcc"],"struct":["Gcc","GccOutput","Meta"]};
