@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["parameterized_over_tcx","trivially_parameterized_over_tcx"],"trait":["ParameterizedOverTcx"]};

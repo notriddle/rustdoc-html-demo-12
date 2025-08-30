@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SerializedModule"],"fn":["check_lto_allowed","crate_type_allows_lto","exported_symbols_for_lto"],"struct":["ThinModule","ThinShared"]};

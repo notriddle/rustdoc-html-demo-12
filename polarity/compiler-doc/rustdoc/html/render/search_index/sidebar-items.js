@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SerializedOptional32","SerializedOptionalString","SimplifiedParam"],"fn":["build_index","get_fn_inputs_and_outputs","get_function_type_for_search","get_index_type","get_index_type_id","make_nullary_fn","simplify_fn_constraint","simplify_fn_type"],"mod":["encode"],"struct":["EntryData","FunctionData","PathData","SerializedSearchIndex","TypeData"]};

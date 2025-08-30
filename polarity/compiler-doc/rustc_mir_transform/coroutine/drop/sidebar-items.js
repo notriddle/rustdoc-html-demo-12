@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["build_pin_fut","build_poll_call","build_poll_switch","cleanup_async_drops","create_coroutine_drop_shim","create_coroutine_drop_shim_async","create_coroutine_drop_shim_proxy_async","elaborate_coroutine_drops","expand_async_drops","gather_dropline_blocks","has_expandable_async_drops","insert_clean_drop"],"struct":["FixReturnPendingVisitor"]};

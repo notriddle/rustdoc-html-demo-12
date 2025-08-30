@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PathKind","UpdateParentGoalCtxt"],"mod":["global_cache","stack"],"struct":["AvailableDepth","CandidateHeadUsages","CycleHead","CycleHeads","EvaluationResult","GlobalCache","HeadUsages","NestedGoals","PathsToNested","ProvisionalCacheEntry","SearchGraph"],"trait":["Cx","Delegate"]};

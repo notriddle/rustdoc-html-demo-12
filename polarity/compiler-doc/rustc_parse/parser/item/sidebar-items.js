@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FnContext","FrontMatterParsingMode","IsMacroRulesItem"],"struct":["FnParseMode"],"type":["ReqName"]};

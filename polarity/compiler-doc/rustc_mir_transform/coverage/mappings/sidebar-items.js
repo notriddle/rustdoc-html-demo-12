@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["extract_branch_mappings","extract_mappings_from_mir","resolve_block_markers"],"struct":["ExtractedMappings"]};

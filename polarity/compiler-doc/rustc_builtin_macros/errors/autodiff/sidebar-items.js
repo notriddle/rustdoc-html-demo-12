@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["AutoDiffInvalidApplication","AutoDiffInvalidApplicationModeAct","AutoDiffInvalidNumberActivities","AutoDiffInvalidRetAct","AutoDiffInvalidTypeForActivity","AutoDiffInvalidWidth","AutoDiffMissingConfig","AutoDiffUnknownActivity"]};

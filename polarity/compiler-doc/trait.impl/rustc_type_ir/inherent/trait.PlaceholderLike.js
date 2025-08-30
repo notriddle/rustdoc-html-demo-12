@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["rustc_infer",[]],["rustc_middle",[["impl&lt;'tcx&gt; <a class=\"trait\" href=\"rustc_middle/ty/inherent/trait.PlaceholderLike.html\" title=\"trait rustc_middle::ty::inherent::PlaceholderLike\">PlaceholderLike</a>&lt;<a class=\"struct\" href=\"rustc_middle/ty/struct.TyCtxt.html\" title=\"struct rustc_middle::ty::TyCtxt\">TyCtxt</a>&lt;'tcx&gt;&gt; for <a class=\"type\" href=\"rustc_middle/ty/type.PlaceholderConst.html\" title=\"type rustc_middle::ty::PlaceholderConst\">PlaceholderConst</a>"],["impl&lt;'tcx&gt; <a class=\"trait\" href=\"rustc_middle/ty/inherent/trait.PlaceholderLike.html\" title=\"trait rustc_middle::ty::inherent::PlaceholderLike\">PlaceholderLike</a>&lt;<a class=\"struct\" href=\"rustc_middle/ty/struct.TyCtxt.html\" title=\"struct rustc_middle::ty::TyCtxt\">TyCtxt</a>&lt;'tcx&gt;&gt; for <a class=\"type\" href=\"rustc_middle/ty/type.PlaceholderRegion.html\" title=\"type rustc_middle::ty::PlaceholderRegion\">PlaceholderRegion</a>"],["impl&lt;'tcx&gt; <a class=\"trait\" href=\"rustc_middle/ty/inherent/trait.PlaceholderLike.html\" title=\"trait rustc_middle::ty::inherent::PlaceholderLike\">PlaceholderLike</a>&lt;<a class=\"struct\" href=\"rustc_middle/ty/struct.TyCtxt.html\" title=\"struct rustc_middle::ty::TyCtxt\">TyCtxt</a>&lt;'tcx&gt;&gt; for <a class=\"type\" href=\"rustc_middle/ty/type.PlaceholderType.html\" title=\"type rustc_middle::ty::PlaceholderType\">PlaceholderType</a>"]]],["rustc_trait_selection",[]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[18,1405,29]}

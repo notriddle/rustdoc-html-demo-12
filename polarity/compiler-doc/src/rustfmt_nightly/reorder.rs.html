@@ -1,0 +1,340 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/rustfmt/src/reorder.rs`."><title>reorder.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustfmt_nightly" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-38ac1f3e.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustfmt_nightly/</div>reorder.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Reorder items.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! `mod`, `extern crate` and `use` declarations are reordered in alphabetical
+<a href=#4 id=4 data-nosnippet>4</a>//! order. Trait items are reordered in pre-determined order (associated types
+<a href=#5 id=5 data-nosnippet>5</a>//! and constants comes before methods).
+<a href=#6 id=6 data-nosnippet>6</a>
+<a href=#7 id=7 data-nosnippet>7</a></span><span class="comment">// FIXME(#2455): Reorder trait items.
+<a href=#8 id=8 data-nosnippet>8</a>
+<a href=#9 id=9 data-nosnippet>9</a></span><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/cmp/enum.Ordering.html">std::cmp::Ordering</a>;
+<a href=#10 id=10 data-nosnippet>10</a>
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>rustc_ast::{<a href="../../rustc_ast/ast/index.html">ast</a>, <a href="../../rustc_ast/attr/index.html">attr</a>};
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>rustc_span::{<a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>, <a href="../../rustc_span/symbol/sym/index.html">symbol::sym</a>};
+<a href=#13 id=13 data-nosnippet>13</a>
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span><span class="kw">crate</span>::config::{<a href="config/mod.rs.html#33-200">Config</a>, <a href="config/options.rs.html#109">GroupImportsTactic</a>};
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span><span class="kw">crate</span>::imports::{<a href="imports.rs.html#97-104">UseSegmentKind</a>, <a href="imports.rs.html#113-122">UseTree</a>, <a href="imports.rs.html#215-250">normalize_use_trees_with_granularity</a>};
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span><span class="kw">crate</span>::items::{<a href="items.rs.html#3600-3605">is_mod_decl</a>, <a href="items.rs.html#3583-3597">rewrite_extern_crate</a>, <a href="items.rs.html#3567-3579">rewrite_mod</a>};
+<a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span><span class="kw">crate</span>::lists::{<a href="lists.rs.html#19-35">ListFormatting</a>, <a href="lists.rs.html#122-132">ListItem</a>, <a href="lists.rs.html#797-827">itemize_list</a>, <a href="lists.rs.html#264-524">write_list</a>};
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span><span class="kw">crate</span>::rewrite::{<a href="rewrite.rs.html#93-111">RewriteContext</a>, <a href="rewrite.rs.html#66-70">RewriteErrorExt</a>};
+<a href=#19 id=19 data-nosnippet>19</a><span class="kw">use </span><a href="shape.rs.html#143-150"><span class="kw">crate</span>::shape::Shape</a>;
+<a href=#20 id=20 data-nosnippet>20</a><span class="kw">use </span><a href="source_map.rs.html#19-26"><span class="kw">crate</span>::source_map::LineRangeUtils</a>;
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">use </span><a href="spanned.rs.html#11-13"><span class="kw">crate</span>::spanned::Spanned</a>;
+<a href=#22 id=22 data-nosnippet>22</a><span class="kw">use </span><span class="kw">crate</span>::utils::{<a href="utils.rs.html#268-272">contains_skip</a>, <a href="utils.rs.html#351-353">mk_sp</a>};
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span><a href="visitor.rs.html#72-90"><span class="kw">crate</span>::visitor::FmtVisitor</a>;
+<a href=#24 id=24 data-nosnippet>24</a>
+<a href=#25 id=25 data-nosnippet>25</a><span class="doccomment">/// Choose the ordering between the given two items.
+<a href=#26 id=26 data-nosnippet>26</a></span><span class="kw">fn </span><a href="../../rustfmt_nightly/reorder/fn.compare_items.html">compare_items</a>(a: <span class="kw-2">&amp;</span><a href="../../rustc_ast/ast/struct.Item.html">ast::Item</a>, b: <span class="kw-2">&amp;</span><a href="../../rustc_ast/ast/struct.Item.html">ast::Item</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/core/cmp/enum.Ordering.html">Ordering</a> {
+<a href=#27 id=27 data-nosnippet>27</a>    <span class="kw">match </span>(<span class="kw-2">&amp;</span><a href="#26">a</a>.kind, <span class="kw-2">&amp;</span><a href="#26">b</a>.kind) {
+<a href=#28 id=28 data-nosnippet>28</a>        (<span class="kw-2">&amp;</span>ast::ItemKind::Mod(<span class="kw">_</span>, a_ident, <span class="kw">_</span>), <span class="kw-2">&amp;</span>ast::ItemKind::Mod(<span class="kw">_</span>, b_ident, <span class="kw">_</span>)) =&gt; {
+<a href=#29 id=29 data-nosnippet>29</a>            <a href="#28">a_ident</a>.<a href="../../rustc_span/symbol/struct.Ident.html#method.as_str">as_str</a>().<a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html#tymethod.cmp">cmp</a>(<a href="#28">b_ident</a>.<a href="../../rustc_span/symbol/struct.Ident.html#method.as_str">as_str</a>())
+<a href=#30 id=30 data-nosnippet>30</a>        }
+<a href=#31 id=31 data-nosnippet>31</a>        (
+<a href=#32 id=32 data-nosnippet>32</a>            <span class="kw-2">&amp;</span>ast::ItemKind::ExternCrate(<span class="kw-2">ref </span>a_name, a_ident),
+<a href=#33 id=33 data-nosnippet>33</a>            <span class="kw-2">&amp;</span>ast::ItemKind::ExternCrate(<span class="kw-2">ref </span>b_name, b_ident),
+<a href=#34 id=34 data-nosnippet>34</a>        ) =&gt; {
+<a href=#35 id=35 data-nosnippet>35</a>            <span class="comment">// `extern crate foo as bar;`
+<a href=#36 id=36 data-nosnippet>36</a>            //               ^^^ Comparing this.
+<a href=#37 id=37 data-nosnippet>37</a>            </span><span class="kw">let </span>a_orig_name = <a href="#32">a_name</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or">unwrap_or</a>(<a href="#32">a_ident</a>.name);
+<a href=#38 id=38 data-nosnippet>38</a>            <span class="kw">let </span>b_orig_name = <a href="#33">b_name</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or">unwrap_or</a>(<a href="#33">b_ident</a>.name);
+<a href=#39 id=39 data-nosnippet>39</a>            <span class="kw">let </span>result = <a href="#37">a_orig_name</a>.<a href="../../rustc_span/symbol/struct.Symbol.html#method.as_str">as_str</a>().<a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html#tymethod.cmp">cmp</a>(<a href="#38">b_orig_name</a>.<a href="../../rustc_span/symbol/struct.Symbol.html#method.as_str">as_str</a>());
+<a href=#40 id=40 data-nosnippet>40</a>            <span class="kw">if </span><a href="#39">result</a> != <a href="https://doc.rust-lang.org/nightly/core/cmp/enum.Ordering.html#variant.Equal">Ordering::Equal</a> {
+<a href=#41 id=41 data-nosnippet>41</a>                <span class="kw">return </span><a href="#39">result</a>;
+<a href=#42 id=42 data-nosnippet>42</a>            }
+<a href=#43 id=43 data-nosnippet>43</a>
+<a href=#44 id=44 data-nosnippet>44</a>            <span class="comment">// `extern crate foo as bar;`
+<a href=#45 id=45 data-nosnippet>45</a>            //                      ^^^ Comparing this.
+<a href=#46 id=46 data-nosnippet>46</a>            </span><span class="kw">match </span>(<a href="#32">a_name</a>, <a href="#33">b_name</a>) {
+<a href=#47 id=47 data-nosnippet>47</a>                (<span class="prelude-val">Some</span>(..), <span class="prelude-val">None</span>) =&gt; <a href="https://doc.rust-lang.org/nightly/core/cmp/enum.Ordering.html#variant.Greater">Ordering::Greater</a>,
+<a href=#48 id=48 data-nosnippet>48</a>                (<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(..)) =&gt; <a href="https://doc.rust-lang.org/nightly/core/cmp/enum.Ordering.html#variant.Less">Ordering::Less</a>,
+<a href=#49 id=49 data-nosnippet>49</a>                (<span class="prelude-val">None</span>, <span class="prelude-val">None</span>) =&gt; <a href="https://doc.rust-lang.org/nightly/core/cmp/enum.Ordering.html#variant.Equal">Ordering::Equal</a>,
+<a href=#50 id=50 data-nosnippet>50</a>                (<span class="prelude-val">Some</span>(..), <span class="prelude-val">Some</span>(..)) =&gt; <a href="#32">a_ident</a>.<a href="../../rustc_span/symbol/struct.Ident.html#method.as_str">as_str</a>().<a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html#tymethod.cmp">cmp</a>(<a href="#33">b_ident</a>.<a href="../../rustc_span/symbol/struct.Ident.html#method.as_str">as_str</a>()),
+<a href=#51 id=51 data-nosnippet>51</a>            }
+<a href=#52 id=52 data-nosnippet>52</a>        }
+<a href=#53 id=53 data-nosnippet>53</a>        <span class="kw">_ </span>=&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#54 id=54 data-nosnippet>54</a>    }
+<a href=#55 id=55 data-nosnippet>55</a>}
+<a href=#56 id=56 data-nosnippet>56</a>
+<a href=#57 id=57 data-nosnippet>57</a><span class="kw">fn </span><a href="../../rustfmt_nightly/reorder/fn.wrap_reorderable_items.html">wrap_reorderable_items</a>(
+<a href=#58 id=58 data-nosnippet>58</a>    context: <span class="kw-2">&amp;</span><a href="rewrite.rs.html#93-111">RewriteContext</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#59 id=59 data-nosnippet>59</a>    list_items: <span class="kw-2">&amp;</span>[<a href="lists.rs.html#122-132">ListItem</a>],
+<a href=#60 id=60 data-nosnippet>60</a>    shape: <a href="shape.rs.html#143-150">Shape</a>,
+<a href=#61 id=61 data-nosnippet>61</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>&gt; {
+<a href=#62 id=62 data-nosnippet>62</a>    <span class="kw">let </span>fmt = <a href="lists.rs.html#38-51">ListFormatting::new</a>(<a href="#60">shape</a>, <a href="#58">context</a>.config)
+<a href=#63 id=63 data-nosnippet>63</a>        .<a href="lists.rs.html#58-61">separator</a>(<span class="string">""</span>)
+<a href=#64 id=64 data-nosnippet>64</a>        .<a href="lists.rs.html#88-91">align_comments</a>(<span class="bool-val">false</span>);
+<a href=#65 id=65 data-nosnippet>65</a>    <a href="lists.rs.html#264-524">write_list</a>(<a href="#59">list_items</a>, <span class="kw-2">&amp;</span><a href="#62">fmt</a>).<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.ok">ok</a>()
+<a href=#66 id=66 data-nosnippet>66</a>}
+<a href=#67 id=67 data-nosnippet>67</a>
+<a href=#68 id=68 data-nosnippet>68</a><span class="kw">fn </span><a href="../../rustfmt_nightly/reorder/fn.rewrite_reorderable_item.html">rewrite_reorderable_item</a>(
+<a href=#69 id=69 data-nosnippet>69</a>    context: <span class="kw-2">&amp;</span><a href="rewrite.rs.html#93-111">RewriteContext</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#70 id=70 data-nosnippet>70</a>    item: <span class="kw-2">&amp;</span><a href="../../rustc_ast/ast/struct.Item.html">ast::Item</a>,
+<a href=#71 id=71 data-nosnippet>71</a>    shape: <a href="shape.rs.html#143-150">Shape</a>,
+<a href=#72 id=72 data-nosnippet>72</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>&gt; {
+<a href=#73 id=73 data-nosnippet>73</a>    <span class="kw">match </span><a href="#70">item</a>.kind {
+<a href=#74 id=74 data-nosnippet>74</a>        <a href="../../rustc_ast/ast/enum.ItemKind.html#variant.ExternCrate">ast::ItemKind::ExternCrate</a>(..) =&gt; <a href="items.rs.html#3583-3597">rewrite_extern_crate</a>(<a href="#69">context</a>, <a href="#70">item</a>, <a href="#71">shape</a>),
+<a href=#75 id=75 data-nosnippet>75</a>        <a href="../../rustc_ast/ast/enum.ItemKind.html#variant.Mod">ast::ItemKind::Mod</a>(<span class="kw">_</span>, ident, <span class="kw">_</span>) =&gt; <a href="items.rs.html#3567-3579">rewrite_mod</a>(<a href="#69">context</a>, <a href="#70">item</a>, <a href="#75">ident</a>, <a href="#71">shape</a>),
+<a href=#76 id=76 data-nosnippet>76</a>        <span class="kw">_ </span>=&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#77 id=77 data-nosnippet>77</a>    }
+<a href=#78 id=78 data-nosnippet>78</a>}
+<a href=#79 id=79 data-nosnippet>79</a>
+<a href=#80 id=80 data-nosnippet>80</a><span class="doccomment">/// Rewrite a list of items with reordering and/or regrouping. Every item
+<a href=#81 id=81 data-nosnippet>81</a>/// in `items` must have the same `ast::ItemKind`. Whether reordering, regrouping,
+<a href=#82 id=82 data-nosnippet>82</a>/// or both are done is determined from the `context`.
+<a href=#83 id=83 data-nosnippet>83</a></span><span class="kw">fn </span><a href="../../rustfmt_nightly/reorder/fn.rewrite_reorderable_or_regroupable_items.html">rewrite_reorderable_or_regroupable_items</a>(
+<a href=#84 id=84 data-nosnippet>84</a>    context: <span class="kw-2">&amp;</span><a href="rewrite.rs.html#93-111">RewriteContext</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#85 id=85 data-nosnippet>85</a>    reorderable_items: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><a href="../../rustc_ast/ast/struct.Item.html">ast::Item</a>],
+<a href=#86 id=86 data-nosnippet>86</a>    shape: <a href="shape.rs.html#143-150">Shape</a>,
+<a href=#87 id=87 data-nosnippet>87</a>    span: <a href="../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#88 id=88 data-nosnippet>88</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a>&gt; {
+<a href=#89 id=89 data-nosnippet>89</a>    <span class="kw">match </span><a href="#85">reorderable_items</a>[<span class="number">0</span>].kind {
+<a href=#90 id=90 data-nosnippet>90</a>        <span class="comment">// FIXME: Remove duplicated code.
+<a href=#91 id=91 data-nosnippet>91</a>        </span><a href="../../rustc_ast/ast/enum.ItemKind.html#variant.Use">ast::ItemKind::Use</a>(..) =&gt; {
+<a href=#92 id=92 data-nosnippet>92</a>            <span class="kw">let </span><span class="kw-2">mut </span>normalized_items: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw">_</span>&gt; = <a href="#85">reorderable_items</a>
+<a href=#93 id=93 data-nosnippet>93</a>                .<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>()
+<a href=#94 id=94 data-nosnippet>94</a>                .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter_map">filter_map</a>(|item| <a href="imports.rs.html#397-419">UseTree::from_ast_with_normalization</a>(<a href="#84">context</a>, <a href="#94">item</a>))
+<a href=#95 id=95 data-nosnippet>95</a>                .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#96 id=96 data-nosnippet>96</a>            <span class="kw">let </span>cloned = <a href="#92">normalized_items</a>.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>();
+<a href=#97 id=97 data-nosnippet>97</a>            <span class="comment">// Add comments before merging.
+<a href=#98 id=98 data-nosnippet>98</a>            </span><span class="kw">let </span>list_items = <a href="lists.rs.html#797-827">itemize_list</a>(
+<a href=#99 id=99 data-nosnippet>99</a>                <a href="#84">context</a>.snippet_provider,
+<a href=#100 id=100 data-nosnippet>100</a>                <a href="#96">cloned</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>(),
+<a href=#101 id=101 data-nosnippet>101</a>                <span class="string">""</span>,
+<a href=#102 id=102 data-nosnippet>102</a>                <span class="string">";"</span>,
+<a href=#103 id=103 data-nosnippet>103</a>                |item| <a href="#103">item</a>.<a href="spanned.rs.html#12">span</a>().<a href="../../rustc_span/span_encoding/struct.Span.html#method.lo">lo</a>(),
+<a href=#104 id=104 data-nosnippet>104</a>                |item| <a href="#104">item</a>.<a href="spanned.rs.html#12">span</a>().<a href="../../rustc_span/span_encoding/struct.Span.html#method.hi">hi</a>(),
+<a href=#105 id=105 data-nosnippet>105</a>                |_item| <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<span class="string">""</span>.<a href="https://doc.rust-lang.org/nightly/alloc/borrow/trait.ToOwned.html#tymethod.to_owned">to_owned</a>()),
+<a href=#106 id=106 data-nosnippet>106</a>                <a href="#87">span</a>.<a href="../../rustc_span/span_encoding/struct.Span.html#method.lo">lo</a>(),
+<a href=#107 id=107 data-nosnippet>107</a>                <a href="#87">span</a>.<a href="../../rustc_span/span_encoding/struct.Span.html#method.hi">hi</a>(),
+<a href=#108 id=108 data-nosnippet>108</a>                <span class="bool-val">false</span>,
+<a href=#109 id=109 data-nosnippet>109</a>            );
+<a href=#110 id=110 data-nosnippet>110</a>            <span class="kw">for </span>(item, list_item) <span class="kw">in </span>normalized_items.iter_mut().zip(list_items) {
+<a href=#111 id=111 data-nosnippet>111</a>                item.list_item = <span class="prelude-val">Some</span>(list_item.clone());
+<a href=#112 id=112 data-nosnippet>112</a>            }
+<a href=#113 id=113 data-nosnippet>113</a>            <a href="#92">normalized_items</a> = <a href="imports.rs.html#215-250">normalize_use_trees_with_granularity</a>(
+<a href=#114 id=114 data-nosnippet>114</a>                <a href="#92">normalized_items</a>,
+<a href=#115 id=115 data-nosnippet>115</a>                <a href="#84">context</a>.config.<a href="config/mod.rs.html#33-200">imports_granularity</a>(),
+<a href=#116 id=116 data-nosnippet>116</a>            );
+<a href=#117 id=117 data-nosnippet>117</a>
+<a href=#118 id=118 data-nosnippet>118</a>            <span class="kw">let </span><span class="kw-2">mut </span>regrouped_items = <span class="kw">match </span><a href="#84">context</a>.config.<a href="config/mod.rs.html#33-200">group_imports</a>() {
+<a href=#119 id=119 data-nosnippet>119</a>                <a href="config/options.rs.html#113">GroupImportsTactic::Preserve</a> | <a href="config/options.rs.html#120">GroupImportsTactic::One</a> =&gt; {
+<a href=#120 id=120 data-nosnippet>120</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[normalized_items]
+<a href=#121 id=121 data-nosnippet>121</a>                }
+<a href=#122 id=122 data-nosnippet>122</a>                <a href="config/options.rs.html#118">GroupImportsTactic::StdExternalCrate</a> =&gt; <a href="#185-209">group_imports</a>(<a href="#92">normalized_items</a>),
+<a href=#123 id=123 data-nosnippet>123</a>            };
+<a href=#124 id=124 data-nosnippet>124</a>
+<a href=#125 id=125 data-nosnippet>125</a>            <span class="kw">if </span><a href="#84">context</a>.config.<a href="config/mod.rs.html#33-200">reorder_imports</a>() {
+<a href=#126 id=126 data-nosnippet>126</a>                <a href="#118">regrouped_items</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter_mut">iter_mut</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.for_each">for_each</a>(|items| <a href="#126">items</a>.<a href="https://doc.rust-lang.org/nightly/alloc/foreigntype.slice.html#method.sort">sort</a>())
+<a href=#127 id=127 data-nosnippet>127</a>            }
+<a href=#128 id=128 data-nosnippet>128</a>
+<a href=#129 id=129 data-nosnippet>129</a>            <span class="comment">// 4 = "use ", 1 = ";"
+<a href=#130 id=130 data-nosnippet>130</a>            </span><span class="kw">let </span>nested_shape = <a href="#86">shape</a>.<a href="shape.rs.html#253-255">offset_left</a>(<span class="number">4</span>)<span class="question-mark">?</span>.<a href="shape.rs.html#238-243">sub_width</a>(<span class="number">1</span>)<span class="question-mark">?</span>;
+<a href=#131 id=131 data-nosnippet>131</a>            <span class="kw">let </span>item_vec: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw">_</span>&gt; = <a href="#118">regrouped_items</a>
+<a href=#132 id=132 data-nosnippet>132</a>                .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>()
+<a href=#133 id=133 data-nosnippet>133</a>                .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter">filter</a>(|use_group| !<a href="#133">use_group</a>.<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.is_empty">is_empty</a>())
+<a href=#134 id=134 data-nosnippet>134</a>                .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|use_group| {
+<a href=#135 id=135 data-nosnippet>135</a>                    <span class="kw">let </span>item_vec: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw">_</span>&gt; = <a href="#134">use_group</a>
+<a href=#136 id=136 data-nosnippet>136</a>                        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>()
+<a href=#137 id=137 data-nosnippet>137</a>                        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|use_tree| {
+<a href=#138 id=138 data-nosnippet>138</a>                            <span class="kw">let </span>item = <a href="#137">use_tree</a>.<a href="imports.rs.html#332-380">rewrite_top_level</a>(<a href="#84">context</a>, <a href="#130">nested_shape</a>);
+<a href=#139 id=139 data-nosnippet>139</a>                            <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(list_item) = <a href="#137">use_tree</a>.list_item {
+<a href=#140 id=140 data-nosnippet>140</a>                                <a href="lists.rs.html#122-132">ListItem</a> {
+<a href=#141 id=141 data-nosnippet>141</a>                                    item: <a href="#138">item</a>,
+<a href=#142 id=142 data-nosnippet>142</a>                                    ..<a href="#139">list_item</a>
+<a href=#143 id=143 data-nosnippet>143</a>                                }
+<a href=#144 id=144 data-nosnippet>144</a>                            } <span class="kw">else </span>{
+<a href=#145 id=145 data-nosnippet>145</a>                                <a href="lists.rs.html#135-143">ListItem::from_item</a>(<a href="#138">item</a>)
+<a href=#146 id=146 data-nosnippet>146</a>                            }
+<a href=#147 id=147 data-nosnippet>147</a>                        })
+<a href=#148 id=148 data-nosnippet>148</a>                        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#149 id=149 data-nosnippet>149</a>                    <a href="#57-66">wrap_reorderable_items</a>(<a href="#84">context</a>, <span class="kw-2">&amp;</span><a href="#135">item_vec</a>, <a href="#130">nested_shape</a>)
+<a href=#150 id=150 data-nosnippet>150</a>                })
+<a href=#151 id=151 data-nosnippet>151</a>                .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>::&lt;<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw">_</span>&gt;&gt;&gt;()<span class="question-mark">?</span>;
+<a href=#152 id=152 data-nosnippet>152</a>
+<a href=#153 id=153 data-nosnippet>153</a>            <span class="kw">let </span>join_string = <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"\n\n{}"</span>, shape.indent.to_string(context.config));
+<a href=#154 id=154 data-nosnippet>154</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#131">item_vec</a>.<a href="https://doc.rust-lang.org/nightly/alloc/foreigntype.slice.html#method.join">join</a>(<span class="kw-2">&amp;</span><a href="#153">join_string</a>))
+<a href=#155 id=155 data-nosnippet>155</a>        }
+<a href=#156 id=156 data-nosnippet>156</a>        <span class="kw">_ </span>=&gt; {
+<a href=#157 id=157 data-nosnippet>157</a>            <span class="kw">let </span>list_items = <a href="lists.rs.html#797-827">itemize_list</a>(
+<a href=#158 id=158 data-nosnippet>158</a>                <a href="#84">context</a>.snippet_provider,
+<a href=#159 id=159 data-nosnippet>159</a>                <a href="#85">reorderable_items</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>(),
+<a href=#160 id=160 data-nosnippet>160</a>                <span class="string">""</span>,
+<a href=#161 id=161 data-nosnippet>161</a>                <span class="string">";"</span>,
+<a href=#162 id=162 data-nosnippet>162</a>                |item| <a href="#162">item</a>.<a href="spanned.rs.html#12">span</a>().<a href="../../rustc_span/span_encoding/struct.Span.html#method.lo">lo</a>(),
+<a href=#163 id=163 data-nosnippet>163</a>                |item| <a href="#163">item</a>.<a href="spanned.rs.html#12">span</a>().<a href="../../rustc_span/span_encoding/struct.Span.html#method.hi">hi</a>(),
+<a href=#164 id=164 data-nosnippet>164</a>                |item| <a href="#68-78">rewrite_reorderable_item</a>(<a href="#84">context</a>, <a href="#164">item</a>, <a href="#86">shape</a>).<a href="rewrite.rs.html#69">unknown_error</a>(),
+<a href=#165 id=165 data-nosnippet>165</a>                <a href="#87">span</a>.<a href="../../rustc_span/span_encoding/struct.Span.html#method.lo">lo</a>(),
+<a href=#166 id=166 data-nosnippet>166</a>                <a href="#87">span</a>.<a href="../../rustc_span/span_encoding/struct.Span.html#method.hi">hi</a>(),
+<a href=#167 id=167 data-nosnippet>167</a>                <span class="bool-val">false</span>,
+<a href=#168 id=168 data-nosnippet>168</a>            );
+<a href=#169 id=169 data-nosnippet>169</a>
+<a href=#170 id=170 data-nosnippet>170</a>            <span class="kw">let </span><span class="kw-2">mut </span>item_pair_vec: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw">_</span>&gt; = <a href="#157">list_items</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.zip">zip</a>(<a href="#85">reorderable_items</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>()).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#171 id=171 data-nosnippet>171</a>            <a href="#170">item_pair_vec</a>.<a href="https://doc.rust-lang.org/nightly/alloc/foreigntype.slice.html#method.sort_by">sort_by</a>(|a, b| <a href="#26-55">compare_items</a>(<a href="#171">a</a>.<span class="number">1</span>, <a href="#171">b</a>.<span class="number">1</span>));
+<a href=#172 id=172 data-nosnippet>172</a>            <span class="kw">let </span>item_vec: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw">_</span>&gt; = <a href="#170">item_pair_vec</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|pair| <a href="#172">pair</a>.<span class="number">0</span>).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#173 id=173 data-nosnippet>173</a>
+<a href=#174 id=174 data-nosnippet>174</a>            <a href="#57-66">wrap_reorderable_items</a>(<a href="#84">context</a>, <span class="kw-2">&amp;</span><a href="#172">item_vec</a>, <a href="#86">shape</a>)
+<a href=#175 id=175 data-nosnippet>175</a>        }
+<a href=#176 id=176 data-nosnippet>176</a>    }
+<a href=#177 id=177 data-nosnippet>177</a>}
+<a href=#178 id=178 data-nosnippet>178</a>
+<a href=#179 id=179 data-nosnippet>179</a><span class="kw">fn </span><a href="../../rustfmt_nightly/reorder/fn.contains_macro_use_attr.html">contains_macro_use_attr</a>(item: <span class="kw-2">&amp;</span><a href="../../rustc_ast/ast/struct.Item.html">ast::Item</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#180 id=180 data-nosnippet>180</a>    <a href="../../rustc_ast/attr/fn.contains_name.html">attr::contains_name</a>(<span class="kw-2">&amp;</span><a href="#179">item</a>.attrs, <a href="../../rustc_span/symbol/sym_generated/constant.macro_use.html">sym::macro_use</a>)
+<a href=#181 id=181 data-nosnippet>181</a>}
+<a href=#182 id=182 data-nosnippet>182</a>
+<a href=#183 id=183 data-nosnippet>183</a><span class="doccomment">/// Divides imports into three groups, corresponding to standard, external
+<a href=#184 id=184 data-nosnippet>184</a>/// and local imports. Sorts each subgroup.
+<a href=#185 id=185 data-nosnippet>185</a></span><span class="kw">fn </span><a href="../../rustfmt_nightly/reorder/fn.group_imports.html">group_imports</a>(uts: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="imports.rs.html#113-122">UseTree</a>&gt;) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="imports.rs.html#113-122">UseTree</a>&gt;&gt; {
+<a href=#186 id=186 data-nosnippet>186</a>    <span class="kw">let </span><span class="kw-2">mut </span>std_imports = <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>();
+<a href=#187 id=187 data-nosnippet>187</a>    <span class="kw">let </span><span class="kw-2">mut </span>external_imports = <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>();
+<a href=#188 id=188 data-nosnippet>188</a>    <span class="kw">let </span><span class="kw-2">mut </span>local_imports = <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>();
+<a href=#189 id=189 data-nosnippet>189</a>
+<a href=#190 id=190 data-nosnippet>190</a>    <span class="kw">for </span>ut <span class="kw">in </span>uts.into_iter() {
+<a href=#191 id=191 data-nosnippet>191</a>        <span class="kw">if </span>ut.path.is_empty() {
+<a href=#192 id=192 data-nosnippet>192</a>            external_imports.push(ut);
+<a href=#193 id=193 data-nosnippet>193</a>            <span class="kw">continue</span>;
+<a href=#194 id=194 data-nosnippet>194</a>        }
+<a href=#195 id=195 data-nosnippet>195</a>        <span class="kw">match </span><span class="kw-2">&amp;</span>ut.path[<span class="number">0</span>].kind {
+<a href=#196 id=196 data-nosnippet>196</a>            UseSegmentKind::Ident(id, <span class="kw">_</span>) =&gt; <span class="kw">match </span>id.as_ref() {
+<a href=#197 id=197 data-nosnippet>197</a>                <span class="string">"std" </span>| <span class="string">"alloc" </span>| <span class="string">"core" </span>=&gt; std_imports.push(ut),
+<a href=#198 id=198 data-nosnippet>198</a>                <span class="kw">_ </span>=&gt; external_imports.push(ut),
+<a href=#199 id=199 data-nosnippet>199</a>            },
+<a href=#200 id=200 data-nosnippet>200</a>            UseSegmentKind::Slf(<span class="kw">_</span>) | UseSegmentKind::Super(<span class="kw">_</span>) | UseSegmentKind::Crate(<span class="kw">_</span>) =&gt; {
+<a href=#201 id=201 data-nosnippet>201</a>                local_imports.push(ut)
+<a href=#202 id=202 data-nosnippet>202</a>            }
+<a href=#203 id=203 data-nosnippet>203</a>            <span class="comment">// These are probably illegal here
+<a href=#204 id=204 data-nosnippet>204</a>            </span>UseSegmentKind::Glob | UseSegmentKind::List(<span class="kw">_</span>) =&gt; external_imports.push(ut),
+<a href=#205 id=205 data-nosnippet>205</a>        }
+<a href=#206 id=206 data-nosnippet>206</a>    }
+<a href=#207 id=207 data-nosnippet>207</a>
+<a href=#208 id=208 data-nosnippet>208</a>    <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.vec.html">vec!</a>[std_imports, external_imports, local_imports]
+<a href=#209 id=209 data-nosnippet>209</a>}
+<a href=#210 id=210 data-nosnippet>210</a>
+<a href=#211 id=211 data-nosnippet>211</a><span class="doccomment">/// A simplified version of `ast::ItemKind`.
+<a href=#212 id=212 data-nosnippet>212</a></span><span class="attr">#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+<a href=#213 id=213 data-nosnippet>213</a></span><span class="kw">enum </span><a href="../../rustfmt_nightly/reorder/enum.ReorderableItemKind.html">ReorderableItemKind</a> {
+<a href=#214 id=214 data-nosnippet>214</a>    ExternCrate,
+<a href=#215 id=215 data-nosnippet>215</a>    Mod,
+<a href=#216 id=216 data-nosnippet>216</a>    Use,
+<a href=#217 id=217 data-nosnippet>217</a>    <span class="doccomment">/// An item that cannot be reordered. Either has an unreorderable item kind
+<a href=#218 id=218 data-nosnippet>218</a>    /// or an `macro_use` attribute.
+<a href=#219 id=219 data-nosnippet>219</a>    </span>Other,
+<a href=#220 id=220 data-nosnippet>220</a>}
+<a href=#221 id=221 data-nosnippet>221</a>
+<a href=#222 id=222 data-nosnippet>222</a><span class="kw">impl </span><a href="#213-220">ReorderableItemKind</a> {
+<a href=#223 id=223 data-nosnippet>223</a>    <span class="kw">fn </span>from(item: <span class="kw-2">&amp;</span><a href="../../rustc_ast/ast/struct.Item.html">ast::Item</a>) -&gt; <span class="self">Self </span>{
+<a href=#224 id=224 data-nosnippet>224</a>        <span class="kw">match </span><a href="#223">item</a>.kind {
+<a href=#225 id=225 data-nosnippet>225</a>            <span class="kw">_ if </span><a href="#179-181">contains_macro_use_attr</a>(<a href="#223">item</a>) | <a href="utils.rs.html#268-272">contains_skip</a>(<span class="kw-2">&amp;</span><a href="#223">item</a>.attrs) =&gt; {
+<a href=#226 id=226 data-nosnippet>226</a>                <a href="#219">ReorderableItemKind::Other</a>
+<a href=#227 id=227 data-nosnippet>227</a>            }
+<a href=#228 id=228 data-nosnippet>228</a>            <a href="../../rustc_ast/ast/enum.ItemKind.html#variant.ExternCrate">ast::ItemKind::ExternCrate</a>(..) =&gt; <a href="#214">ReorderableItemKind::ExternCrate</a>,
+<a href=#229 id=229 data-nosnippet>229</a>            <a href="../../rustc_ast/ast/enum.ItemKind.html#variant.Mod">ast::ItemKind::Mod</a>(..) <span class="kw">if </span><a href="items.rs.html#3600-3605">is_mod_decl</a>(<a href="#223">item</a>) =&gt; <a href="#215">ReorderableItemKind::Mod</a>,
+<a href=#230 id=230 data-nosnippet>230</a>            <a href="../../rustc_ast/ast/enum.ItemKind.html#variant.Use">ast::ItemKind::Use</a>(..) =&gt; <a href="#216">ReorderableItemKind::Use</a>,
+<a href=#231 id=231 data-nosnippet>231</a>            <span class="kw">_ </span>=&gt; <a href="#219">ReorderableItemKind::Other</a>,
+<a href=#232 id=232 data-nosnippet>232</a>        }
+<a href=#233 id=233 data-nosnippet>233</a>    }
+<a href=#234 id=234 data-nosnippet>234</a>
+<a href=#235 id=235 data-nosnippet>235</a>    <span class="kw">fn </span>is_same_item_kind(<span class="self">self</span>, item: <span class="kw-2">&amp;</span><a href="../../rustc_ast/ast/struct.Item.html">ast::Item</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#236 id=236 data-nosnippet>236</a>        <a href="#223-233">ReorderableItemKind::from</a>(<a href="#235">item</a>) == <span class="self"><a href="#235">self</a>
+<a href=#237 id=237 data-nosnippet>237</a>    </span>}
+<a href=#238 id=238 data-nosnippet>238</a>
+<a href=#239 id=239 data-nosnippet>239</a>    <span class="kw">fn </span>is_reorderable(<span class="self">self</span>, config: <span class="kw-2">&amp;</span><a href="config/mod.rs.html#33-200">Config</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#240 id=240 data-nosnippet>240</a>        <span class="kw">match </span><span class="self"><a href="#239">self</a> </span>{
+<a href=#241 id=241 data-nosnippet>241</a>            <a href="#214">ReorderableItemKind::ExternCrate</a> =&gt; <a href="#239">config</a>.<a href="config/mod.rs.html#33-200">reorder_imports</a>(),
+<a href=#242 id=242 data-nosnippet>242</a>            <a href="#215">ReorderableItemKind::Mod</a> =&gt; <a href="#239">config</a>.<a href="config/mod.rs.html#33-200">reorder_modules</a>(),
+<a href=#243 id=243 data-nosnippet>243</a>            <a href="#216">ReorderableItemKind::Use</a> =&gt; <a href="#239">config</a>.<a href="config/mod.rs.html#33-200">reorder_imports</a>(),
+<a href=#244 id=244 data-nosnippet>244</a>            <a href="#219">ReorderableItemKind::Other</a> =&gt; <span class="bool-val">false</span>,
+<a href=#245 id=245 data-nosnippet>245</a>        }
+<a href=#246 id=246 data-nosnippet>246</a>    }
+<a href=#247 id=247 data-nosnippet>247</a>
+<a href=#248 id=248 data-nosnippet>248</a>    <span class="kw">fn </span>is_regroupable(<span class="self">self</span>, config: <span class="kw-2">&amp;</span><a href="config/mod.rs.html#33-200">Config</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#249 id=249 data-nosnippet>249</a>        <span class="kw">match </span><span class="self"><a href="#248">self</a> </span>{
+<a href=#250 id=250 data-nosnippet>250</a>            <a href="#214">ReorderableItemKind::ExternCrate</a>
+<a href=#251 id=251 data-nosnippet>251</a>            | <a href="#215">ReorderableItemKind::Mod</a>
+<a href=#252 id=252 data-nosnippet>252</a>            | <a href="#219">ReorderableItemKind::Other</a> =&gt; <span class="bool-val">false</span>,
+<a href=#253 id=253 data-nosnippet>253</a>            <a href="#216">ReorderableItemKind::Use</a> =&gt; <a href="#248">config</a>.<a href="config/mod.rs.html#33-200">group_imports</a>() != <a href="config/options.rs.html#113">GroupImportsTactic::Preserve</a>,
+<a href=#254 id=254 data-nosnippet>254</a>        }
+<a href=#255 id=255 data-nosnippet>255</a>    }
+<a href=#256 id=256 data-nosnippet>256</a>
+<a href=#257 id=257 data-nosnippet>257</a>    <span class="kw">fn </span>in_group(<span class="self">self</span>, config: <span class="kw-2">&amp;</span><a href="config/mod.rs.html#33-200">Config</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#258 id=258 data-nosnippet>258</a>        <span class="kw">match </span><span class="self"><a href="#257">self</a> </span>{
+<a href=#259 id=259 data-nosnippet>259</a>            <a href="#214">ReorderableItemKind::ExternCrate</a> | <a href="#215">ReorderableItemKind::Mod</a> =&gt; <span class="bool-val">true</span>,
+<a href=#260 id=260 data-nosnippet>260</a>            <a href="#216">ReorderableItemKind::Use</a> =&gt; <a href="#257">config</a>.<a href="config/mod.rs.html#33-200">group_imports</a>() == <a href="config/options.rs.html#113">GroupImportsTactic::Preserve</a>,
+<a href=#261 id=261 data-nosnippet>261</a>            <a href="#219">ReorderableItemKind::Other</a> =&gt; <span class="bool-val">false</span>,
+<a href=#262 id=262 data-nosnippet>262</a>        }
+<a href=#263 id=263 data-nosnippet>263</a>    }
+<a href=#264 id=264 data-nosnippet>264</a>}
+<a href=#265 id=265 data-nosnippet>265</a>
+<a href=#266 id=266 data-nosnippet>266</a><span class="kw">impl</span>&lt;<span class="lifetime">'b</span>, <span class="lifetime">'a</span>: <span class="lifetime">'b</span>&gt; <a href="visitor.rs.html#72-90">FmtVisitor</a>&lt;<span class="lifetime">'a</span>&gt; {
+<a href=#267 id=267 data-nosnippet>267</a>    <span class="doccomment">/// Format items with the same item kind and reorder them, regroup them, or
+<a href=#268 id=268 data-nosnippet>268</a>    /// both. If `in_group` is `true`, then the items separated by an empty line
+<a href=#269 id=269 data-nosnippet>269</a>    /// will not be reordered together.
+<a href=#270 id=270 data-nosnippet>270</a>    </span><span class="kw">fn </span>walk_reorderable_or_regroupable_items(
+<a href=#271 id=271 data-nosnippet>271</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#272 id=272 data-nosnippet>272</a>        items: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><a href="../../rustc_ast/ast/struct.Item.html">ast::Item</a>],
+<a href=#273 id=273 data-nosnippet>273</a>        item_kind: <a href="#213-220">ReorderableItemKind</a>,
+<a href=#274 id=274 data-nosnippet>274</a>        in_group: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
+<a href=#275 id=275 data-nosnippet>275</a>    ) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> {
+<a href=#276 id=276 data-nosnippet>276</a>        <span class="kw">let </span><span class="kw-2">mut </span>last = <a class="self" href="#271">self</a>.psess.<a href="source_map.rs.html#25">lookup_line_range</a>(<a href="#272">items</a>[<span class="number">0</span>].<a href="spanned.rs.html#12">span</a>());
+<a href=#277 id=277 data-nosnippet>277</a>        <span class="kw">let </span>item_length = <a href="#272">items</a>
+<a href=#278 id=278 data-nosnippet>278</a>            .<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>()
+<a href=#279 id=279 data-nosnippet>279</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.take_while">take_while</a>(|ppi| {
+<a href=#280 id=280 data-nosnippet>280</a>                <a href="#273">item_kind</a>.<a href="#235-237">is_same_item_kind</a>(<span class="kw-2">&amp;***</span><a href="#279">ppi</a>)
+<a href=#281 id=281 data-nosnippet>281</a>                    &amp;&amp; (!<a href="#274">in_group</a> || {
+<a href=#282 id=282 data-nosnippet>282</a>                        <span class="kw">let </span>current = <a class="self" href="#271">self</a>.psess.<a href="source_map.rs.html#25">lookup_line_range</a>(<a href="#279">ppi</a>.<a href="spanned.rs.html#12">span</a>());
+<a href=#283 id=283 data-nosnippet>283</a>                        <span class="kw">let </span>in_same_group = <a href="#282">current</a>.lo &lt; <a href="#276">last</a>.hi + <span class="number">2</span>;
+<a href=#284 id=284 data-nosnippet>284</a>                        <a href="#276">last</a> = <a href="#282">current</a>;
+<a href=#285 id=285 data-nosnippet>285</a>                        <a href="#283">in_same_group</a>
+<a href=#286 id=286 data-nosnippet>286</a>                    })
+<a href=#287 id=287 data-nosnippet>287</a>            })
+<a href=#288 id=288 data-nosnippet>288</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.count">count</a>();
+<a href=#289 id=289 data-nosnippet>289</a>        <span class="kw">let </span>items = <span class="kw-2">&amp;</span><a href="#272">items</a>[..<a href="#277">item_length</a>];
+<a href=#290 id=290 data-nosnippet>290</a>
+<a href=#291 id=291 data-nosnippet>291</a>        <span class="kw">let </span>at_least_one_in_file_lines = <a href="#289">items</a>
+<a href=#292 id=292 data-nosnippet>292</a>            .<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>()
+<a href=#293 id=293 data-nosnippet>293</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.any">any</a>(|item| !<a class="macro" href="utils.rs.html#360-368">out_of_file_lines_range!</a>(<span class="self">self</span>, item.span));
+<a href=#294 id=294 data-nosnippet>294</a>
+<a href=#295 id=295 data-nosnippet>295</a>        <span class="kw">if </span><a href="#291">at_least_one_in_file_lines</a> &amp;&amp; !<a href="#289">items</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.is_empty">is_empty</a>() {
+<a href=#296 id=296 data-nosnippet>296</a>            <span class="kw">let </span>lo = <a href="#289">items</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.first">first</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="spanned.rs.html#12">span</a>().<a href="../../rustc_span/span_encoding/struct.Span.html#method.lo">lo</a>();
+<a href=#297 id=297 data-nosnippet>297</a>            <span class="kw">let </span>hi = <a href="#289">items</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.last">last</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="spanned.rs.html#12">span</a>().<a href="../../rustc_span/span_encoding/struct.Span.html#method.hi">hi</a>();
+<a href=#298 id=298 data-nosnippet>298</a>            <span class="kw">let </span>span = <a href="utils.rs.html#351-353">mk_sp</a>(<a href="#296">lo</a>, <a href="#297">hi</a>);
+<a href=#299 id=299 data-nosnippet>299</a>            <span class="kw">let </span>rw = <a href="#83-177">rewrite_reorderable_or_regroupable_items</a>(
+<a href=#300 id=300 data-nosnippet>300</a>                <span class="kw-2">&amp;</span><a class="self" href="#271">self</a>.<a href="visitor.rs.html#1017-1032">get_context</a>(),
+<a href=#301 id=301 data-nosnippet>301</a>                <a href="#289">items</a>,
+<a href=#302 id=302 data-nosnippet>302</a>                <a class="self" href="#271">self</a>.<a href="visitor.rs.html#107-109">shape</a>(),
+<a href=#303 id=303 data-nosnippet>303</a>                <a href="#298">span</a>,
+<a href=#304 id=304 data-nosnippet>304</a>            );
+<a href=#305 id=305 data-nosnippet>305</a>            <a class="self" href="#271">self</a>.<a href="visitor.rs.html#741-744">push_rewrite</a>(<a href="#298">span</a>, <a href="#299">rw</a>);
+<a href=#306 id=306 data-nosnippet>306</a>        } <span class="kw">else </span>{
+<a href=#307 id=307 data-nosnippet>307</a>            <span class="kw">for </span>item <span class="kw">in </span>items {
+<a href=#308 id=308 data-nosnippet>308</a>                <span class="self">self</span>.push_rewrite(item.span, <span class="prelude-val">None</span>);
+<a href=#309 id=309 data-nosnippet>309</a>            }
+<a href=#310 id=310 data-nosnippet>310</a>        }
+<a href=#311 id=311 data-nosnippet>311</a>
+<a href=#312 id=312 data-nosnippet>312</a>        <a href="#277">item_length</a>
+<a href=#313 id=313 data-nosnippet>313</a>    }
+<a href=#314 id=314 data-nosnippet>314</a>
+<a href=#315 id=315 data-nosnippet>315</a>    <span class="doccomment">/// Visits and format the given items. Items are reordered If they are
+<a href=#316 id=316 data-nosnippet>316</a>    /// consecutive and reorderable.
+<a href=#317 id=317 data-nosnippet>317</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>visit_items_with_reordering(<span class="kw-2">&amp;mut </span><span class="self">self</span>, <span class="kw-2">mut </span>items: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><a href="../../rustc_ast/ast/struct.Item.html">ast::Item</a>]) {
+<a href=#318 id=318 data-nosnippet>318</a>        <span class="kw">while </span>!items.is_empty() {
+<a href=#319 id=319 data-nosnippet>319</a>            <span class="comment">// If the next item is a `use`, `extern crate` or `mod`, then extract it and any
+<a href=#320 id=320 data-nosnippet>320</a>            // subsequent items that have the same item kind to be reordered within
+<a href=#321 id=321 data-nosnippet>321</a>            // `walk_reorderable_items`. Otherwise, just format the next item for output.
+<a href=#322 id=322 data-nosnippet>322</a>            </span><span class="kw">let </span>item_kind = ReorderableItemKind::from(items[<span class="number">0</span>]);
+<a href=#323 id=323 data-nosnippet>323</a>            <span class="kw">if </span>item_kind.is_reorderable(<span class="self">self</span>.config) || item_kind.is_regroupable(<span class="self">self</span>.config) {
+<a href=#324 id=324 data-nosnippet>324</a>                <span class="kw">let </span>visited_items_num = <span class="self">self</span>.walk_reorderable_or_regroupable_items(
+<a href=#325 id=325 data-nosnippet>325</a>                    items,
+<a href=#326 id=326 data-nosnippet>326</a>                    item_kind,
+<a href=#327 id=327 data-nosnippet>327</a>                    item_kind.in_group(<span class="self">self</span>.config),
+<a href=#328 id=328 data-nosnippet>328</a>                );
+<a href=#329 id=329 data-nosnippet>329</a>                <span class="kw">let </span>(<span class="kw">_</span>, rest) = items.split_at(visited_items_num);
+<a href=#330 id=330 data-nosnippet>330</a>                items = rest;
+<a href=#331 id=331 data-nosnippet>331</a>            } <span class="kw">else </span>{
+<a href=#332 id=332 data-nosnippet>332</a>                <span class="comment">// Reaching here means items were not reordered. There must be at least
+<a href=#333 id=333 data-nosnippet>333</a>                // one item left in `items`, so calling `unwrap()` here is safe.
+<a href=#334 id=334 data-nosnippet>334</a>                </span><span class="kw">let </span>(item, rest) = items.split_first().unwrap();
+<a href=#335 id=335 data-nosnippet>335</a>                <span class="self">self</span>.visit_item(item);
+<a href=#336 id=336 data-nosnippet>336</a>                items = rest;
+<a href=#337 id=337 data-nosnippet>337</a>            }
+<a href=#338 id=338 data-nosnippet>338</a>        }
+<a href=#339 id=339 data-nosnippet>339</a>    }
+<a href=#340 id=340 data-nosnippet>340</a>}</code></pre></div></section></main></body></html>

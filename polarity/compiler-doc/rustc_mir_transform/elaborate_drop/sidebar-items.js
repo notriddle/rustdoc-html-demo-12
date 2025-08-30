@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DropFlagMode","DropStyle","Unwind"],"fn":["elaborate_drop"],"struct":["DropCtxt"],"trait":["DropElaborator"]};

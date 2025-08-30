@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["collect_autodiff_fn","collect_autodiff_fn_from_arg"]};

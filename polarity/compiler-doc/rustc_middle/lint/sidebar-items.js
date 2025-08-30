@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LintLevelSource"],"fn":["explain_lint_level_source","lint_level","reveal_actual_level"],"struct":["LevelAndSource","LintExpectation","ShallowLintLevelMap"]};

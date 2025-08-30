@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["add_global","add_priv_unnamed_arr","add_tgt_offload_entry","add_unnamed_global","declare_offload_fn","gen_call_handling","gen_define_handling","gen_tgt_data_mappers","gen_tgt_kernel_global","generate_at_one","handle_gpu_code"]};

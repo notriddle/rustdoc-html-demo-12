@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["TypingMode"],"fn":["may_use_unstable_feature"],"trait":["InferCtxtLike"]};

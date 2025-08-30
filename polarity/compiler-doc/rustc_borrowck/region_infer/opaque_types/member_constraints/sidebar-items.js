@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["apply_member_constraint","apply_member_constraints"],"struct":["CollectMemberConstraintsVisitor"]};

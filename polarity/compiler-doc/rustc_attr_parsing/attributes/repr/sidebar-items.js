@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AlignKind"],"fn":["int_type_of_word","parse_alignment","parse_repr","parse_repr_align"],"macro":["int_pat"],"struct":["AlignParser","ReprParser"]};

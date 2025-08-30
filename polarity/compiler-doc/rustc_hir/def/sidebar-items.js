@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CtorKind","CtorOf","DefKind","LifetimeRes","Namespace","NonMacroAttrKind","Res"],"struct":["MacroKinds","PartialRes","PerNS"],"type":["DocLinkResMap"]};

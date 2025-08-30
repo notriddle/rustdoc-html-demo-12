@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INCOMING","INVALID_EDGE_INDEX","OUTGOING"],"struct":["AdjacentEdges","DepthFirstTraversal","Direction","Edge","EdgeIndex","LinkedGraph","Node","NodeIndex"]};

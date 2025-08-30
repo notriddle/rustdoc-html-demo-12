@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ALL_TARGETS"],"enum":["AllowedResult","AllowedTargets","Policy"],"fn":["allowed_targets_applied","filter_targets"]};

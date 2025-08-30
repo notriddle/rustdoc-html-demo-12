@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["add_data_and_relocation","add_version_to_llvm_target","get_sdk_root","macho_platform","sdk_name","stdout_to_path","xcode_select_developer_dir","xcrun_show_sdk_path"],"struct":["OSVersion"]};

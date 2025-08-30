@@ -1,0 +1,977 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/debuginfo/metadata/enums/cpp_like.rs`."><title>cpp_like.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-38ac1f3e.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../../src-files.js"></script><script defer src="../../../../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_codegen_llvm/debuginfo/metadata/enums/</div>cpp_like.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html">std::borrow::Cow</a>;
+<a href=#2 id=2 data-nosnippet>2</a>
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span><a href="https://docs.rs/libc/0.2.174/libc/primitives/type.c_uint.html">libc::c_uint</a>;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>rustc_abi::{<a href="../../../../../rustc_abi/struct.Align.html">Align</a>, <a href="../../../../../rustc_abi/enum.Endian.html">Endian</a>, <a href="../../../../../rustc_abi/layout/ty/struct.FieldIdx.html">FieldIdx</a>, <a href="../../../../../rustc_abi/struct.Size.html">Size</a>, <a href="../../../../../rustc_abi/enum.TagEncoding.html">TagEncoding</a>, <a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>, <a href="../../../../../rustc_abi/enum.Variants.html">Variants</a>};
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/debuginfo/type_names/fn.compute_debuginfo_type_name.html">rustc_codegen_ssa::debuginfo::type_names::compute_debuginfo_type_name</a>;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>rustc_codegen_ssa::debuginfo::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/debuginfo/fn.tag_base_type.html">tag_base_type</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/debuginfo/fn.wants_c_like_enum_debuginfo.html">wants_c_like_enum_debuginfo</a>};
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>rustc_codegen_ssa::traits::{<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/consts/trait.ConstCodegenMethods.html">ConstCodegenMethods</a>, <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/misc/trait.MiscCodegenMethods.html">MiscCodegenMethods</a>};
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span>rustc_index::IndexVec;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="../../../../../rustc_middle/macro.bug.html">rustc_middle::bug</a>;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>rustc_middle::ty::layout::{<a href="../../../../../rustc_middle/ty/layout/trait.LayoutOf.html">LayoutOf</a>, <a href="../../../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>};
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>rustc_middle::ty::{<a class="self" href="../../../../../rustc_middle/ty/index.html">self</a>, <a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html">AdtDef</a>, <a href="../../../../../rustc_type_ir/ty_kind/closure/struct.CoroutineArgs.html">CoroutineArgs</a>, <a href="../../../../../rustc_middle/ty/sty/trait.CoroutineArgsExt.html">CoroutineArgsExt</a>, <a href="../../../../../rustc_middle/ty/struct.Ty.html">Ty</a>};
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span><a href="https://docs.rs/smallvec/1.15.1/smallvec/macro.smallvec.html">smallvec::smallvec</a>;
+<a href=#13 id=13 data-nosnippet>13</a>
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span><span class="kw">crate</span>::common::{<a href="../../../common.rs.html#417-420">AsCCharPtr</a>, <a href="../../../context.rs.html#90">CodegenCx</a>};
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span><a href="../../dwarf_const.rs.html#19"><span class="kw">crate</span>::debuginfo::dwarf_const::DW_TAG_const_type</a>;
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span><a href="mod.rs.html#372-376"><span class="kw">crate</span>::debuginfo::metadata::enums::DiscrResult</a>;
+<a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span><span class="kw">crate</span>::debuginfo::metadata::type_map::{<a class="self" href="../../metadata.rs.html#80">self</a>, <a href="../type_map.rs.html#160-164">Stub</a>, <a href="../type_map.rs.html#36-48">UniqueTypeId</a>};
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span><span class="kw">crate</span>::debuginfo::metadata::{
+<a href=#19 id=19 data-nosnippet>19</a>    <a href="../type_map.rs.html#148-151">DINodeCreationResult</a>, <a href="../../metadata.rs.html#72-73">NO_GENERICS</a>, <a href="../../metadata.rs.html#70">NO_SCOPE_METADATA</a>, <a href="../../metadata.rs.html#77">SmallVec</a>, <a href="../../metadata.rs.html#67">UNKNOWN_LINE_NUMBER</a>,
+<a href=#20 id=20 data-nosnippet>20</a>    <a href="../../metadata.rs.html#976-1003">build_field_di_node</a>, <a href="../../metadata.rs.html#1005-1031">create_member_type</a>, <a href="../../metadata.rs.html#525-629">file_metadata</a>, <a href="../../metadata.rs.html#1685-1698">file_metadata_from_def_id</a>,
+<a href=#21 id=21 data-nosnippet>21</a>    <a href="../../metadata.rs.html#94-96">size_and_align_of</a>, <a href="../../metadata.rs.html#425-493">type_di_node</a>, <a href="../../metadata.rs.html#631-635">unknown_file_metadata</a>, <a href="../../metadata.rs.html#1038-1052">visibility_di_flags</a>,
+<a href=#22 id=22 data-nosnippet>22</a>};
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span><a href="../../utils.rs.html#43-45"><span class="kw">crate</span>::debuginfo::utils::DIB</a>;
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">use </span><span class="kw">crate</span>::llvm::debuginfo::{<a href="../../../llvm/ffi.rs.html#883">DIFile</a>, <a href="../../../llvm/ffi.rs.html#897-938">DIFlags</a>, <a href="../../../llvm/ffi.rs.html#886">DIType</a>};
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">use </span><span class="kw">crate</span>::llvm::{<a class="self" href="../../../lib.rs.html#65">self</a>};
+<a href=#26 id=26 data-nosnippet>26</a>
+<a href=#27 id=27 data-nosnippet>27</a><span class="comment">// The names of the associated constants in each variant wrapper struct.
+<a href=#28 id=28 data-nosnippet>28</a>// These have to match up with the names being used in `intrinsic.natvis`.
+<a href=#29 id=29 data-nosnippet>29</a></span><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.ASSOC_CONST_DISCR_NAME.html">ASSOC_CONST_DISCR_NAME</a>: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = <span class="string">"NAME"</span>;
+<a href=#30 id=30 data-nosnippet>30</a><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.ASSOC_CONST_DISCR_EXACT.html">ASSOC_CONST_DISCR_EXACT</a>: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = <span class="string">"DISCR_EXACT"</span>;
+<a href=#31 id=31 data-nosnippet>31</a><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.ASSOC_CONST_DISCR_BEGIN.html">ASSOC_CONST_DISCR_BEGIN</a>: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = <span class="string">"DISCR_BEGIN"</span>;
+<a href=#32 id=32 data-nosnippet>32</a><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.ASSOC_CONST_DISCR_END.html">ASSOC_CONST_DISCR_END</a>: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = <span class="string">"DISCR_END"</span>;
+<a href=#33 id=33 data-nosnippet>33</a>
+<a href=#34 id=34 data-nosnippet>34</a><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.ASSOC_CONST_DISCR128_EXACT_LO.html">ASSOC_CONST_DISCR128_EXACT_LO</a>: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = <span class="string">"DISCR128_EXACT_LO"</span>;
+<a href=#35 id=35 data-nosnippet>35</a><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.ASSOC_CONST_DISCR128_EXACT_HI.html">ASSOC_CONST_DISCR128_EXACT_HI</a>: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = <span class="string">"DISCR128_EXACT_HI"</span>;
+<a href=#36 id=36 data-nosnippet>36</a><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.ASSOC_CONST_DISCR128_BEGIN_LO.html">ASSOC_CONST_DISCR128_BEGIN_LO</a>: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = <span class="string">"DISCR128_BEGIN_LO"</span>;
+<a href=#37 id=37 data-nosnippet>37</a><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.ASSOC_CONST_DISCR128_BEGIN_HI.html">ASSOC_CONST_DISCR128_BEGIN_HI</a>: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = <span class="string">"DISCR128_BEGIN_HI"</span>;
+<a href=#38 id=38 data-nosnippet>38</a><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.ASSOC_CONST_DISCR128_END_LO.html">ASSOC_CONST_DISCR128_END_LO</a>: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = <span class="string">"DISCR128_END_LO"</span>;
+<a href=#39 id=39 data-nosnippet>39</a><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.ASSOC_CONST_DISCR128_END_HI.html">ASSOC_CONST_DISCR128_END_HI</a>: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = <span class="string">"DISCR128_END_HI"</span>;
+<a href=#40 id=40 data-nosnippet>40</a>
+<a href=#41 id=41 data-nosnippet>41</a><span class="comment">// The name of the tag field in the top-level union
+<a href=#42 id=42 data-nosnippet>42</a></span><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.TAG_FIELD_NAME.html">TAG_FIELD_NAME</a>: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = <span class="string">"tag"</span>;
+<a href=#43 id=43 data-nosnippet>43</a><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.TAG_FIELD_NAME_128_LO.html">TAG_FIELD_NAME_128_LO</a>: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = <span class="string">"tag128_lo"</span>;
+<a href=#44 id=44 data-nosnippet>44</a><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.TAG_FIELD_NAME_128_HI.html">TAG_FIELD_NAME_128_HI</a>: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = <span class="string">"tag128_hi"</span>;
+<a href=#45 id=45 data-nosnippet>45</a>
+<a href=#46 id=46 data-nosnippet>46</a><span class="comment">// We assign a "virtual" discriminant value to the sole variant of
+<a href=#47 id=47 data-nosnippet>47</a>// a single-variant enum.
+<a href=#48 id=48 data-nosnippet>48</a></span><span class="kw">const </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/constant.SINGLE_VARIANT_VIRTUAL_DISR.html">SINGLE_VARIANT_VIRTUAL_DISR</a>: <a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a> = <span class="number">0</span>;
+<a href=#49 id=49 data-nosnippet>49</a>
+<a href=#50 id=50 data-nosnippet>50</a><span class="doccomment">/// In CPP-like mode, we generate a union with a field for each variant and an
+<a href=#51 id=51 data-nosnippet>51</a>/// explicit tag field. The field of each variant has a struct type
+<a href=#52 id=52 data-nosnippet>52</a>/// that encodes the discriminant of the variant and it's data layout.
+<a href=#53 id=53 data-nosnippet>53</a>/// The union also has a nested enumeration type that is only used for encoding
+<a href=#54 id=54 data-nosnippet>54</a>/// variant names in an efficient way. Its enumerator values do _not_ correspond
+<a href=#55 id=55 data-nosnippet>55</a>/// to the enum's discriminant values.
+<a href=#56 id=56 data-nosnippet>56</a>/// It's roughly equivalent to the following C/C++ code:
+<a href=#57 id=57 data-nosnippet>57</a>///
+<a href=#58 id=58 data-nosnippet>58</a>/// ```c
+<a href=#59 id=59 data-nosnippet>59</a>/// union enum2$&lt;{fully-qualified-name}&gt; {
+<a href=#60 id=60 data-nosnippet>60</a>///   struct Variant0 {
+<a href=#61 id=61 data-nosnippet>61</a>///     struct {name-of-variant-0} {
+<a href=#62 id=62 data-nosnippet>62</a>///        &lt;variant 0 fields&gt;
+<a href=#63 id=63 data-nosnippet>63</a>///     } value;
+<a href=#64 id=64 data-nosnippet>64</a>///
+<a href=#65 id=65 data-nosnippet>65</a>///     static VariantNames NAME = {name-of-variant-0};
+<a href=#66 id=66 data-nosnippet>66</a>///     static int_type DISCR_EXACT = {discriminant-of-variant-0};
+<a href=#67 id=67 data-nosnippet>67</a>///   } variant0;
+<a href=#68 id=68 data-nosnippet>68</a>///
+<a href=#69 id=69 data-nosnippet>69</a>///   &lt;other variant structs&gt;
+<a href=#70 id=70 data-nosnippet>70</a>///
+<a href=#71 id=71 data-nosnippet>71</a>///   int_type tag;
+<a href=#72 id=72 data-nosnippet>72</a>///
+<a href=#73 id=73 data-nosnippet>73</a>///   enum VariantNames {
+<a href=#74 id=74 data-nosnippet>74</a>///      &lt;name-of-variant-0&gt; = 0, // The numeric values are variant index,
+<a href=#75 id=75 data-nosnippet>75</a>///      &lt;name-of-variant-1&gt; = 1, // not discriminant values.
+<a href=#76 id=76 data-nosnippet>76</a>///      &lt;name-of-variant-2&gt; = 2,
+<a href=#77 id=77 data-nosnippet>77</a>///      ...
+<a href=#78 id=78 data-nosnippet>78</a>///   }
+<a href=#79 id=79 data-nosnippet>79</a>/// }
+<a href=#80 id=80 data-nosnippet>80</a>/// ```
+<a href=#81 id=81 data-nosnippet>81</a>///
+<a href=#82 id=82 data-nosnippet>82</a>/// As you can see, the type name is wrapped in `enum2$&lt;_&gt;`. This way we can
+<a href=#83 id=83 data-nosnippet>83</a>/// have a single NatVis rule for handling all enums. The `2` in `enum2$&lt;_&gt;`
+<a href=#84 id=84 data-nosnippet>84</a>/// is an encoding version tag, so that debuggers can decide to decode this
+<a href=#85 id=85 data-nosnippet>85</a>/// differently than the previous `enum$&lt;_&gt;` encoding emitted by earlier
+<a href=#86 id=86 data-nosnippet>86</a>/// compiler versions.
+<a href=#87 id=87 data-nosnippet>87</a>///
+<a href=#88 id=88 data-nosnippet>88</a>/// Niche-tag enums have one special variant, usually called the
+<a href=#89 id=89 data-nosnippet>89</a>/// "untagged variant". This variant has a field that
+<a href=#90 id=90 data-nosnippet>90</a>/// doubles as the tag of the enum. The variant is active when the value of
+<a href=#91 id=91 data-nosnippet>91</a>/// that field is within a pre-defined range. Therefore the variant struct
+<a href=#92 id=92 data-nosnippet>92</a>/// has a `DISCR_BEGIN` and `DISCR_END` field instead of `DISCR_EXACT` in
+<a href=#93 id=93 data-nosnippet>93</a>/// that case. Both `DISCR_BEGIN` and `DISCR_END` are inclusive bounds.
+<a href=#94 id=94 data-nosnippet>94</a>/// Note that these ranges can wrap around, so that `DISCR_END &lt; DISCR_BEGIN`.
+<a href=#95 id=95 data-nosnippet>95</a>///
+<a href=#96 id=96 data-nosnippet>96</a>/// Single-variant enums don't actually have a tag field. In this case we
+<a href=#97 id=97 data-nosnippet>97</a>/// emit a static tag field (that always has the value 0) so we can use the
+<a href=#98 id=98 data-nosnippet>98</a>/// same representation (and NatVis).
+<a href=#99 id=99 data-nosnippet>99</a>///
+<a href=#100 id=100 data-nosnippet>100</a>/// For niche-layout enums it's possible to have a 128-bit tag. NatVis, VS, and
+<a href=#101 id=101 data-nosnippet>101</a>/// WinDbg (the main targets for CPP-like debuginfo at the moment) don't support
+<a href=#102 id=102 data-nosnippet>102</a>/// 128-bit integers, so all values involved get split into two 64-bit fields.
+<a href=#103 id=103 data-nosnippet>103</a>/// Instead of the `tag` field, we generate two fields `tag128_lo` and `tag128_hi`,
+<a href=#104 id=104 data-nosnippet>104</a>/// Instead of `DISCR_EXACT`, we generate `DISCR128_EXACT_LO` and `DISCR128_EXACT_HI`,
+<a href=#105 id=105 data-nosnippet>105</a>/// and so on.
+<a href=#106 id=106 data-nosnippet>106</a>///
+<a href=#107 id=107 data-nosnippet>107</a>///
+<a href=#108 id=108 data-nosnippet>108</a>/// The following pseudocode shows how to decode an enum value in a debugger:
+<a href=#109 id=109 data-nosnippet>109</a>///
+<a href=#110 id=110 data-nosnippet>110</a>/// ```text
+<a href=#111 id=111 data-nosnippet>111</a>///
+<a href=#112 id=112 data-nosnippet>112</a>/// fn find_active_variant(enum_value) -&gt; (VariantName, VariantValue) {
+<a href=#113 id=113 data-nosnippet>113</a>///     let is_128_bit = enum_value.has_field("tag128_lo");
+<a href=#114 id=114 data-nosnippet>114</a>///
+<a href=#115 id=115 data-nosnippet>115</a>///     if !is_128_bit {
+<a href=#116 id=116 data-nosnippet>116</a>///         // Note: `tag` can be a static field for enums with only one
+<a href=#117 id=117 data-nosnippet>117</a>///         //       inhabited variant.
+<a href=#118 id=118 data-nosnippet>118</a>///         let tag = enum_value.field("tag").value;
+<a href=#119 id=119 data-nosnippet>119</a>///
+<a href=#120 id=120 data-nosnippet>120</a>///         // For each variant, check if it is a match. Only one of them will match,
+<a href=#121 id=121 data-nosnippet>121</a>///         // so if we find it we can return it immediately.
+<a href=#122 id=122 data-nosnippet>122</a>///         for variant_field in enum_value.fields().filter(|f| f.name.starts_with("variant")) {
+<a href=#123 id=123 data-nosnippet>123</a>///             if variant_field.has_field("DISCR_EXACT") {
+<a href=#124 id=124 data-nosnippet>124</a>///                 // This variant corresponds to a single tag value
+<a href=#125 id=125 data-nosnippet>125</a>///                 if variant_field.field("DISCR_EXACT").value == tag {
+<a href=#126 id=126 data-nosnippet>126</a>///                     return (variant_field.field("NAME"), variant_field.value);
+<a href=#127 id=127 data-nosnippet>127</a>///                 }
+<a href=#128 id=128 data-nosnippet>128</a>///             } else {
+<a href=#129 id=129 data-nosnippet>129</a>///                 // This is a range variant
+<a href=#130 id=130 data-nosnippet>130</a>///                 let begin = variant_field.field("DISCR_BEGIN");
+<a href=#131 id=131 data-nosnippet>131</a>///                 let end = variant_field.field("DISCR_END");
+<a href=#132 id=132 data-nosnippet>132</a>///
+<a href=#133 id=133 data-nosnippet>133</a>///                 if is_in_range(tag, begin, end) {
+<a href=#134 id=134 data-nosnippet>134</a>///                     return (variant_field.field("NAME"), variant_field.value);
+<a href=#135 id=135 data-nosnippet>135</a>///                 }
+<a href=#136 id=136 data-nosnippet>136</a>///             }
+<a href=#137 id=137 data-nosnippet>137</a>///         }
+<a href=#138 id=138 data-nosnippet>138</a>///     } else {
+<a href=#139 id=139 data-nosnippet>139</a>///         // Basically the same as with smaller tags, we just have to
+<a href=#140 id=140 data-nosnippet>140</a>///         // stitch the values together.
+<a href=#141 id=141 data-nosnippet>141</a>///         let tag: u128 = (enum_value.field("tag128_lo").value as u128) |
+<a href=#142 id=142 data-nosnippet>142</a>///                         (enum_value.field("tag128_hi").value as u128 &lt;&lt; 64);
+<a href=#143 id=143 data-nosnippet>143</a>///
+<a href=#144 id=144 data-nosnippet>144</a>///         for variant_field in enum_value.fields().filter(|f| f.name.starts_with("variant")) {
+<a href=#145 id=145 data-nosnippet>145</a>///             if variant_field.has_field("DISCR128_EXACT_LO") {
+<a href=#146 id=146 data-nosnippet>146</a>///                 let discr_exact = (variant_field.field("DISCR128_EXACT_LO" as u128) |
+<a href=#147 id=147 data-nosnippet>147</a>///                                   (variant_field.field("DISCR128_EXACT_HI") as u128 &lt;&lt; 64);
+<a href=#148 id=148 data-nosnippet>148</a>///
+<a href=#149 id=149 data-nosnippet>149</a>///                 // This variant corresponds to a single tag value
+<a href=#150 id=150 data-nosnippet>150</a>///                 if discr_exact.value == tag {
+<a href=#151 id=151 data-nosnippet>151</a>///                     return (variant_field.field("NAME"), variant_field.value);
+<a href=#152 id=152 data-nosnippet>152</a>///                 }
+<a href=#153 id=153 data-nosnippet>153</a>///             } else {
+<a href=#154 id=154 data-nosnippet>154</a>///                 // This is a range variant
+<a href=#155 id=155 data-nosnippet>155</a>///                 let begin = (variant_field.field("DISCR128_BEGIN_LO").value as u128) |
+<a href=#156 id=156 data-nosnippet>156</a>///                             (variant_field.field("DISCR128_BEGIN_HI").value as u128 &lt;&lt; 64);
+<a href=#157 id=157 data-nosnippet>157</a>///                 let end = (variant_field.field("DISCR128_END_LO").value as u128) |
+<a href=#158 id=158 data-nosnippet>158</a>///                           (variant_field.field("DISCR128_END_HI").value as u128 &lt;&lt; 64);
+<a href=#159 id=159 data-nosnippet>159</a>///
+<a href=#160 id=160 data-nosnippet>160</a>///                 if is_in_range(tag, begin, end) {
+<a href=#161 id=161 data-nosnippet>161</a>///                     return (variant_field.field("NAME"), variant_field.value);
+<a href=#162 id=162 data-nosnippet>162</a>///                 }
+<a href=#163 id=163 data-nosnippet>163</a>///             }
+<a href=#164 id=164 data-nosnippet>164</a>///         }
+<a href=#165 id=165 data-nosnippet>165</a>///     }
+<a href=#166 id=166 data-nosnippet>166</a>///
+<a href=#167 id=167 data-nosnippet>167</a>///     // We should have found an active variant at this point.
+<a href=#168 id=168 data-nosnippet>168</a>///     unreachable!();
+<a href=#169 id=169 data-nosnippet>169</a>/// }
+<a href=#170 id=170 data-nosnippet>170</a>///
+<a href=#171 id=171 data-nosnippet>171</a>/// // Check if a value is within the given range
+<a href=#172 id=172 data-nosnippet>172</a>/// // (where the range might wrap around the value space)
+<a href=#173 id=173 data-nosnippet>173</a>/// fn is_in_range(value, start, end) -&gt; bool {
+<a href=#174 id=174 data-nosnippet>174</a>///     if start &lt; end {
+<a href=#175 id=175 data-nosnippet>175</a>///         value &gt;= start &amp;&amp; value &lt;= end
+<a href=#176 id=176 data-nosnippet>176</a>///     } else {
+<a href=#177 id=177 data-nosnippet>177</a>///         value &gt;= start || value &lt;= end
+<a href=#178 id=178 data-nosnippet>178</a>///     }
+<a href=#179 id=179 data-nosnippet>179</a>/// }
+<a href=#180 id=180 data-nosnippet>180</a>///
+<a href=#181 id=181 data-nosnippet>181</a>/// ```
+<a href=#182 id=182 data-nosnippet>182</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/fn.build_enum_type_di_node.html">build_enum_type_di_node</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;(
+<a href=#183 id=183 data-nosnippet>183</a>    cx: <span class="kw-2">&amp;</span><a href="../../../context.rs.html#90">CodegenCx</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#184 id=184 data-nosnippet>184</a>    unique_type_id: <a href="../type_map.rs.html#36-48">UniqueTypeId</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#185 id=185 data-nosnippet>185</a>) -&gt; <a href="../type_map.rs.html#148-151">DINodeCreationResult</a>&lt;<span class="lifetime">'ll</span>&gt; {
+<a href=#186 id=186 data-nosnippet>186</a>    <span class="kw">let </span>enum_type = <a href="#184">unique_type_id</a>.<a href="../type_map.rs.html#116-121">expect_ty</a>();
+<a href=#187 id=187 data-nosnippet>187</a>    <span class="kw">let </span><span class="kw-2">&amp;</span>ty::Adt(enum_adt_def, <span class="kw">_</span>) = <a href="#186">enum_type</a>.<a href="../../../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() <span class="kw">else </span>{
+<a href=#188 id=188 data-nosnippet>188</a>        <a class="macro" href="../../../../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"build_enum_type_di_node() called with non-enum type: `{:?}`"</span>, enum_type)
+<a href=#189 id=189 data-nosnippet>189</a>    };
+<a href=#190 id=190 data-nosnippet>190</a>
+<a href=#191 id=191 data-nosnippet>191</a>    <span class="kw">let </span>enum_type_and_layout = <a href="#183">cx</a>.<a href="../../../../../rustc_middle/ty/layout/trait.LayoutOf.html#tymethod.layout_of">layout_of</a>(<a href="#186">enum_type</a>);
+<a href=#192 id=192 data-nosnippet>192</a>    <span class="kw">let </span>enum_type_name = <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/debuginfo/type_names/fn.compute_debuginfo_type_name.html">compute_debuginfo_type_name</a>(<a href="#183">cx</a>.tcx, <a href="#186">enum_type</a>, <span class="bool-val">false</span>);
+<a href=#193 id=193 data-nosnippet>193</a>
+<a href=#194 id=194 data-nosnippet>194</a>    <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert.html">assert!</a>(!wants_c_like_enum_debuginfo(cx.tcx, enum_type_and_layout));
+<a href=#195 id=195 data-nosnippet>195</a>
+<a href=#196 id=196 data-nosnippet>196</a>    <span class="kw">let </span>def_location = <span class="kw">if </span><a href="#183">cx</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/misc/trait.MiscCodegenMethods.html#tymethod.sess">sess</a>().opts.unstable_opts.debug_info_type_line_numbers {
+<a href=#197 id=197 data-nosnippet>197</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="../../metadata.rs.html#1685-1698">file_metadata_from_def_id</a>(<a href="#183">cx</a>, <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#187">enum_adt_def</a>.<a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.did">did</a>())))
+<a href=#198 id=198 data-nosnippet>198</a>    } <span class="kw">else </span>{
+<a href=#199 id=199 data-nosnippet>199</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
+<a href=#200 id=200 data-nosnippet>200</a>    </a>};
+<a href=#201 id=201 data-nosnippet>201</a>
+<a href=#202 id=202 data-nosnippet>202</a>    <a href="../type_map.rs.html#266-354">type_map::build_type_with_children</a>(
+<a href=#203 id=203 data-nosnippet>203</a>        <a href="#183">cx</a>,
+<a href=#204 id=204 data-nosnippet>204</a>        <a href="../type_map.rs.html#184-248">type_map::stub</a>(
+<a href=#205 id=205 data-nosnippet>205</a>            <a href="#183">cx</a>,
+<a href=#206 id=206 data-nosnippet>206</a>            <a href="../type_map.rs.html#162">type_map::Stub::Union</a>,
+<a href=#207 id=207 data-nosnippet>207</a>            <a href="#184">unique_type_id</a>,
+<a href=#208 id=208 data-nosnippet>208</a>            <span class="kw-2">&amp;</span><a href="#192">enum_type_name</a>,
+<a href=#209 id=209 data-nosnippet>209</a>            <a href="#196">def_location</a>,
+<a href=#210 id=210 data-nosnippet>210</a>            <a href="#183">cx</a>.<a href="../../../type_of.rs.html#151-154">size_and_align_of</a>(<a href="#186">enum_type</a>),
+<a href=#211 id=211 data-nosnippet>211</a>            <a href="../../metadata.rs.html#70">NO_SCOPE_METADATA</a>,
+<a href=#212 id=212 data-nosnippet>212</a>            <a href="../../metadata.rs.html#1038-1052">visibility_di_flags</a>(<a href="#183">cx</a>, <a href="#187">enum_adt_def</a>.<a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.did">did</a>(), <a href="#187">enum_adt_def</a>.<a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.did">did</a>()),
+<a href=#213 id=213 data-nosnippet>213</a>        ),
+<a href=#214 id=214 data-nosnippet>214</a>        |cx, enum_type_di_node| {
+<a href=#215 id=215 data-nosnippet>215</a>            <span class="kw">match </span><a href="#191">enum_type_and_layout</a>.variants {
+<a href=#216 id=216 data-nosnippet>216</a>                <a href="../../../../../rustc_abi/enum.Variants.html#variant.Empty">Variants::Empty</a> =&gt; {
+<a href=#217 id=217 data-nosnippet>217</a>                    <span class="comment">// We don't generate any members for uninhabited types.
+<a href=#218 id=218 data-nosnippet>218</a>                    </span><span class="kw">return </span><a class="macro" href="https://docs.rs/smallvec/1.15.1/smallvec/macro.smallvec.html">smallvec!</a>[];
+<a href=#219 id=219 data-nosnippet>219</a>                }
+<a href=#220 id=220 data-nosnippet>220</a>                <a href="../../../../../rustc_abi/enum.Variants.html#variant.Single">Variants::Single</a> { index: variant_index } =&gt; <a href="#315-396">build_single_variant_union_fields</a>(
+<a href=#221 id=221 data-nosnippet>221</a>                    <a href="#214">cx</a>,
+<a href=#222 id=222 data-nosnippet>222</a>                    <a href="#187">enum_adt_def</a>,
+<a href=#223 id=223 data-nosnippet>223</a>                    <a href="#191">enum_type_and_layout</a>,
+<a href=#224 id=224 data-nosnippet>224</a>                    <a href="#214">enum_type_di_node</a>,
+<a href=#225 id=225 data-nosnippet>225</a>                    <a href="#220">variant_index</a>,
+<a href=#226 id=226 data-nosnippet>226</a>                ),
+<a href=#227 id=227 data-nosnippet>227</a>                <a href="../../../../../rustc_abi/enum.Variants.html#variant.Multiple">Variants::Multiple</a> {
+<a href=#228 id=228 data-nosnippet>228</a>                    tag_encoding: TagEncoding::Direct,
+<a href=#229 id=229 data-nosnippet>229</a>                    <span class="kw-2">ref </span>variants,
+<a href=#230 id=230 data-nosnippet>230</a>                    tag_field,
+<a href=#231 id=231 data-nosnippet>231</a>                    ..
+<a href=#232 id=232 data-nosnippet>232</a>                } =&gt; <a href="#398-462">build_union_fields_for_enum</a>(
+<a href=#233 id=233 data-nosnippet>233</a>                    <a href="#214">cx</a>,
+<a href=#234 id=234 data-nosnippet>234</a>                    <a href="#187">enum_adt_def</a>,
+<a href=#235 id=235 data-nosnippet>235</a>                    <a href="#191">enum_type_and_layout</a>,
+<a href=#236 id=236 data-nosnippet>236</a>                    <a href="#214">enum_type_di_node</a>,
+<a href=#237 id=237 data-nosnippet>237</a>                    <a href="#229">variants</a>.indices(),
+<a href=#238 id=238 data-nosnippet>238</a>                    <a href="#230">tag_field</a>,
+<a href=#239 id=239 data-nosnippet>239</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#240 id=240 data-nosnippet>240</a>                ),
+<a href=#241 id=241 data-nosnippet>241</a>                <a href="../../../../../rustc_abi/enum.Variants.html#variant.Multiple">Variants::Multiple</a> {
+<a href=#242 id=242 data-nosnippet>242</a>                    tag_encoding: TagEncoding::Niche { untagged_variant, .. },
+<a href=#243 id=243 data-nosnippet>243</a>                    <span class="kw-2">ref </span>variants,
+<a href=#244 id=244 data-nosnippet>244</a>                    tag_field,
+<a href=#245 id=245 data-nosnippet>245</a>                    ..
+<a href=#246 id=246 data-nosnippet>246</a>                } =&gt; <a href="#398-462">build_union_fields_for_enum</a>(
+<a href=#247 id=247 data-nosnippet>247</a>                    <a href="#214">cx</a>,
+<a href=#248 id=248 data-nosnippet>248</a>                    <a href="#187">enum_adt_def</a>,
+<a href=#249 id=249 data-nosnippet>249</a>                    <a href="#191">enum_type_and_layout</a>,
+<a href=#250 id=250 data-nosnippet>250</a>                    <a href="#214">enum_type_di_node</a>,
+<a href=#251 id=251 data-nosnippet>251</a>                    <a href="#243">variants</a>.indices(),
+<a href=#252 id=252 data-nosnippet>252</a>                    <a href="#244">tag_field</a>,
+<a href=#253 id=253 data-nosnippet>253</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#242">untagged_variant</a>),
+<a href=#254 id=254 data-nosnippet>254</a>                ),
+<a href=#255 id=255 data-nosnippet>255</a>            }
+<a href=#256 id=256 data-nosnippet>256</a>        },
+<a href=#257 id=257 data-nosnippet>257</a>        <a href="../../metadata.rs.html#72-73">NO_GENERICS</a>,
+<a href=#258 id=258 data-nosnippet>258</a>    )
+<a href=#259 id=259 data-nosnippet>259</a>}
+<a href=#260 id=260 data-nosnippet>260</a>
+<a href=#261 id=261 data-nosnippet>261</a><span class="doccomment">/// A coroutine debuginfo node looks the same as a that of an enum type.
+<a href=#262 id=262 data-nosnippet>262</a>///
+<a href=#263 id=263 data-nosnippet>263</a>/// See [build_enum_type_di_node] for more information.
+<a href=#264 id=264 data-nosnippet>264</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/fn.build_coroutine_di_node.html">build_coroutine_di_node</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;(
+<a href=#265 id=265 data-nosnippet>265</a>    cx: <span class="kw-2">&amp;</span><a href="../../../context.rs.html#90">CodegenCx</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#266 id=266 data-nosnippet>266</a>    unique_type_id: <a href="../type_map.rs.html#36-48">UniqueTypeId</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#267 id=267 data-nosnippet>267</a>) -&gt; <a href="../type_map.rs.html#148-151">DINodeCreationResult</a>&lt;<span class="lifetime">'ll</span>&gt; {
+<a href=#268 id=268 data-nosnippet>268</a>    <span class="kw">let </span>coroutine_type = <a href="#266">unique_type_id</a>.<a href="../type_map.rs.html#116-121">expect_ty</a>();
+<a href=#269 id=269 data-nosnippet>269</a>    <span class="kw">let </span>def_location = <span class="kw">if </span><a href="#265">cx</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/misc/trait.MiscCodegenMethods.html#tymethod.sess">sess</a>().opts.unstable_opts.debug_info_type_line_numbers {
+<a href=#270 id=270 data-nosnippet>270</a>        <span class="kw">let </span><span class="kw-2">&amp;</span>ty::Coroutine(coroutine_def_id, <span class="kw">_</span>) = <a href="#268">coroutine_type</a>.<a href="../../../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() <span class="kw">else </span>{
+<a href=#271 id=271 data-nosnippet>271</a>            <a class="macro" href="../../../../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"build_coroutine_di_node() called with non-coroutine type: `{:?}`"</span>, coroutine_type)
+<a href=#272 id=272 data-nosnippet>272</a>        };
+<a href=#273 id=273 data-nosnippet>273</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="../../metadata.rs.html#1685-1698">file_metadata_from_def_id</a>(<a href="#265">cx</a>, <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#270">coroutine_def_id</a>)))
+<a href=#274 id=274 data-nosnippet>274</a>    } <span class="kw">else </span>{
+<a href=#275 id=275 data-nosnippet>275</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
+<a href=#276 id=276 data-nosnippet>276</a>    </a>};
+<a href=#277 id=277 data-nosnippet>277</a>    <span class="kw">let </span>coroutine_type_and_layout = <a href="#265">cx</a>.<a href="../../../../../rustc_middle/ty/layout/trait.LayoutOf.html#tymethod.layout_of">layout_of</a>(<a href="#268">coroutine_type</a>);
+<a href=#278 id=278 data-nosnippet>278</a>    <span class="kw">let </span>coroutine_type_name = <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/debuginfo/type_names/fn.compute_debuginfo_type_name.html">compute_debuginfo_type_name</a>(<a href="#265">cx</a>.tcx, <a href="#268">coroutine_type</a>, <span class="bool-val">false</span>);
+<a href=#279 id=279 data-nosnippet>279</a>
+<a href=#280 id=280 data-nosnippet>280</a>    <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert.html">assert!</a>(!wants_c_like_enum_debuginfo(cx.tcx, coroutine_type_and_layout));
+<a href=#281 id=281 data-nosnippet>281</a>
+<a href=#282 id=282 data-nosnippet>282</a>    <a href="../type_map.rs.html#266-354">type_map::build_type_with_children</a>(
+<a href=#283 id=283 data-nosnippet>283</a>        <a href="#265">cx</a>,
+<a href=#284 id=284 data-nosnippet>284</a>        <a href="../type_map.rs.html#184-248">type_map::stub</a>(
+<a href=#285 id=285 data-nosnippet>285</a>            <a href="#265">cx</a>,
+<a href=#286 id=286 data-nosnippet>286</a>            <a href="../type_map.rs.html#162">type_map::Stub::Union</a>,
+<a href=#287 id=287 data-nosnippet>287</a>            <a href="#266">unique_type_id</a>,
+<a href=#288 id=288 data-nosnippet>288</a>            <span class="kw-2">&amp;</span><a href="#278">coroutine_type_name</a>,
+<a href=#289 id=289 data-nosnippet>289</a>            <a href="#269">def_location</a>,
+<a href=#290 id=290 data-nosnippet>290</a>            <a href="../../metadata.rs.html#94-96">size_and_align_of</a>(<a href="#277">coroutine_type_and_layout</a>),
+<a href=#291 id=291 data-nosnippet>291</a>            <a href="../../metadata.rs.html#70">NO_SCOPE_METADATA</a>,
+<a href=#292 id=292 data-nosnippet>292</a>            DIFlags::FlagZero,
+<a href=#293 id=293 data-nosnippet>293</a>        ),
+<a href=#294 id=294 data-nosnippet>294</a>        |cx, coroutine_type_di_node| <span class="kw">match </span><a href="#277">coroutine_type_and_layout</a>.variants {
+<a href=#295 id=295 data-nosnippet>295</a>            <a href="../../../../../rustc_abi/enum.Variants.html#variant.Multiple">Variants::Multiple</a> { tag_encoding: TagEncoding::Direct, .. } =&gt; {
+<a href=#296 id=296 data-nosnippet>296</a>                <a href="#708-797">build_union_fields_for_direct_tag_coroutine</a>(
+<a href=#297 id=297 data-nosnippet>297</a>                    <a href="#294">cx</a>,
+<a href=#298 id=298 data-nosnippet>298</a>                    <a href="#277">coroutine_type_and_layout</a>,
+<a href=#299 id=299 data-nosnippet>299</a>                    <a href="#294">coroutine_type_di_node</a>,
+<a href=#300 id=300 data-nosnippet>300</a>                )
+<a href=#301 id=301 data-nosnippet>301</a>            }
+<a href=#302 id=302 data-nosnippet>302</a>            <a href="../../../../../rustc_abi/enum.Variants.html#variant.Single">Variants::Single</a> { .. }
+<a href=#303 id=303 data-nosnippet>303</a>            | <a href="../../../../../rustc_abi/enum.Variants.html#variant.Empty">Variants::Empty</a>
+<a href=#304 id=304 data-nosnippet>304</a>            | <a href="../../../../../rustc_abi/enum.Variants.html#variant.Multiple">Variants::Multiple</a> { tag_encoding: TagEncoding::Niche { .. }, .. } =&gt; {
+<a href=#305 id=305 data-nosnippet>305</a>                <a class="macro" href="../../../../../rustc_middle/macro.bug.html">bug!</a>(
+<a href=#306 id=306 data-nosnippet>306</a>                    <span class="string">"Encountered coroutine with non-direct-tag layout: {:?}"</span>,
+<a href=#307 id=307 data-nosnippet>307</a>                    coroutine_type_and_layout
+<a href=#308 id=308 data-nosnippet>308</a>                )
+<a href=#309 id=309 data-nosnippet>309</a>            }
+<a href=#310 id=310 data-nosnippet>310</a>        },
+<a href=#311 id=311 data-nosnippet>311</a>        <a href="../../metadata.rs.html#72-73">NO_GENERICS</a>,
+<a href=#312 id=312 data-nosnippet>312</a>    )
+<a href=#313 id=313 data-nosnippet>313</a>}
+<a href=#314 id=314 data-nosnippet>314</a>
+<a href=#315 id=315 data-nosnippet>315</a><span class="kw">fn </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/fn.build_single_variant_union_fields.html">build_single_variant_union_fields</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;(
+<a href=#316 id=316 data-nosnippet>316</a>    cx: <span class="kw-2">&amp;</span><a href="../../../context.rs.html#90">CodegenCx</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#317 id=317 data-nosnippet>317</a>    enum_adt_def: <a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html">AdtDef</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#318 id=318 data-nosnippet>318</a>    enum_type_and_layout: <a href="../../../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#319 id=319 data-nosnippet>319</a>    enum_type_di_node: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>,
+<a href=#320 id=320 data-nosnippet>320</a>    variant_index: <a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>,
+<a href=#321 id=321 data-nosnippet>321</a>) -&gt; <a href="../../metadata.rs.html#77">SmallVec</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>&gt; {
+<a href=#322 id=322 data-nosnippet>322</a>    <span class="kw">let </span>variant_layout = <a href="#318">enum_type_and_layout</a>.<a href="../../../../../rustc_abi/layout/ty/struct.TyAndLayout.html#method.for_variant">for_variant</a>(<a href="#316">cx</a>, <a href="#320">variant_index</a>);
+<a href=#323 id=323 data-nosnippet>323</a>    <span class="kw">let </span>visibility_flags = <a href="../../metadata.rs.html#1038-1052">visibility_di_flags</a>(<a href="#316">cx</a>, <a href="#317">enum_adt_def</a>.<a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.did">did</a>(), <a href="#317">enum_adt_def</a>.<a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.did">did</a>());
+<a href=#324 id=324 data-nosnippet>324</a>    <span class="kw">let </span>variant_struct_type_di_node = <a href="mod.rs.html#200-264"><span class="kw">super</span>::build_enum_variant_struct_type_di_node</a>(
+<a href=#325 id=325 data-nosnippet>325</a>        <a href="#316">cx</a>,
+<a href=#326 id=326 data-nosnippet>326</a>        <a href="#318">enum_type_and_layout</a>,
+<a href=#327 id=327 data-nosnippet>327</a>        <a href="#319">enum_type_di_node</a>,
+<a href=#328 id=328 data-nosnippet>328</a>        <a href="#320">variant_index</a>,
+<a href=#329 id=329 data-nosnippet>329</a>        <a href="#317">enum_adt_def</a>.<a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.variant">variant</a>(<a href="#320">variant_index</a>),
+<a href=#330 id=330 data-nosnippet>330</a>        <a href="#322">variant_layout</a>,
+<a href=#331 id=331 data-nosnippet>331</a>        <a href="#323">visibility_flags</a>,
+<a href=#332 id=332 data-nosnippet>332</a>    );
+<a href=#333 id=333 data-nosnippet>333</a>
+<a href=#334 id=334 data-nosnippet>334</a>    <span class="kw">let </span>tag_base_type = <a href="#316">cx</a>.tcx.types.u32;
+<a href=#335 id=335 data-nosnippet>335</a>    <span class="kw">let </span>tag_base_type_di_node = <a href="../../metadata.rs.html#425-493">type_di_node</a>(<a href="#316">cx</a>, <a href="#334">tag_base_type</a>);
+<a href=#336 id=336 data-nosnippet>336</a>    <span class="kw">let </span>tag_base_type_align = <a href="#316">cx</a>.<a href="../../../type_of.rs.html#143-145">align_of</a>(<a href="#334">tag_base_type</a>);
+<a href=#337 id=337 data-nosnippet>337</a>
+<a href=#338 id=338 data-nosnippet>338</a>    <span class="kw">let </span>enum_adt_def_id = <span class="kw">if </span><a href="#316">cx</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/misc/trait.MiscCodegenMethods.html#tymethod.sess">sess</a>().opts.unstable_opts.debug_info_type_line_numbers {
+<a href=#339 id=339 data-nosnippet>339</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#317">enum_adt_def</a>.<a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.did">did</a>())
+<a href=#340 id=340 data-nosnippet>340</a>    } <span class="kw">else </span>{
+<a href=#341 id=341 data-nosnippet>341</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
+<a href=#342 id=342 data-nosnippet>342</a>    </a>};
+<a href=#343 id=343 data-nosnippet>343</a>
+<a href=#344 id=344 data-nosnippet>344</a>    <span class="kw">let </span>variant_names_type_di_node = <a href="#476-491">build_variant_names_type_di_node</a>(
+<a href=#345 id=345 data-nosnippet>345</a>        <a href="#316">cx</a>,
+<a href=#346 id=346 data-nosnippet>346</a>        <a href="#319">enum_type_di_node</a>,
+<a href=#347 id=347 data-nosnippet>347</a>        <a href="https://doc.rust-lang.org/nightly/core/iter/sources/once/fn.once.html">std::iter::once</a>((
+<a href=#348 id=348 data-nosnippet>348</a>            <a href="#320">variant_index</a>,
+<a href=#349 id=349 data-nosnippet>349</a>            <a href="https://doc.rust-lang.org/nightly/core/convert/trait.From.html#tymethod.from">Cow::from</a>(<a href="#317">enum_adt_def</a>.<a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.variant">variant</a>(<a href="#320">variant_index</a>).name.<a href="../../../../../rustc_span/symbol/struct.Symbol.html#method.as_str">as_str</a>()),
+<a href=#350 id=350 data-nosnippet>350</a>        )),
+<a href=#351 id=351 data-nosnippet>351</a>        <a href="#338">enum_adt_def_id</a>,
+<a href=#352 id=352 data-nosnippet>352</a>    );
+<a href=#353 id=353 data-nosnippet>353</a>
+<a href=#354 id=354 data-nosnippet>354</a>    <span class="kw">let </span>variant_struct_type_wrapper_di_node = <a href="#493-697">build_variant_struct_wrapper_type_di_node</a>(
+<a href=#355 id=355 data-nosnippet>355</a>        <a href="#316">cx</a>,
+<a href=#356 id=356 data-nosnippet>356</a>        <a href="#318">enum_type_and_layout</a>,
+<a href=#357 id=357 data-nosnippet>357</a>        <a href="#319">enum_type_di_node</a>,
+<a href=#358 id=358 data-nosnippet>358</a>        <a href="#320">variant_index</a>,
+<a href=#359 id=359 data-nosnippet>359</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#360 id=360 data-nosnippet>360</a>        <a href="#324">variant_struct_type_di_node</a>,
+<a href=#361 id=361 data-nosnippet>361</a>        <a href="#344">variant_names_type_di_node</a>,
+<a href=#362 id=362 data-nosnippet>362</a>        <a href="#335">tag_base_type_di_node</a>,
+<a href=#363 id=363 data-nosnippet>363</a>        <a href="#334">tag_base_type</a>,
+<a href=#364 id=364 data-nosnippet>364</a>        <a href="mod.rs.html#373">DiscrResult::NoDiscriminant</a>,
+<a href=#365 id=365 data-nosnippet>365</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#366 id=366 data-nosnippet>366</a>    );
+<a href=#367 id=367 data-nosnippet>367</a>
+<a href=#368 id=368 data-nosnippet>368</a>    <a class="macro" href="https://docs.rs/smallvec/1.15.1/smallvec/macro.smallvec.html">smallvec!</a>[
+<a href=#369 id=369 data-nosnippet>369</a>        build_field_di_node(
+<a href=#370 id=370 data-nosnippet>370</a>            cx,
+<a href=#371 id=371 data-nosnippet>371</a>            enum_type_di_node,
+<a href=#372 id=372 data-nosnippet>372</a>            <span class="kw-2">&amp;</span>variant_union_field_name(variant_index),
+<a href=#373 id=373 data-nosnippet>373</a>            <span class="comment">// NOTE: We use the layout of the entire type, not from variant_layout
+<a href=#374 id=374 data-nosnippet>374</a>            //       since the later is sometimes smaller (if it has fewer fields).
+<a href=#375 id=375 data-nosnippet>375</a>            </span>enum_type_and_layout,
+<a href=#376 id=376 data-nosnippet>376</a>            Size::ZERO,
+<a href=#377 id=377 data-nosnippet>377</a>            visibility_flags,
+<a href=#378 id=378 data-nosnippet>378</a>            variant_struct_type_wrapper_di_node,
+<a href=#379 id=379 data-nosnippet>379</a>            <span class="prelude-val">None</span>,
+<a href=#380 id=380 data-nosnippet>380</a>        ),
+<a href=#381 id=381 data-nosnippet>381</a>        <span class="kw">unsafe </span>{
+<a href=#382 id=382 data-nosnippet>382</a>            llvm::LLVMRustDIBuilderCreateStaticMemberType(
+<a href=#383 id=383 data-nosnippet>383</a>                DIB(cx),
+<a href=#384 id=384 data-nosnippet>384</a>                enum_type_di_node,
+<a href=#385 id=385 data-nosnippet>385</a>                TAG_FIELD_NAME.as_c_char_ptr(),
+<a href=#386 id=386 data-nosnippet>386</a>                TAG_FIELD_NAME.len(),
+<a href=#387 id=387 data-nosnippet>387</a>                unknown_file_metadata(cx),
+<a href=#388 id=388 data-nosnippet>388</a>                UNKNOWN_LINE_NUMBER,
+<a href=#389 id=389 data-nosnippet>389</a>                variant_names_type_di_node,
+<a href=#390 id=390 data-nosnippet>390</a>                visibility_flags,
+<a href=#391 id=391 data-nosnippet>391</a>                <span class="prelude-val">Some</span>(cx.const_u64(SINGLE_VARIANT_VIRTUAL_DISR)),
+<a href=#392 id=392 data-nosnippet>392</a>                tag_base_type_align.bits() <span class="kw">as </span>u32,
+<a href=#393 id=393 data-nosnippet>393</a>            )
+<a href=#394 id=394 data-nosnippet>394</a>        }
+<a href=#395 id=395 data-nosnippet>395</a>    ]
+<a href=#396 id=396 data-nosnippet>396</a>}
+<a href=#397 id=397 data-nosnippet>397</a>
+<a href=#398 id=398 data-nosnippet>398</a><span class="kw">fn </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/fn.build_union_fields_for_enum.html">build_union_fields_for_enum</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;(
+<a href=#399 id=399 data-nosnippet>399</a>    cx: <span class="kw-2">&amp;</span><a href="../../../context.rs.html#90">CodegenCx</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#400 id=400 data-nosnippet>400</a>    enum_adt_def: <a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html">AdtDef</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#401 id=401 data-nosnippet>401</a>    enum_type_and_layout: <a href="../../../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#402 id=402 data-nosnippet>402</a>    enum_type_di_node: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>,
+<a href=#403 id=403 data-nosnippet>403</a>    variant_indices: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = <a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>&gt; + <a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html">Clone</a>,
+<a href=#404 id=404 data-nosnippet>404</a>    tag_field: <a href="../../../../../rustc_abi/layout/ty/struct.FieldIdx.html">FieldIdx</a>,
+<a href=#405 id=405 data-nosnippet>405</a>    untagged_variant_index: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>&gt;,
+<a href=#406 id=406 data-nosnippet>406</a>) -&gt; <a href="../../metadata.rs.html#77">SmallVec</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>&gt; {
+<a href=#407 id=407 data-nosnippet>407</a>    <span class="kw">let </span>tag_base_type = <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/debuginfo/fn.tag_base_type.html">tag_base_type</a>(<a href="#399">cx</a>.tcx, <a href="#401">enum_type_and_layout</a>);
+<a href=#408 id=408 data-nosnippet>408</a>
+<a href=#409 id=409 data-nosnippet>409</a>    <span class="kw">let </span>enum_adt_def_id = <span class="kw">if </span><a href="#399">cx</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/misc/trait.MiscCodegenMethods.html#tymethod.sess">sess</a>().opts.unstable_opts.debug_info_type_line_numbers {
+<a href=#410 id=410 data-nosnippet>410</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#400">enum_adt_def</a>.<a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.did">did</a>())
+<a href=#411 id=411 data-nosnippet>411</a>    } <span class="kw">else </span>{
+<a href=#412 id=412 data-nosnippet>412</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
+<a href=#413 id=413 data-nosnippet>413</a>    </a>};
+<a href=#414 id=414 data-nosnippet>414</a>
+<a href=#415 id=415 data-nosnippet>415</a>    <span class="kw">let </span>variant_names_type_di_node = <a href="#476-491">build_variant_names_type_di_node</a>(
+<a href=#416 id=416 data-nosnippet>416</a>        <a href="#399">cx</a>,
+<a href=#417 id=417 data-nosnippet>417</a>        <a href="#402">enum_type_di_node</a>,
+<a href=#418 id=418 data-nosnippet>418</a>        <a href="#403">variant_indices</a>.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|variant_index| {
+<a href=#419 id=419 data-nosnippet>419</a>            <span class="kw">let </span>variant_name = <a href="https://doc.rust-lang.org/nightly/core/convert/trait.From.html#tymethod.from">Cow::from</a>(<a href="#400">enum_adt_def</a>.<a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.variant">variant</a>(<a href="#418">variant_index</a>).name.<a href="../../../../../rustc_span/symbol/struct.Symbol.html#method.as_str">as_str</a>());
+<a href=#420 id=420 data-nosnippet>420</a>            (<a href="#418">variant_index</a>, <a href="#419">variant_name</a>)
+<a href=#421 id=421 data-nosnippet>421</a>        }),
+<a href=#422 id=422 data-nosnippet>422</a>        <a href="#409">enum_adt_def_id</a>,
+<a href=#423 id=423 data-nosnippet>423</a>    );
+<a href=#424 id=424 data-nosnippet>424</a>    <span class="kw">let </span>visibility_flags = <a href="../../metadata.rs.html#1038-1052">visibility_di_flags</a>(<a href="#399">cx</a>, <a href="#400">enum_adt_def</a>.<a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.did">did</a>(), <a href="#400">enum_adt_def</a>.<a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.did">did</a>());
+<a href=#425 id=425 data-nosnippet>425</a>
+<a href=#426 id=426 data-nosnippet>426</a>    <span class="kw">let </span>variant_field_infos: <a href="../../metadata.rs.html#77">SmallVec</a>&lt;<a href="#920-925">VariantFieldInfo</a>&lt;<span class="lifetime">'ll</span>&gt;&gt; = <a href="#403">variant_indices</a>
+<a href=#427 id=427 data-nosnippet>427</a>        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|variant_index| {
+<a href=#428 id=428 data-nosnippet>428</a>            <span class="kw">let </span>variant_layout = <a href="#401">enum_type_and_layout</a>.<a href="../../../../../rustc_abi/layout/ty/struct.TyAndLayout.html#method.for_variant">for_variant</a>(<a href="#399">cx</a>, <a href="#427">variant_index</a>);
+<a href=#429 id=429 data-nosnippet>429</a>
+<a href=#430 id=430 data-nosnippet>430</a>            <span class="kw">let </span>variant_def = <a href="#400">enum_adt_def</a>.<a href="../../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.variant">variant</a>(<a href="#427">variant_index</a>);
+<a href=#431 id=431 data-nosnippet>431</a>
+<a href=#432 id=432 data-nosnippet>432</a>            <span class="kw">let </span>variant_struct_type_di_node = <a href="mod.rs.html#200-264"><span class="kw">super</span>::build_enum_variant_struct_type_di_node</a>(
+<a href=#433 id=433 data-nosnippet>433</a>                <a href="#399">cx</a>,
+<a href=#434 id=434 data-nosnippet>434</a>                <a href="#401">enum_type_and_layout</a>,
+<a href=#435 id=435 data-nosnippet>435</a>                <a href="#402">enum_type_di_node</a>,
+<a href=#436 id=436 data-nosnippet>436</a>                <a href="#427">variant_index</a>,
+<a href=#437 id=437 data-nosnippet>437</a>                <a href="#430">variant_def</a>,
+<a href=#438 id=438 data-nosnippet>438</a>                <a href="#428">variant_layout</a>,
+<a href=#439 id=439 data-nosnippet>439</a>                <a href="#424">visibility_flags</a>,
+<a href=#440 id=440 data-nosnippet>440</a>            );
+<a href=#441 id=441 data-nosnippet>441</a>
+<a href=#442 id=442 data-nosnippet>442</a>            <a href="#920-925">VariantFieldInfo</a> {
+<a href=#443 id=443 data-nosnippet>443</a>                <a href="#427">variant_index</a>,
+<a href=#444 id=444 data-nosnippet>444</a>                <a href="#432">variant_struct_type_di_node</a>,
+<a href=#445 id=445 data-nosnippet>445</a>                source_info: <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#446 id=446 data-nosnippet>446</a>                discr: <a href="mod.rs.html#389-428"><span class="kw">super</span>::compute_discriminant_value</a>(<a href="#399">cx</a>, <a href="#401">enum_type_and_layout</a>, <a href="#427">variant_index</a>),
+<a href=#447 id=447 data-nosnippet>447</a>            }
+<a href=#448 id=448 data-nosnippet>448</a>        })
+<a href=#449 id=449 data-nosnippet>449</a>        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#450 id=450 data-nosnippet>450</a>
+<a href=#451 id=451 data-nosnippet>451</a>    <a href="#801-917">build_union_fields_for_direct_tag_enum_or_coroutine</a>(
+<a href=#452 id=452 data-nosnippet>452</a>        <a href="#399">cx</a>,
+<a href=#453 id=453 data-nosnippet>453</a>        <a href="#401">enum_type_and_layout</a>,
+<a href=#454 id=454 data-nosnippet>454</a>        <a href="#402">enum_type_di_node</a>,
+<a href=#455 id=455 data-nosnippet>455</a>        <span class="kw-2">&amp;</span><a href="#426">variant_field_infos</a>,
+<a href=#456 id=456 data-nosnippet>456</a>        <a href="#415">variant_names_type_di_node</a>,
+<a href=#457 id=457 data-nosnippet>457</a>        <a href="#407">tag_base_type</a>,
+<a href=#458 id=458 data-nosnippet>458</a>        <a href="#404">tag_field</a>,
+<a href=#459 id=459 data-nosnippet>459</a>        <a href="#405">untagged_variant_index</a>,
+<a href=#460 id=460 data-nosnippet>460</a>        <a href="#424">visibility_flags</a>,
+<a href=#461 id=461 data-nosnippet>461</a>    )
+<a href=#462 id=462 data-nosnippet>462</a>}
+<a href=#463 id=463 data-nosnippet>463</a>
+<a href=#464 id=464 data-nosnippet>464</a><span class="comment">// The base type of the VariantNames DW_AT_enumeration_type is always the same.
+<a href=#465 id=465 data-nosnippet>465</a>// It has nothing to do with the tag of the enum and just has to be big enough
+<a href=#466 id=466 data-nosnippet>466</a>// to hold all variant names.
+<a href=#467 id=467 data-nosnippet>467</a></span><span class="kw">fn </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/fn.variant_names_enum_base_type.html">variant_names_enum_base_type</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;(cx: <span class="kw-2">&amp;</span><a href="../../../context.rs.html#90">CodegenCx</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;) -&gt; <a href="../../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#468 id=468 data-nosnippet>468</a>    <a href="#467">cx</a>.tcx.types.u32
+<a href=#469 id=469 data-nosnippet>469</a>}
+<a href=#470 id=470 data-nosnippet>470</a>
+<a href=#471 id=471 data-nosnippet>471</a><span class="doccomment">/// This function builds a DW_AT_enumeration_type that contains an entry for
+<a href=#472 id=472 data-nosnippet>472</a>/// each variant. Note that this has nothing to do with the discriminant. The
+<a href=#473 id=473 data-nosnippet>473</a>/// numeric value of each enumerator corresponds to the variant index. The
+<a href=#474 id=474 data-nosnippet>474</a>/// type is only used for efficiently encoding the name of each variant in
+<a href=#475 id=475 data-nosnippet>475</a>/// debuginfo.
+<a href=#476 id=476 data-nosnippet>476</a></span><span class="kw">fn </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/fn.build_variant_names_type_di_node.html">build_variant_names_type_di_node</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;(
+<a href=#477 id=477 data-nosnippet>477</a>    cx: <span class="kw-2">&amp;</span><a href="../../../context.rs.html#90">CodegenCx</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#478 id=478 data-nosnippet>478</a>    containing_scope: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>,
+<a href=#479 id=479 data-nosnippet>479</a>    variants: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = (<a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>, <a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html">Cow</a>&lt;<span class="lifetime">'tcx</span>, <a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt;)&gt;,
+<a href=#480 id=480 data-nosnippet>480</a>    enum_def_id: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../../../rustc_span/def_id/struct.DefId.html">rustc_span::def_id::DefId</a>&gt;,
+<a href=#481 id=481 data-nosnippet>481</a>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a> {
+<a href=#482 id=482 data-nosnippet>482</a>    <span class="comment">// Create an enumerator for each variant.
+<a href=#483 id=483 data-nosnippet>483</a>    </span><a href="mod.rs.html#97-148"><span class="kw">super</span>::build_enumeration_type_di_node</a>(
+<a href=#484 id=484 data-nosnippet>484</a>        <a href="#477">cx</a>,
+<a href=#485 id=485 data-nosnippet>485</a>        <span class="string">"VariantNames"</span>,
+<a href=#486 id=486 data-nosnippet>486</a>        <a href="#467-469">variant_names_enum_base_type</a>(<a href="#477">cx</a>),
+<a href=#487 id=487 data-nosnippet>487</a>        <a href="#479">variants</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|(variant_index, variant_name)| (<a href="#487">variant_name</a>, <a href="#487">variant_index</a>.<a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html#method.as_u32">as_u32</a>().<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>())),
+<a href=#488 id=488 data-nosnippet>488</a>        <a href="#480">enum_def_id</a>,
+<a href=#489 id=489 data-nosnippet>489</a>        <a href="#478">containing_scope</a>,
+<a href=#490 id=490 data-nosnippet>490</a>    )
+<a href=#491 id=491 data-nosnippet>491</a>}
+<a href=#492 id=492 data-nosnippet>492</a>
+<a href=#493 id=493 data-nosnippet>493</a><span class="kw">fn </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/fn.build_variant_struct_wrapper_type_di_node.html">build_variant_struct_wrapper_type_di_node</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;(
+<a href=#494 id=494 data-nosnippet>494</a>    cx: <span class="kw-2">&amp;</span><a href="../../../context.rs.html#90">CodegenCx</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#495 id=495 data-nosnippet>495</a>    enum_or_coroutine_type_and_layout: <a href="../../../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#496 id=496 data-nosnippet>496</a>    enum_or_coroutine_type_di_node: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>,
+<a href=#497 id=497 data-nosnippet>497</a>    variant_index: <a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>,
+<a href=#498 id=498 data-nosnippet>498</a>    untagged_variant_index: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>&gt;,
+<a href=#499 id=499 data-nosnippet>499</a>    variant_struct_type_di_node: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>,
+<a href=#500 id=500 data-nosnippet>500</a>    variant_names_type_di_node: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>,
+<a href=#501 id=501 data-nosnippet>501</a>    tag_base_type_di_node: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>,
+<a href=#502 id=502 data-nosnippet>502</a>    tag_base_type: <a href="../../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#503 id=503 data-nosnippet>503</a>    discr: <a href="mod.rs.html#372-376">DiscrResult</a>,
+<a href=#504 id=504 data-nosnippet>504</a>    source_info: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;(<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#883">DIFile</a>, <a href="https://docs.rs/libc/0.2.174/libc/primitives/type.c_uint.html">c_uint</a>)&gt;,
+<a href=#505 id=505 data-nosnippet>505</a>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a> {
+<a href=#506 id=506 data-nosnippet>506</a>    <a href="../type_map.rs.html#266-354">type_map::build_type_with_children</a>(
+<a href=#507 id=507 data-nosnippet>507</a>        <a href="#494">cx</a>,
+<a href=#508 id=508 data-nosnippet>508</a>        <a href="../type_map.rs.html#184-248">type_map::stub</a>(
+<a href=#509 id=509 data-nosnippet>509</a>            <a href="#494">cx</a>,
+<a href=#510 id=510 data-nosnippet>510</a>            <a href="../type_map.rs.html#161">Stub::Struct</a>,
+<a href=#511 id=511 data-nosnippet>511</a>            <a href="../type_map.rs.html#76-86">UniqueTypeId::for_enum_variant_struct_type_wrapper</a>(
+<a href=#512 id=512 data-nosnippet>512</a>                <a href="#494">cx</a>.tcx,
+<a href=#513 id=513 data-nosnippet>513</a>                <a href="#495">enum_or_coroutine_type_and_layout</a>.ty,
+<a href=#514 id=514 data-nosnippet>514</a>                <a href="#497">variant_index</a>,
+<a href=#515 id=515 data-nosnippet>515</a>            ),
+<a href=#516 id=516 data-nosnippet>516</a>            <span class="kw-2">&amp;</span><a href="#953-977">variant_struct_wrapper_type_name</a>(<a href="#497">variant_index</a>),
+<a href=#517 id=517 data-nosnippet>517</a>            <a href="#504">source_info</a>,
+<a href=#518 id=518 data-nosnippet>518</a>            <span class="comment">// NOTE: We use size and align of enum_type, not from variant_layout:
+<a href=#519 id=519 data-nosnippet>519</a>            </span><a href="../../metadata.rs.html#94-96">size_and_align_of</a>(<a href="#495">enum_or_coroutine_type_and_layout</a>),
+<a href=#520 id=520 data-nosnippet>520</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#496">enum_or_coroutine_type_di_node</a>),
+<a href=#521 id=521 data-nosnippet>521</a>            DIFlags::FlagZero,
+<a href=#522 id=522 data-nosnippet>522</a>        ),
+<a href=#523 id=523 data-nosnippet>523</a>        |cx, wrapper_struct_type_di_node| {
+<a href=#524 id=524 data-nosnippet>524</a>            <span class="kw">enum </span>DiscrKind {
+<a href=#525 id=525 data-nosnippet>525</a>                Exact(<a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>),
+<a href=#526 id=526 data-nosnippet>526</a>                Exact128(<a href="https://doc.rust-lang.org/nightly/std/primitive.u128.html">u128</a>),
+<a href=#527 id=527 data-nosnippet>527</a>                Range(<a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>),
+<a href=#528 id=528 data-nosnippet>528</a>                Range128(<a href="https://doc.rust-lang.org/nightly/std/primitive.u128.html">u128</a>, <a href="https://doc.rust-lang.org/nightly/std/primitive.u128.html">u128</a>),
+<a href=#529 id=529 data-nosnippet>529</a>            }
+<a href=#530 id=530 data-nosnippet>530</a>
+<a href=#531 id=531 data-nosnippet>531</a>            <span class="kw">let </span>(tag_base_type_size, tag_base_type_align) = <a href="#523">cx</a>.<a href="../../../type_of.rs.html#151-154">size_and_align_of</a>(<a href="#502">tag_base_type</a>);
+<a href=#532 id=532 data-nosnippet>532</a>            <span class="kw">let </span>is_128_bits = <a href="#531">tag_base_type_size</a>.<a href="../../../../../rustc_abi/struct.Size.html#method.bits">bits</a>() &gt; <span class="number">64</span>;
+<a href=#533 id=533 data-nosnippet>533</a>
+<a href=#534 id=534 data-nosnippet>534</a>            <span class="kw">let </span>discr = <span class="kw">match </span><a href="#503">discr</a> {
+<a href=#535 id=535 data-nosnippet>535</a>                <a href="mod.rs.html#373">DiscrResult::NoDiscriminant</a> =&gt; <a href="#525">DiscrKind::Exact</a>(<a href="#48">SINGLE_VARIANT_VIRTUAL_DISR</a>),
+<a href=#536 id=536 data-nosnippet>536</a>                <a href="mod.rs.html#374">DiscrResult::Value</a>(discr_val) =&gt; {
+<a href=#537 id=537 data-nosnippet>537</a>                    <span class="kw">if </span><a href="#532">is_128_bits</a> {
+<a href=#538 id=538 data-nosnippet>538</a>                        <a href="#526">DiscrKind::Exact128</a>(<a href="#536">discr_val</a>)
+<a href=#539 id=539 data-nosnippet>539</a>                    } <span class="kw">else </span>{
+<a href=#540 id=540 data-nosnippet>540</a>                        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(discr_val, discr_val <span class="kw">as </span>u64 <span class="kw">as </span>u128);
+<a href=#541 id=541 data-nosnippet>541</a>                        <a href="#525">DiscrKind::Exact</a>(<a href="#536">discr_val</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>)
+<a href=#542 id=542 data-nosnippet>542</a>                    }
+<a href=#543 id=543 data-nosnippet>543</a>                }
+<a href=#544 id=544 data-nosnippet>544</a>                <a href="mod.rs.html#375">DiscrResult::Range</a>(min, max) =&gt; {
+<a href=#545 id=545 data-nosnippet>545</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(<span class="prelude-val">Some</span>(variant_index), untagged_variant_index);
+<a href=#546 id=546 data-nosnippet>546</a>                    <span class="kw">if </span><a href="#532">is_128_bits</a> {
+<a href=#547 id=547 data-nosnippet>547</a>                        <a href="#528">DiscrKind::Range128</a>(<a href="#544">min</a>, <a href="#544">max</a>)
+<a href=#548 id=548 data-nosnippet>548</a>                    } <span class="kw">else </span>{
+<a href=#549 id=549 data-nosnippet>549</a>                        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(min, min <span class="kw">as </span>u64 <span class="kw">as </span>u128);
+<a href=#550 id=550 data-nosnippet>550</a>                        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(max, max <span class="kw">as </span>u64 <span class="kw">as </span>u128);
+<a href=#551 id=551 data-nosnippet>551</a>                        <a href="#527">DiscrKind::Range</a>(<a href="#544">min</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>, <a href="#544">max</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>)
+<a href=#552 id=552 data-nosnippet>552</a>                    }
+<a href=#553 id=553 data-nosnippet>553</a>                }
+<a href=#554 id=554 data-nosnippet>554</a>            };
+<a href=#555 id=555 data-nosnippet>555</a>
+<a href=#556 id=556 data-nosnippet>556</a>            <span class="kw">let </span><span class="kw-2">mut </span>fields = <a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.new">SmallVec::new</a>();
+<a href=#557 id=557 data-nosnippet>557</a>
+<a href=#558 id=558 data-nosnippet>558</a>            <span class="comment">// We always have a field for the value
+<a href=#559 id=559 data-nosnippet>559</a>            </span><a href="#556">fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="../../metadata.rs.html#976-1003">build_field_di_node</a>(
+<a href=#560 id=560 data-nosnippet>560</a>                <a href="#523">cx</a>,
+<a href=#561 id=561 data-nosnippet>561</a>                <a href="#523">wrapper_struct_type_di_node</a>,
+<a href=#562 id=562 data-nosnippet>562</a>                <span class="string">"value"</span>,
+<a href=#563 id=563 data-nosnippet>563</a>                <a href="#495">enum_or_coroutine_type_and_layout</a>,
+<a href=#564 id=564 data-nosnippet>564</a>                Size::ZERO,
+<a href=#565 id=565 data-nosnippet>565</a>                DIFlags::FlagZero,
+<a href=#566 id=566 data-nosnippet>566</a>                <a href="#499">variant_struct_type_di_node</a>,
+<a href=#567 id=567 data-nosnippet>567</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#568 id=568 data-nosnippet>568</a>            ));
+<a href=#569 id=569 data-nosnippet>569</a>
+<a href=#570 id=570 data-nosnippet>570</a>            <span class="kw">let </span>build_assoc_const = |name: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>,
+<a href=#571 id=571 data-nosnippet>571</a>                                     type_di_node_: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>,
+<a href=#572 id=572 data-nosnippet>572</a>                                     value: <a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>,
+<a href=#573 id=573 data-nosnippet>573</a>                                     align: <a href="../../../../../rustc_abi/struct.Align.html">Align</a>| <span class="kw">unsafe </span>{
+<a href=#574 id=574 data-nosnippet>574</a>                <span class="comment">// FIXME: Currently we force all DISCR_* values to be u64's as LLDB seems to have
+<a href=#575 id=575 data-nosnippet>575</a>                // problems inspecting other value types. Since DISCR_* is typically only going to be
+<a href=#576 id=576 data-nosnippet>576</a>                // directly inspected via the debugger visualizer - which compares it to the `tag` value
+<a href=#577 id=577 data-nosnippet>577</a>                // (whose type is not modified at all) it shouldn't cause any real problems.
+<a href=#578 id=578 data-nosnippet>578</a>                </span><span class="kw">let </span>(t_di, align) = <span class="kw">if </span><a href="#570">name</a> == <a href="#29">ASSOC_CONST_DISCR_NAME</a> {
+<a href=#579 id=579 data-nosnippet>579</a>                    (<a href="#571">type_di_node_</a>, <a href="#573">align</a>.<a href="../../../../../rustc_abi/struct.Align.html#method.bits">bits</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>)
+<a href=#580 id=580 data-nosnippet>580</a>                } <span class="kw">else </span>{
+<a href=#581 id=581 data-nosnippet>581</a>                    <span class="kw">let </span>ty_u64 = <a href="../../../../../rustc_middle/ty/struct.Ty.html#method.new_uint">Ty::new_uint</a>(<a href="#523">cx</a>.tcx, <a href="../../../../../rustc_ast_ir/enum.UintTy.html#variant.U64">ty::UintTy::U64</a>);
+<a href=#582 id=582 data-nosnippet>582</a>                    (<a href="../../metadata.rs.html#425-493">type_di_node</a>(<a href="#523">cx</a>, <a href="#581">ty_u64</a>), Align::EIGHT.<a href="../../../../../rustc_abi/struct.Align.html#method.bits">bits</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u32.html">u32</a>)
+<a href=#583 id=583 data-nosnippet>583</a>                };
+<a href=#584 id=584 data-nosnippet>584</a>
+<a href=#585 id=585 data-nosnippet>585</a>                <span class="comment">// must wrap type in a `const` modifier for LLDB to be able to inspect the value of the member
+<a href=#586 id=586 data-nosnippet>586</a>                </span><span class="kw">let </span>field_type =
+<a href=#587 id=587 data-nosnippet>587</a>                    <a href="../../../llvm/ffi.rs.html#2301-2305">llvm::LLVMRustDIBuilderCreateQualifiedType</a>(<a href="../../utils.rs.html#43-45">DIB</a>(<a href="#523">cx</a>), <a href="../../dwarf_const.rs.html#19">DW_TAG_const_type</a>, <a href="#578">t_di</a>);
+<a href=#588 id=588 data-nosnippet>588</a>
+<a href=#589 id=589 data-nosnippet>589</a>                <a href="../../../llvm/ffi.rs.html#2288-2299">llvm::LLVMRustDIBuilderCreateStaticMemberType</a>(
+<a href=#590 id=590 data-nosnippet>590</a>                    <a href="../../utils.rs.html#43-45">DIB</a>(<a href="#523">cx</a>),
+<a href=#591 id=591 data-nosnippet>591</a>                    <a href="#523">wrapper_struct_type_di_node</a>,
+<a href=#592 id=592 data-nosnippet>592</a>                    <a href="#570">name</a>.<a href="../../../common.rs.html#419">as_c_char_ptr</a>(),
+<a href=#593 id=593 data-nosnippet>593</a>                    <a href="#570">name</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.str.html#method.len">len</a>(),
+<a href=#594 id=594 data-nosnippet>594</a>                    <a href="../../metadata.rs.html#631-635">unknown_file_metadata</a>(<a href="#523">cx</a>),
+<a href=#595 id=595 data-nosnippet>595</a>                    <a href="../../metadata.rs.html#67">UNKNOWN_LINE_NUMBER</a>,
+<a href=#596 id=596 data-nosnippet>596</a>                    <a href="#586">field_type</a>,
+<a href=#597 id=597 data-nosnippet>597</a>                    DIFlags::FlagZero,
+<a href=#598 id=598 data-nosnippet>598</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#523">cx</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/consts/trait.ConstCodegenMethods.html#tymethod.const_u64">const_u64</a>(<a href="#572">value</a>)),
+<a href=#599 id=599 data-nosnippet>599</a>                    <a href="#578">align</a>,
+<a href=#600 id=600 data-nosnippet>600</a>                )
+<a href=#601 id=601 data-nosnippet>601</a>            };
+<a href=#602 id=602 data-nosnippet>602</a>
+<a href=#603 id=603 data-nosnippet>603</a>            <span class="comment">// We also always have an associated constant for the discriminant value
+<a href=#604 id=604 data-nosnippet>604</a>            // of the variant.
+<a href=#605 id=605 data-nosnippet>605</a>            </span><a href="#556">fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="#570">build_assoc_const</a>(
+<a href=#606 id=606 data-nosnippet>606</a>                <a href="#29">ASSOC_CONST_DISCR_NAME</a>,
+<a href=#607 id=607 data-nosnippet>607</a>                <a href="#500">variant_names_type_di_node</a>,
+<a href=#608 id=608 data-nosnippet>608</a>                <a href="#497">variant_index</a>.<a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html#method.as_u32">as_u32</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>,
+<a href=#609 id=609 data-nosnippet>609</a>                <a href="#523">cx</a>.<a href="../../../type_of.rs.html#143-145">align_of</a>(<a href="#467-469">variant_names_enum_base_type</a>(<a href="#523">cx</a>)),
+<a href=#610 id=610 data-nosnippet>610</a>            ));
+<a href=#611 id=611 data-nosnippet>611</a>
+<a href=#612 id=612 data-nosnippet>612</a>            <span class="comment">// Emit the discriminant value (or range) corresponding to the variant.
+<a href=#613 id=613 data-nosnippet>613</a>            </span><span class="kw">match </span><a href="#534">discr</a> {
+<a href=#614 id=614 data-nosnippet>614</a>                <a href="#525">DiscrKind::Exact</a>(discr_val) =&gt; {
+<a href=#615 id=615 data-nosnippet>615</a>                    <a href="#556">fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="#570">build_assoc_const</a>(
+<a href=#616 id=616 data-nosnippet>616</a>                        <a href="#30">ASSOC_CONST_DISCR_EXACT</a>,
+<a href=#617 id=617 data-nosnippet>617</a>                        <a href="#501">tag_base_type_di_node</a>,
+<a href=#618 id=618 data-nosnippet>618</a>                        <a href="#614">discr_val</a>,
+<a href=#619 id=619 data-nosnippet>619</a>                        <a href="#531">tag_base_type_align</a>,
+<a href=#620 id=620 data-nosnippet>620</a>                    ));
+<a href=#621 id=621 data-nosnippet>621</a>                }
+<a href=#622 id=622 data-nosnippet>622</a>                <a href="#526">DiscrKind::Exact128</a>(discr_val) =&gt; {
+<a href=#623 id=623 data-nosnippet>623</a>                    <span class="kw">let </span>align = <a href="#523">cx</a>.<a href="../../../type_of.rs.html#143-145">align_of</a>(<a href="#523">cx</a>.tcx.types.u64);
+<a href=#624 id=624 data-nosnippet>624</a>                    <span class="kw">let </span>type_di_node = <a href="../../metadata.rs.html#425-493">type_di_node</a>(<a href="#523">cx</a>, <a href="#523">cx</a>.tcx.types.u64);
+<a href=#625 id=625 data-nosnippet>625</a>                    <span class="kw">let </span><a href="#699-702">Split128</a> { hi, lo } = <a href="#704-706">split_128</a>(<a href="#622">discr_val</a>);
+<a href=#626 id=626 data-nosnippet>626</a>
+<a href=#627 id=627 data-nosnippet>627</a>                    <a href="#556">fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="#570">build_assoc_const</a>(
+<a href=#628 id=628 data-nosnippet>628</a>                        <a href="#34">ASSOC_CONST_DISCR128_EXACT_LO</a>,
+<a href=#629 id=629 data-nosnippet>629</a>                        <a href="#624">type_di_node</a>,
+<a href=#630 id=630 data-nosnippet>630</a>                        <a href="#625">lo</a>,
+<a href=#631 id=631 data-nosnippet>631</a>                        <a href="#623">align</a>,
+<a href=#632 id=632 data-nosnippet>632</a>                    ));
+<a href=#633 id=633 data-nosnippet>633</a>
+<a href=#634 id=634 data-nosnippet>634</a>                    <a href="#556">fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="#570">build_assoc_const</a>(
+<a href=#635 id=635 data-nosnippet>635</a>                        <a href="#35">ASSOC_CONST_DISCR128_EXACT_HI</a>,
+<a href=#636 id=636 data-nosnippet>636</a>                        <a href="#624">type_di_node</a>,
+<a href=#637 id=637 data-nosnippet>637</a>                        <a href="#625">hi</a>,
+<a href=#638 id=638 data-nosnippet>638</a>                        <a href="#623">align</a>,
+<a href=#639 id=639 data-nosnippet>639</a>                    ));
+<a href=#640 id=640 data-nosnippet>640</a>                }
+<a href=#641 id=641 data-nosnippet>641</a>                <a href="#527">DiscrKind::Range</a>(begin, end) =&gt; {
+<a href=#642 id=642 data-nosnippet>642</a>                    <a href="#556">fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="#570">build_assoc_const</a>(
+<a href=#643 id=643 data-nosnippet>643</a>                        <a href="#31">ASSOC_CONST_DISCR_BEGIN</a>,
+<a href=#644 id=644 data-nosnippet>644</a>                        <a href="#501">tag_base_type_di_node</a>,
+<a href=#645 id=645 data-nosnippet>645</a>                        <a href="#641">begin</a>,
+<a href=#646 id=646 data-nosnippet>646</a>                        <a href="#531">tag_base_type_align</a>,
+<a href=#647 id=647 data-nosnippet>647</a>                    ));
+<a href=#648 id=648 data-nosnippet>648</a>
+<a href=#649 id=649 data-nosnippet>649</a>                    <a href="#556">fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="#570">build_assoc_const</a>(
+<a href=#650 id=650 data-nosnippet>650</a>                        <a href="#32">ASSOC_CONST_DISCR_END</a>,
+<a href=#651 id=651 data-nosnippet>651</a>                        <a href="#501">tag_base_type_di_node</a>,
+<a href=#652 id=652 data-nosnippet>652</a>                        <a href="#641">end</a>,
+<a href=#653 id=653 data-nosnippet>653</a>                        <a href="#531">tag_base_type_align</a>,
+<a href=#654 id=654 data-nosnippet>654</a>                    ));
+<a href=#655 id=655 data-nosnippet>655</a>                }
+<a href=#656 id=656 data-nosnippet>656</a>                <a href="#528">DiscrKind::Range128</a>(begin, end) =&gt; {
+<a href=#657 id=657 data-nosnippet>657</a>                    <span class="kw">let </span>align = <a href="#523">cx</a>.<a href="../../../type_of.rs.html#143-145">align_of</a>(<a href="#523">cx</a>.tcx.types.u64);
+<a href=#658 id=658 data-nosnippet>658</a>                    <span class="kw">let </span>type_di_node = <a href="../../metadata.rs.html#425-493">type_di_node</a>(<a href="#523">cx</a>, <a href="#523">cx</a>.tcx.types.u64);
+<a href=#659 id=659 data-nosnippet>659</a>                    <span class="kw">let </span><a href="#699-702">Split128</a> { hi: begin_hi, lo: begin_lo } = <a href="#704-706">split_128</a>(<a href="#656">begin</a>);
+<a href=#660 id=660 data-nosnippet>660</a>                    <span class="kw">let </span><a href="#699-702">Split128</a> { hi: end_hi, lo: end_lo } = <a href="#704-706">split_128</a>(<a href="#656">end</a>);
+<a href=#661 id=661 data-nosnippet>661</a>
+<a href=#662 id=662 data-nosnippet>662</a>                    <a href="#556">fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="#570">build_assoc_const</a>(
+<a href=#663 id=663 data-nosnippet>663</a>                        <a href="#37">ASSOC_CONST_DISCR128_BEGIN_HI</a>,
+<a href=#664 id=664 data-nosnippet>664</a>                        <a href="#658">type_di_node</a>,
+<a href=#665 id=665 data-nosnippet>665</a>                        <a href="#659">begin_hi</a>,
+<a href=#666 id=666 data-nosnippet>666</a>                        <a href="#657">align</a>,
+<a href=#667 id=667 data-nosnippet>667</a>                    ));
+<a href=#668 id=668 data-nosnippet>668</a>
+<a href=#669 id=669 data-nosnippet>669</a>                    <a href="#556">fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="#570">build_assoc_const</a>(
+<a href=#670 id=670 data-nosnippet>670</a>                        <a href="#36">ASSOC_CONST_DISCR128_BEGIN_LO</a>,
+<a href=#671 id=671 data-nosnippet>671</a>                        <a href="#658">type_di_node</a>,
+<a href=#672 id=672 data-nosnippet>672</a>                        <a href="#659">begin_lo</a>,
+<a href=#673 id=673 data-nosnippet>673</a>                        <a href="#657">align</a>,
+<a href=#674 id=674 data-nosnippet>674</a>                    ));
+<a href=#675 id=675 data-nosnippet>675</a>
+<a href=#676 id=676 data-nosnippet>676</a>                    <a href="#556">fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="#570">build_assoc_const</a>(
+<a href=#677 id=677 data-nosnippet>677</a>                        <a href="#39">ASSOC_CONST_DISCR128_END_HI</a>,
+<a href=#678 id=678 data-nosnippet>678</a>                        <a href="#658">type_di_node</a>,
+<a href=#679 id=679 data-nosnippet>679</a>                        <a href="#660">end_hi</a>,
+<a href=#680 id=680 data-nosnippet>680</a>                        <a href="#657">align</a>,
+<a href=#681 id=681 data-nosnippet>681</a>                    ));
+<a href=#682 id=682 data-nosnippet>682</a>
+<a href=#683 id=683 data-nosnippet>683</a>                    <a href="#556">fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="#570">build_assoc_const</a>(
+<a href=#684 id=684 data-nosnippet>684</a>                        <a href="#38">ASSOC_CONST_DISCR128_END_LO</a>,
+<a href=#685 id=685 data-nosnippet>685</a>                        <a href="#658">type_di_node</a>,
+<a href=#686 id=686 data-nosnippet>686</a>                        <a href="#660">end_lo</a>,
+<a href=#687 id=687 data-nosnippet>687</a>                        <a href="#657">align</a>,
+<a href=#688 id=688 data-nosnippet>688</a>                    ));
+<a href=#689 id=689 data-nosnippet>689</a>                }
+<a href=#690 id=690 data-nosnippet>690</a>            }
+<a href=#691 id=691 data-nosnippet>691</a>
+<a href=#692 id=692 data-nosnippet>692</a>            <a href="#556">fields</a>
+<a href=#693 id=693 data-nosnippet>693</a>        },
+<a href=#694 id=694 data-nosnippet>694</a>        <a href="../../metadata.rs.html#72-73">NO_GENERICS</a>,
+<a href=#695 id=695 data-nosnippet>695</a>    )
+<a href=#696 id=696 data-nosnippet>696</a>    .di_node
+<a href=#697 id=697 data-nosnippet>697</a>}
+<a href=#698 id=698 data-nosnippet>698</a>
+<a href=#699 id=699 data-nosnippet>699</a><span class="kw">struct </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/struct.Split128.html">Split128</a> {
+<a href=#700 id=700 data-nosnippet>700</a>    hi: <a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>,
+<a href=#701 id=701 data-nosnippet>701</a>    lo: <a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>,
+<a href=#702 id=702 data-nosnippet>702</a>}
+<a href=#703 id=703 data-nosnippet>703</a>
+<a href=#704 id=704 data-nosnippet>704</a><span class="kw">fn </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/fn.split_128.html">split_128</a>(value: <a href="https://doc.rust-lang.org/nightly/std/primitive.u128.html">u128</a>) -&gt; <a href="#699-702">Split128</a> {
+<a href=#705 id=705 data-nosnippet>705</a>    <a href="#699-702">Split128</a> { hi: (<a href="#704">value</a> &gt;&gt; <span class="number">64</span>) <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a>, lo: <a href="#704">value</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/nightly/std/primitive.u64.html">u64</a> }
+<a href=#706 id=706 data-nosnippet>706</a>}
+<a href=#707 id=707 data-nosnippet>707</a>
+<a href=#708 id=708 data-nosnippet>708</a><span class="kw">fn </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/fn.build_union_fields_for_direct_tag_coroutine.html">build_union_fields_for_direct_tag_coroutine</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;(
+<a href=#709 id=709 data-nosnippet>709</a>    cx: <span class="kw-2">&amp;</span><a href="../../../context.rs.html#90">CodegenCx</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#710 id=710 data-nosnippet>710</a>    coroutine_type_and_layout: <a href="../../../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#711 id=711 data-nosnippet>711</a>    coroutine_type_di_node: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>,
+<a href=#712 id=712 data-nosnippet>712</a>) -&gt; <a href="../../metadata.rs.html#77">SmallVec</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>&gt; {
+<a href=#713 id=713 data-nosnippet>713</a>    <span class="kw">let </span><a href="../../../../../rustc_abi/enum.Variants.html#variant.Multiple">Variants::Multiple</a> { tag_encoding: TagEncoding::Direct, tag_field, .. } =
+<a href=#714 id=714 data-nosnippet>714</a>        <a href="#710">coroutine_type_and_layout</a>.variants
+<a href=#715 id=715 data-nosnippet>715</a>    <span class="kw">else </span>{
+<a href=#716 id=716 data-nosnippet>716</a>        <a class="macro" href="../../../../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"This function only supports layouts with directly encoded tags."</span>)
+<a href=#717 id=717 data-nosnippet>717</a>    };
+<a href=#718 id=718 data-nosnippet>718</a>
+<a href=#719 id=719 data-nosnippet>719</a>    <span class="kw">let </span>(coroutine_def_id, coroutine_args) = <span class="kw">match </span><a href="#710">coroutine_type_and_layout</a>.ty.<a href="../../../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() {
+<a href=#720 id=720 data-nosnippet>720</a>        <span class="kw-2">&amp;</span>ty::Coroutine(def_id, args) =&gt; (<a href="#720">def_id</a>, <a href="#720">args</a>.<a href="../../../../../rustc_middle/ty/list/struct.RawList.html#method.as_coroutine">as_coroutine</a>()),
+<a href=#721 id=721 data-nosnippet>721</a>        <span class="kw">_ </span>=&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#722 id=722 data-nosnippet>722</a>    };
+<a href=#723 id=723 data-nosnippet>723</a>
+<a href=#724 id=724 data-nosnippet>724</a>    <span class="kw">let </span>coroutine_layout = <a href="#709">cx</a>.tcx.<a href="../../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.coroutine_layout">coroutine_layout</a>(<a href="#719">coroutine_def_id</a>, <a href="#719">coroutine_args</a>.args).<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.unwrap">unwrap</a>();
+<a href=#725 id=725 data-nosnippet>725</a>
+<a href=#726 id=726 data-nosnippet>726</a>    <span class="kw">let </span>common_upvar_names = <a href="#709">cx</a>.tcx.<a href="../../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.closure_saved_names_of_captured_variables">closure_saved_names_of_captured_variables</a>(<a href="#719">coroutine_def_id</a>);
+<a href=#727 id=727 data-nosnippet>727</a>    <span class="kw">let </span>variant_range = <a href="#719">coroutine_args</a>.<a href="../../../../../rustc_middle/ty/sty/trait.CoroutineArgsExt.html#tymethod.variant_range">variant_range</a>(<a href="#719">coroutine_def_id</a>, <a href="#709">cx</a>.tcx);
+<a href=#728 id=728 data-nosnippet>728</a>    <span class="kw">let </span>variant_count = (<a href="#727">variant_range</a>.start.<a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html#method.as_u32">as_u32</a>()..<a href="#727">variant_range</a>.end.<a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html#method.as_u32">as_u32</a>()).<a href="https://doc.rust-lang.org/nightly/core/iter/traits/exact_size/trait.ExactSizeIterator.html#tymethod.len">len</a>();
+<a href=#729 id=729 data-nosnippet>729</a>
+<a href=#730 id=730 data-nosnippet>730</a>    <span class="kw">let </span>tag_base_type = <a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/debuginfo/fn.tag_base_type.html">tag_base_type</a>(<a href="#709">cx</a>.tcx, <a href="#710">coroutine_type_and_layout</a>);
+<a href=#731 id=731 data-nosnippet>731</a>
+<a href=#732 id=732 data-nosnippet>732</a>    <span class="kw">let </span>variant_names_type_di_node = <a href="#476-491">build_variant_names_type_di_node</a>(
+<a href=#733 id=733 data-nosnippet>733</a>        <a href="#709">cx</a>,
+<a href=#734 id=734 data-nosnippet>734</a>        <a href="#711">coroutine_type_di_node</a>,
+<a href=#735 id=735 data-nosnippet>735</a>        <a href="#727">variant_range</a>
+<a href=#736 id=736 data-nosnippet>736</a>            .<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone">clone</a>()
+<a href=#737 id=737 data-nosnippet>737</a>            .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|variant_index| (<a href="#737">variant_index</a>, <a href="../../../../../rustc_middle/ty/sty/trait.CoroutineArgsExt.html#tymethod.variant_name">CoroutineArgs::variant_name</a>(<a href="#737">variant_index</a>))),
+<a href=#738 id=738 data-nosnippet>738</a>        <span class="kw">if </span><a href="#709">cx</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/misc/trait.MiscCodegenMethods.html#tymethod.sess">sess</a>().opts.unstable_opts.debug_info_type_line_numbers {
+<a href=#739 id=739 data-nosnippet>739</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#719">coroutine_def_id</a>)
+<a href=#740 id=740 data-nosnippet>740</a>        } <span class="kw">else </span>{
+<a href=#741 id=741 data-nosnippet>741</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
+<a href=#742 id=742 data-nosnippet>742</a>        </a>},
+<a href=#743 id=743 data-nosnippet>743</a>    );
+<a href=#744 id=744 data-nosnippet>744</a>
+<a href=#745 id=745 data-nosnippet>745</a>    <span class="kw">let </span>discriminants: IndexVec&lt;<a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>, <a href="mod.rs.html#372-376">DiscrResult</a>&gt; = {
+<a href=#746 id=746 data-nosnippet>746</a>        <span class="kw">let </span>discriminants_iter = <a href="#719">coroutine_args</a>.<a href="../../../../../rustc_middle/ty/sty/trait.CoroutineArgsExt.html#tymethod.discriminants">discriminants</a>(<a href="#719">coroutine_def_id</a>, <a href="#709">cx</a>.tcx);
+<a href=#747 id=747 data-nosnippet>747</a>        <span class="kw">let </span><span class="kw-2">mut </span>discriminants: IndexVec&lt;<a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>, <a href="mod.rs.html#372-376">DiscrResult</a>&gt; =
+<a href=#748 id=748 data-nosnippet>748</a>            IndexVec::with_capacity(<a href="#728">variant_count</a>);
+<a href=#749 id=749 data-nosnippet>749</a>        <span class="kw">for </span>(variant_index, discr) <span class="kw">in </span>discriminants_iter {
+<a href=#750 id=750 data-nosnippet>750</a>            <span class="comment">// Assert that the index in the IndexMap matches up with the given VariantIdx.
+<a href=#751 id=751 data-nosnippet>751</a>            </span><span class="macro">assert_eq!</span>(variant_index, discriminants.next_index());
+<a href=#752 id=752 data-nosnippet>752</a>            discriminants.push(DiscrResult::Value(discr.val));
+<a href=#753 id=753 data-nosnippet>753</a>        }
+<a href=#754 id=754 data-nosnippet>754</a>        <a href="#747">discriminants</a>
+<a href=#755 id=755 data-nosnippet>755</a>    };
+<a href=#756 id=756 data-nosnippet>756</a>
+<a href=#757 id=757 data-nosnippet>757</a>    <span class="comment">// Build the type node for each field.
+<a href=#758 id=758 data-nosnippet>758</a>    </span><span class="kw">let </span>variant_field_infos: <a href="../../metadata.rs.html#77">SmallVec</a>&lt;<a href="#920-925">VariantFieldInfo</a>&lt;<span class="lifetime">'ll</span>&gt;&gt; = <a href="#727">variant_range</a>
+<a href=#759 id=759 data-nosnippet>759</a>        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|variant_index| {
+<a href=#760 id=760 data-nosnippet>760</a>            <span class="kw">let </span>variant_struct_type_di_node = <a href="mod.rs.html#283-369"><span class="kw">super</span>::build_coroutine_variant_struct_type_di_node</a>(
+<a href=#761 id=761 data-nosnippet>761</a>                <a href="#709">cx</a>,
+<a href=#762 id=762 data-nosnippet>762</a>                <a href="#759">variant_index</a>,
+<a href=#763 id=763 data-nosnippet>763</a>                <a href="#710">coroutine_type_and_layout</a>,
+<a href=#764 id=764 data-nosnippet>764</a>                <a href="#711">coroutine_type_di_node</a>,
+<a href=#765 id=765 data-nosnippet>765</a>                <a href="#724">coroutine_layout</a>,
+<a href=#766 id=766 data-nosnippet>766</a>                <a href="#726">common_upvar_names</a>,
+<a href=#767 id=767 data-nosnippet>767</a>            );
+<a href=#768 id=768 data-nosnippet>768</a>
+<a href=#769 id=769 data-nosnippet>769</a>            <span class="kw">let </span>span = <a href="#724">coroutine_layout</a>.variant_source_info[<a href="#759">variant_index</a>].span;
+<a href=#770 id=770 data-nosnippet>770</a>            <span class="kw">let </span>source_info = <span class="kw">if </span>!<a href="#769">span</a>.<a href="../../../../../rustc_span/span_encoding/struct.Span.html#method.is_dummy">is_dummy</a>() {
+<a href=#771 id=771 data-nosnippet>771</a>                <span class="kw">let </span>loc = <a href="#709">cx</a>.<a href="../../mod.rs.html#264-286">lookup_debug_loc</a>(<a href="#769">span</a>.<a href="../../../../../rustc_span/span_encoding/struct.Span.html#method.lo">lo</a>());
+<a href=#772 id=772 data-nosnippet>772</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>((<a href="../../metadata.rs.html#525-629">file_metadata</a>(<a href="#709">cx</a>, <span class="kw-2">&amp;</span><a href="#771">loc</a>.file), <a href="#771">loc</a>.line <span class="kw">as </span><a href="https://docs.rs/libc/0.2.174/libc/primitives/type.c_uint.html">c_uint</a>))
+<a href=#773 id=773 data-nosnippet>773</a>            } <span class="kw">else </span>{
+<a href=#774 id=774 data-nosnippet>774</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
+<a href=#775 id=775 data-nosnippet>775</a>            </a>};
+<a href=#776 id=776 data-nosnippet>776</a>
+<a href=#777 id=777 data-nosnippet>777</a>            <a href="#920-925">VariantFieldInfo</a> {
+<a href=#778 id=778 data-nosnippet>778</a>                <a href="#759">variant_index</a>,
+<a href=#779 id=779 data-nosnippet>779</a>                <a href="#760">variant_struct_type_di_node</a>,
+<a href=#780 id=780 data-nosnippet>780</a>                <a href="#770">source_info</a>,
+<a href=#781 id=781 data-nosnippet>781</a>                discr: <a href="#745">discriminants</a>[<a href="#759">variant_index</a>],
+<a href=#782 id=782 data-nosnippet>782</a>            }
+<a href=#783 id=783 data-nosnippet>783</a>        })
+<a href=#784 id=784 data-nosnippet>784</a>        .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#785 id=785 data-nosnippet>785</a>
+<a href=#786 id=786 data-nosnippet>786</a>    <a href="#801-917">build_union_fields_for_direct_tag_enum_or_coroutine</a>(
+<a href=#787 id=787 data-nosnippet>787</a>        <a href="#709">cx</a>,
+<a href=#788 id=788 data-nosnippet>788</a>        <a href="#710">coroutine_type_and_layout</a>,
+<a href=#789 id=789 data-nosnippet>789</a>        <a href="#711">coroutine_type_di_node</a>,
+<a href=#790 id=790 data-nosnippet>790</a>        <span class="kw-2">&amp;</span><a href="#758">variant_field_infos</a>[..],
+<a href=#791 id=791 data-nosnippet>791</a>        <a href="#732">variant_names_type_di_node</a>,
+<a href=#792 id=792 data-nosnippet>792</a>        <a href="#730">tag_base_type</a>,
+<a href=#793 id=793 data-nosnippet>793</a>        <a href="#713">tag_field</a>,
+<a href=#794 id=794 data-nosnippet>794</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#795 id=795 data-nosnippet>795</a>        DIFlags::FlagZero,
+<a href=#796 id=796 data-nosnippet>796</a>    )
+<a href=#797 id=797 data-nosnippet>797</a>}
+<a href=#798 id=798 data-nosnippet>798</a>
+<a href=#799 id=799 data-nosnippet>799</a><span class="doccomment">/// This is a helper function shared between enums and coroutines that makes sure fields have the
+<a href=#800 id=800 data-nosnippet>800</a>/// expect names.
+<a href=#801 id=801 data-nosnippet>801</a></span><span class="kw">fn </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/fn.build_union_fields_for_direct_tag_enum_or_coroutine.html">build_union_fields_for_direct_tag_enum_or_coroutine</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;(
+<a href=#802 id=802 data-nosnippet>802</a>    cx: <span class="kw-2">&amp;</span><a href="../../../context.rs.html#90">CodegenCx</a>&lt;<span class="lifetime">'ll</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#803 id=803 data-nosnippet>803</a>    enum_type_and_layout: <a href="../../../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#804 id=804 data-nosnippet>804</a>    enum_type_di_node: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>,
+<a href=#805 id=805 data-nosnippet>805</a>    variant_field_infos: <span class="kw-2">&amp;</span>[<a href="#920-925">VariantFieldInfo</a>&lt;<span class="lifetime">'ll</span>&gt;],
+<a href=#806 id=806 data-nosnippet>806</a>    discr_type_di_node: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>,
+<a href=#807 id=807 data-nosnippet>807</a>    tag_base_type: <a href="../../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#808 id=808 data-nosnippet>808</a>    tag_field: <a href="../../../../../rustc_abi/layout/ty/struct.FieldIdx.html">FieldIdx</a>,
+<a href=#809 id=809 data-nosnippet>809</a>    untagged_variant_index: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>&gt;,
+<a href=#810 id=810 data-nosnippet>810</a>    di_flags: <a href="../../../llvm/ffi.rs.html#897-938">DIFlags</a>,
+<a href=#811 id=811 data-nosnippet>811</a>) -&gt; <a href="../../metadata.rs.html#77">SmallVec</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>&gt; {
+<a href=#812 id=812 data-nosnippet>812</a>    <span class="kw">let </span>tag_base_type_di_node = <a href="../../metadata.rs.html#425-493">type_di_node</a>(<a href="#802">cx</a>, <a href="#807">tag_base_type</a>);
+<a href=#813 id=813 data-nosnippet>813</a>    <span class="kw">let </span><span class="kw-2">mut </span>unions_fields = <a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.with_capacity">SmallVec::with_capacity</a>(<a href="#805">variant_field_infos</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.len">len</a>() + <span class="number">1</span>);
+<a href=#814 id=814 data-nosnippet>814</a>
+<a href=#815 id=815 data-nosnippet>815</a>    <span class="comment">// We create a field in the union for each variant ...
+<a href=#816 id=816 data-nosnippet>816</a>    </span><a href="#813">unions_fields</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.Extend.html#tymethod.extend">extend</a>(<a href="#805">variant_field_infos</a>.<a href="https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|variant_member_info| {
+<a href=#817 id=817 data-nosnippet>817</a>        <span class="kw">let </span>(file_di_node, line_number) = <a href="#816">variant_member_info</a>
+<a href=#818 id=818 data-nosnippet>818</a>            .source_info
+<a href=#819 id=819 data-nosnippet>819</a>            .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or_else">unwrap_or_else</a>(|| (<a href="../../metadata.rs.html#631-635">unknown_file_metadata</a>(<a href="#802">cx</a>), <a href="../../metadata.rs.html#67">UNKNOWN_LINE_NUMBER</a>));
+<a href=#820 id=820 data-nosnippet>820</a>
+<a href=#821 id=821 data-nosnippet>821</a>        <span class="kw">let </span>field_name = <a href="#927-951">variant_union_field_name</a>(<a href="#816">variant_member_info</a>.variant_index);
+<a href=#822 id=822 data-nosnippet>822</a>
+<a href=#823 id=823 data-nosnippet>823</a>        <span class="kw">let </span>variant_struct_type_wrapper = <a href="#493-697">build_variant_struct_wrapper_type_di_node</a>(
+<a href=#824 id=824 data-nosnippet>824</a>            <a href="#802">cx</a>,
+<a href=#825 id=825 data-nosnippet>825</a>            <a href="#803">enum_type_and_layout</a>,
+<a href=#826 id=826 data-nosnippet>826</a>            <a href="#804">enum_type_di_node</a>,
+<a href=#827 id=827 data-nosnippet>827</a>            <a href="#816">variant_member_info</a>.variant_index,
+<a href=#828 id=828 data-nosnippet>828</a>            <a href="#809">untagged_variant_index</a>,
+<a href=#829 id=829 data-nosnippet>829</a>            <a href="#816">variant_member_info</a>.variant_struct_type_di_node,
+<a href=#830 id=830 data-nosnippet>830</a>            <a href="#806">discr_type_di_node</a>,
+<a href=#831 id=831 data-nosnippet>831</a>            <a href="#812">tag_base_type_di_node</a>,
+<a href=#832 id=832 data-nosnippet>832</a>            <a href="#807">tag_base_type</a>,
+<a href=#833 id=833 data-nosnippet>833</a>            <a href="#816">variant_member_info</a>.discr,
+<a href=#834 id=834 data-nosnippet>834</a>            <span class="kw">if </span><a href="#802">cx</a>.<a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_codegen_ssa/traits/misc/trait.MiscCodegenMethods.html#tymethod.sess">sess</a>().opts.unstable_opts.debug_info_type_line_numbers {
+<a href=#835 id=835 data-nosnippet>835</a>                <a href="#816">variant_member_info</a>.source_info
+<a href=#836 id=836 data-nosnippet>836</a>            } <span class="kw">else </span>{
+<a href=#837 id=837 data-nosnippet>837</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
+<a href=#838 id=838 data-nosnippet>838</a>            </a>},
+<a href=#839 id=839 data-nosnippet>839</a>        );
+<a href=#840 id=840 data-nosnippet>840</a>
+<a href=#841 id=841 data-nosnippet>841</a>        <span class="comment">// We use create_member_type() member type directly because
+<a href=#842 id=842 data-nosnippet>842</a>        // the build_field_di_node() function does not support specifying a source location,
+<a href=#843 id=843 data-nosnippet>843</a>        // which is something that we don't do anywhere else.
+<a href=#844 id=844 data-nosnippet>844</a>        </span><a href="../../metadata.rs.html#1005-1031">create_member_type</a>(
+<a href=#845 id=845 data-nosnippet>845</a>            <a href="#802">cx</a>,
+<a href=#846 id=846 data-nosnippet>846</a>            <a href="#804">enum_type_di_node</a>,
+<a href=#847 id=847 data-nosnippet>847</a>            <span class="kw-2">&amp;</span><a href="#821">field_name</a>,
+<a href=#848 id=848 data-nosnippet>848</a>            <a href="#817">file_di_node</a>,
+<a href=#849 id=849 data-nosnippet>849</a>            <a href="#817">line_number</a>,
+<a href=#850 id=850 data-nosnippet>850</a>            <span class="comment">// NOTE: We use the layout of the entire type, not from variant_layout
+<a href=#851 id=851 data-nosnippet>851</a>            //       since the later is sometimes smaller (if it has fewer fields).
+<a href=#852 id=852 data-nosnippet>852</a>            </span><a href="#803">enum_type_and_layout</a>,
+<a href=#853 id=853 data-nosnippet>853</a>            <span class="comment">// Union fields are always at offset zero
+<a href=#854 id=854 data-nosnippet>854</a>            </span>Size::ZERO,
+<a href=#855 id=855 data-nosnippet>855</a>            <a href="#810">di_flags</a>,
+<a href=#856 id=856 data-nosnippet>856</a>            <a href="#823">variant_struct_type_wrapper</a>,
+<a href=#857 id=857 data-nosnippet>857</a>        )
+<a href=#858 id=858 data-nosnippet>858</a>    }));
+<a href=#859 id=859 data-nosnippet>859</a>
+<a href=#860 id=860 data-nosnippet>860</a>    <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(
+<a href=#861 id=861 data-nosnippet>861</a>        cx.size_and_align_of(enum_type_and_layout.field(cx, tag_field.as_usize()).ty),
+<a href=#862 id=862 data-nosnippet>862</a>        cx.size_and_align_of(<span class="self">self</span>::tag_base_type(cx.tcx, enum_type_and_layout))
+<a href=#863 id=863 data-nosnippet>863</a>    );
+<a href=#864 id=864 data-nosnippet>864</a>
+<a href=#865 id=865 data-nosnippet>865</a>    <span class="comment">// ... and a field for the tag. If the tag is 128 bits wide, this will actually
+<a href=#866 id=866 data-nosnippet>866</a>    // be two 64-bit fields.
+<a href=#867 id=867 data-nosnippet>867</a>    </span><span class="kw">let </span>is_128_bits = <a href="#802">cx</a>.<a href="../../../type_of.rs.html#147-149">size_of</a>(<a href="#807">tag_base_type</a>).<a href="../../../../../rustc_abi/struct.Size.html#method.bits">bits</a>() &gt; <span class="number">64</span>;
+<a href=#868 id=868 data-nosnippet>868</a>
+<a href=#869 id=869 data-nosnippet>869</a>    <span class="kw">if </span><a href="#867">is_128_bits</a> {
+<a href=#870 id=870 data-nosnippet>870</a>        <span class="kw">let </span>type_di_node = <a href="../../metadata.rs.html#425-493">type_di_node</a>(<a href="#802">cx</a>, <a href="#802">cx</a>.tcx.types.u64);
+<a href=#871 id=871 data-nosnippet>871</a>        <span class="kw">let </span>u64_layout = <a href="#802">cx</a>.<a href="../../../../../rustc_middle/ty/layout/trait.LayoutOf.html#tymethod.layout_of">layout_of</a>(<a href="#802">cx</a>.tcx.types.u64);
+<a href=#872 id=872 data-nosnippet>872</a>
+<a href=#873 id=873 data-nosnippet>873</a>        <span class="kw">let </span>(lo_offset, hi_offset) = <span class="kw">match </span><a href="#802">cx</a>.tcx.data_layout.endian {
+<a href=#874 id=874 data-nosnippet>874</a>            <a href="../../../../../rustc_abi/enum.Endian.html#variant.Little">Endian::Little</a> =&gt; (<span class="number">0</span>, <span class="number">8</span>),
+<a href=#875 id=875 data-nosnippet>875</a>            <a href="../../../../../rustc_abi/enum.Endian.html#variant.Big">Endian::Big</a> =&gt; (<span class="number">8</span>, <span class="number">0</span>),
+<a href=#876 id=876 data-nosnippet>876</a>        };
+<a href=#877 id=877 data-nosnippet>877</a>
+<a href=#878 id=878 data-nosnippet>878</a>        <span class="kw">let </span>tag_field_offset = <a href="#803">enum_type_and_layout</a>.fields.<a href="../../../../../rustc_abi/enum.FieldsShape.html#method.offset">offset</a>(<a href="#808">tag_field</a>.<a href="../../../../../rustc_abi/layout/ty/struct.FieldIdx.html#method.as_usize">as_usize</a>()).<a href="../../../../../rustc_abi/struct.Size.html#method.bytes">bytes</a>();
+<a href=#879 id=879 data-nosnippet>879</a>        <span class="kw">let </span>lo_offset = <a href="../../../../../rustc_abi/struct.Size.html#method.from_bytes">Size::from_bytes</a>(<a href="#878">tag_field_offset</a> + <a href="#873">lo_offset</a>);
+<a href=#880 id=880 data-nosnippet>880</a>        <span class="kw">let </span>hi_offset = <a href="../../../../../rustc_abi/struct.Size.html#method.from_bytes">Size::from_bytes</a>(<a href="#878">tag_field_offset</a> + <a href="#873">hi_offset</a>);
+<a href=#881 id=881 data-nosnippet>881</a>
+<a href=#882 id=882 data-nosnippet>882</a>        <a href="#813">unions_fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="../../metadata.rs.html#976-1003">build_field_di_node</a>(
+<a href=#883 id=883 data-nosnippet>883</a>            <a href="#802">cx</a>,
+<a href=#884 id=884 data-nosnippet>884</a>            <a href="#804">enum_type_di_node</a>,
+<a href=#885 id=885 data-nosnippet>885</a>            <a href="#43">TAG_FIELD_NAME_128_LO</a>,
+<a href=#886 id=886 data-nosnippet>886</a>            <a href="#871">u64_layout</a>,
+<a href=#887 id=887 data-nosnippet>887</a>            <a href="#879">lo_offset</a>,
+<a href=#888 id=888 data-nosnippet>888</a>            <a href="#810">di_flags</a>,
+<a href=#889 id=889 data-nosnippet>889</a>            <a href="#870">type_di_node</a>,
+<a href=#890 id=890 data-nosnippet>890</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#891 id=891 data-nosnippet>891</a>        ));
+<a href=#892 id=892 data-nosnippet>892</a>
+<a href=#893 id=893 data-nosnippet>893</a>        <a href="#813">unions_fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="../../metadata.rs.html#976-1003">build_field_di_node</a>(
+<a href=#894 id=894 data-nosnippet>894</a>            <a href="#802">cx</a>,
+<a href=#895 id=895 data-nosnippet>895</a>            <a href="#804">enum_type_di_node</a>,
+<a href=#896 id=896 data-nosnippet>896</a>            <a href="#44">TAG_FIELD_NAME_128_HI</a>,
+<a href=#897 id=897 data-nosnippet>897</a>            <a href="#871">u64_layout</a>,
+<a href=#898 id=898 data-nosnippet>898</a>            <a href="#880">hi_offset</a>,
+<a href=#899 id=899 data-nosnippet>899</a>            DIFlags::FlagZero,
+<a href=#900 id=900 data-nosnippet>900</a>            <a href="#870">type_di_node</a>,
+<a href=#901 id=901 data-nosnippet>901</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#902 id=902 data-nosnippet>902</a>        ));
+<a href=#903 id=903 data-nosnippet>903</a>    } <span class="kw">else </span>{
+<a href=#904 id=904 data-nosnippet>904</a>        <a href="#813">unions_fields</a>.<a href="https://docs.rs/smallvec/1.15.1/smallvec/struct.SmallVec.html#method.push">push</a>(<a href="../../metadata.rs.html#976-1003">build_field_di_node</a>(
+<a href=#905 id=905 data-nosnippet>905</a>            <a href="#802">cx</a>,
+<a href=#906 id=906 data-nosnippet>906</a>            <a href="#804">enum_type_di_node</a>,
+<a href=#907 id=907 data-nosnippet>907</a>            <a href="#42">TAG_FIELD_NAME</a>,
+<a href=#908 id=908 data-nosnippet>908</a>            <a href="#803">enum_type_and_layout</a>.<a href="../../../../../rustc_abi/layout/ty/struct.TyAndLayout.html#method.field">field</a>(<a href="#802">cx</a>, <a href="#808">tag_field</a>.<a href="../../../../../rustc_abi/layout/ty/struct.FieldIdx.html#method.as_usize">as_usize</a>()),
+<a href=#909 id=909 data-nosnippet>909</a>            <a href="#803">enum_type_and_layout</a>.fields.<a href="../../../../../rustc_abi/enum.FieldsShape.html#method.offset">offset</a>(<a href="#808">tag_field</a>.<a href="../../../../../rustc_abi/layout/ty/struct.FieldIdx.html#method.as_usize">as_usize</a>()),
+<a href=#910 id=910 data-nosnippet>910</a>            <a href="#810">di_flags</a>,
+<a href=#911 id=911 data-nosnippet>911</a>            <a href="#812">tag_base_type_di_node</a>,
+<a href=#912 id=912 data-nosnippet>912</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#913 id=913 data-nosnippet>913</a>        ));
+<a href=#914 id=914 data-nosnippet>914</a>    }
+<a href=#915 id=915 data-nosnippet>915</a>
+<a href=#916 id=916 data-nosnippet>916</a>    <a href="#813">unions_fields</a>
+<a href=#917 id=917 data-nosnippet>917</a>}
+<a href=#918 id=918 data-nosnippet>918</a>
+<a href=#919 id=919 data-nosnippet>919</a><span class="doccomment">/// Information about a single field of the top-level DW_TAG_union_type.
+<a href=#920 id=920 data-nosnippet>920</a></span><span class="kw">struct </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/struct.VariantFieldInfo.html">VariantFieldInfo</a>&lt;<span class="lifetime">'ll</span>&gt; {
+<a href=#921 id=921 data-nosnippet>921</a>    variant_index: <a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>,
+<a href=#922 id=922 data-nosnippet>922</a>    variant_struct_type_di_node: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#886">DIType</a>,
+<a href=#923 id=923 data-nosnippet>923</a>    source_info: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;(<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../../../llvm/ffi.rs.html#883">DIFile</a>, <a href="https://docs.rs/libc/0.2.174/libc/primitives/type.c_uint.html">c_uint</a>)&gt;,
+<a href=#924 id=924 data-nosnippet>924</a>    discr: <a href="mod.rs.html#372-376">DiscrResult</a>,
+<a href=#925 id=925 data-nosnippet>925</a>}
+<a href=#926 id=926 data-nosnippet>926</a>
+<a href=#927 id=927 data-nosnippet>927</a><span class="kw">fn </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/fn.variant_union_field_name.html">variant_union_field_name</a>(variant_index: <a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html">Cow</a>&lt;<span class="lifetime">'static</span>, <a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt; {
+<a href=#928 id=928 data-nosnippet>928</a>    <span class="kw">const </span>PRE_ALLOCATED: [<span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>; <span class="number">16</span>] = [
+<a href=#929 id=929 data-nosnippet>929</a>        <span class="string">"variant0"</span>,
+<a href=#930 id=930 data-nosnippet>930</a>        <span class="string">"variant1"</span>,
+<a href=#931 id=931 data-nosnippet>931</a>        <span class="string">"variant2"</span>,
+<a href=#932 id=932 data-nosnippet>932</a>        <span class="string">"variant3"</span>,
+<a href=#933 id=933 data-nosnippet>933</a>        <span class="string">"variant4"</span>,
+<a href=#934 id=934 data-nosnippet>934</a>        <span class="string">"variant5"</span>,
+<a href=#935 id=935 data-nosnippet>935</a>        <span class="string">"variant6"</span>,
+<a href=#936 id=936 data-nosnippet>936</a>        <span class="string">"variant7"</span>,
+<a href=#937 id=937 data-nosnippet>937</a>        <span class="string">"variant8"</span>,
+<a href=#938 id=938 data-nosnippet>938</a>        <span class="string">"variant9"</span>,
+<a href=#939 id=939 data-nosnippet>939</a>        <span class="string">"variant10"</span>,
+<a href=#940 id=940 data-nosnippet>940</a>        <span class="string">"variant11"</span>,
+<a href=#941 id=941 data-nosnippet>941</a>        <span class="string">"variant12"</span>,
+<a href=#942 id=942 data-nosnippet>942</a>        <span class="string">"variant13"</span>,
+<a href=#943 id=943 data-nosnippet>943</a>        <span class="string">"variant14"</span>,
+<a href=#944 id=944 data-nosnippet>944</a>        <span class="string">"variant15"</span>,
+<a href=#945 id=945 data-nosnippet>945</a>    ];
+<a href=#946 id=946 data-nosnippet>946</a>
+<a href=#947 id=947 data-nosnippet>947</a>    <a href="#928-945">PRE_ALLOCATED</a>
+<a href=#948 id=948 data-nosnippet>948</a>        .<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.get">get</a>(<a href="#927">variant_index</a>.<a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html#method.as_usize">as_usize</a>())
+<a href=#949 id=949 data-nosnippet>949</a>        .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|<span class="kw-2">&amp;</span>s| <a href="https://doc.rust-lang.org/nightly/core/convert/trait.From.html#tymethod.from">Cow::from</a>(<a href="#949">s</a>))
+<a href=#950 id=950 data-nosnippet>950</a>        .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or_else">unwrap_or_else</a>(|| <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"variant{}"</span>, variant_index.as_usize()).<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>())
+<a href=#951 id=951 data-nosnippet>951</a>}
+<a href=#952 id=952 data-nosnippet>952</a>
+<a href=#953 id=953 data-nosnippet>953</a><span class="kw">fn </span><a href="../../../../../rustc_codegen_llvm/debuginfo/metadata/enums/cpp_like/fn.variant_struct_wrapper_type_name.html">variant_struct_wrapper_type_name</a>(variant_index: <a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/borrow/enum.Cow.html">Cow</a>&lt;<span class="lifetime">'static</span>, <a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>&gt; {
+<a href=#954 id=954 data-nosnippet>954</a>    <span class="kw">const </span>PRE_ALLOCATED: [<span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a>; <span class="number">16</span>] = [
+<a href=#955 id=955 data-nosnippet>955</a>        <span class="string">"Variant0"</span>,
+<a href=#956 id=956 data-nosnippet>956</a>        <span class="string">"Variant1"</span>,
+<a href=#957 id=957 data-nosnippet>957</a>        <span class="string">"Variant2"</span>,
+<a href=#958 id=958 data-nosnippet>958</a>        <span class="string">"Variant3"</span>,
+<a href=#959 id=959 data-nosnippet>959</a>        <span class="string">"Variant4"</span>,
+<a href=#960 id=960 data-nosnippet>960</a>        <span class="string">"Variant5"</span>,
+<a href=#961 id=961 data-nosnippet>961</a>        <span class="string">"Variant6"</span>,
+<a href=#962 id=962 data-nosnippet>962</a>        <span class="string">"Variant7"</span>,
+<a href=#963 id=963 data-nosnippet>963</a>        <span class="string">"Variant8"</span>,
+<a href=#964 id=964 data-nosnippet>964</a>        <span class="string">"Variant9"</span>,
+<a href=#965 id=965 data-nosnippet>965</a>        <span class="string">"Variant10"</span>,
+<a href=#966 id=966 data-nosnippet>966</a>        <span class="string">"Variant11"</span>,
+<a href=#967 id=967 data-nosnippet>967</a>        <span class="string">"Variant12"</span>,
+<a href=#968 id=968 data-nosnippet>968</a>        <span class="string">"Variant13"</span>,
+<a href=#969 id=969 data-nosnippet>969</a>        <span class="string">"Variant14"</span>,
+<a href=#970 id=970 data-nosnippet>970</a>        <span class="string">"Variant15"</span>,
+<a href=#971 id=971 data-nosnippet>971</a>    ];
+<a href=#972 id=972 data-nosnippet>972</a>
+<a href=#973 id=973 data-nosnippet>973</a>    <a href="#954-971">PRE_ALLOCATED</a>
+<a href=#974 id=974 data-nosnippet>974</a>        .<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.get">get</a>(<a href="#953">variant_index</a>.<a href="../../../../../rustc_abi/layout/ty/struct.VariantIdx.html#method.as_usize">as_usize</a>())
+<a href=#975 id=975 data-nosnippet>975</a>        .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map">map</a>(|<span class="kw-2">&amp;</span>s| <a href="https://doc.rust-lang.org/nightly/core/convert/trait.From.html#tymethod.from">Cow::from</a>(<a href="#975">s</a>))
+<a href=#976 id=976 data-nosnippet>976</a>        .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap_or_else">unwrap_or_else</a>(|| <a class="macro" href="https://doc.rust-lang.org/nightly/alloc/macro.format.html">format!</a>(<span class="string">"Variant{}"</span>, variant_index.as_usize()).<a href="https://doc.rust-lang.org/nightly/core/convert/trait.Into.html#tymethod.into">into</a>())
+<a href=#977 id=977 data-nosnippet>977</a>}</code></pre></div></section></main></body></html>

@@ -1,0 +1,84 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Centralized logic for parsing and attributes."><title>rustc_attr_parsing - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="rustc_attr_parsing" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-38ac1f3e.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate rustc_attr_parsing</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../rustc_attr_parsing/index.html"><img class="rust-logo" src="../static.files/rust-logo-9a9549ea.svg" alt="logo"></a><h2><a href="../rustc_attr_parsing/index.html">rustc_<wbr>attr_<wbr>parsing</a><span class="version">1.91.0-dev</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#architecture" title="Architecture">Architecture</a></li><li><a href="#background" title="Background">Background</a></li><li><a href="#types-of-attributes" title="Types of Attributes">Types of Attributes</a><ul><li><a href="#1-active-attributes" title="1. Active Attributes">1. Active Attributes</a></li><li><a href="#2-inert-attributes" title="2. Inert Attributes">2. Inert Attributes</a></li></ul></li><li><a href="#how-this-crate-works" title="How This Crate Works">How This Crate Works</a></li></ul><h3><a href="#modules">Crate Items</a></h3><ul class="block"><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#constants" title="Constants">Constants</a></li><li><a href="#statics" title="Statics">Statics</a></li><li><a href="#traits" title="Traits">Traits</a></li><li><a href="#functions" title="Functions">Functions</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>rustc_<wbr>attr_<wbr>parsing</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/rustc_attr_parsing/lib.rs.html#1-115">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Centralized logic for parsing and attributes.</p>
+<h3 id="architecture"><a class="doc-anchor" href="#architecture">§</a>Architecture</h3>
+<p>This crate is part of a series of crates and modules that handle attribute processing.</p>
+<ul>
+<li><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_hir/index.html">rustc_hir::attrs</a>: Defines the data structures that store parsed attributes</li>
+<li><a href="https://doc.rust-lang.org/nightly/nightly-rustc/rustc_attr_parsing/index.html">rustc_attr_parsing</a>: This crate, handles the parsing of attributes</li>
+<li>(planned) rustc_attr_validation: Will handle attribute validation, logic currently handled in <code>rustc_passes</code></li>
+</ul>
+<p>The separation between data structures and parsing follows the principle of separation of concerns.
+Data structures (<code>rustc_hir::attrs</code>) define what attributes look like after parsing.
+This crate (<code>rustc_attr_parsing</code>) handles how to convert raw tokens into those structures.
+This split allows other parts of the compiler to use the data structures without needing
+the parsing logic, making the codebase more modular and maintainable.</p>
+<h3 id="background"><a class="doc-anchor" href="#background">§</a>Background</h3>
+<p>Previously, the compiler had a single attribute definition (<code>ast::Attribute</code>) with parsing and
+validation scattered throughout the codebase. This was reorganized for better maintainability
+(see <a href="https://github.com/rust-lang/rust/issues/131229">#131229</a>).</p>
+<h3 id="types-of-attributes"><a class="doc-anchor" href="#types-of-attributes">§</a>Types of Attributes</h3>
+<p>In Rust, attributes are markers that can be attached to items. They come in two main categories.</p>
+<h4 id="1-active-attributes"><a class="doc-anchor" href="#1-active-attributes">§</a>1. Active Attributes</h4>
+<p>These are attribute-like proc-macros that expand into other Rust code.
+They can be either user-defined or compiler-provided. Examples of compiler-provided active attributes:</p>
+<ul>
+<li><code>#[derive(...)]</code>: Expands into trait implementations</li>
+<li><code>#[cfg()]</code>: Expands based on configuration</li>
+<li><code>#[cfg_attr()]</code>: Conditional attribute application</li>
+</ul>
+<h4 id="2-inert-attributes"><a class="doc-anchor" href="#2-inert-attributes">§</a>2. Inert Attributes</h4>
+<p>These are pure markers that don’t expand into other code. They guide the compilation process.
+They can be user-defined (in proc-macro helpers) or built-in. Examples of built-in inert attributes:</p>
+<ul>
+<li><code>#[stable()]</code>: Marks stable API items</li>
+<li><code>#[inline()]</code>: Suggests function inlining</li>
+<li><code>#[repr()]</code>: Controls type representation</li>
+</ul>
+<div class="example-wrap"><pre class="language-text"><code>                     Active                 Inert
+             ┌──────────────────────┬──────────────────────┐
+             │     (mostly in)      │    these are parsed  │
+             │ rustc_builtin_macros │        here!         │
+             │                      │                      │
+             │    #[derive(...)]    │    #[stable()]       │
+    Built-in │    #[cfg()]          │    #[inline()]       │
+             │    #[cfg_attr()]     │    #[repr()]         │
+             │                      │                      │
+             ├──────────────────────┼──────────────────────┤
+             │                      │                      │
+             │                      │       `b` in         │
+             │                      │ #[proc_macro_derive( │
+User created │ #[proc_macro_attr()] │    a,                │
+             │                      │    attributes(b)     │
+             │                      │ ]                    │
+             └──────────────────────┴──────────────────────┘</code></pre></div><h3 id="how-this-crate-works"><a class="doc-anchor" href="#how-this-crate-works">§</a>How This Crate Works</h3>
+<p>In this crate, syntactical attributes (sequences of tokens that look like
+<code>#[something(something else)]</code>) are parsed into more semantic attributes, markers on items.
+Multiple syntactic attributes might influence a single semantic attribute. For example,
+<code>#[stable(...)]</code> and <code>#[unstable()]</code> cannot occur together, and both semantically define
+a “stability” of an item. So, the stability attribute has an
+<a href="attributes/trait.AttributeParser.html" title="trait rustc_attr_parsing::attributes::AttributeParser"><code>AttributeParser</code></a> that recognizes both the <code>#[stable()]</code>
+and <code>#[unstable()]</code> syntactic attributes, and at the end produce a single
+<a href="../rustc_hir/attrs/data_structures/enum.AttributeKind.html#variant.Stability" title="variant rustc_hir::attrs::data_structures::AttributeKind::Stability"><code>AttributeKind::Stability</code></a>.</p>
+<p>When multiple instances of the same attribute are allowed, they’re combined into a single
+semantic attribute. For example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[repr(C)]
+#[repr(packed)]
+</span><span class="kw">struct </span>Meow {}</code></pre></div>
+<p>This is equivalent to <code>#[repr(C, packed)]</code> and results in a single <code>AttributeKind::Repr</code>
+containing both <code>C</code> and <code>packed</code> annotations.</p>
+</div></details><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="attributes/index.html" title="mod rustc_attr_parsing::attributes">attributes</a><span title="Restricted Visibility">&nbsp;🔒</span> </dt><dd>All the individual attribute parsers for each of rustc’s built-in attributes.
+This module defines traits for attribute parsers, little state machines that recognize and parse
+attributes out of a longer list of attributes. The main trait is called <a href="struct.AttributeParser.html" title="struct rustc_attr_parsing::AttributeParser"><code>AttributeParser</code></a>.
+You can find more docs about <a href="struct.AttributeParser.html" title="struct rustc_attr_parsing::AttributeParser"><code>AttributeParser</code></a>s on the trait itself.
+However, for many types of attributes, implementing <a href="struct.AttributeParser.html" title="struct rustc_attr_parsing::AttributeParser"><code>AttributeParser</code></a> is not necessary.
+It allows for a lot of flexibility you might not want.</dd><dt><a class="mod" href="context/index.html" title="mod rustc_attr_parsing::context">context</a><span title="Restricted Visibility">&nbsp;🔒</span> </dt><dd>All the important types given to attribute parsers when parsing</dd><dt><a class="mod" href="interface/index.html" title="mod rustc_attr_parsing::interface">interface</a><span title="Restricted Visibility">&nbsp;🔒</span> </dt><dd>Code that other crates interact with, to actually parse a list (or sometimes single)
+attribute.</dd><dt><a class="mod" href="lints/index.html" title="mod rustc_attr_parsing::lints">lints</a><span title="Restricted Visibility">&nbsp;🔒</span> </dt><dt><a class="mod" href="parser/index.html" title="mod rustc_attr_parsing::parser">parser</a></dt><dd>Despite this entire module called attribute parsing and the term being a little overloaded,
+in this module the code lives that actually breaks up tokenstreams into semantic pieces of attributes,
+like lists or name-value pairs.
+This is in essence an (improved) duplicate of <code>rustc_ast/attr/mod.rs</code>.
+That module is intended to be deleted in its entirety.</dd><dt><a class="mod" href="session_diagnostics/index.html" title="mod rustc_attr_parsing::session_diagnostics">session_<wbr>diagnostics</a><span title="Restricted Visibility">&nbsp;🔒</span> </dt><dt><a class="mod" href="target_checking/index.html" title="mod rustc_attr_parsing::target_checking">target_<wbr>checking</a><span title="Restricted Visibility">&nbsp;🔒</span> </dt><dt><a class="mod" href="validate_attr/index.html" title="mod rustc_attr_parsing::validate_attr">validate_<wbr>attr</a></dt><dd>Meta-syntax validation logic of attributes for post-expansion.</dd></dl><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.AttributeParser.html" title="struct rustc_attr_parsing::AttributeParser">Attribute<wbr>Parser</a></dt><dd>Context created once, for example as part of the ast lowering
+context, through which all attributes can be lowered.</dd><dt><a class="struct" href="struct.Condition.html" title="struct rustc_attr_parsing::Condition">Condition</a></dt><dt><a class="struct" href="struct.Early.html" title="struct rustc_attr_parsing::Early">Early</a></dt><dd>used when parsing attributes for miscellaneous things <em>before</em> ast lowering</dd><dt><a class="struct" href="struct.Late.html" title="struct rustc_attr_parsing::Late">Late</a></dt><dd>used when parsing attributes during ast lowering</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.EvalConfigResult.html" title="enum rustc_attr_parsing::EvalConfigResult">Eval<wbr>Config<wbr>Result</a></dt><dt><a class="enum" href="enum.OmitDoc.html" title="enum rustc_attr_parsing::OmitDoc">OmitDoc</a></dt><dt><a class="enum" href="enum.ShouldEmit.html" title="enum rustc_attr_parsing::ShouldEmit">Should<wbr>Emit</a></dt></dl><h2 id="constants" class="section-header">Constants<a href="#constants" class="anchor">§</a></h2><dl class="item-table"><dt><a class="constant" href="constant.CFG_TEMPLATE.html" title="constant rustc_attr_parsing::CFG_TEMPLATE">CFG_<wbr>TEMPLATE</a></dt></dl><h2 id="statics" class="section-header">Statics<a href="#statics" class="anchor">§</a></h2><dl class="item-table"><dt><a class="static" href="static.DEFAULT_LOCALE_RESOURCE.html" title="static rustc_attr_parsing::DEFAULT_LOCALE_RESOURCE">DEFAULT_<wbr>LOCALE_<wbr>RESOURCE</a></dt><dd>Raw content of Fluent resource for this crate, generated by <code>fluent_messages</code> macro,
+imported by <code>rustc_driver</code> to include all crates’ resources in one bundle.</dd></dl><h2 id="traits" class="section-header">Traits<a href="#traits" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.CfgMatchesLintEmitter.html" title="trait rustc_attr_parsing::CfgMatchesLintEmitter">CfgMatches<wbr>Lint<wbr>Emitter</a></dt><dd>Emitter of a builtin lint from <code>cfg_matches</code>.</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.cfg_matches.html" title="fn rustc_attr_parsing::cfg_matches">cfg_<wbr>matches</a></dt><dd>Tests if a cfg-pattern matches the cfg set</dd><dt><a class="fn" href="fn.emit_attribute_lint.html" title="fn rustc_attr_parsing::emit_attribute_lint">emit_<wbr>attribute_<wbr>lint</a></dt><dt><a class="fn" href="fn.eval_condition.html" title="fn rustc_attr_parsing::eval_condition">eval_<wbr>condition</a></dt><dd>Evaluate a cfg-like condition (with <code>any</code> and <code>all</code>), using <code>eval</code> to
+evaluate individual items.</dd><dt><a class="fn" href="fn.eval_config_entry.html" title="fn rustc_attr_parsing::eval_config_entry">eval_<wbr>config_<wbr>entry</a></dt><dt><a class="fn" href="fn.is_builtin_attr.html" title="fn rustc_attr_parsing::is_builtin_attr">is_<wbr>builtin_<wbr>attr</a></dt><dt><a class="fn" href="fn.is_doc_alias_attrs_contain_symbol.html" title="fn rustc_attr_parsing::is_doc_alias_attrs_contain_symbol">is_<wbr>doc_<wbr>alias_<wbr>attrs_<wbr>contain_<wbr>symbol</a></dt><dt><a class="fn" href="fn.parse_cfg_attr.html" title="fn rustc_attr_parsing::parse_cfg_attr">parse_<wbr>cfg_<wbr>attr</a></dt><dt><a class="fn" href="fn.parse_version.html" title="fn rustc_attr_parsing::parse_version">parse_<wbr>version</a></dt><dd>Parse a rustc version number written inside string literal in an attribute,
+like appears in <code>since = "1.0.0"</code>. Suffixes like “-dev” and “-nightly” are
+not accepted in this position, unlike when parsing CFG_RELEASE.</dd><dt><a class="fn" href="fn.try_gate_cfg.html" title="fn rustc_attr_parsing::try_gate_cfg">try_<wbr>gate_<wbr>cfg</a></dt></dl></section></div></main></body></html>

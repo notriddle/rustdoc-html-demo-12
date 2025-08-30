@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BUF_SIZE","MAGIC_END_BYTES"],"macro":["read_leb128","write_leb128"],"mod":["mem_encoder"],"struct":["FileEncoder","IntEncodedWithFixedSize","MemDecoder"],"type":["FileEncodeResult"]};

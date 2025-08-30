@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["parse_tf_attribute"],"struct":["ColdParser","CoverageParser","ExportNameParser","ForceTargetFeatureParser","NakedParser","NoMangleParser","OptimizeParser","SanitizeParser","TargetFeatureParser","TrackCallerParser","UsedParser"]};

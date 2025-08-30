@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PROC_MACRO_ALLOWED_TARGETS"],"fn":["parse_derive_like"],"struct":["ProcMacroAttributeParser","ProcMacroDeriveParser","ProcMacroParser","RustcBuiltinMacroParser"]};

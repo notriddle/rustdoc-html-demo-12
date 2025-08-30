@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["extract_value","parse_dialect","parse_phase"],"struct":["CustomMirParser"]};

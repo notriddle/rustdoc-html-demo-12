@@ -1,0 +1,658 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/eval_context.rs`."><title>eval_context.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-38ac1f3e.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_const_eval/interpret/</div>eval_context.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/macros/macro.debug_assert_matches.html">std::assert_matches::debug_assert_matches</a>;
+<a href=#2 id=2 data-nosnippet>2</a>
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>either::{<a href="https://docs.rs/either/1/either/Either/variant.Left.html">Left</a>, <a href="https://docs.rs/either/1/either/Either/variant.Right.html">Right</a>};
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>rustc_abi::{<a href="../../../rustc_abi/struct.Align.html">Align</a>, <a href="../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a>, <a href="../../../rustc_abi/struct.Size.html">Size</a>, <a href="../../../rustc_abi/struct.TargetDataLayout.html">TargetDataLayout</a>};
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="../../../rustc_errors/struct.DiagCtxtHandle.html">rustc_errors::DiagCtxtHandle</a>;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="../../../rustc_span/def_id/struct.DefId.html">rustc_hir::def_id::DefId</a>;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>rustc_middle::mir::interpret::{<a href="../../../rustc_middle/mir/interpret/error/enum.ErrorHandled.html">ErrorHandled</a>, <a href="../../../rustc_middle/mir/interpret/error/enum.InvalidMetaKind.html">InvalidMetaKind</a>, <a href="../../../rustc_middle/mir/interpret/error/struct.ReportedErrorInfo.html">ReportedErrorInfo</a>};
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="../../../rustc_middle/query/plumbing/struct.TyCtxtAt.html">rustc_middle::query::TyCtxtAt</a>;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span>rustc_middle::ty::layout::{
+<a href=#10 id=10 data-nosnippet>10</a>    <a class="self" href="../../../rustc_middle/ty/layout/index.html">self</a>, <a href="../../../rustc_middle/ty/layout/enum.FnAbiError.html">FnAbiError</a>, <a href="../../../rustc_middle/ty/layout/trait.FnAbiOf.html">FnAbiOf</a>, <a href="../../../rustc_middle/ty/layout/trait.FnAbiOfHelpers.html">FnAbiOfHelpers</a>, <a href="../../../rustc_middle/ty/layout/enum.FnAbiRequest.html">FnAbiRequest</a>, <a href="../../../rustc_middle/ty/layout/enum.LayoutError.html">LayoutError</a>, <a href="../../../rustc_middle/ty/layout/trait.LayoutOf.html">LayoutOf</a>,
+<a href=#11 id=11 data-nosnippet>11</a>    <a href="../../../rustc_middle/ty/layout/trait.LayoutOfHelpers.html">LayoutOfHelpers</a>, <a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>,
+<a href=#12 id=12 data-nosnippet>12</a>};
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span>rustc_middle::ty::{<a class="self" href="../../../rustc_middle/ty/index.html">self</a>, <a href="../../../rustc_middle/ty/generic_args/type.GenericArgsRef.html">GenericArgsRef</a>, <a href="../../../rustc_middle/ty/struct.Ty.html">Ty</a>, <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>, <a href="../../../rustc_type_ir/fold/trait.TypeFoldable.html">TypeFoldable</a>, <a href="../../../rustc_middle/ty/struct.TypingEnv.html">TypingEnv</a>, <a href="../../../rustc_type_ir/enum.Variance.html">Variance</a>};
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span>rustc_middle::{<a href="../../../rustc_middle/mir/index.html">mir</a>, <a href="../../../rustc_middle/macro.span_bug.html">span_bug</a>};
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span><a href="../../../rustc_session/session/struct.Limit.html">rustc_session::Limit</a>;
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span><a href="../../../rustc_span/span_encoding/struct.Span.html">rustc_span::Span</a>;
+<a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span><a href="../../../rustc_target/callconv/struct.FnAbi.html">rustc_target::callconv::FnAbi</a>;
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug</a>, <a href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace</a>};
+<a href=#19 id=19 data-nosnippet>19</a>
+<a href=#20 id=20 data-nosnippet>20</a><span class="kw">use super</span>::{
+<a href=#21 id=21 data-nosnippet>21</a>    <a href="stack.rs.html#60-108">Frame</a>, <a href="stack.rs.html#212-215">FrameInfo</a>, <a href="../../../rustc_middle/mir/interpret/struct.GlobalId.html">GlobalId</a>, <a href="../../../rustc_middle/mir/interpret/error/struct.InterpErrorInfo.html">InterpErrorInfo</a>, <a href="../../../rustc_middle/mir/interpret/error/enum.InterpErrorKind.html">InterpErrorKind</a>, <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>, <a href="place.rs.html#100-103">MPlaceTy</a>, <a href="machine.rs.html#99-620">Machine</a>,
+<a href=#22 id=22 data-nosnippet>22</a>    <a href="place.rs.html#24-29">MemPlaceMeta</a>, <a href="memory.rs.html#113-139">Memory</a>, <a href="operand.rs.html#491-494">OpTy</a>, <a href="place.rs.html#183-199">Place</a>, <a href="place.rs.html#208-211">PlaceTy</a>, <a href="../../../rustc_middle/mir/interpret/pointer/trait.PointerArithmetic.html">PointerArithmetic</a>, <a href="projection.rs.html#34-105">Projectable</a>, <a href="../../../rustc_middle/mir/interpret/pointer/trait.Provenance.html">Provenance</a>,
+<a href=#23 id=23 data-nosnippet>23</a>    <a href="../../../rustc_middle/macro.err_inval.html">err_inval</a>, <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>, <a href="../../../rustc_middle/macro.throw_inval.html">throw_inval</a>, <a href="../../../rustc_middle/macro.throw_ub.html">throw_ub</a>, <a href="../../../rustc_middle/macro.throw_ub_custom.html">throw_ub_custom</a>,
+<a href=#24 id=24 data-nosnippet>24</a>};
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">use crate</span>::{<a href="../errors.rs.html#444-463">ReportErrorExt</a>, <a href="util.rs.html#143-151">enter_trace_span</a>, <a href="../lib.rs.html#34">fluent_generated</a> <span class="kw">as </span>fluent, <a href="../lib.rs.html#25">util</a>};
+<a href=#26 id=26 data-nosnippet>26</a>
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">pub struct </span><a href="../../../rustc_const_eval/interpret/struct.InterpCx.html">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#28 id=28 data-nosnippet>28</a>    <span class="doccomment">/// Stores the `Machine` instance.
+<a href=#29 id=29 data-nosnippet>29</a>    ///
+<a href=#30 id=30 data-nosnippet>30</a>    /// Note: the stack is provided by the machine.
+<a href=#31 id=31 data-nosnippet>31</a>    </span><span class="kw">pub </span>machine: M,
+<a href=#32 id=32 data-nosnippet>32</a>
+<a href=#33 id=33 data-nosnippet>33</a>    <span class="doccomment">/// The results of the type checker, from rustc.
+<a href=#34 id=34 data-nosnippet>34</a>    /// The span in this is the "root" of the evaluation, i.e., the const
+<a href=#35 id=35 data-nosnippet>35</a>    /// we are evaluating (if this is CTFE).
+<a href=#36 id=36 data-nosnippet>36</a>    </span><span class="kw">pub </span>tcx: <a href="../../../rustc_middle/query/plumbing/struct.TyCtxtAt.html">TyCtxtAt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#37 id=37 data-nosnippet>37</a>
+<a href=#38 id=38 data-nosnippet>38</a>    <span class="doccomment">/// The current context in case we're evaluating in a
+<a href=#39 id=39 data-nosnippet>39</a>    /// polymorphic context. This always uses `ty::TypingMode::PostAnalysis`.
+<a href=#40 id=40 data-nosnippet>40</a>    </span><span class="kw">pub</span>(<span class="kw">super</span>) typing_env: <a href="../../../rustc_middle/ty/struct.TypingEnv.html">ty::TypingEnv</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#41 id=41 data-nosnippet>41</a>
+<a href=#42 id=42 data-nosnippet>42</a>    <span class="doccomment">/// The virtual memory system.
+<a href=#43 id=43 data-nosnippet>43</a>    </span><span class="kw">pub </span>memory: <a href="memory.rs.html#113-139">Memory</a>&lt;<span class="lifetime">'tcx</span>, M&gt;,
+<a href=#44 id=44 data-nosnippet>44</a>
+<a href=#45 id=45 data-nosnippet>45</a>    <span class="doccomment">/// The recursion limit (cached from `tcx.recursion_limit(())`)
+<a href=#46 id=46 data-nosnippet>46</a>    </span><span class="kw">pub </span>recursion_limit: <a href="../../../rustc_session/session/struct.Limit.html">Limit</a>,
+<a href=#47 id=47 data-nosnippet>47</a>}
+<a href=#48 id=48 data-nosnippet>48</a>
+<a href=#49 id=49 data-nosnippet>49</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; <a href="../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a> <span class="kw">for </span><a href="#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt; {
+<a href=#50 id=50 data-nosnippet>50</a>    <span class="attr">#[inline]
+<a href=#51 id=51 data-nosnippet>51</a>    </span><span class="kw">fn </span>data_layout(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><a href="../../../rustc_abi/struct.TargetDataLayout.html">TargetDataLayout</a> {
+<a href=#52 id=52 data-nosnippet>52</a>        <span class="kw-2">&amp;</span><a class="self" href="#51">self</a>.tcx.data_layout
+<a href=#53 id=53 data-nosnippet>53</a>    }
+<a href=#54 id=54 data-nosnippet>54</a>}
+<a href=#55 id=55 data-nosnippet>55</a>
+<a href=#56 id=56 data-nosnippet>56</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, M&gt; <a href="../../../rustc_middle/ty/layout/trait.HasTyCtxt.html">layout::HasTyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt;
+<a href=#57 id=57 data-nosnippet>57</a><span class="kw">where
+<a href=#58 id=58 data-nosnippet>58</a>    </span>M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#59 id=59 data-nosnippet>59</a>{
+<a href=#60 id=60 data-nosnippet>60</a>    <span class="attr">#[inline]
+<a href=#61 id=61 data-nosnippet>61</a>    </span><span class="kw">fn </span>tcx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#62 id=62 data-nosnippet>62</a>        <span class="kw-2">*</span><a class="self" href="#61">self</a>.tcx
+<a href=#63 id=63 data-nosnippet>63</a>    }
+<a href=#64 id=64 data-nosnippet>64</a>}
+<a href=#65 id=65 data-nosnippet>65</a>
+<a href=#66 id=66 data-nosnippet>66</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, M&gt; <a href="../../../rustc_middle/ty/layout/trait.HasTypingEnv.html">layout::HasTypingEnv</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt;
+<a href=#67 id=67 data-nosnippet>67</a><span class="kw">where
+<a href=#68 id=68 data-nosnippet>68</a>    </span>M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#69 id=69 data-nosnippet>69</a>{
+<a href=#70 id=70 data-nosnippet>70</a>    <span class="kw">fn </span>typing_env(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="../../../rustc_middle/ty/struct.TypingEnv.html">ty::TypingEnv</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#71 id=71 data-nosnippet>71</a>        <a class="self" href="#70">self</a>.typing_env
+<a href=#72 id=72 data-nosnippet>72</a>    }
+<a href=#73 id=73 data-nosnippet>73</a>}
+<a href=#74 id=74 data-nosnippet>74</a>
+<a href=#75 id=75 data-nosnippet>75</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; <a href="../../../rustc_middle/ty/layout/trait.LayoutOfHelpers.html">LayoutOfHelpers</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt; {
+<a href=#76 id=76 data-nosnippet>76</a>    <span class="kw">type </span>LayoutOfResult = <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;, <a href="../../../rustc_middle/mir/interpret/error/enum.InterpErrorKind.html">InterpErrorKind</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;;
+<a href=#77 id=77 data-nosnippet>77</a>
+<a href=#78 id=78 data-nosnippet>78</a>    <span class="attr">#[inline]
+<a href=#79 id=79 data-nosnippet>79</a>    </span><span class="kw">fn </span>layout_tcx_at_span(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a> {
+<a href=#80 id=80 data-nosnippet>80</a>        <span class="comment">// Using the cheap root span for performance.
+<a href=#81 id=81 data-nosnippet>81</a>        </span><a class="self" href="#79">self</a>.tcx.span
+<a href=#82 id=82 data-nosnippet>82</a>    }
+<a href=#83 id=83 data-nosnippet>83</a>
+<a href=#84 id=84 data-nosnippet>84</a>    <span class="attr">#[inline]
+<a href=#85 id=85 data-nosnippet>85</a>    </span><span class="kw">fn </span>handle_layout_err(
+<a href=#86 id=86 data-nosnippet>86</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#87 id=87 data-nosnippet>87</a>        err: <a href="../../../rustc_middle/ty/layout/enum.LayoutError.html">LayoutError</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#88 id=88 data-nosnippet>88</a>        <span class="kw">_</span>: <a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#89 id=89 data-nosnippet>89</a>        <span class="kw">_</span>: <a href="../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#90 id=90 data-nosnippet>90</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/enum.InterpErrorKind.html">InterpErrorKind</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#91 id=91 data-nosnippet>91</a>        <a class="macro" href="../../../rustc_middle/macro.err_inval.html">err_inval!</a>(Layout(<a href="#87">err</a>))
+<a href=#92 id=92 data-nosnippet>92</a>    }
+<a href=#93 id=93 data-nosnippet>93</a>}
+<a href=#94 id=94 data-nosnippet>94</a>
+<a href=#95 id=95 data-nosnippet>95</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; <a href="../../../rustc_middle/ty/layout/trait.FnAbiOfHelpers.html">FnAbiOfHelpers</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt; {
+<a href=#96 id=96 data-nosnippet>96</a>    <span class="kw">type </span>FnAbiOfResult = <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../rustc_target/callconv/struct.FnAbi.html">FnAbi</a>&lt;<span class="lifetime">'tcx</span>, <a href="../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;, <a href="../../../rustc_middle/mir/interpret/error/enum.InterpErrorKind.html">InterpErrorKind</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;;
+<a href=#97 id=97 data-nosnippet>97</a>
+<a href=#98 id=98 data-nosnippet>98</a>    <span class="kw">fn </span>handle_fn_abi_err(
+<a href=#99 id=99 data-nosnippet>99</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#100 id=100 data-nosnippet>100</a>        err: <a href="../../../rustc_middle/ty/layout/enum.FnAbiError.html">FnAbiError</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#101 id=101 data-nosnippet>101</a>        _span: <a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#102 id=102 data-nosnippet>102</a>        _fn_abi_request: <a href="../../../rustc_middle/ty/layout/enum.FnAbiRequest.html">FnAbiRequest</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#103 id=103 data-nosnippet>103</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/enum.InterpErrorKind.html">InterpErrorKind</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#104 id=104 data-nosnippet>104</a>        <span class="kw">match </span><a href="#100">err</a> {
+<a href=#105 id=105 data-nosnippet>105</a>            <a href="../../../rustc_middle/ty/layout/enum.FnAbiError.html#variant.Layout">FnAbiError::Layout</a>(err) =&gt; <a class="macro" href="../../../rustc_middle/macro.err_inval.html">err_inval!</a>(Layout(<a href="#105">err</a>)),
+<a href=#106 id=106 data-nosnippet>106</a>        }
+<a href=#107 id=107 data-nosnippet>107</a>    }
+<a href=#108 id=108 data-nosnippet>108</a>}
+<a href=#109 id=109 data-nosnippet>109</a>
+<a href=#110 id=110 data-nosnippet>110</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; <a href="#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt; {
+<a href=#111 id=111 data-nosnippet>111</a>    <span class="doccomment">/// This inherent method takes priority over the trait method with the same name in LayoutOf,
+<a href=#112 id=112 data-nosnippet>112</a>    /// and allows wrapping the actual [LayoutOf::layout_of] with a tracing span.
+<a href=#113 id=113 data-nosnippet>113</a>    /// See [LayoutOf::layout_of] for the original documentation.
+<a href=#114 id=114 data-nosnippet>114</a>    </span><span class="attr">#[inline(always)]
+<a href=#115 id=115 data-nosnippet>115</a>    </span><span class="kw">pub fn </span>layout_of(<span class="kw-2">&amp;</span><span class="self">self</span>, ty: <a href="../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; &lt;<span class="self">Self </span><span class="kw">as </span>LayoutOfHelpers&lt;<span class="lifetime">'tcx</span>&gt;&gt;::LayoutOfResult {
+<a href=#116 id=116 data-nosnippet>116</a>        <span class="kw">let </span>_trace = <a class="macro" href="util.rs.html#143-151">enter_trace_span!</a>(M, layouting::layout_of, ty = <span class="question-mark">?</span>ty.kind());
+<a href=#117 id=117 data-nosnippet>117</a>        <a href="../../../rustc_middle/ty/layout/trait.LayoutOf.html#tymethod.layout_of">LayoutOf::layout_of</a>(<a class="self" href="#115">self</a>, <a href="#115">ty</a>)
+<a href=#118 id=118 data-nosnippet>118</a>    }
+<a href=#119 id=119 data-nosnippet>119</a>
+<a href=#120 id=120 data-nosnippet>120</a>    <span class="doccomment">/// This inherent method takes priority over the trait method with the same name in FnAbiOf,
+<a href=#121 id=121 data-nosnippet>121</a>    /// and allows wrapping the actual [FnAbiOf::fn_abi_of_fn_ptr] with a tracing span.
+<a href=#122 id=122 data-nosnippet>122</a>    /// See [FnAbiOf::fn_abi_of_fn_ptr] for the original documentation.
+<a href=#123 id=123 data-nosnippet>123</a>    </span><span class="attr">#[inline(always)]
+<a href=#124 id=124 data-nosnippet>124</a>    </span><span class="kw">pub fn </span>fn_abi_of_fn_ptr(
+<a href=#125 id=125 data-nosnippet>125</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#126 id=126 data-nosnippet>126</a>        sig: <a href="../../../rustc_middle/ty/sty/type.PolyFnSig.html">ty::PolyFnSig</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#127 id=127 data-nosnippet>127</a>        extra_args: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../rustc_middle/ty/list/type.List.html">ty::List</a>&lt;<a href="../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#128 id=128 data-nosnippet>128</a>    ) -&gt; &lt;<span class="self">Self </span><span class="kw">as </span>FnAbiOfHelpers&lt;<span class="lifetime">'tcx</span>&gt;&gt;::FnAbiOfResult {
+<a href=#129 id=129 data-nosnippet>129</a>        <span class="kw">let </span>_trace = <a class="macro" href="util.rs.html#143-151">enter_trace_span!</a>(M, layouting::fn_abi_of_fn_ptr, <span class="question-mark">?</span>sig, <span class="question-mark">?</span>extra_args);
+<a href=#130 id=130 data-nosnippet>130</a>        <a href="../../../rustc_middle/ty/layout/trait.FnAbiOf.html#tymethod.fn_abi_of_fn_ptr">FnAbiOf::fn_abi_of_fn_ptr</a>(<a class="self" href="#125">self</a>, <a href="#126">sig</a>, <a href="#127">extra_args</a>)
+<a href=#131 id=131 data-nosnippet>131</a>    }
+<a href=#132 id=132 data-nosnippet>132</a>
+<a href=#133 id=133 data-nosnippet>133</a>    <span class="doccomment">/// This inherent method takes priority over the trait method with the same name in FnAbiOf,
+<a href=#134 id=134 data-nosnippet>134</a>    /// and allows wrapping the actual [FnAbiOf::fn_abi_of_instance] with a tracing span.
+<a href=#135 id=135 data-nosnippet>135</a>    /// See [FnAbiOf::fn_abi_of_instance] for the original documentation.
+<a href=#136 id=136 data-nosnippet>136</a>    </span><span class="attr">#[inline(always)]
+<a href=#137 id=137 data-nosnippet>137</a>    </span><span class="kw">pub fn </span>fn_abi_of_instance(
+<a href=#138 id=138 data-nosnippet>138</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#139 id=139 data-nosnippet>139</a>        instance: <a href="../../../rustc_middle/ty/instance/struct.Instance.html">ty::Instance</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#140 id=140 data-nosnippet>140</a>        extra_args: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../rustc_middle/ty/list/type.List.html">ty::List</a>&lt;<a href="../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#141 id=141 data-nosnippet>141</a>    ) -&gt; &lt;<span class="self">Self </span><span class="kw">as </span>FnAbiOfHelpers&lt;<span class="lifetime">'tcx</span>&gt;&gt;::FnAbiOfResult {
+<a href=#142 id=142 data-nosnippet>142</a>        <span class="kw">let </span>_trace = <a class="macro" href="util.rs.html#143-151">enter_trace_span!</a>(M, layouting::fn_abi_of_instance, <span class="question-mark">?</span>instance, <span class="question-mark">?</span>extra_args);
+<a href=#143 id=143 data-nosnippet>143</a>        <a href="../../../rustc_middle/ty/layout/trait.FnAbiOf.html#tymethod.fn_abi_of_instance">FnAbiOf::fn_abi_of_instance</a>(<a class="self" href="#138">self</a>, <a href="#139">instance</a>, <a href="#140">extra_args</a>)
+<a href=#144 id=144 data-nosnippet>144</a>    }
+<a href=#145 id=145 data-nosnippet>145</a>}
+<a href=#146 id=146 data-nosnippet>146</a>
+<a href=#147 id=147 data-nosnippet>147</a><span class="doccomment">/// Test if it is valid for a MIR assignment to assign `src`-typed place to `dest`-typed value.
+<a href=#148 id=148 data-nosnippet>148</a>/// This test should be symmetric, as it is primarily about layout compatibility.
+<a href=#149 id=149 data-nosnippet>149</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../rustc_const_eval/interpret/eval_context/fn.mir_assign_valid_types.html">mir_assign_valid_types</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#150 id=150 data-nosnippet>150</a>    tcx: <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#151 id=151 data-nosnippet>151</a>    typing_env: <a href="../../../rustc_middle/ty/struct.TypingEnv.html">TypingEnv</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#152 id=152 data-nosnippet>152</a>    src: <a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#153 id=153 data-nosnippet>153</a>    dest: <a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#154 id=154 data-nosnippet>154</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#155 id=155 data-nosnippet>155</a>    <span class="comment">// Type-changing assignments can happen when subtyping is used. While
+<a href=#156 id=156 data-nosnippet>156</a>    // all normal lifetimes are erased, higher-ranked types with their
+<a href=#157 id=157 data-nosnippet>157</a>    // late-bound lifetimes are still around and can lead to type
+<a href=#158 id=158 data-nosnippet>158</a>    // differences.
+<a href=#159 id=159 data-nosnippet>159</a>    </span><span class="kw">if </span><a href="../util/compare_types.rs.html#26-47">util::relate_types</a>(<a href="#150">tcx</a>, <a href="#151">typing_env</a>, <a href="../../../rustc_type_ir/enum.Variance.html#variant.Covariant">Variance::Covariant</a>, <a href="#152">src</a>.ty, <a href="#153">dest</a>.ty) {
+<a href=#160 id=160 data-nosnippet>160</a>        <span class="comment">// Make sure the layout is equal, too -- just to be safe. Miri really
+<a href=#161 id=161 data-nosnippet>161</a>        // needs layout equality. For performance reason we skip this check when
+<a href=#162 id=162 data-nosnippet>162</a>        // the types are equal. Equal types *can* have different layouts when
+<a href=#163 id=163 data-nosnippet>163</a>        // enum downcast is involved (as enum variants carry the type of the
+<a href=#164 id=164 data-nosnippet>164</a>        // enum), but those should never occur in assignments.
+<a href=#165 id=165 data-nosnippet>165</a>        </span><span class="kw">if </span><a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.cfg.html">cfg!</a>(debug_assertions) || <a href="#152">src</a>.ty != <a href="#153">dest</a>.ty {
+<a href=#166 id=166 data-nosnippet>166</a>            <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(src.layout, dest.layout);
+<a href=#167 id=167 data-nosnippet>167</a>        }
+<a href=#168 id=168 data-nosnippet>168</a>        <span class="bool-val">true
+<a href=#169 id=169 data-nosnippet>169</a>    </span>} <span class="kw">else </span>{
+<a href=#170 id=170 data-nosnippet>170</a>        <span class="bool-val">false
+<a href=#171 id=171 data-nosnippet>171</a>    </span>}
+<a href=#172 id=172 data-nosnippet>172</a>}
+<a href=#173 id=173 data-nosnippet>173</a>
+<a href=#174 id=174 data-nosnippet>174</a><span class="doccomment">/// Use the already known layout if given (but sanity check in debug mode),
+<a href=#175 id=175 data-nosnippet>175</a>/// or compute the layout.
+<a href=#176 id=176 data-nosnippet>176</a></span><span class="attr">#[cfg_attr(not(debug_assertions), inline(always))]
+<a href=#177 id=177 data-nosnippet>177</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../rustc_const_eval/interpret/eval_context/fn.from_known_layout.html">from_known_layout</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#178 id=178 data-nosnippet>178</a>    tcx: <a href="../../../rustc_middle/query/plumbing/struct.TyCtxtAt.html">TyCtxtAt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#179 id=179 data-nosnippet>179</a>    typing_env: <a href="../../../rustc_middle/ty/struct.TypingEnv.html">TypingEnv</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#180 id=180 data-nosnippet>180</a>    known_layout: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#181 id=181 data-nosnippet>181</a>    compute: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>() -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#182 id=182 data-nosnippet>182</a>) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#183 id=183 data-nosnippet>183</a>    <span class="kw">match </span><a href="#180">known_layout</a> {
+<a href=#184 id=184 data-nosnippet>184</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a> </a>=&gt; <a href="#181">compute</a>(),
+<a href=#185 id=185 data-nosnippet>185</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(known_layout) =&gt; {
+<a href=#186 id=186 data-nosnippet>186</a>            <span class="kw">if </span><a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.cfg.html">cfg!</a>(debug_assertions) {
+<a href=#187 id=187 data-nosnippet>187</a>                <span class="kw">let </span>check_layout = <a href="#181">compute</a>()<span class="question-mark">?</span>;
+<a href=#188 id=188 data-nosnippet>188</a>                <span class="kw">if </span>!<a href="#149-172">mir_assign_valid_types</a>(<a href="#178">tcx</a>.tcx, <a href="#179">typing_env</a>, <a href="#187">check_layout</a>, <a href="#185">known_layout</a>) {
+<a href=#189 id=189 data-nosnippet>189</a>                    <a class="macro" href="../../../rustc_middle/macro.span_bug.html">span_bug!</a>(
+<a href=#190 id=190 data-nosnippet>190</a>                        <a href="#178">tcx</a>.span,
+<a href=#191 id=191 data-nosnippet>191</a>                        <span class="string">"expected type differs from actual type.\nexpected: {}\nactual: {}"</span>,
+<a href=#192 id=192 data-nosnippet>192</a>                        known_layout.ty,
+<a href=#193 id=193 data-nosnippet>193</a>                        check_layout.ty,
+<a href=#194 id=194 data-nosnippet>194</a>                    );
+<a href=#195 id=195 data-nosnippet>195</a>                }
+<a href=#196 id=196 data-nosnippet>196</a>            }
+<a href=#197 id=197 data-nosnippet>197</a>            <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a href="#185">known_layout</a>)
+<a href=#198 id=198 data-nosnippet>198</a>        }
+<a href=#199 id=199 data-nosnippet>199</a>    }
+<a href=#200 id=200 data-nosnippet>200</a>}
+<a href=#201 id=201 data-nosnippet>201</a>
+<a href=#202 id=202 data-nosnippet>202</a><span class="doccomment">/// Turn the given error into a human-readable string. Expects the string to be printed, so if
+<a href=#203 id=203 data-nosnippet>203</a>/// `RUSTC_CTFE_BACKTRACE` is set this will show a backtrace of the rustc internals that
+<a href=#204 id=204 data-nosnippet>204</a>/// triggered the error.
+<a href=#205 id=205 data-nosnippet>205</a>///
+<a href=#206 id=206 data-nosnippet>206</a>/// This is NOT the preferred way to render an error; use `report` from `const_eval` instead.
+<a href=#207 id=207 data-nosnippet>207</a>/// However, this is useful when error messages appear in ICEs.
+<a href=#208 id=208 data-nosnippet>208</a></span><span class="kw">pub fn </span><a href="../../../rustc_const_eval/interpret/fn.format_interp_error.html">format_interp_error</a>&lt;<span class="lifetime">'tcx</span>&gt;(dcx: <a href="../../../rustc_errors/struct.DiagCtxtHandle.html">DiagCtxtHandle</a>&lt;<span class="lifetime">'_</span>&gt;, e: <a href="../../../rustc_middle/mir/interpret/error/struct.InterpErrorInfo.html">InterpErrorInfo</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/string/struct.String.html">String</a> {
+<a href=#209 id=209 data-nosnippet>209</a>    <span class="kw">let </span>(e, backtrace) = <a href="#208">e</a>.<a href="../../../rustc_middle/mir/interpret/error/struct.InterpErrorInfo.html#method.into_parts">into_parts</a>();
+<a href=#210 id=210 data-nosnippet>210</a>    <a href="#209">backtrace</a>.<a href="../../../rustc_middle/mir/interpret/error/struct.InterpErrorBacktrace.html#method.print_backtrace">print_backtrace</a>();
+<a href=#211 id=211 data-nosnippet>211</a>    <span class="comment">// FIXME(fee1-dead), HACK: we want to use the error as title therefore we can just extract the
+<a href=#212 id=212 data-nosnippet>212</a>    // label and arguments from the InterpError.
+<a href=#213 id=213 data-nosnippet>213</a>    </span><span class="attr">#[allow(rustc::untranslatable_diagnostic)]
+<a href=#214 id=214 data-nosnippet>214</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>diag = <a href="#208">dcx</a>.<a href="../../../rustc_errors/struct.DiagCtxtHandle.html#method.struct_allow">struct_allow</a>(<span class="string">""</span>);
+<a href=#215 id=215 data-nosnippet>215</a>    <span class="kw">let </span>msg = <a href="#209">e</a>.<a href="../errors.rs.html#446">diagnostic_message</a>();
+<a href=#216 id=216 data-nosnippet>216</a>    <a href="#209">e</a>.<a href="../errors.rs.html#447">add_args</a>(<span class="kw-2">&amp;mut </span><a href="#214">diag</a>);
+<a href=#217 id=217 data-nosnippet>217</a>    <span class="kw">let </span>s = <a href="#208">dcx</a>.<a href="../../../rustc_errors/struct.DiagCtxt.html#method.eagerly_translate_to_string">eagerly_translate_to_string</a>(<a href="#215">msg</a>, <a href="#214">diag</a>.args.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.iter">iter</a>());
+<a href=#218 id=218 data-nosnippet>218</a>    <a href="#214">diag</a>.<a href="../../../rustc_errors/diagnostic/struct.Diag.html#method.cancel">cancel</a>();
+<a href=#219 id=219 data-nosnippet>219</a>    <a href="#217">s</a>
+<a href=#220 id=220 data-nosnippet>220</a>}
+<a href=#221 id=221 data-nosnippet>221</a>
+<a href=#222 id=222 data-nosnippet>222</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; <a href="#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt; {
+<a href=#223 id=223 data-nosnippet>223</a>    <span class="kw">pub fn </span>new(
+<a href=#224 id=224 data-nosnippet>224</a>        tcx: <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#225 id=225 data-nosnippet>225</a>        root_span: <a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#226 id=226 data-nosnippet>226</a>        typing_env: <a href="../../../rustc_middle/ty/struct.TypingEnv.html">ty::TypingEnv</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#227 id=227 data-nosnippet>227</a>        machine: M,
+<a href=#228 id=228 data-nosnippet>228</a>    ) -&gt; <span class="self">Self </span>{
+<a href=#229 id=229 data-nosnippet>229</a>        <span class="comment">// Const eval always happens in post analysis mode in order to be able to use the hidden types of
+<a href=#230 id=230 data-nosnippet>230</a>        // opaque types. This is needed for trivial things like `size_of`, but also for using associated
+<a href=#231 id=231 data-nosnippet>231</a>        // types that are not specified in the opaque type. We also use MIR bodies whose opaque types have
+<a href=#232 id=232 data-nosnippet>232</a>        // already been revealed, so we'd be able to at least partially observe the hidden types anyways.
+<a href=#233 id=233 data-nosnippet>233</a>        </span><a class="macro" href="https://doc.rust-lang.org/nightly/core/macros/macro.debug_assert_matches.html">debug_assert_matches!</a>(typing_env.typing_mode, ty::TypingMode::PostAnalysis);
+<a href=#234 id=234 data-nosnippet>234</a>        <a href="#27-47">InterpCx</a> {
+<a href=#235 id=235 data-nosnippet>235</a>            <a href="#227">machine</a>,
+<a href=#236 id=236 data-nosnippet>236</a>            tcx: <a href="#224">tcx</a>.<a href="../../../rustc_middle/ty/context/struct.TyCtxt.html#method.at">at</a>(<a href="#225">root_span</a>),
+<a href=#237 id=237 data-nosnippet>237</a>            <a href="#226">typing_env</a>,
+<a href=#238 id=238 data-nosnippet>238</a>            memory: <a href="memory.rs.html#160-167">Memory::new</a>(),
+<a href=#239 id=239 data-nosnippet>239</a>            recursion_limit: <a href="#224">tcx</a>.<a href="../../../rustc_middle/ty/context/struct.TyCtxt.html#method.recursion_limit">recursion_limit</a>(),
+<a href=#240 id=240 data-nosnippet>240</a>        }
+<a href=#241 id=241 data-nosnippet>241</a>    }
+<a href=#242 id=242 data-nosnippet>242</a>
+<a href=#243 id=243 data-nosnippet>243</a>    <span class="doccomment">/// Returns the span of the currently executed statement/terminator.
+<a href=#244 id=244 data-nosnippet>244</a>    /// This is the span typically used for error reporting.
+<a href=#245 id=245 data-nosnippet>245</a>    </span><span class="attr">#[inline(always)]
+<a href=#246 id=246 data-nosnippet>246</a>    </span><span class="kw">pub fn </span>cur_span(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a> {
+<a href=#247 id=247 data-nosnippet>247</a>        <span class="comment">// This deliberately does *not* honor `requires_caller_location` since it is used for much
+<a href=#248 id=248 data-nosnippet>248</a>        // more than just panics.
+<a href=#249 id=249 data-nosnippet>249</a>        </span><a class="self" href="#246">self</a>.<a href="#252-254">stack</a>().<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.last">last</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.map_or">map_or</a>(<a class="self" href="#246">self</a>.tcx.span, |f| <a href="#249">f</a>.<a href="stack.rs.html#294-299">current_span</a>())
+<a href=#250 id=250 data-nosnippet>250</a>    }
+<a href=#251 id=251 data-nosnippet>251</a>
+<a href=#252 id=252 data-nosnippet>252</a>    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>stack(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>[<a href="stack.rs.html#60-108">Frame</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance, M::FrameExtra&gt;] {
+<a href=#253 id=253 data-nosnippet>253</a>        <a href="machine.rs.html#522-524">M::stack</a>(<a class="self" href="#252">self</a>)
+<a href=#254 id=254 data-nosnippet>254</a>    }
+<a href=#255 id=255 data-nosnippet>255</a>
+<a href=#256 id=256 data-nosnippet>256</a>    <span class="attr">#[inline(always)]
+<a href=#257 id=257 data-nosnippet>257</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>stack_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span><a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="stack.rs.html#60-108">Frame</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance, M::FrameExtra&gt;&gt; {
+<a href=#258 id=258 data-nosnippet>258</a>        <a href="machine.rs.html#527-529">M::stack_mut</a>(<a class="self" href="#257">self</a>)
+<a href=#259 id=259 data-nosnippet>259</a>    }
+<a href=#260 id=260 data-nosnippet>260</a>
+<a href=#261 id=261 data-nosnippet>261</a>    <span class="attr">#[inline(always)]
+<a href=#262 id=262 data-nosnippet>262</a>    </span><span class="kw">pub fn </span>frame_idx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.usize.html">usize</a> {
+<a href=#263 id=263 data-nosnippet>263</a>        <span class="kw">let </span>stack = <a class="self" href="#262">self</a>.<a href="#252-254">stack</a>();
+<a href=#264 id=264 data-nosnippet>264</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert.html">assert!</a>(!stack.is_empty());
+<a href=#265 id=265 data-nosnippet>265</a>        <a href="#263">stack</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.len">len</a>() - <span class="number">1
+<a href=#266 id=266 data-nosnippet>266</a>    </span>}
+<a href=#267 id=267 data-nosnippet>267</a>
+<a href=#268 id=268 data-nosnippet>268</a>    <span class="attr">#[inline(always)]
+<a href=#269 id=269 data-nosnippet>269</a>    </span><span class="kw">pub fn </span>frame(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><a href="stack.rs.html#60-108">Frame</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance, M::FrameExtra&gt; {
+<a href=#270 id=270 data-nosnippet>270</a>        <a class="self" href="#269">self</a>.<a href="#252-254">stack</a>().<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.last">last</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.expect">expect</a>(<span class="string">"no call frames exist"</span>)
+<a href=#271 id=271 data-nosnippet>271</a>    }
+<a href=#272 id=272 data-nosnippet>272</a>
+<a href=#273 id=273 data-nosnippet>273</a>    <span class="attr">#[inline(always)]
+<a href=#274 id=274 data-nosnippet>274</a>    </span><span class="kw">pub fn </span>frame_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span><a href="stack.rs.html#60-108">Frame</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance, M::FrameExtra&gt; {
+<a href=#275 id=275 data-nosnippet>275</a>        <a class="self" href="#274">self</a>.<a href="#257-259">stack_mut</a>().<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.last_mut">last_mut</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.expect">expect</a>(<span class="string">"no call frames exist"</span>)
+<a href=#276 id=276 data-nosnippet>276</a>    }
+<a href=#277 id=277 data-nosnippet>277</a>
+<a href=#278 id=278 data-nosnippet>278</a>    <span class="attr">#[inline(always)]
+<a href=#279 id=279 data-nosnippet>279</a>    </span><span class="kw">pub fn </span>body(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../rustc_middle/mir/struct.Body.html">mir::Body</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#280 id=280 data-nosnippet>280</a>        <a class="self" href="#279">self</a>.<a href="#269-271">frame</a>().body
+<a href=#281 id=281 data-nosnippet>281</a>    }
+<a href=#282 id=282 data-nosnippet>282</a>
+<a href=#283 id=283 data-nosnippet>283</a>    <span class="attr">#[inline]
+<a href=#284 id=284 data-nosnippet>284</a>    </span><span class="kw">pub fn </span>type_is_freeze(<span class="kw-2">&amp;</span><span class="self">self</span>, ty: <a href="../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#285 id=285 data-nosnippet>285</a>        <a href="#284">ty</a>.<a href="../../../rustc_middle/ty/struct.Ty.html#method.is_freeze">is_freeze</a>(<span class="kw-2">*</span><a class="self" href="#284">self</a>.tcx, <a class="self" href="#284">self</a>.typing_env)
+<a href=#286 id=286 data-nosnippet>286</a>    }
+<a href=#287 id=287 data-nosnippet>287</a>
+<a href=#288 id=288 data-nosnippet>288</a>    <span class="kw">pub fn </span>load_mir(
+<a href=#289 id=289 data-nosnippet>289</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#290 id=290 data-nosnippet>290</a>        instance: <a href="../../../rustc_middle/ty/instance/enum.InstanceKind.html">ty::InstanceKind</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#291 id=291 data-nosnippet>291</a>        promoted: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../rustc_middle/mir/struct.Promoted.html">mir::Promoted</a>&gt;,
+<a href=#292 id=292 data-nosnippet>292</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../rustc_middle/mir/struct.Body.html">mir::Body</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#293 id=293 data-nosnippet>293</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"load mir(instance={:?}, promoted={:?})"</span>, instance, promoted);
+<a href=#294 id=294 data-nosnippet>294</a>        <span class="kw">let </span>body = <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(promoted) = <a href="#291">promoted</a> {
+<a href=#295 id=295 data-nosnippet>295</a>            <span class="kw">let </span>def = <a href="#290">instance</a>.<a href="../../../rustc_middle/ty/instance/enum.InstanceKind.html#method.def_id">def_id</a>();
+<a href=#296 id=296 data-nosnippet>296</a>            <span class="kw-2">&amp;</span><a class="self" href="#289">self</a>.tcx.<a href="../../../rustc_middle/query/plumbing/struct.TyCtxtAt.html#method.promoted_mir">promoted_mir</a>(<a href="#295">def</a>)[<a href="#294">promoted</a>]
+<a href=#297 id=297 data-nosnippet>297</a>        } <span class="kw">else </span>{
+<a href=#298 id=298 data-nosnippet>298</a>            <a href="machine.rs.html#182-187">M::load_mir</a>(<a class="self" href="#289">self</a>, <a href="#290">instance</a>)
+<a href=#299 id=299 data-nosnippet>299</a>        };
+<a href=#300 id=300 data-nosnippet>300</a>        <span class="comment">// do not continue if typeck errors occurred (can only occur in local crate)
+<a href=#301 id=301 data-nosnippet>301</a>        </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(err) = <a href="#294">body</a>.tainted_by_errors {
+<a href=#302 id=302 data-nosnippet>302</a>            <a class="macro" href="../../../rustc_middle/macro.throw_inval.html">throw_inval!</a>(AlreadyReported(ReportedErrorInfo::non_const_eval_error(err)));
+<a href=#303 id=303 data-nosnippet>303</a>        }
+<a href=#304 id=304 data-nosnippet>304</a>        <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a href="#294">body</a>)
+<a href=#305 id=305 data-nosnippet>305</a>    }
+<a href=#306 id=306 data-nosnippet>306</a>
+<a href=#307 id=307 data-nosnippet>307</a>    <span class="doccomment">/// Call this on things you got out of the MIR (so it is as generic as the current
+<a href=#308 id=308 data-nosnippet>308</a>    /// stack frame), to bring it into the proper environment for this interpreter.
+<a href=#309 id=309 data-nosnippet>309</a>    </span><span class="kw">pub fn </span>instantiate_from_current_frame_and_normalize_erasing_regions&lt;
+<a href=#310 id=310 data-nosnippet>310</a>        T: <a href="../../../rustc_type_ir/fold/trait.TypeFoldable.html">TypeFoldable</a>&lt;<a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#311 id=311 data-nosnippet>311</a>    &gt;(
+<a href=#312 id=312 data-nosnippet>312</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#313 id=313 data-nosnippet>313</a>        value: T,
+<a href=#314 id=314 data-nosnippet>314</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;T, <a href="../../../rustc_middle/mir/interpret/error/enum.ErrorHandled.html">ErrorHandled</a>&gt; {
+<a href=#315 id=315 data-nosnippet>315</a>        <a class="self" href="#312">self</a>.<a href="#320-338">instantiate_from_frame_and_normalize_erasing_regions</a>(<a class="self" href="#312">self</a>.<a href="#269-271">frame</a>(), <a href="#313">value</a>)
+<a href=#316 id=316 data-nosnippet>316</a>    }
+<a href=#317 id=317 data-nosnippet>317</a>
+<a href=#318 id=318 data-nosnippet>318</a>    <span class="doccomment">/// Call this on things you got out of the MIR (so it is as generic as the provided
+<a href=#319 id=319 data-nosnippet>319</a>    /// stack frame), to bring it into the proper environment for this interpreter.
+<a href=#320 id=320 data-nosnippet>320</a>    </span><span class="kw">pub fn </span>instantiate_from_frame_and_normalize_erasing_regions&lt;T: <a href="../../../rustc_type_ir/fold/trait.TypeFoldable.html">TypeFoldable</a>&lt;<a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt;(
+<a href=#321 id=321 data-nosnippet>321</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#322 id=322 data-nosnippet>322</a>        frame: <span class="kw-2">&amp;</span><a href="stack.rs.html#60-108">Frame</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance, M::FrameExtra&gt;,
+<a href=#323 id=323 data-nosnippet>323</a>        value: T,
+<a href=#324 id=324 data-nosnippet>324</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;T, <a href="../../../rustc_middle/mir/interpret/error/enum.ErrorHandled.html">ErrorHandled</a>&gt; {
+<a href=#325 id=325 data-nosnippet>325</a>        <span class="kw">let </span>_trace = <a class="macro" href="util.rs.html#143-151">enter_trace_span!</a>(
+<a href=#326 id=326 data-nosnippet>326</a>            M,
+<a href=#327 id=327 data-nosnippet>327</a>            <span class="string">"instantiate_from_frame_and_normalize_erasing_regions"</span>,
+<a href=#328 id=328 data-nosnippet>328</a>            %frame.instance
+<a href=#329 id=329 data-nosnippet>329</a>        );
+<a href=#330 id=330 data-nosnippet>330</a>        <a href="#322">frame</a>
+<a href=#331 id=331 data-nosnippet>331</a>            .instance
+<a href=#332 id=332 data-nosnippet>332</a>            .<a href="../../../rustc_middle/ty/instance/struct.Instance.html#method.try_instantiate_mir_and_normalize_erasing_regions">try_instantiate_mir_and_normalize_erasing_regions</a>(
+<a href=#333 id=333 data-nosnippet>333</a>                <span class="kw-2">*</span><a class="self" href="#321">self</a>.tcx,
+<a href=#334 id=334 data-nosnippet>334</a>                <a class="self" href="#321">self</a>.typing_env,
+<a href=#335 id=335 data-nosnippet>335</a>                <a href="../../../rustc_type_ir/binder/struct.EarlyBinder.html#method.bind">ty::EarlyBinder::bind</a>(<a href="#323">value</a>),
+<a href=#336 id=336 data-nosnippet>336</a>            )
+<a href=#337 id=337 data-nosnippet>337</a>            .<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.map_err">map_err</a>(|<span class="kw">_</span>| <a href="../../../rustc_middle/mir/interpret/error/enum.ErrorHandled.html#variant.TooGeneric">ErrorHandled::TooGeneric</a>(<a class="self" href="#321">self</a>.<a href="#246-250">cur_span</a>()))
+<a href=#338 id=338 data-nosnippet>338</a>    }
+<a href=#339 id=339 data-nosnippet>339</a>
+<a href=#340 id=340 data-nosnippet>340</a>    <span class="doccomment">/// The `args` are assumed to already be in our interpreter "universe".
+<a href=#341 id=341 data-nosnippet>341</a>    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>resolve(
+<a href=#342 id=342 data-nosnippet>342</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#343 id=343 data-nosnippet>343</a>        def: <a href="../../../rustc_span/def_id/struct.DefId.html">DefId</a>,
+<a href=#344 id=344 data-nosnippet>344</a>        args: <a href="../../../rustc_middle/ty/generic_args/type.GenericArgsRef.html">GenericArgsRef</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#345 id=345 data-nosnippet>345</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="../../../rustc_middle/ty/instance/struct.Instance.html">ty::Instance</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#346 id=346 data-nosnippet>346</a>        <span class="kw">let </span>_trace = <a class="macro" href="util.rs.html#143-151">enter_trace_span!</a>(M, resolve::try_resolve, def = <span class="question-mark">?</span>def);
+<a href=#347 id=347 data-nosnippet>347</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"resolve: {:?}, {:#?}"</span>, def, args);
+<a href=#348 id=348 data-nosnippet>348</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"typing_env: {:#?}"</span>, <span class="self">self</span>.typing_env);
+<a href=#349 id=349 data-nosnippet>349</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"args: {:#?}"</span>, args);
+<a href=#350 id=350 data-nosnippet>350</a>        <span class="kw">match </span><a href="../../../rustc_middle/ty/instance/struct.Instance.html#method.try_resolve">ty::Instance::try_resolve</a>(<span class="kw-2">*</span><a class="self" href="#342">self</a>.tcx, <a class="self" href="#342">self</a>.typing_env, <a href="#343">def</a>, <a href="#344">args</a>) {
+<a href=#351 id=351 data-nosnippet>351</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<span class="prelude-val">Some</span>(instance)) =&gt; <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a href="#351">instance</a>),
+<a href=#352 id=352 data-nosnippet>352</a>            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Ok">Ok</a>(<span class="prelude-val">None</span>) =&gt; <a class="macro" href="../../../rustc_middle/macro.throw_inval.html">throw_inval!</a>(TooGeneric),
+<a href=#353 id=353 data-nosnippet>353</a>
+<a href=#354 id=354 data-nosnippet>354</a>            <span class="comment">// FIXME(eddyb) this could be a bit more specific than `AlreadyReported`.
+<a href=#355 id=355 data-nosnippet>355</a>            </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#variant.Err">Err</a>(error_guaranteed) =&gt; <a class="macro" href="../../../rustc_middle/macro.throw_inval.html">throw_inval!</a>(AlreadyReported(
+<a href=#356 id=356 data-nosnippet>356</a>                ReportedErrorInfo::non_const_eval_error(error_guaranteed)
+<a href=#357 id=357 data-nosnippet>357</a>            )),
+<a href=#358 id=358 data-nosnippet>358</a>        }
+<a href=#359 id=359 data-nosnippet>359</a>    }
+<a href=#360 id=360 data-nosnippet>360</a>
+<a href=#361 id=361 data-nosnippet>361</a>    <span class="doccomment">/// Walks up the callstack from the intrinsic's callsite, searching for the first callsite in a
+<a href=#362 id=362 data-nosnippet>362</a>    /// frame which is not `#[track_caller]`. This matches the `caller_location` intrinsic,
+<a href=#363 id=363 data-nosnippet>363</a>    /// and is primarily intended for the panic machinery.
+<a href=#364 id=364 data-nosnippet>364</a>    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>find_closest_untracked_caller_location(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a> {
+<a href=#365 id=365 data-nosnippet>365</a>        <span class="kw">for </span>frame <span class="kw">in </span><span class="self">self</span>.stack().iter().rev() {
+<a href=#366 id=366 data-nosnippet>366</a>            <span class="macro">debug!</span>(<span class="string">"find_closest_untracked_caller_location: checking frame {:?}"</span>, frame.instance);
+<a href=#367 id=367 data-nosnippet>367</a>
+<a href=#368 id=368 data-nosnippet>368</a>            <span class="comment">// Assert that the frame we look at is actually executing code currently
+<a href=#369 id=369 data-nosnippet>369</a>            // (`loc` is `Right` when we are unwinding and the frame does not require cleanup).
+<a href=#370 id=370 data-nosnippet>370</a>            </span><span class="kw">let </span>loc = frame.loc.left().unwrap();
+<a href=#371 id=371 data-nosnippet>371</a>
+<a href=#372 id=372 data-nosnippet>372</a>            <span class="comment">// This could be a non-`Call` terminator (such as `Drop`), or not a terminator at all
+<a href=#373 id=373 data-nosnippet>373</a>            // (such as `box`). Use the normal span by default.
+<a href=#374 id=374 data-nosnippet>374</a>            </span><span class="kw">let </span><span class="kw-2">mut </span>source_info = <span class="kw-2">*</span>frame.body.source_info(loc);
+<a href=#375 id=375 data-nosnippet>375</a>
+<a href=#376 id=376 data-nosnippet>376</a>            <span class="comment">// If this is a `Call` terminator, use the `fn_span` instead.
+<a href=#377 id=377 data-nosnippet>377</a>            </span><span class="kw">let </span>block = <span class="kw-2">&amp;</span>frame.body.basic_blocks[loc.block];
+<a href=#378 id=378 data-nosnippet>378</a>            <span class="kw">if </span>loc.statement_index == block.statements.len() {
+<a href=#379 id=379 data-nosnippet>379</a>                <span class="macro">debug!</span>(
+<a href=#380 id=380 data-nosnippet>380</a>                    <span class="string">"find_closest_untracked_caller_location: got terminator {:?} ({:?})"</span>,
+<a href=#381 id=381 data-nosnippet>381</a>                    block.terminator(),
+<a href=#382 id=382 data-nosnippet>382</a>                    block.terminator().kind,
+<a href=#383 id=383 data-nosnippet>383</a>                );
+<a href=#384 id=384 data-nosnippet>384</a>                <span class="kw">if let </span>mir::TerminatorKind::Call { fn_span, .. } = block.terminator().kind {
+<a href=#385 id=385 data-nosnippet>385</a>                    source_info.span = fn_span;
+<a href=#386 id=386 data-nosnippet>386</a>                }
+<a href=#387 id=387 data-nosnippet>387</a>            }
+<a href=#388 id=388 data-nosnippet>388</a>
+<a href=#389 id=389 data-nosnippet>389</a>            <span class="kw">let </span>caller_location = <span class="kw">if </span>frame.instance.def.requires_caller_location(<span class="kw-2">*</span><span class="self">self</span>.tcx) {
+<a href=#390 id=390 data-nosnippet>390</a>                <span class="comment">// We use `Err(())` as indication that we should continue up the call stack since
+<a href=#391 id=391 data-nosnippet>391</a>                // this is a `#[track_caller]` function.
+<a href=#392 id=392 data-nosnippet>392</a>                </span><span class="prelude-val">Some</span>(<span class="prelude-val">Err</span>(()))
+<a href=#393 id=393 data-nosnippet>393</a>            } <span class="kw">else </span>{
+<a href=#394 id=394 data-nosnippet>394</a>                <span class="prelude-val">None
+<a href=#395 id=395 data-nosnippet>395</a>            </span>};
+<a href=#396 id=396 data-nosnippet>396</a>            <span class="kw">if let </span><span class="prelude-val">Ok</span>(span) =
+<a href=#397 id=397 data-nosnippet>397</a>                frame.body.caller_location_span(source_info, caller_location, <span class="kw-2">*</span><span class="self">self</span>.tcx, <span class="prelude-val">Ok</span>)
+<a href=#398 id=398 data-nosnippet>398</a>            {
+<a href=#399 id=399 data-nosnippet>399</a>                <span class="kw">return </span>span;
+<a href=#400 id=400 data-nosnippet>400</a>            }
+<a href=#401 id=401 data-nosnippet>401</a>        }
+<a href=#402 id=402 data-nosnippet>402</a>
+<a href=#403 id=403 data-nosnippet>403</a>        <a class="macro" href="../../../rustc_middle/macro.span_bug.html">span_bug!</a>(<a class="self" href="#364">self</a>.<a href="#246-250">cur_span</a>(), <span class="string">"no non-`#[track_caller]` frame found"</span>)
+<a href=#404 id=404 data-nosnippet>404</a>    }
+<a href=#405 id=405 data-nosnippet>405</a>
+<a href=#406 id=406 data-nosnippet>406</a>    <span class="doccomment">/// Returns the actual dynamic size and alignment of the place at the given type.
+<a href=#407 id=407 data-nosnippet>407</a>    /// Only the "meta" (metadata) part of the place matters.
+<a href=#408 id=408 data-nosnippet>408</a>    /// This can fail to provide an answer for extern types.
+<a href=#409 id=409 data-nosnippet>409</a>    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>size_and_align_from_meta(
+<a href=#410 id=410 data-nosnippet>410</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#411 id=411 data-nosnippet>411</a>        metadata: <span class="kw-2">&amp;</span><a href="place.rs.html#24-29">MemPlaceMeta</a>&lt;M::Provenance&gt;,
+<a href=#412 id=412 data-nosnippet>412</a>        layout: <span class="kw-2">&amp;</span><a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#413 id=413 data-nosnippet>413</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;(<a href="../../../rustc_abi/struct.Size.html">Size</a>, <a href="../../../rustc_abi/struct.Align.html">Align</a>)&gt;&gt; {
+<a href=#414 id=414 data-nosnippet>414</a>        <span class="kw">if </span><a href="#412">layout</a>.<a href="../../../rustc_abi/struct.LayoutData.html#method.is_sized">is_sized</a>() {
+<a href=#415 id=415 data-nosnippet>415</a>            <span class="kw">return </span><a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>((<a href="#412">layout</a>.size, <a href="#412">layout</a>.align.abi)));
+<a href=#416 id=416 data-nosnippet>416</a>        }
+<a href=#417 id=417 data-nosnippet>417</a>        <span class="kw">match </span><a href="#412">layout</a>.ty.<a href="../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() {
+<a href=#418 id=418 data-nosnippet>418</a>            <a href="../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Adt">ty::Adt</a>(..) | <a href="../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Tuple">ty::Tuple</a>(..) =&gt; {
+<a href=#419 id=419 data-nosnippet>419</a>                <span class="comment">// First get the size of all statically known fields.
+<a href=#420 id=420 data-nosnippet>420</a>                // Don't use type_of::sizing_type_of because that expects t to be sized,
+<a href=#421 id=421 data-nosnippet>421</a>                // and it also rounds up to alignment, which we want to avoid,
+<a href=#422 id=422 data-nosnippet>422</a>                // as the unsized field's alignment could be smaller.
+<a href=#423 id=423 data-nosnippet>423</a>                </span><a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert.html">assert!</a>(!layout.ty.is_simd());
+<a href=#424 id=424 data-nosnippet>424</a>                <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert.html">assert!</a>(layout.fields.count() &gt; <span class="number">0</span>);
+<a href=#425 id=425 data-nosnippet>425</a>                <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"DST layout: {:?}"</span>, layout);
+<a href=#426 id=426 data-nosnippet>426</a>
+<a href=#427 id=427 data-nosnippet>427</a>                <span class="kw">let </span>unsized_offset_unadjusted = <a href="#412">layout</a>.fields.<a href="../../../rustc_abi/enum.FieldsShape.html#method.offset">offset</a>(<a href="#412">layout</a>.fields.<a href="../../../rustc_abi/enum.FieldsShape.html#method.count">count</a>() - <span class="number">1</span>);
+<a href=#428 id=428 data-nosnippet>428</a>                <span class="kw">let </span>sized_align = <a href="#412">layout</a>.align.abi;
+<a href=#429 id=429 data-nosnippet>429</a>
+<a href=#430 id=430 data-nosnippet>430</a>                <span class="comment">// Recurse to get the size of the dynamically sized field (must be
+<a href=#431 id=431 data-nosnippet>431</a>                // the last field). Can't have foreign types here, how would we
+<a href=#432 id=432 data-nosnippet>432</a>                // adjust alignment and size for them?
+<a href=#433 id=433 data-nosnippet>433</a>                </span><span class="kw">let </span>field = <a href="#412">layout</a>.<a href="../../../rustc_abi/layout/ty/struct.TyAndLayout.html#method.field">field</a>(<a class="self" href="#410">self</a>, <a href="#412">layout</a>.fields.<a href="../../../rustc_abi/enum.FieldsShape.html#method.count">count</a>() - <span class="number">1</span>);
+<a href=#434 id=434 data-nosnippet>434</a>                <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>((unsized_size, <span class="kw-2">mut </span>unsized_align)) =
+<a href=#435 id=435 data-nosnippet>435</a>                    <a class="self" href="#410">self</a>.<a href="#409-495">size_and_align_from_meta</a>(<a href="#411">metadata</a>, <span class="kw-2">&amp;</span><a href="#433">field</a>)<span class="question-mark">?
+<a href=#436 id=436 data-nosnippet>436</a>                </span><span class="kw">else </span>{
+<a href=#437 id=437 data-nosnippet>437</a>                    <span class="comment">// A field with an extern type. We don't know the actual dynamic size
+<a href=#438 id=438 data-nosnippet>438</a>                    // or the alignment.
+<a href=#439 id=439 data-nosnippet>439</a>                    </span><span class="kw">return </span><a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>);
+<a href=#440 id=440 data-nosnippet>440</a>                };
+<a href=#441 id=441 data-nosnippet>441</a>
+<a href=#442 id=442 data-nosnippet>442</a>                <span class="comment">// # First compute the dynamic alignment
+<a href=#443 id=443 data-nosnippet>443</a>
+<a href=#444 id=444 data-nosnippet>444</a>                // Packed type alignment needs to be capped.
+<a href=#445 id=445 data-nosnippet>445</a>                </span><span class="kw">if let </span><a href="../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Adt">ty::Adt</a>(def, <span class="kw">_</span>) = <a href="#412">layout</a>.ty.<a href="../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>()
+<a href=#446 id=446 data-nosnippet>446</a>                    &amp;&amp; <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(packed) = <a href="#445">def</a>.<a href="../../../rustc_middle/ty/adt/struct.AdtDef.html#method.repr">repr</a>().pack
+<a href=#447 id=447 data-nosnippet>447</a>                {
+<a href=#448 id=448 data-nosnippet>448</a>                    <a href="#434">unsized_align</a> = <a href="#434">unsized_align</a>.<a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html#tymethod.min">min</a>(<a href="#446">packed</a>);
+<a href=#449 id=449 data-nosnippet>449</a>                }
+<a href=#450 id=450 data-nosnippet>450</a>
+<a href=#451 id=451 data-nosnippet>451</a>                <span class="comment">// Choose max of two known alignments (combined value must
+<a href=#452 id=452 data-nosnippet>452</a>                // be aligned according to more restrictive of the two).
+<a href=#453 id=453 data-nosnippet>453</a>                </span><span class="kw">let </span>full_align = <a href="#428">sized_align</a>.<a href="https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html#tymethod.max">max</a>(<a href="#434">unsized_align</a>);
+<a href=#454 id=454 data-nosnippet>454</a>
+<a href=#455 id=455 data-nosnippet>455</a>                <span class="comment">// # Then compute the dynamic size
+<a href=#456 id=456 data-nosnippet>456</a>
+<a href=#457 id=457 data-nosnippet>457</a>                </span><span class="kw">let </span>unsized_offset_adjusted = <a href="#427">unsized_offset_unadjusted</a>.<a href="../../../rustc_abi/struct.Size.html#method.align_to">align_to</a>(<a href="#434">unsized_align</a>);
+<a href=#458 id=458 data-nosnippet>458</a>                <span class="kw">let </span>full_size = (<a href="#457">unsized_offset_adjusted</a> + <a href="#434">unsized_size</a>).<a href="../../../rustc_abi/struct.Size.html#method.align_to">align_to</a>(<a href="#453">full_align</a>);
+<a href=#459 id=459 data-nosnippet>459</a>
+<a href=#460 id=460 data-nosnippet>460</a>                <span class="comment">// Just for our sanitiy's sake, assert that this is equal to what codegen would compute.
+<a href=#461 id=461 data-nosnippet>461</a>                </span><a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(
+<a href=#462 id=462 data-nosnippet>462</a>                    full_size,
+<a href=#463 id=463 data-nosnippet>463</a>                    (unsized_offset_unadjusted + unsized_size).align_to(full_align)
+<a href=#464 id=464 data-nosnippet>464</a>                );
+<a href=#465 id=465 data-nosnippet>465</a>
+<a href=#466 id=466 data-nosnippet>466</a>                <span class="comment">// Check if this brought us over the size limit.
+<a href=#467 id=467 data-nosnippet>467</a>                </span><span class="kw">if </span><a href="#458">full_size</a> &gt; <a class="self" href="#410">self</a>.<a href="../../../rustc_middle/mir/interpret/pointer/trait.PointerArithmetic.html#tymethod.max_size_of_val">max_size_of_val</a>() {
+<a href=#468 id=468 data-nosnippet>468</a>                    <a class="macro" href="../../../rustc_middle/macro.throw_ub.html">throw_ub!</a>(InvalidMeta(InvalidMetaKind::TooBig));
+<a href=#469 id=469 data-nosnippet>469</a>                }
+<a href=#470 id=470 data-nosnippet>470</a>                <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>((<a href="#458">full_size</a>, <a href="#453">full_align</a>)))
+<a href=#471 id=471 data-nosnippet>471</a>            }
+<a href=#472 id=472 data-nosnippet>472</a>            <a href="../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Dynamic">ty::Dynamic</a>(expected_trait, <span class="kw">_</span>, ty::Dyn) =&gt; {
+<a href=#473 id=473 data-nosnippet>473</a>                <span class="kw">let </span>vtable = <a href="#411">metadata</a>.<a href="place.rs.html#33-40">unwrap_meta</a>().<a href="../../../rustc_middle/mir/interpret/value/enum.Scalar.html#method.to_pointer">to_pointer</a>(<a class="self" href="#410">self</a>)<span class="question-mark">?</span>;
+<a href=#474 id=474 data-nosnippet>474</a>                <span class="comment">// Read size and align from vtable (already checks size).
+<a href=#475 id=475 data-nosnippet>475</a>                </span><a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a class="self" href="#410">self</a>.<a href="traits.rs.html#38-47">get_vtable_size_and_align</a>(<a href="#473">vtable</a>, <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#472">expected_trait</a>))<span class="question-mark">?</span>))
+<a href=#476 id=476 data-nosnippet>476</a>            }
+<a href=#477 id=477 data-nosnippet>477</a>
+<a href=#478 id=478 data-nosnippet>478</a>            <a href="../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Slice">ty::Slice</a>(<span class="kw">_</span>) | <a href="../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Str">ty::Str</a> =&gt; {
+<a href=#479 id=479 data-nosnippet>479</a>                <span class="kw">let </span>len = <a href="#411">metadata</a>.<a href="place.rs.html#33-40">unwrap_meta</a>().<a href="../../../rustc_middle/mir/interpret/value/enum.Scalar.html#method.to_target_usize">to_target_usize</a>(<a class="self" href="#410">self</a>)<span class="question-mark">?</span>;
+<a href=#480 id=480 data-nosnippet>480</a>                <span class="kw">let </span>elem = <a href="#412">layout</a>.<a href="../../../rustc_abi/layout/ty/struct.TyAndLayout.html#method.field">field</a>(<a class="self" href="#410">self</a>, <span class="number">0</span>);
+<a href=#481 id=481 data-nosnippet>481</a>
+<a href=#482 id=482 data-nosnippet>482</a>                <span class="comment">// Make sure the slice is not too big.
+<a href=#483 id=483 data-nosnippet>483</a>                </span><span class="kw">let </span>size = <a href="#480">elem</a>.size.<a href="../../../rustc_abi/struct.Size.html#method.bytes">bytes</a>().<a href="https://doc.rust-lang.org/nightly/core/foreigntype.num.html#method.saturating_mul">saturating_mul</a>(<a href="#479">len</a>); <span class="comment">// we rely on `max_size_of_val` being smaller than `u64::MAX`.
+<a href=#484 id=484 data-nosnippet>484</a>                </span><span class="kw">let </span>size = <a href="../../../rustc_abi/struct.Size.html#method.from_bytes">Size::from_bytes</a>(<a href="#483">size</a>);
+<a href=#485 id=485 data-nosnippet>485</a>                <span class="kw">if </span><a href="#484">size</a> &gt; <a class="self" href="#410">self</a>.<a href="../../../rustc_middle/mir/interpret/pointer/trait.PointerArithmetic.html#tymethod.max_size_of_val">max_size_of_val</a>() {
+<a href=#486 id=486 data-nosnippet>486</a>                    <a class="macro" href="../../../rustc_middle/macro.throw_ub.html">throw_ub!</a>(InvalidMeta(InvalidMetaKind::SliceTooBig));
+<a href=#487 id=487 data-nosnippet>487</a>                }
+<a href=#488 id=488 data-nosnippet>488</a>                <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>((<a href="#484">size</a>, <a href="#480">elem</a>.align.abi)))
+<a href=#489 id=489 data-nosnippet>489</a>            }
+<a href=#490 id=490 data-nosnippet>490</a>
+<a href=#491 id=491 data-nosnippet>491</a>            <a href="../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Foreign">ty::Foreign</a>(<span class="kw">_</span>) =&gt; <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>),
+<a href=#492 id=492 data-nosnippet>492</a>
+<a href=#493 id=493 data-nosnippet>493</a>            <span class="kw">_ </span>=&gt; <a class="macro" href="../../../rustc_middle/macro.span_bug.html">span_bug!</a>(<a class="self" href="#410">self</a>.<a href="#246-250">cur_span</a>(), <span class="string">"size_and_align_of::&lt;{}&gt; not supported"</span>, layout.ty),
+<a href=#494 id=494 data-nosnippet>494</a>        }
+<a href=#495 id=495 data-nosnippet>495</a>    }
+<a href=#496 id=496 data-nosnippet>496</a>    <span class="attr">#[inline]
+<a href=#497 id=497 data-nosnippet>497</a>    </span><span class="kw">pub fn </span>size_and_align_of_val(
+<a href=#498 id=498 data-nosnippet>498</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#499 id=499 data-nosnippet>499</a>        val: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="projection.rs.html#34-105">Projectable</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;,
+<a href=#500 id=500 data-nosnippet>500</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;(<a href="../../../rustc_abi/struct.Size.html">Size</a>, <a href="../../../rustc_abi/struct.Align.html">Align</a>)&gt;&gt; {
+<a href=#501 id=501 data-nosnippet>501</a>        <a class="self" href="#498">self</a>.<a href="#409-495">size_and_align_from_meta</a>(<span class="kw-2">&amp;</span><a href="#499">val</a>.<a href="projection.rs.html#39">meta</a>(), <span class="kw-2">&amp;</span><a href="#499">val</a>.<a href="projection.rs.html#36">layout</a>())
+<a href=#502 id=502 data-nosnippet>502</a>    }
+<a href=#503 id=503 data-nosnippet>503</a>
+<a href=#504 id=504 data-nosnippet>504</a>    <span class="doccomment">/// Jump to the given block.
+<a href=#505 id=505 data-nosnippet>505</a>    </span><span class="attr">#[inline]
+<a href=#506 id=506 data-nosnippet>506</a>    </span><span class="kw">pub fn </span>go_to_block(<span class="kw-2">&amp;mut </span><span class="self">self</span>, target: <a href="../../../rustc_middle/mir/struct.BasicBlock.html">mir::BasicBlock</a>) {
+<a href=#507 id=507 data-nosnippet>507</a>        <a class="self" href="#506">self</a>.<a href="#274-276">frame_mut</a>().loc = <a href="https://docs.rs/either/1/either/Either/variant.Left.html">Left</a>(<a href="../../../rustc_middle/mir/struct.Location.html">mir::Location</a> { block: <a href="#506">target</a>, statement_index: <span class="number">0 </span>});
+<a href=#508 id=508 data-nosnippet>508</a>    }
+<a href=#509 id=509 data-nosnippet>509</a>
+<a href=#510 id=510 data-nosnippet>510</a>    <span class="doccomment">/// *Return* to the given `target` basic block.
+<a href=#511 id=511 data-nosnippet>511</a>    /// Do *not* use for unwinding! Use `unwind_to_block` instead.
+<a href=#512 id=512 data-nosnippet>512</a>    ///
+<a href=#513 id=513 data-nosnippet>513</a>    /// If `target` is `None`, that indicates the function cannot return, so we raise UB.
+<a href=#514 id=514 data-nosnippet>514</a>    </span><span class="kw">pub fn </span>return_to_block(<span class="kw-2">&amp;mut </span><span class="self">self</span>, target: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../rustc_middle/mir/struct.BasicBlock.html">mir::BasicBlock</a>&gt;) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#515 id=515 data-nosnippet>515</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(target) = <a href="#514">target</a> {
+<a href=#516 id=516 data-nosnippet>516</a>            <a class="self" href="#514">self</a>.<a href="#506-508">go_to_block</a>(<a href="#515">target</a>);
+<a href=#517 id=517 data-nosnippet>517</a>            <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#518 id=518 data-nosnippet>518</a>        } <span class="kw">else </span>{
+<a href=#519 id=519 data-nosnippet>519</a>            <a class="macro" href="../../../rustc_middle/macro.throw_ub.html">throw_ub!</a>(Unreachable)
+<a href=#520 id=520 data-nosnippet>520</a>        }
+<a href=#521 id=521 data-nosnippet>521</a>    }
+<a href=#522 id=522 data-nosnippet>522</a>
+<a href=#523 id=523 data-nosnippet>523</a>    <span class="doccomment">/// *Unwind* to the given `target` basic block.
+<a href=#524 id=524 data-nosnippet>524</a>    /// Do *not* use for returning! Use `return_to_block` instead.
+<a href=#525 id=525 data-nosnippet>525</a>    ///
+<a href=#526 id=526 data-nosnippet>526</a>    /// If `target` is `UnwindAction::Continue`, that indicates the function does not need cleanup
+<a href=#527 id=527 data-nosnippet>527</a>    /// during unwinding, and we will just keep propagating that upwards.
+<a href=#528 id=528 data-nosnippet>528</a>    ///
+<a href=#529 id=529 data-nosnippet>529</a>    /// If `target` is `UnwindAction::Unreachable`, that indicates the function does not allow
+<a href=#530 id=530 data-nosnippet>530</a>    /// unwinding, and doing so is UB.
+<a href=#531 id=531 data-nosnippet>531</a>    </span><span class="attr">#[cold] </span><span class="comment">// usually we have normal returns, not unwinding
+<a href=#532 id=532 data-nosnippet>532</a>    </span><span class="kw">pub fn </span>unwind_to_block(<span class="kw-2">&amp;mut </span><span class="self">self</span>, target: <a href="../../../rustc_middle/mir/syntax/enum.UnwindAction.html">mir::UnwindAction</a>) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#533 id=533 data-nosnippet>533</a>        <a class="self" href="#532">self</a>.<a href="#274-276">frame_mut</a>().loc = <span class="kw">match </span><a href="#532">target</a> {
+<a href=#534 id=534 data-nosnippet>534</a>            <a href="../../../rustc_middle/mir/syntax/enum.UnwindAction.html#variant.Cleanup">mir::UnwindAction::Cleanup</a>(block) =&gt; <a href="https://docs.rs/either/1/either/Either/variant.Left.html">Left</a>(<a href="../../../rustc_middle/mir/struct.Location.html">mir::Location</a> { <a href="#534">block</a>, statement_index: <span class="number">0 </span>}),
+<a href=#535 id=535 data-nosnippet>535</a>            <a href="../../../rustc_middle/mir/syntax/enum.UnwindAction.html#variant.Continue">mir::UnwindAction::Continue</a> =&gt; <a href="https://docs.rs/either/1/either/Either/variant.Right.html">Right</a>(<a class="self" href="#532">self</a>.<a href="#274-276">frame_mut</a>().body.span),
+<a href=#536 id=536 data-nosnippet>536</a>            <a href="../../../rustc_middle/mir/syntax/enum.UnwindAction.html#variant.Unreachable">mir::UnwindAction::Unreachable</a> =&gt; {
+<a href=#537 id=537 data-nosnippet>537</a>                <a class="macro" href="../../../rustc_middle/macro.throw_ub_custom.html">throw_ub_custom!</a>(fluent::const_eval_unreachable_unwind);
+<a href=#538 id=538 data-nosnippet>538</a>            }
+<a href=#539 id=539 data-nosnippet>539</a>            <a href="../../../rustc_middle/mir/syntax/enum.UnwindAction.html#variant.Terminate">mir::UnwindAction::Terminate</a>(reason) =&gt; {
+<a href=#540 id=540 data-nosnippet>540</a>                <a class="self" href="#532">self</a>.<a href="#274-276">frame_mut</a>().loc = <a href="https://docs.rs/either/1/either/Either/variant.Right.html">Right</a>(<a class="self" href="#532">self</a>.<a href="#274-276">frame_mut</a>().body.span);
+<a href=#541 id=541 data-nosnippet>541</a>                <a href="machine.rs.html#253-256">M::unwind_terminate</a>(<a class="self" href="#532">self</a>, <a href="#539">reason</a>)<span class="question-mark">?</span>;
+<a href=#542 id=542 data-nosnippet>542</a>                <span class="comment">// This might have pushed a new stack frame, or it terminated execution.
+<a href=#543 id=543 data-nosnippet>543</a>                // Either way, `loc` will not be updated.
+<a href=#544 id=544 data-nosnippet>544</a>                </span><span class="kw">return </span><a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(());
+<a href=#545 id=545 data-nosnippet>545</a>            }
+<a href=#546 id=546 data-nosnippet>546</a>        };
+<a href=#547 id=547 data-nosnippet>547</a>        <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#548 id=548 data-nosnippet>548</a>    }
+<a href=#549 id=549 data-nosnippet>549</a>
+<a href=#550 id=550 data-nosnippet>550</a>    <span class="doccomment">/// Call a query that can return `ErrorHandled`. Should be used for statics and other globals.
+<a href=#551 id=551 data-nosnippet>551</a>    /// (`mir::Const`/`ty::Const` have `eval` methods that can be used directly instead.)
+<a href=#552 id=552 data-nosnippet>552</a>    </span><span class="kw">pub fn </span>ctfe_query&lt;T&gt;(
+<a href=#553 id=553 data-nosnippet>553</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#554 id=554 data-nosnippet>554</a>        query: <span class="kw">impl </span><a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnOnce.html">FnOnce</a>(<a href="../../../rustc_middle/query/plumbing/struct.TyCtxtAt.html">TyCtxtAt</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;T, <a href="../../../rustc_middle/mir/interpret/error/enum.ErrorHandled.html">ErrorHandled</a>&gt;,
+<a href=#555 id=555 data-nosnippet>555</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html">Result</a>&lt;T, <a href="../../../rustc_middle/mir/interpret/error/enum.ErrorHandled.html">ErrorHandled</a>&gt; {
+<a href=#556 id=556 data-nosnippet>556</a>        <span class="comment">// Use a precise span for better cycle errors.
+<a href=#557 id=557 data-nosnippet>557</a>        </span><a href="#554">query</a>(<a class="self" href="#553">self</a>.tcx.<a href="../../../rustc_middle/ty/context/struct.TyCtxt.html#method.at">at</a>(<a class="self" href="#553">self</a>.<a href="#246-250">cur_span</a>())).<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.map_err">map_err</a>(|err| {
+<a href=#558 id=558 data-nosnippet>558</a>            <a href="#557">err</a>.<a href="../../../rustc_middle/mir/interpret/error/enum.ErrorHandled.html#method.emit_note">emit_note</a>(<span class="kw-2">*</span><a class="self" href="#553">self</a>.tcx);
+<a href=#559 id=559 data-nosnippet>559</a>            <a href="#557">err</a>
+<a href=#560 id=560 data-nosnippet>560</a>        })
+<a href=#561 id=561 data-nosnippet>561</a>    }
+<a href=#562 id=562 data-nosnippet>562</a>
+<a href=#563 id=563 data-nosnippet>563</a>    <span class="kw">pub fn </span>eval_global(
+<a href=#564 id=564 data-nosnippet>564</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#565 id=565 data-nosnippet>565</a>        instance: <a href="../../../rustc_middle/ty/instance/struct.Instance.html">ty::Instance</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#566 id=566 data-nosnippet>566</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="place.rs.html#100-103">MPlaceTy</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt; {
+<a href=#567 id=567 data-nosnippet>567</a>        <span class="kw">let </span>gid = <a href="../../../rustc_middle/mir/interpret/struct.GlobalId.html">GlobalId</a> { <a href="#565">instance</a>, promoted: <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a> </a>};
+<a href=#568 id=568 data-nosnippet>568</a>        <span class="kw">let </span>val = <span class="kw">if </span><a class="self" href="#564">self</a>.tcx.<a href="../../../rustc_middle/ty/context/struct.TyCtxt.html#method.is_static">is_static</a>(<a href="#567">gid</a>.instance.<a href="../../../rustc_middle/ty/instance/struct.Instance.html#method.def_id">def_id</a>()) {
+<a href=#569 id=569 data-nosnippet>569</a>            <span class="kw">let </span>alloc_id = <a class="self" href="#564">self</a>.tcx.<a href="../../../rustc_middle/ty/context/struct.TyCtxt.html#method.reserve_and_set_static_alloc">reserve_and_set_static_alloc</a>(<a href="#567">gid</a>.instance.<a href="../../../rustc_middle/ty/instance/struct.Instance.html#method.def_id">def_id</a>());
+<a href=#570 id=570 data-nosnippet>570</a>
+<a href=#571 id=571 data-nosnippet>571</a>            <span class="kw">let </span>ty = <a href="#565">instance</a>.<a href="../../../rustc_middle/ty/instance/struct.Instance.html#method.ty">ty</a>(<a class="self" href="#564">self</a>.tcx.tcx, <a class="self" href="#564">self</a>.typing_env);
+<a href=#572 id=572 data-nosnippet>572</a>            <a href="../../../rustc_middle/mir/consts/struct.ConstAlloc.html">mir::ConstAlloc</a> { <a href="#569">alloc_id</a>, <a href="#571">ty</a> }
+<a href=#573 id=573 data-nosnippet>573</a>        } <span class="kw">else </span>{
+<a href=#574 id=574 data-nosnippet>574</a>            <a class="self" href="#564">self</a>.<a href="#552-561">ctfe_query</a>(|tcx| <a href="#574">tcx</a>.<a href="../../../rustc_middle/query/plumbing/struct.TyCtxtAt.html#method.eval_to_allocation_raw">eval_to_allocation_raw</a>(<a class="self" href="#564">self</a>.typing_env.<a href="../../../rustc_middle/ty/struct.TypingEnv.html#method.as_query_input">as_query_input</a>(<a href="#567">gid</a>)))<span class="question-mark">?
+<a href=#575 id=575 data-nosnippet>575</a>        </span>};
+<a href=#576 id=576 data-nosnippet>576</a>        <a class="self" href="#564">self</a>.<a href="place.rs.html#1058-1067">raw_const_to_mplace</a>(<a href="#568">val</a>)
+<a href=#577 id=577 data-nosnippet>577</a>    }
+<a href=#578 id=578 data-nosnippet>578</a>
+<a href=#579 id=579 data-nosnippet>579</a>    <span class="kw">pub fn </span>eval_mir_constant(
+<a href=#580 id=580 data-nosnippet>580</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#581 id=581 data-nosnippet>581</a>        val: <span class="kw-2">&amp;</span><a href="../../../rustc_middle/mir/consts/enum.Const.html">mir::Const</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#582 id=582 data-nosnippet>582</a>        span: <a href="../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#583 id=583 data-nosnippet>583</a>        layout: <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#584 id=584 data-nosnippet>584</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="operand.rs.html#491-494">OpTy</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt; {
+<a href=#585 id=585 data-nosnippet>585</a>        <span class="kw">let </span>_trace = <a class="macro" href="util.rs.html#143-151">enter_trace_span!</a>(M, const_eval::eval_mir_constant, <span class="question-mark">?</span>val);
+<a href=#586 id=586 data-nosnippet>586</a>        <span class="kw">let </span>const_val = <a href="#581">val</a>.<a href="../../../rustc_middle/mir/consts/enum.Const.html#method.eval">eval</a>(<span class="kw-2">*</span><a class="self" href="#580">self</a>.tcx, <a class="self" href="#580">self</a>.typing_env, <a href="#582">span</a>).<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.map_err">map_err</a>(|err| {
+<a href=#587 id=587 data-nosnippet>587</a>                <span class="kw">if </span>M::ALL_CONSTS_ARE_PRECHECKED {
+<a href=#588 id=588 data-nosnippet>588</a>                    <span class="kw">match </span><a href="#586">err</a> {
+<a href=#589 id=589 data-nosnippet>589</a>                        <a href="../../../rustc_middle/mir/interpret/error/enum.ErrorHandled.html#variant.TooGeneric">ErrorHandled::TooGeneric</a>(..) =&gt; {},
+<a href=#590 id=590 data-nosnippet>590</a>                        <a href="../../../rustc_middle/mir/interpret/error/enum.ErrorHandled.html#variant.Reported">ErrorHandled::Reported</a>(reported, span) =&gt; {
+<a href=#591 id=591 data-nosnippet>591</a>                            <span class="kw">if </span><a href="#590">reported</a>.<a href="../../../rustc_middle/mir/interpret/error/struct.ReportedErrorInfo.html#method.is_allowed_in_infallible">is_allowed_in_infallible</a>() {
+<a href=#592 id=592 data-nosnippet>592</a>                                <span class="comment">// These errors can just sometimes happen, even when the expression
+<a href=#593 id=593 data-nosnippet>593</a>                                // is nominally "infallible", e.g. when running out of memory
+<a href=#594 id=594 data-nosnippet>594</a>                                // or when some layout could not be computed.
+<a href=#595 id=595 data-nosnippet>595</a>                            </span>} <span class="kw">else </span>{
+<a href=#596 id=596 data-nosnippet>596</a>                                <span class="comment">// Looks like the const is not captured by `required_consts`, that's bad.
+<a href=#597 id=597 data-nosnippet>597</a>                                </span><a class="macro" href="../../../rustc_middle/macro.span_bug.html">span_bug!</a>(<a href="#590">span</a>, <span class="string">"interpret const eval failure of {val:?} which is not in required_consts"</span>);
+<a href=#598 id=598 data-nosnippet>598</a>                            }
+<a href=#599 id=599 data-nosnippet>599</a>                        }
+<a href=#600 id=600 data-nosnippet>600</a>                    }
+<a href=#601 id=601 data-nosnippet>601</a>                }
+<a href=#602 id=602 data-nosnippet>602</a>                <a href="#586">err</a>.<a href="../../../rustc_middle/mir/interpret/error/enum.ErrorHandled.html#method.emit_note">emit_note</a>(<span class="kw-2">*</span><a class="self" href="#580">self</a>.tcx);
+<a href=#603 id=603 data-nosnippet>603</a>                <a href="#586">err</a>
+<a href=#604 id=604 data-nosnippet>604</a>            })<span class="question-mark">?</span>;
+<a href=#605 id=605 data-nosnippet>605</a>        <a class="self" href="#580">self</a>.<a href="operand.rs.html#860-893">const_val_to_op</a>(<a href="#586">const_val</a>, <a href="#581">val</a>.<a href="../../../rustc_middle/mir/consts/enum.Const.html#method.ty">ty</a>(), <a href="#583">layout</a>)
+<a href=#606 id=606 data-nosnippet>606</a>    }
+<a href=#607 id=607 data-nosnippet>607</a>
+<a href=#608 id=608 data-nosnippet>608</a>    <span class="attr">#[must_use]
+<a href=#609 id=609 data-nosnippet>609</a>    </span><span class="kw">pub fn </span>dump_place(<span class="kw-2">&amp;</span><span class="self">self</span>, place: <span class="kw-2">&amp;</span><a href="place.rs.html#208-211">PlaceTy</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;) -&gt; <a href="#629-632">PlacePrinter</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>, M&gt; {
+<a href=#610 id=610 data-nosnippet>610</a>        <a href="#629-632">PlacePrinter</a> { ecx: <a class="self" href="#609">self</a>, place: <span class="kw-2">*</span><a href="#609">place</a>.<a href="place.rs.html#232-234">place</a>() }
+<a href=#611 id=611 data-nosnippet>611</a>    }
+<a href=#612 id=612 data-nosnippet>612</a>
+<a href=#613 id=613 data-nosnippet>613</a>    <span class="attr">#[must_use]
+<a href=#614 id=614 data-nosnippet>614</a>    </span><span class="kw">pub fn </span>generate_stacktrace(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="stack.rs.html#212-215">FrameInfo</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#615 id=615 data-nosnippet>615</a>        <a href="stack.rs.html#323-346">Frame::generate_stacktrace_from_stack</a>(<a class="self" href="#614">self</a>.<a href="#252-254">stack</a>())
+<a href=#616 id=616 data-nosnippet>616</a>    }
+<a href=#617 id=617 data-nosnippet>617</a>
+<a href=#618 id=618 data-nosnippet>618</a>    <span class="kw">pub fn </span>adjust_nan&lt;F1, F2&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, f: F2, inputs: <span class="kw-2">&amp;</span>[F1]) -&gt; F2
+<a href=#619 id=619 data-nosnippet>619</a>    <span class="kw">where
+<a href=#620 id=620 data-nosnippet>620</a>        </span>F1: <a href="https://docs.rs/rustc_apfloat/0.2.3+llvm-462a31f5a5ab/rustc_apfloat/trait.Float.html">rustc_apfloat::Float</a> + <a href="https://docs.rs/rustc_apfloat/0.2.3+llvm-462a31f5a5ab/rustc_apfloat/trait.FloatConvert.html">rustc_apfloat::FloatConvert</a>&lt;F2&gt;,
+<a href=#621 id=621 data-nosnippet>621</a>        F2: <a href="https://docs.rs/rustc_apfloat/0.2.3+llvm-462a31f5a5ab/rustc_apfloat/trait.Float.html">rustc_apfloat::Float</a>,
+<a href=#622 id=622 data-nosnippet>622</a>    {
+<a href=#623 id=623 data-nosnippet>623</a>        <span class="kw">if </span><a href="#618">f</a>.<a href="https://docs.rs/rustc_apfloat/0.2.3+llvm-462a31f5a5ab/rustc_apfloat/trait.Float.html#tymethod.is_nan">is_nan</a>() { <a href="machine.rs.html#270-276">M::generate_nan</a>(<a class="self" href="#618">self</a>, <a href="#618">inputs</a>) } <span class="kw">else </span>{ <a href="#618">f</a> }
+<a href=#624 id=624 data-nosnippet>624</a>    }
+<a href=#625 id=625 data-nosnippet>625</a>}
+<a href=#626 id=626 data-nosnippet>626</a>
+<a href=#627 id=627 data-nosnippet>627</a><span class="attr">#[doc(hidden)]
+<a href=#628 id=628 data-nosnippet>628</a></span><span class="doccomment">/// Helper struct for the `dump_place` function.
+<a href=#629 id=629 data-nosnippet>629</a></span><span class="kw">pub struct </span>PlacePrinter&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#630 id=630 data-nosnippet>630</a>    ecx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt;,
+<a href=#631 id=631 data-nosnippet>631</a>    place: <a href="place.rs.html#183-199">Place</a>&lt;M::Provenance&gt;,
+<a href=#632 id=632 data-nosnippet>632</a>}
+<a href=#633 id=633 data-nosnippet>633</a>
+<a href=#634 id=634 data-nosnippet>634</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; <a href="https://doc.rust-lang.org/nightly/core/fmt/trait.Debug.html">std::fmt::Debug</a> <span class="kw">for </span><a href="#629-632">PlacePrinter</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, M&gt; {
+<a href=#635 id=635 data-nosnippet>635</a>    <span class="kw">fn </span>fmt(<span class="kw-2">&amp;</span><span class="self">self</span>, fmt: <span class="kw-2">&amp;mut </span><a href="https://doc.rust-lang.org/nightly/core/fmt/struct.Formatter.html">std::fmt::Formatter</a>&lt;<span class="lifetime">'_</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/nightly/core/fmt/type.Result.html">std::fmt::Result</a> {
+<a href=#636 id=636 data-nosnippet>636</a>        <span class="kw">match </span><a class="self" href="#635">self</a>.place {
+<a href=#637 id=637 data-nosnippet>637</a>            <a href="place.rs.html#198">Place::Local</a> { local, offset, locals_addr } =&gt; {
+<a href=#638 id=638 data-nosnippet>638</a>                <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.debug_assert_eq.html">debug_assert_eq!</a>(locals_addr, <span class="self">self</span>.ecx.frame().locals_addr());
+<a href=#639 id=639 data-nosnippet>639</a>                <span class="kw">let </span><span class="kw-2">mut </span>allocs = <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html#method.new">Vec::new</a>();
+<a href=#640 id=640 data-nosnippet>640</a>                <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.write.html">write!</a>(<a href="#635">fmt</a>, <span class="string">"{local:?}"</span>)<span class="question-mark">?</span>;
+<a href=#641 id=641 data-nosnippet>641</a>                <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(offset) = <a href="#637">offset</a> {
+<a href=#642 id=642 data-nosnippet>642</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.write.html">write!</a>(<a href="#635">fmt</a>, <span class="string">"+{:#x}"</span>, offset.bytes())<span class="question-mark">?</span>;
+<a href=#643 id=643 data-nosnippet>643</a>                }
+<a href=#644 id=644 data-nosnippet>644</a>                <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.write.html">write!</a>(<a href="#635">fmt</a>, <span class="string">":"</span>)<span class="question-mark">?</span>;
+<a href=#645 id=645 data-nosnippet>645</a>
+<a href=#646 id=646 data-nosnippet>646</a>                <a class="self" href="#635">self</a>.ecx.<a href="#269-271">frame</a>().locals[<a href="#637">local</a>].<a href="stack.rs.html#630-670">print</a>(<span class="kw-2">&amp;mut </span><a href="#639">allocs</a>, <a href="#635">fmt</a>)<span class="question-mark">?</span>;
+<a href=#647 id=647 data-nosnippet>647</a>
+<a href=#648 id=648 data-nosnippet>648</a>                <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.write.html">write!</a>(<a href="#635">fmt</a>, <span class="string">": {:?}"</span>, <span class="self">self</span>.ecx.dump_allocs(allocs.into_iter().flatten().collect()))
+<a href=#649 id=649 data-nosnippet>649</a>            }
+<a href=#650 id=650 data-nosnippet>650</a>            <a href="place.rs.html#185">Place::Ptr</a>(mplace) =&gt; <span class="kw">match </span><a href="#650">mplace</a>.ptr.provenance.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.and_then">and_then</a>(<a href="../../../rustc_middle/mir/interpret/pointer/trait.Provenance.html#tymethod.get_alloc_id">Provenance::get_alloc_id</a>) {
+<a href=#651 id=651 data-nosnippet>651</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(alloc_id) =&gt; {
+<a href=#652 id=652 data-nosnippet>652</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.write.html">write!</a>(<a href="#635">fmt</a>, <span class="string">"by ref {:?}: {:?}"</span>, mplace.ptr, <span class="self">self</span>.ecx.dump_alloc(alloc_id))
+<a href=#653 id=653 data-nosnippet>653</a>                }
+<a href=#654 id=654 data-nosnippet>654</a>                ptr =&gt; <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.write.html">write!</a>(<a href="#635">fmt</a>, <span class="string">" integral by ref: {ptr:?}"</span>),
+<a href=#655 id=655 data-nosnippet>655</a>            },
+<a href=#656 id=656 data-nosnippet>656</a>        }
+<a href=#657 id=657 data-nosnippet>657</a>    }
+<a href=#658 id=658 data-nosnippet>658</a>}</code></pre></div></section></main></body></html>

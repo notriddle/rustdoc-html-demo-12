@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["HomogeneousAggregate"],"mod":["reg"],"struct":["Heterogeneous"]};

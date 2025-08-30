@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CrateDepKind","DllCallingConvention","ExternCrateSource","LinkagePreference"],"struct":["CrateSource","DllImport","ExternCrate","ForeignModule","NativeLib","Untracked"],"trait":["CrateStore"],"type":["CrateStoreDyn"]};

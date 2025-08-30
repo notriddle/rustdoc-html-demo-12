@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["allocation_filter","create_ty_and_layout","try_new_indirect","try_new_scalar","try_new_slice"]};

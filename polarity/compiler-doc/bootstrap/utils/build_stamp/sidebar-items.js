@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["clear_if_dirty","codegen_backend_stamp","generate_smart_stamp_hash","librustc_stamp","libstd_stamp"],"struct":["BuildStamp"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["BottomUpFolder","BoundVarReplacer","FnMutDelegate"],"trait":["BoundVarReplacerDelegate"]};

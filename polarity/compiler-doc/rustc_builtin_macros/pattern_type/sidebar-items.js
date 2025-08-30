@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["expand","parse_pat_ty","pat_to_ty_pat","ty_pat"]};

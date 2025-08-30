@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CounterKind","ExprKind"],"struct":["BranchRegion","CodeRegion","Counter","CounterExpression","CoverageSpan","ExpansionRegion","Regions"]};

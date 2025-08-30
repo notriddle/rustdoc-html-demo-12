@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["union"],"mod":["edge_set"],"struct":["Dfa","State","Transitions","UnionIter"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CanonicalTyVarKind","Certainty"],"struct":["CanonicalParamEnvCache","OriginalQueryValues","QueryRegionConstraints","QueryResponse"],"type":["Canonical","CanonicalQueryInput","CanonicalQueryResponse","CanonicalVarKind","CanonicalVarKinds","CanonicalVarValues","QueryOutlivesConstraint"]};

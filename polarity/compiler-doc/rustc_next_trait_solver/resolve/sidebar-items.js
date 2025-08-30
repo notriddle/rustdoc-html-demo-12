@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["eager_resolve_vars"],"struct":["EagerResolver"]};

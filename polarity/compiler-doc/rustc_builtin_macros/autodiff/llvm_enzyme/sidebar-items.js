@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["assure_mut_ref","call_autodiff","expand_forward","expand_reverse","expand_with_mode","extract_item_info","first_ident","from_ast","gen_enzyme_decl","gen_turbofish_expr","has_ret","meta_item_inner_to_ts","name","outer_normal_attr","width"]};

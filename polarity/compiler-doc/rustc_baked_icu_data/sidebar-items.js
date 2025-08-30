@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["baked_data_provider"],"macro":["impl_data_provider","impl_list_and_v1","make_provider"],"mod":["supported_locales"],"struct":["BakedDataProvider"]};

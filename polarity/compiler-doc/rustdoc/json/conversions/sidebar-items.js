@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["format_integer_type","from_clean_function","from_clean_item","from_clean_static","maybe_from_hir_attr","other_attr","repr_attr"],"trait":["FromClean","IntoJson"]};

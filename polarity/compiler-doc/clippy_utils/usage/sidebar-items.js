@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["contains_return_break_continue_macro","contains_todo_unimplement_macro","is_potentially_local_place","is_potentially_mutated","is_todo_unimplemented_macro","is_todo_unimplemented_stub","local_used_after_expr","local_used_in","mutated_variables"],"struct":["BindingUsageFinder","MutVarsDelegate","ParamBindingIdCollector"]};

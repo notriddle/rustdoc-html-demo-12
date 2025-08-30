@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["try_visit","walk_visitable_list"],"struct":["FoundEscapingVars","FoundFlags","HasErrorVisitor","HasEscapingVarsVisitor","HasTypeFlagsVisitor"],"trait":["Flags","TypeSuperVisitable","TypeVisitable","TypeVisitableExt","TypeVisitor","VisitorResult"]};

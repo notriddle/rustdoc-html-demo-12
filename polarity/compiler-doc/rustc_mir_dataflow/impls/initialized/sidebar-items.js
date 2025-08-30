@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["EverInitializedPlaces","MaybeInitializedPlaces","MaybePlacesSwitchIntData","MaybeUninitializedPlaces"],"type":["EverInitializedPlacesDomain","MaybeUninitializedPlacesDomain"]};

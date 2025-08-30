@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BracketType","ResolveTemplateError"],"struct":["ConfigRelativePath","PathAndArgs"]};

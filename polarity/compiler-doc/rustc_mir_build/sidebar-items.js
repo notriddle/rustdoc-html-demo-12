@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["provide"],"mod":["builder","check_tail_calls","check_unsafety","errors","thir"],"static":["DEFAULT_LOCALE_RESOURCE"]};

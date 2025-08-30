@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["escape_bytes","escape_single_byte","escape_single_char"],"struct":["EscapeOptions"]};

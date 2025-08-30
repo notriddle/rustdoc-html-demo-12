@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Value"],"fn":["compute_replacement","fully_replaceable_locals","move_to_copy_pointers","propagate_ssa"],"struct":["ReferencePropagation","Replacer"]};

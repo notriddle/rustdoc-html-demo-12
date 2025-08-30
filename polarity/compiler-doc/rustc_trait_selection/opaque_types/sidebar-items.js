@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["NonDefiningUseReason"],"fn":["opaque_type_has_defining_use_args","report_item_does_not_constrain_error"],"struct":["LazyOpaqueTyEnv"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["glb","solve_constraints"],"struct":["SolveContext"]};

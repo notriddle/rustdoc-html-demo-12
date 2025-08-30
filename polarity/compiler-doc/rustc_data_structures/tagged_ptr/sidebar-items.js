@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["bits_for","bits_for_tags"],"struct":["TaggedRef"],"trait":["Tag"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ALLOWED_TARGETS"],"fn":["insert_value_into_option_or_error","parse_stability","parse_unstability"],"macro":["reject_outside_std"],"struct":["BodyStabilityParser","ConstStabilityIndirectParser","ConstStabilityParser","StabilityParser"]};

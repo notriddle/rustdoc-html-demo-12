@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["set_inline","set_loose_types","set_print","set_print_activity","set_print_perf","set_print_type","set_print_type_fun","set_rust_rules","set_strict_aliasing"]};

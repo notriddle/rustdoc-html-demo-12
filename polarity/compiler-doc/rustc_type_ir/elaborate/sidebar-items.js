@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ElaborateSized","Filter"],"fn":["elaborate","elaborate_component_to_clause","elaborate_outlives_assumptions","supertrait_def_ids","supertraits"],"struct":["ClauseWithSupertraitSpan","Elaborator","FilterToTraits"],"trait":["Elaboratable"]};

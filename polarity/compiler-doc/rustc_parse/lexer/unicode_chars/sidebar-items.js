@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ASCII_ARRAY"],"fn":["check_for_substitution","peek_delimited"],"static":["UNICODE_ARRAY"]};

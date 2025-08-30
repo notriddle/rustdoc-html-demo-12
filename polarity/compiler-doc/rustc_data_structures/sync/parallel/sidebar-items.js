@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["broadcast","join","par_for_each_in","par_map","par_slice","parallel_guard","scope","serial_join","spawn","try_par_for_each_in"],"struct":["ParallelGuard"]};

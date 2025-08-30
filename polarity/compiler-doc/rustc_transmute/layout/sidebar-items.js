@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["dfa","rustc","tree"],"struct":["Byte","Reference","Uninhabited"],"trait":["Def","Region","Type"]};

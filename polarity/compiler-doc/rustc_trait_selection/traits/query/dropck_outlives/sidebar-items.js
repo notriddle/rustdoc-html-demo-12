@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["compute_dropck_outlives_inner","compute_dropck_outlives_with_errors","dtorck_constraint_for_ty_inner","trivial_dropck_outlives"]};

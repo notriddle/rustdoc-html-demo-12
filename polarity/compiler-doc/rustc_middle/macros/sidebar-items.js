@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["TrivialLiftImpls","TrivialTypeTraversalAndLiftImpls","TrivialTypeTraversalImpls"]};

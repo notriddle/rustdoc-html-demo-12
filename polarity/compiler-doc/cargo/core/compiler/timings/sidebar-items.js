@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CODEGEN_SECTION_NAME","FRONTEND_SECTION_NAME"],"enum":["AggregatedSections","SectionTimingEvent"],"fn":["render_rustc_info"],"static":["HTML_CANVAS","HTML_TMPL"],"struct":["CompilationSection","Concurrency","SectionData","SectionTiming","Timings","UnitTime"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MACRO_USE_ALLOWED_TARGETS","MACRO_USE_TEMPLATE"],"struct":["AllowInternalUnsafeParser","MacroEscapeParser","MacroUseParser"]};

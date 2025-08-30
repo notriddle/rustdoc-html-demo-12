@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["DiagSymbolList","ElidedLifetimeInPathSubdiag","ExpectedLifetimeParameter","IndicateAnonymousLifetime","SingleLabelManySpans"]};

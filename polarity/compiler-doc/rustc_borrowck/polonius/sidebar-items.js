@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ConstraintDirection"],"mod":["constraints","dump","legacy","liveness_constraints","loan_liveness","typeck_constraints"],"struct":["PoloniusContext","PoloniusDiagnosticsContext","PoloniusLivenessContext"],"type":["LiveLoans"]};

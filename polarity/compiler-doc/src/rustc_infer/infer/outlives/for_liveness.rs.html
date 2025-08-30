@@ -1,0 +1,109 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_infer/src/infer/outlives/for_liveness.rs`."><title>for_liveness.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_infer" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-38ac1f3e.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_infer/infer/outlives/</div>for_liveness.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>rustc_middle::ty::{
+<a href=#2 id=2 data-nosnippet>2</a>    <a class="self" href="../../../../rustc_middle/ty/index.html">self</a>, <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>, <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>, <a href="../../../../rustc_infer/infer/canonical/ir/trait.TypeSuperVisitable.html">TypeSuperVisitable</a>, <a href="../../../../rustc_infer/infer/canonical/ir/trait.TypeVisitable.html">TypeVisitable</a>, <a href="../../../../rustc_infer/infer/canonical/ir/trait.TypeVisitableExt.html">TypeVisitableExt</a>, <a href="../../../../rustc_infer/infer/canonical/ir/trait.TypeVisitor.html">TypeVisitor</a>,
+<a href=#3 id=3 data-nosnippet>3</a>};
+<a href=#4 id=4 data-nosnippet>4</a>
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="mod.rs.html#18"><span class="kw">crate</span>::infer::outlives::test_type_match</a>;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="../region_constraints/mod.rs.html#234-240"><span class="kw">crate</span>::infer::region_constraints::VerifyIfEq</a>;
+<a href=#7 id=7 data-nosnippet>7</a>
+<a href=#8 id=8 data-nosnippet>8</a><span class="doccomment">/// Visits free regions in the type that are relevant for liveness computation.
+<a href=#9 id=9 data-nosnippet>9</a>/// These regions are passed to `OP`.
+<a href=#10 id=10 data-nosnippet>10</a>///
+<a href=#11 id=11 data-nosnippet>11</a>/// Specifically, we visit all of the regions of types recursively, except if
+<a href=#12 id=12 data-nosnippet>12</a>/// the type is an alias, we look at the outlives bounds in the param-env
+<a href=#13 id=13 data-nosnippet>13</a>/// and alias's item bounds. If there is a unique outlives bound, then visit
+<a href=#14 id=14 data-nosnippet>14</a>/// that instead. If there is not a unique but there is a `'static` outlives
+<a href=#15 id=15 data-nosnippet>15</a>/// bound, then don't visit anything. Otherwise, walk through the opaque's
+<a href=#16 id=16 data-nosnippet>16</a>/// regions structurally.
+<a href=#17 id=17 data-nosnippet>17</a></span><span class="kw">pub struct </span><a href="../../../../rustc_infer/infer/outlives/for_liveness/struct.FreeRegionsVisitor.html">FreeRegionsVisitor</a>&lt;<span class="lifetime">'tcx</span>, OP: <a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnMut.html">FnMut</a>(<a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;)&gt; {
+<a href=#18 id=18 data-nosnippet>18</a>    <span class="kw">pub </span>tcx: <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#19 id=19 data-nosnippet>19</a>    <span class="kw">pub </span>param_env: <a href="../../../../rustc_middle/ty/struct.ParamEnv.html">ty::ParamEnv</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#20 id=20 data-nosnippet>20</a>    <span class="kw">pub </span>op: OP,
+<a href=#21 id=21 data-nosnippet>21</a>}
+<a href=#22 id=22 data-nosnippet>22</a>
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, OP&gt; <a href="../../../../rustc_infer/infer/canonical/ir/trait.TypeVisitor.html">TypeVisitor</a>&lt;<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span><a href="#17-21">FreeRegionsVisitor</a>&lt;<span class="lifetime">'tcx</span>, OP&gt;
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">where
+<a href=#25 id=25 data-nosnippet>25</a>    </span>OP: <a href="https://doc.rust-lang.org/nightly/core/ops/function/trait.FnMut.html">FnMut</a>(<a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;),
+<a href=#26 id=26 data-nosnippet>26</a>{
+<a href=#27 id=27 data-nosnippet>27</a>    <span class="kw">fn </span>visit_region(<span class="kw-2">&amp;mut </span><span class="self">self</span>, r: <a href="../../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'tcx</span>&gt;) {
+<a href=#28 id=28 data-nosnippet>28</a>        <span class="kw">match </span><a href="#27">r</a>.<a href="../../../../rustc_middle/ty/region/struct.Region.html#method.kind">kind</a>() {
+<a href=#29 id=29 data-nosnippet>29</a>            <span class="comment">// ignore bound regions, keep visiting
+<a href=#30 id=30 data-nosnippet>30</a>            </span><a href="../../../../rustc_infer/infer/canonical/ir/enum.RegionKind.html">ty::ReBound</a>(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; {}
+<a href=#31 id=31 data-nosnippet>31</a>            <span class="kw">_ </span>=&gt; (<a class="self" href="#27">self</a>.op)(<a href="#27">r</a>),
+<a href=#32 id=32 data-nosnippet>32</a>        }
+<a href=#33 id=33 data-nosnippet>33</a>    }
+<a href=#34 id=34 data-nosnippet>34</a>
+<a href=#35 id=35 data-nosnippet>35</a>    <span class="kw">fn </span>visit_ty(<span class="kw-2">&amp;mut </span><span class="self">self</span>, ty: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;) {
+<a href=#36 id=36 data-nosnippet>36</a>        <span class="comment">// We're only interested in types involving regions
+<a href=#37 id=37 data-nosnippet>37</a>        </span><span class="kw">if </span>!<a href="#35">ty</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.flags">flags</a>().intersects(ty::TypeFlags::HAS_FREE_REGIONS) {
+<a href=#38 id=38 data-nosnippet>38</a>            <span class="kw">return</span>;
+<a href=#39 id=39 data-nosnippet>39</a>        }
+<a href=#40 id=40 data-nosnippet>40</a>
+<a href=#41 id=41 data-nosnippet>41</a>        <span class="comment">// FIXME: Don't consider alias bounds on types that have escaping bound
+<a href=#42 id=42 data-nosnippet>42</a>        // vars. See #117455.
+<a href=#43 id=43 data-nosnippet>43</a>        </span><span class="kw">if </span><a href="#35">ty</a>.<a href="../../../../rustc_infer/infer/canonical/ir/trait.TypeVisitableExt.html">has_escaping_bound_vars</a>() {
+<a href=#44 id=44 data-nosnippet>44</a>            <span class="kw">return </span><a href="#35">ty</a>.<a href="../../../../rustc_infer/infer/canonical/ir/trait.TypeSuperVisitable.html">super_visit_with</a>(<a class="self" href="#35">self</a>);
+<a href=#45 id=45 data-nosnippet>45</a>        }
+<a href=#46 id=46 data-nosnippet>46</a>
+<a href=#47 id=47 data-nosnippet>47</a>        <span class="kw">match </span><span class="kw-2">*</span><a href="#35">ty</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() {
+<a href=#48 id=48 data-nosnippet>48</a>            <span class="comment">// We can prove that an alias is live two ways:
+<a href=#49 id=49 data-nosnippet>49</a>            // 1. All the components are live.
+<a href=#50 id=50 data-nosnippet>50</a>            //
+<a href=#51 id=51 data-nosnippet>51</a>            // 2. There is a known outlives bound or where-clause, and that
+<a href=#52 id=52 data-nosnippet>52</a>            //    region is live.
+<a href=#53 id=53 data-nosnippet>53</a>            //
+<a href=#54 id=54 data-nosnippet>54</a>            // We search through the item bounds and where clauses for
+<a href=#55 id=55 data-nosnippet>55</a>            // either `'static` or a unique outlives region, and if one is
+<a href=#56 id=56 data-nosnippet>56</a>            // found, we just need to prove that that region is still live.
+<a href=#57 id=57 data-nosnippet>57</a>            // If one is not found, then we continue to walk through the alias.
+<a href=#58 id=58 data-nosnippet>58</a>            </span><a href="../../../../rustc_infer/infer/canonical/ir/enum.TyKind.html">ty::Alias</a>(kind, ty::AliasTy { def_id, args, .. }) =&gt; {
+<a href=#59 id=59 data-nosnippet>59</a>                <span class="kw">let </span>tcx = <a class="self" href="#35">self</a>.tcx;
+<a href=#60 id=60 data-nosnippet>60</a>                <span class="kw">let </span>param_env = <a class="self" href="#35">self</a>.param_env;
+<a href=#61 id=61 data-nosnippet>61</a>                <span class="kw">let </span>outlives_bounds: <a href="https://doc.rust-lang.org/nightly/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw">_</span>&gt; = <a href="#59">tcx</a>
+<a href=#62 id=62 data-nosnippet>62</a>                    .<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.item_bounds">item_bounds</a>(<a href="#58">def_id</a>)
+<a href=#63 id=63 data-nosnippet>63</a>                    .<a href="../../../../rustc_type_ir/binder/struct.EarlyBinder.html#method.iter_instantiated">iter_instantiated</a>(<a href="#59">tcx</a>, <a href="#58">args</a>)
+<a href=#64 id=64 data-nosnippet>64</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.chain">chain</a>(<a href="#60">param_env</a>.<a href="../../../../rustc_middle/ty/struct.ParamEnv.html#method.caller_bounds">caller_bounds</a>())
+<a href=#65 id=65 data-nosnippet>65</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter_map">filter_map</a>(|clause| {
+<a href=#66 id=66 data-nosnippet>66</a>                        <span class="kw">let </span>outlives = <a href="#65">clause</a>.<a href="../../../../rustc_middle/ty/predicate/struct.Clause.html#method.as_type_outlives_clause">as_type_outlives_clause</a>()<span class="question-mark">?</span>;
+<a href=#67 id=67 data-nosnippet>67</a>                        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(outlives) = <a href="#66">outlives</a>.<a href="../../../../rustc_type_ir/binder/struct.Binder.html#method.no_bound_vars">no_bound_vars</a>()
+<a href=#68 id=68 data-nosnippet>68</a>                            &amp;&amp; <a href="#67">outlives</a>.<span class="number">0 </span>== <a href="#35">ty</a>
+<a href=#69 id=69 data-nosnippet>69</a>                        {
+<a href=#70 id=70 data-nosnippet>70</a>                            <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#67">outlives</a>.<span class="number">1</span>)
+<a href=#71 id=71 data-nosnippet>71</a>                        } <span class="kw">else </span>{
+<a href=#72 id=72 data-nosnippet>72</a>                            <a href="test_type_match.rs.html#37-69">test_type_match::extract_verify_if_eq</a>(
+<a href=#73 id=73 data-nosnippet>73</a>                                <a href="#59">tcx</a>,
+<a href=#74 id=74 data-nosnippet>74</a>                                <span class="kw-2">&amp;</span><a href="#66">outlives</a>.<a href="../../../../rustc_type_ir/binder/struct.Binder.html#method.map_bound">map_bound</a>(|<a href="../../../../rustc_infer/infer/canonical/ir/struct.OutlivesPredicate.html">ty::OutlivesPredicate</a>(ty, bound)| {
+<a href=#75 id=75 data-nosnippet>75</a>                                    <a href="../region_constraints/mod.rs.html#234-240">VerifyIfEq</a> { <a href="#74">ty</a>, <a href="#74">bound</a> }
+<a href=#76 id=76 data-nosnippet>76</a>                                }),
+<a href=#77 id=77 data-nosnippet>77</a>                                <a href="#35">ty</a>,
+<a href=#78 id=78 data-nosnippet>78</a>                            )
+<a href=#79 id=79 data-nosnippet>79</a>                        }
+<a href=#80 id=80 data-nosnippet>80</a>                    })
+<a href=#81 id=81 data-nosnippet>81</a>                    .<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#82 id=82 data-nosnippet>82</a>                <span class="comment">// If we find `'static`, then we know the alias doesn't capture *any* regions.
+<a href=#83 id=83 data-nosnippet>83</a>                // Otherwise, all of the outlives regions should be equal -- if they're not,
+<a href=#84 id=84 data-nosnippet>84</a>                // we don't really know how to proceed, so we continue recursing through the
+<a href=#85 id=85 data-nosnippet>85</a>                // alias.
+<a href=#86 id=86 data-nosnippet>86</a>                </span><span class="kw">if </span><a href="#61">outlives_bounds</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.contains">contains</a>(<span class="kw-2">&amp;</span><a href="#59">tcx</a>.lifetimes.re_static) {
+<a href=#87 id=87 data-nosnippet>87</a>                    <span class="comment">// no
+<a href=#88 id=88 data-nosnippet>88</a>                </span>} <span class="kw">else if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(r) = <a href="#61">outlives_bounds</a>.<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.first">first</a>()
+<a href=#89 id=89 data-nosnippet>89</a>                    &amp;&amp; <a href="#61">outlives_bounds</a>[<span class="number">1</span>..].<a href="https://doc.rust-lang.org/nightly/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.all">all</a>(|other_r| <a href="#89">other_r</a> == <a href="#88">r</a>)
+<a href=#90 id=90 data-nosnippet>90</a>                {
+<a href=#91 id=91 data-nosnippet>91</a>                    <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert.html">assert!</a>(r.type_flags().intersects(ty::TypeFlags::HAS_FREE_REGIONS));
+<a href=#92 id=92 data-nosnippet>92</a>                    <a href="#88">r</a>.<a href="../../../../rustc_infer/infer/canonical/ir/trait.TypeVisitable.html">visit_with</a>(<a class="self" href="#35">self</a>);
+<a href=#93 id=93 data-nosnippet>93</a>                } <span class="kw">else </span>{
+<a href=#94 id=94 data-nosnippet>94</a>                    <span class="comment">// Skip lifetime parameters that are not captured, since they do
+<a href=#95 id=95 data-nosnippet>95</a>                    // not need to be live.
+<a href=#96 id=96 data-nosnippet>96</a>                    </span><span class="kw">let </span>variances = <a href="#59">tcx</a>.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.opt_alias_variances">opt_alias_variances</a>(<a href="#58">kind</a>, <a href="#58">def_id</a>);
+<a href=#97 id=97 data-nosnippet>97</a>
+<a href=#98 id=98 data-nosnippet>98</a>                    <span class="kw">for </span>(idx, s) <span class="kw">in </span>args.iter().enumerate() {
+<a href=#99 id=99 data-nosnippet>99</a>                        <span class="kw">if </span>variances.map(|variances| variances[idx]) != <span class="prelude-val">Some</span>(ty::Bivariant) {
+<a href=#100 id=100 data-nosnippet>100</a>                            s.visit_with(<span class="self">self</span>);
+<a href=#101 id=101 data-nosnippet>101</a>                        }
+<a href=#102 id=102 data-nosnippet>102</a>                    }
+<a href=#103 id=103 data-nosnippet>103</a>                }
+<a href=#104 id=104 data-nosnippet>104</a>            }
+<a href=#105 id=105 data-nosnippet>105</a>
+<a href=#106 id=106 data-nosnippet>106</a>            <span class="kw">_ </span>=&gt; <a href="#35">ty</a>.<a href="../../../../rustc_infer/infer/canonical/ir/trait.TypeSuperVisitable.html">super_visit_with</a>(<a class="self" href="#35">self</a>),
+<a href=#107 id=107 data-nosnippet>107</a>        }
+<a href=#108 id=108 data-nosnippet>108</a>    }
+<a href=#109 id=109 data-nosnippet>109</a>}</code></pre></div></section></main></body></html>

@@ -1,0 +1,70 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_data_structures/src/steal.rs`."><title>steal.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_data_structures" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-38ac1f3e.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_data_structures/</div>steal.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-2"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><span class="kw">crate</span>::stable_hasher::{<a href="stable_hasher.rs.html#44-46">HashStable</a>, <a href="../../rustc_data_structures/stable_hasher/type.StableHasher.html">StableHasher</a>};
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span><span class="kw">crate</span>::sync::{<a href="../../rustc_data_structures/sync/type.MappedReadGuard.html">MappedReadGuard</a>, <a href="../../rustc_data_structures/sync/type.ReadGuard.html">ReadGuard</a>, <a href="sync.rs.html#161">RwLock</a>};
+<a href=#3 id=3 data-nosnippet>3</a>
+<a href=#4 id=4 data-nosnippet>4</a><span class="doccomment">/// The `Steal` struct is intended to used as the value for a query.
+<a href=#5 id=5 data-nosnippet>5</a>/// Specifically, we sometimes have queries (*cough* MIR *cough*)
+<a href=#6 id=6 data-nosnippet>6</a>/// where we create a large, complex value that we want to iteratively
+<a href=#7 id=7 data-nosnippet>7</a>/// update (e.g., optimize). We could clone the value for each
+<a href=#8 id=8 data-nosnippet>8</a>/// optimization, but that'd be expensive. And yet we don't just want
+<a href=#9 id=9 data-nosnippet>9</a>/// to mutate it in place, because that would spoil the idea that
+<a href=#10 id=10 data-nosnippet>10</a>/// queries are these pure functions that produce an immutable value
+<a href=#11 id=11 data-nosnippet>11</a>/// (since if you did the query twice, you could observe the mutations).
+<a href=#12 id=12 data-nosnippet>12</a>/// So instead we have the query produce a `&amp;'tcx Steal&lt;mir::Body&lt;'tcx&gt;&gt;`
+<a href=#13 id=13 data-nosnippet>13</a>/// (to be very specific). Now we can read from this
+<a href=#14 id=14 data-nosnippet>14</a>/// as much as we want (using `borrow()`), but you can also
+<a href=#15 id=15 data-nosnippet>15</a>/// `steal()`. Once you steal, any further attempt to read will panic.
+<a href=#16 id=16 data-nosnippet>16</a>/// Therefore, we know that -- assuming no ICE -- nobody is observing
+<a href=#17 id=17 data-nosnippet>17</a>/// the fact that the MIR was updated.
+<a href=#18 id=18 data-nosnippet>18</a>///
+<a href=#19 id=19 data-nosnippet>19</a>/// Obviously, whenever you have a query that yields a `Steal` value,
+<a href=#20 id=20 data-nosnippet>20</a>/// you must treat it with caution, and make sure that you know that
+<a href=#21 id=21 data-nosnippet>21</a>/// -- once the value is stolen -- it will never be read from again.
+<a href=#22 id=22 data-nosnippet>22</a></span><span class="comment">//
+<a href=#23 id=23 data-nosnippet>23</a>// FIXME(#41710): what is the best way to model linear queries?
+<a href=#24 id=24 data-nosnippet>24</a></span><span class="attr">#[derive(Debug)]
+<a href=#25 id=25 data-nosnippet>25</a></span><span class="kw">pub struct </span><a href="../../rustc_data_structures/steal/struct.Steal.html">Steal</a>&lt;T&gt; {
+<a href=#26 id=26 data-nosnippet>26</a>    value: <a href="sync.rs.html#161">RwLock</a>&lt;<a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;T&gt;&gt;,
+<a href=#27 id=27 data-nosnippet>27</a>}
+<a href=#28 id=28 data-nosnippet>28</a>
+<a href=#29 id=29 data-nosnippet>29</a><span class="kw">impl</span>&lt;T&gt; <a href="#25-27">Steal</a>&lt;T&gt; {
+<a href=#30 id=30 data-nosnippet>30</a>    <span class="kw">pub fn </span>new(value: T) -&gt; <span class="self">Self </span>{
+<a href=#31 id=31 data-nosnippet>31</a>        <a href="#25-27">Steal</a> { value: <a href="sync.rs.html#165-167">RwLock::new</a>(<a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#30">value</a>)) }
+<a href=#32 id=32 data-nosnippet>32</a>    }
+<a href=#33 id=33 data-nosnippet>33</a>
+<a href=#34 id=34 data-nosnippet>34</a>    <span class="attr">#[track_caller]
+<a href=#35 id=35 data-nosnippet>35</a>    </span><span class="kw">pub fn </span>borrow(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="../../rustc_data_structures/sync/type.MappedReadGuard.html">MappedReadGuard</a>&lt;<span class="lifetime">'_</span>, T&gt; {
+<a href=#36 id=36 data-nosnippet>36</a>        <span class="kw">let </span>borrow = <a class="self" href="#35">self</a>.value.<a href="sync.rs.html#204-206">borrow</a>();
+<a href=#37 id=37 data-nosnippet>37</a>        <span class="kw">if </span><a href="#36">borrow</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_none">is_none</a>() {
+<a href=#38 id=38 data-nosnippet>38</a>            <a class="macro" href="https://doc.rust-lang.org/nightly/std/macro.panic.html">panic!</a>(<span class="string">"attempted to read from stolen value: {}"</span>, std::any::type_name::&lt;T&gt;());
+<a href=#39 id=39 data-nosnippet>39</a>        }
+<a href=#40 id=40 data-nosnippet>40</a>        <a href="https://docs.rs/lock_api/0.4.13/lock_api/rwlock/struct.RwLockReadGuard.html#method.map">ReadGuard::map</a>(<a href="#36">borrow</a>, |opt| <a href="#40">opt</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.as_ref">as_ref</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.unwrap">unwrap</a>())
+<a href=#41 id=41 data-nosnippet>41</a>    }
+<a href=#42 id=42 data-nosnippet>42</a>
+<a href=#43 id=43 data-nosnippet>43</a>    <span class="attr">#[track_caller]
+<a href=#44 id=44 data-nosnippet>44</a>    </span><span class="kw">pub fn </span>get_mut(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>T {
+<a href=#45 id=45 data-nosnippet>45</a>        <a class="self" href="#44">self</a>.value.<a href="sync.rs.html#175-177">get_mut</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.as_mut">as_mut</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.expect">expect</a>(<span class="string">"attempt to read from stolen value"</span>)
+<a href=#46 id=46 data-nosnippet>46</a>    }
+<a href=#47 id=47 data-nosnippet>47</a>
+<a href=#48 id=48 data-nosnippet>48</a>    <span class="attr">#[track_caller]
+<a href=#49 id=49 data-nosnippet>49</a>    </span><span class="kw">pub fn </span>steal(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; T {
+<a href=#50 id=50 data-nosnippet>50</a>        <span class="kw">let </span>value_ref = <span class="kw-2">&amp;mut *</span><a class="self" href="#49">self</a>.value.<a href="sync.rs.html#189-191">try_write</a>().<a href="https://doc.rust-lang.org/nightly/core/result/enum.Result.html#method.expect">expect</a>(<span class="string">"stealing value which is locked"</span>);
+<a href=#51 id=51 data-nosnippet>51</a>        <span class="kw">let </span>value = <a href="#50">value_ref</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.take">take</a>();
+<a href=#52 id=52 data-nosnippet>52</a>        <a href="#51">value</a>.<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.expect">expect</a>(<span class="string">"attempt to steal from stolen value"</span>)
+<a href=#53 id=53 data-nosnippet>53</a>    }
+<a href=#54 id=54 data-nosnippet>54</a>
+<a href=#55 id=55 data-nosnippet>55</a>    <span class="doccomment">/// Writers of rustc drivers often encounter stealing issues. This function makes it possible to
+<a href=#56 id=56 data-nosnippet>56</a>    /// handle these errors gracefully.
+<a href=#57 id=57 data-nosnippet>57</a>    ///
+<a href=#58 id=58 data-nosnippet>58</a>    /// This should not be used within rustc as it leaks information not tracked
+<a href=#59 id=59 data-nosnippet>59</a>    /// by the query system, breaking incremental compilation.
+<a href=#60 id=60 data-nosnippet>60</a>    </span><span class="attr">#[rustc_lint_untracked_query_information]
+<a href=#61 id=61 data-nosnippet>61</a>    </span><span class="kw">pub fn </span>is_stolen(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#62 id=62 data-nosnippet>62</a>        <a class="self" href="#61">self</a>.value.<a href="sync.rs.html#204-206">borrow</a>().<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_none">is_none</a>()
+<a href=#63 id=63 data-nosnippet>63</a>    }
+<a href=#64 id=64 data-nosnippet>64</a>}
+<a href=#65 id=65 data-nosnippet>65</a>
+<a href=#66 id=66 data-nosnippet>66</a><span class="kw">impl</span>&lt;CTX, T: <a href="stable_hasher.rs.html#44-46">HashStable</a>&lt;CTX&gt;&gt; <a href="stable_hasher.rs.html#44-46">HashStable</a>&lt;CTX&gt; <span class="kw">for </span><a href="#25-27">Steal</a>&lt;T&gt; {
+<a href=#67 id=67 data-nosnippet>67</a>    <span class="kw">fn </span>hash_stable(<span class="kw-2">&amp;</span><span class="self">self</span>, hcx: <span class="kw-2">&amp;mut </span>CTX, hasher: <span class="kw-2">&amp;mut </span><a href="../../rustc_data_structures/stable_hasher/type.StableHasher.html">StableHasher</a>) {
+<a href=#68 id=68 data-nosnippet>68</a>        <a class="self" href="#67">self</a>.<a href="#35-41">borrow</a>().<a href="stable_hasher.rs.html#45">hash_stable</a>(<a href="#67">hcx</a>, <a href="#67">hasher</a>);
+<a href=#69 id=69 data-nosnippet>69</a>    }
+<a href=#70 id=70 data-nosnippet>70</a>}</code></pre></div></section></main></body></html>

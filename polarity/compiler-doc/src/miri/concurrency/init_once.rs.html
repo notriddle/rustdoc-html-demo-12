@@ -1,0 +1,157 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/concurrency/init_once.rs`."><title>init_once.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-38ac1f3e.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/concurrency/</div>init_once.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/core/cell/struct.RefCell.html">std::cell::RefCell</a>;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/alloc/collections/vec_deque/struct.VecDeque.html">std::collections::VecDeque</a>;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span><a href="https://doc.rust-lang.org/nightly/alloc/rc/struct.Rc.html">std::rc::Rc</a>;
+<a href=#4 id=4 data-nosnippet>4</a>
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="thread.rs.html#54"><span class="kw">super</span>::thread::DynUnblockCallback</a>;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="vector_clock.rs.html#137"><span class="kw">super</span>::vector_clock::VClock</a>;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use crate</span>::<span class="kw-2">*</span>;
+<a href=#8 id=8 data-nosnippet>8</a>
+<a href=#9 id=9 data-nosnippet>9</a><span class="attr">#[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
+<a href=#10 id=10 data-nosnippet>10</a></span><span class="doccomment">/// The current status of a one time initialization.
+<a href=#11 id=11 data-nosnippet>11</a></span><span class="kw">pub enum </span><a href="../../../miri/concurrency/init_once/enum.InitOnceStatus.html">InitOnceStatus</a> {
+<a href=#12 id=12 data-nosnippet>12</a>    <span class="attr">#[default]
+<a href=#13 id=13 data-nosnippet>13</a>    </span>Uninitialized,
+<a href=#14 id=14 data-nosnippet>14</a>    Begun,
+<a href=#15 id=15 data-nosnippet>15</a>    Complete,
+<a href=#16 id=16 data-nosnippet>16</a>}
+<a href=#17 id=17 data-nosnippet>17</a>
+<a href=#18 id=18 data-nosnippet>18</a><span class="doccomment">/// The one time initialization state.
+<a href=#19 id=19 data-nosnippet>19</a></span><span class="attr">#[derive(Default, Debug)]
+<a href=#20 id=20 data-nosnippet>20</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span><a href="../../../miri/concurrency/init_once/struct.InitOnce.html">InitOnce</a> {
+<a href=#21 id=21 data-nosnippet>21</a>    status: <a href="#11-16">InitOnceStatus</a>,
+<a href=#22 id=22 data-nosnippet>22</a>    waiters: <a href="https://doc.rust-lang.org/nightly/alloc/collections/vec_deque/struct.VecDeque.html">VecDeque</a>&lt;<a href="thread.rs.html#58">ThreadId</a>&gt;,
+<a href=#23 id=23 data-nosnippet>23</a>    clock: <a href="vector_clock.rs.html#137">VClock</a>,
+<a href=#24 id=24 data-nosnippet>24</a>}
+<a href=#25 id=25 data-nosnippet>25</a>
+<a href=#26 id=26 data-nosnippet>26</a><span class="kw">impl </span><a href="#20-24">InitOnce</a> {
+<a href=#27 id=27 data-nosnippet>27</a>    <span class="attr">#[inline]
+<a href=#28 id=28 data-nosnippet>28</a>    </span><span class="kw">pub fn </span>status(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="#11-16">InitOnceStatus</a> {
+<a href=#29 id=29 data-nosnippet>29</a>        <a class="self" href="#28">self</a>.status
+<a href=#30 id=30 data-nosnippet>30</a>    }
+<a href=#31 id=31 data-nosnippet>31</a>
+<a href=#32 id=32 data-nosnippet>32</a>    <span class="doccomment">/// Begin initializing this InitOnce. Must only be called after checking that it is currently
+<a href=#33 id=33 data-nosnippet>33</a>    /// uninitialized.
+<a href=#34 id=34 data-nosnippet>34</a>    </span><span class="attr">#[inline]
+<a href=#35 id=35 data-nosnippet>35</a>    </span><span class="kw">pub fn </span>begin(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#36 id=36 data-nosnippet>36</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(
+<a href=#37 id=37 data-nosnippet>37</a>            <span class="self">self</span>.status(),
+<a href=#38 id=38 data-nosnippet>38</a>            InitOnceStatus::Uninitialized,
+<a href=#39 id=39 data-nosnippet>39</a>            <span class="string">"beginning already begun or complete init once"
+<a href=#40 id=40 data-nosnippet>40</a>        </span>);
+<a href=#41 id=41 data-nosnippet>41</a>        <a class="self" href="#35">self</a>.status = <a href="#14">InitOnceStatus::Begun</a>;
+<a href=#42 id=42 data-nosnippet>42</a>    }
+<a href=#43 id=43 data-nosnippet>43</a>}
+<a href=#44 id=44 data-nosnippet>44</a>
+<a href=#45 id=45 data-nosnippet>45</a><span class="attr">#[derive(Default, Clone, Debug)]
+<a href=#46 id=46 data-nosnippet>46</a></span><span class="kw">pub struct </span><a href="../../../miri/struct.InitOnceRef.html">InitOnceRef</a>(<a href="https://doc.rust-lang.org/nightly/alloc/rc/struct.Rc.html">Rc</a>&lt;<a href="https://doc.rust-lang.org/nightly/core/cell/struct.RefCell.html">RefCell</a>&lt;<a href="#20-24">InitOnce</a>&gt;&gt;);
+<a href=#47 id=47 data-nosnippet>47</a>
+<a href=#48 id=48 data-nosnippet>48</a><span class="kw">impl </span><a href="#46">InitOnceRef</a> {
+<a href=#49 id=49 data-nosnippet>49</a>    <span class="kw">pub fn </span>new() -&gt; <span class="self">Self </span>{
+<a href=#50 id=50 data-nosnippet>50</a>        <span class="self">Self</span>(<a href="https://doc.rust-lang.org/nightly/core/default/trait.Default.html#tymethod.default">Default::default</a>())
+<a href=#51 id=51 data-nosnippet>51</a>    }
+<a href=#52 id=52 data-nosnippet>52</a>
+<a href=#53 id=53 data-nosnippet>53</a>    <span class="kw">pub fn </span>status(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="#11-16">InitOnceStatus</a> {
+<a href=#54 id=54 data-nosnippet>54</a>        <a class="self" href="#53">self</a>.<span class="number">0</span>.<a href="https://doc.rust-lang.org/nightly/core/cell/struct.RefCell.html#method.borrow">borrow</a>().<a href="#28-30">status</a>()
+<a href=#55 id=55 data-nosnippet>55</a>    }
+<a href=#56 id=56 data-nosnippet>56</a>
+<a href=#57 id=57 data-nosnippet>57</a>    <span class="kw">pub fn </span>begin(<span class="kw-2">&amp;</span><span class="self">self</span>) {
+<a href=#58 id=58 data-nosnippet>58</a>        <a class="self" href="#57">self</a>.<span class="number">0</span>.<a href="https://doc.rust-lang.org/nightly/core/cell/struct.RefCell.html#method.borrow_mut">borrow_mut</a>().<a href="#35-42">begin</a>();
+<a href=#59 id=59 data-nosnippet>59</a>    }
+<a href=#60 id=60 data-nosnippet>60</a>}
+<a href=#61 id=61 data-nosnippet>61</a>
+<a href=#62 id=62 data-nosnippet>62</a><span class="kw">impl </span><a href="../provenance_gc.rs.html#8-10">VisitProvenance</a> <span class="kw">for </span><a href="#46">InitOnceRef</a> {
+<a href=#63 id=63 data-nosnippet>63</a>    <span class="comment">// InitOnce contains no provenance.
+<a href=#64 id=64 data-nosnippet>64</a>    </span><span class="kw">fn </span>visit_provenance(<span class="kw-2">&amp;</span><span class="self">self</span>, _visit: <span class="kw-2">&amp;mut </span><a href="../provenance_gc.rs.html#6">VisitWith</a>&lt;<span class="lifetime">'_</span>&gt;) {}
+<a href=#65 id=65 data-nosnippet>65</a>}
+<a href=#66 id=66 data-nosnippet>66</a>
+<a href=#67 id=67 data-nosnippet>67</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="#68-157">EvalContextExt</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="../machine.rs.html#961"><span class="kw">crate</span>::MiriInterpCx</a>&lt;<span class="lifetime">'tcx</span>&gt; {}
+<a href=#68 id=68 data-nosnippet>68</a><span class="kw">pub trait </span><a href="../../../miri/concurrency/init_once/trait.EvalContextExt.html">EvalContextExt</a>&lt;<span class="lifetime">'tcx</span>&gt;: <a href="../machine.rs.html#964-967"><span class="kw">crate</span>::MiriInterpCxExt</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#69 id=69 data-nosnippet>69</a>    <span class="doccomment">/// Put the thread into the queue waiting for the initialization.
+<a href=#70 id=70 data-nosnippet>70</a>    </span><span class="attr">#[inline]
+<a href=#71 id=71 data-nosnippet>71</a>    </span><span class="kw">fn </span>init_once_enqueue_and_block(
+<a href=#72 id=72 data-nosnippet>72</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#73 id=73 data-nosnippet>73</a>        init_once_ref: <a href="#46">InitOnceRef</a>,
+<a href=#74 id=74 data-nosnippet>74</a>        callback: <a href="thread.rs.html#54">DynUnblockCallback</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#75 id=75 data-nosnippet>75</a>    ) {
+<a href=#76 id=76 data-nosnippet>76</a>        <span class="kw">let </span>this = <a class="self" href="#72">self</a>.<a href="../machine.rs.html#966">eval_context_mut</a>();
+<a href=#77 id=77 data-nosnippet>77</a>        <span class="kw">let </span>thread = <a href="#76">this</a>.<a href="thread.rs.html#1136-1139">active_thread</a>();
+<a href=#78 id=78 data-nosnippet>78</a>        <span class="kw">let </span><span class="kw-2">mut </span>init_once = <a href="#73">init_once_ref</a>.<span class="number">0</span>.<a href="https://doc.rust-lang.org/nightly/core/cell/struct.RefCell.html#method.borrow_mut">borrow_mut</a>();
+<a href=#79 id=79 data-nosnippet>79</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_ne.html">assert_ne!</a>(init_once.status, InitOnceStatus::Complete, <span class="string">"queueing on complete init once"</span>);
+<a href=#80 id=80 data-nosnippet>80</a>
+<a href=#81 id=81 data-nosnippet>81</a>        <a href="#78">init_once</a>.waiters.<a href="https://doc.rust-lang.org/nightly/alloc/collections/vec_deque/struct.VecDeque.html#method.push_back">push_back</a>(<a href="#77">thread</a>);
+<a href=#82 id=82 data-nosnippet>82</a>        <a href="#76">this</a>.<a href="thread.rs.html#974-1002">block_thread</a>(<a href="thread.rs.html#106">BlockReason::InitOnce</a>, <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>, <a href="#74">callback</a>);
+<a href=#83 id=83 data-nosnippet>83</a>    }
+<a href=#84 id=84 data-nosnippet>84</a>
+<a href=#85 id=85 data-nosnippet>85</a>    <span class="attr">#[inline]
+<a href=#86 id=86 data-nosnippet>86</a>    </span><span class="kw">fn </span>init_once_complete(<span class="kw-2">&amp;mut </span><span class="self">self</span>, init_once_ref: <span class="kw-2">&amp;</span><a href="#46">InitOnceRef</a>) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#87 id=87 data-nosnippet>87</a>        <span class="kw">let </span>this = <a class="self" href="#86">self</a>.<a href="../machine.rs.html#966">eval_context_mut</a>();
+<a href=#88 id=88 data-nosnippet>88</a>
+<a href=#89 id=89 data-nosnippet>89</a>        <span class="kw">let </span><span class="kw-2">mut </span>init_once = <a href="#86">init_once_ref</a>.<span class="number">0</span>.<a href="https://doc.rust-lang.org/nightly/core/cell/struct.RefCell.html#method.borrow_mut">borrow_mut</a>();
+<a href=#90 id=90 data-nosnippet>90</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(
+<a href=#91 id=91 data-nosnippet>91</a>            init_once.status,
+<a href=#92 id=92 data-nosnippet>92</a>            InitOnceStatus::Begun,
+<a href=#93 id=93 data-nosnippet>93</a>            <span class="string">"completing already complete or uninit init once"
+<a href=#94 id=94 data-nosnippet>94</a>        </span>);
+<a href=#95 id=95 data-nosnippet>95</a>
+<a href=#96 id=96 data-nosnippet>96</a>        <a href="#89">init_once</a>.status = <a href="#15">InitOnceStatus::Complete</a>;
+<a href=#97 id=97 data-nosnippet>97</a>
+<a href=#98 id=98 data-nosnippet>98</a>        <span class="comment">// Each complete happens-before the end of the wait
+<a href=#99 id=99 data-nosnippet>99</a>        </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(data_race) = <a href="#87">this</a>.machine.data_race.<a href="data_race_handler.rs.html#39-41">as_vclocks_ref</a>() {
+<a href=#100 id=100 data-nosnippet>100</a>            <a href="#99">data_race</a>
+<a href=#101 id=101 data-nosnippet>101</a>                .<a href="data_race.rs.html#1891-1905">release_clock</a>(<span class="kw-2">&amp;</span><a href="#87">this</a>.machine.threads, |clock| <a href="#89">init_once</a>.clock.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone_from">clone_from</a>(<a href="#101">clock</a>));
+<a href=#102 id=102 data-nosnippet>102</a>        }
+<a href=#103 id=103 data-nosnippet>103</a>
+<a href=#104 id=104 data-nosnippet>104</a>        <span class="comment">// Wake up everyone.
+<a href=#105 id=105 data-nosnippet>105</a>        // need to take the queue to avoid having `this` be borrowed multiple times
+<a href=#106 id=106 data-nosnippet>106</a>        </span><span class="kw">let </span>waiters = <a href="https://doc.rust-lang.org/nightly/core/mem/fn.take.html">std::mem::take</a>(<span class="kw-2">&amp;mut </span><a href="#89">init_once</a>.waiters);
+<a href=#107 id=107 data-nosnippet>107</a>        <a href="https://doc.rust-lang.org/nightly/core/mem/fn.drop.html">drop</a>(<a href="#89">init_once</a>);
+<a href=#108 id=108 data-nosnippet>108</a>        <span class="kw">for </span>waiter <span class="kw">in </span>waiters {
+<a href=#109 id=109 data-nosnippet>109</a>            this.unblock_thread(waiter, BlockReason::InitOnce)<span class="question-mark">?</span>;
+<a href=#110 id=110 data-nosnippet>110</a>        }
+<a href=#111 id=111 data-nosnippet>111</a>
+<a href=#112 id=112 data-nosnippet>112</a>        <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#113 id=113 data-nosnippet>113</a>    }
+<a href=#114 id=114 data-nosnippet>114</a>
+<a href=#115 id=115 data-nosnippet>115</a>    <span class="attr">#[inline]
+<a href=#116 id=116 data-nosnippet>116</a>    </span><span class="kw">fn </span>init_once_fail(<span class="kw-2">&amp;mut </span><span class="self">self</span>, init_once_ref: <span class="kw-2">&amp;</span><a href="#46">InitOnceRef</a>) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#117 id=117 data-nosnippet>117</a>        <span class="kw">let </span>this = <a class="self" href="#116">self</a>.<a href="../machine.rs.html#966">eval_context_mut</a>();
+<a href=#118 id=118 data-nosnippet>118</a>        <span class="kw">let </span><span class="kw-2">mut </span>init_once = <a href="#116">init_once_ref</a>.<span class="number">0</span>.<a href="https://doc.rust-lang.org/nightly/core/cell/struct.RefCell.html#method.borrow_mut">borrow_mut</a>();
+<a href=#119 id=119 data-nosnippet>119</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(
+<a href=#120 id=120 data-nosnippet>120</a>            init_once.status,
+<a href=#121 id=121 data-nosnippet>121</a>            InitOnceStatus::Begun,
+<a href=#122 id=122 data-nosnippet>122</a>            <span class="string">"failing already completed or uninit init once"
+<a href=#123 id=123 data-nosnippet>123</a>        </span>);
+<a href=#124 id=124 data-nosnippet>124</a>        <span class="comment">// This is again uninitialized.
+<a href=#125 id=125 data-nosnippet>125</a>        </span><a href="#118">init_once</a>.status = <a href="#13">InitOnceStatus::Uninitialized</a>;
+<a href=#126 id=126 data-nosnippet>126</a>
+<a href=#127 id=127 data-nosnippet>127</a>        <span class="comment">// Each complete happens-before the end of the wait
+<a href=#128 id=128 data-nosnippet>128</a>        </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(data_race) = <a href="#117">this</a>.machine.data_race.<a href="data_race_handler.rs.html#39-41">as_vclocks_ref</a>() {
+<a href=#129 id=129 data-nosnippet>129</a>            <a href="#128">data_race</a>
+<a href=#130 id=130 data-nosnippet>130</a>                .<a href="data_race.rs.html#1891-1905">release_clock</a>(<span class="kw-2">&amp;</span><a href="#117">this</a>.machine.threads, |clock| <a href="#118">init_once</a>.clock.<a href="https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html#tymethod.clone_from">clone_from</a>(<a href="#130">clock</a>));
+<a href=#131 id=131 data-nosnippet>131</a>        }
+<a href=#132 id=132 data-nosnippet>132</a>
+<a href=#133 id=133 data-nosnippet>133</a>        <span class="comment">// Wake up one waiting thread, so they can go ahead and try to init this.
+<a href=#134 id=134 data-nosnippet>134</a>        </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(waiter) = <a href="#118">init_once</a>.waiters.<a href="https://doc.rust-lang.org/nightly/alloc/collections/vec_deque/struct.VecDeque.html#method.pop_front">pop_front</a>() {
+<a href=#135 id=135 data-nosnippet>135</a>            <a href="https://doc.rust-lang.org/nightly/core/mem/fn.drop.html">drop</a>(<a href="#118">init_once</a>);
+<a href=#136 id=136 data-nosnippet>136</a>            <a href="#117">this</a>.<a href="thread.rs.html#1006-1025">unblock_thread</a>(<a href="#134">waiter</a>, <a href="thread.rs.html#106">BlockReason::InitOnce</a>)<span class="question-mark">?</span>;
+<a href=#137 id=137 data-nosnippet>137</a>        }
+<a href=#138 id=138 data-nosnippet>138</a>
+<a href=#139 id=139 data-nosnippet>139</a>        <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#140 id=140 data-nosnippet>140</a>    }
+<a href=#141 id=141 data-nosnippet>141</a>
+<a href=#142 id=142 data-nosnippet>142</a>    <span class="doccomment">/// Synchronize with the previous completion of an InitOnce.
+<a href=#143 id=143 data-nosnippet>143</a>    /// Must only be called after checking that it is complete.
+<a href=#144 id=144 data-nosnippet>144</a>    </span><span class="attr">#[inline]
+<a href=#145 id=145 data-nosnippet>145</a>    </span><span class="kw">fn </span>init_once_observe_completed(<span class="kw-2">&amp;mut </span><span class="self">self</span>, init_once_ref: <span class="kw-2">&amp;</span><a href="#46">InitOnceRef</a>) {
+<a href=#146 id=146 data-nosnippet>146</a>        <span class="kw">let </span>this = <a class="self" href="#145">self</a>.<a href="../machine.rs.html#966">eval_context_mut</a>();
+<a href=#147 id=147 data-nosnippet>147</a>        <span class="kw">let </span>init_once = <a href="#145">init_once_ref</a>.<span class="number">0</span>.<a href="https://doc.rust-lang.org/nightly/core/cell/struct.RefCell.html#method.borrow">borrow</a>();
+<a href=#148 id=148 data-nosnippet>148</a>
+<a href=#149 id=149 data-nosnippet>149</a>        <a class="macro" href="https://doc.rust-lang.org/nightly/core/macro.assert_eq.html">assert_eq!</a>(
+<a href=#150 id=150 data-nosnippet>150</a>            init_once.status,
+<a href=#151 id=151 data-nosnippet>151</a>            InitOnceStatus::Complete,
+<a href=#152 id=152 data-nosnippet>152</a>            <span class="string">"observing the completion of incomplete init once"
+<a href=#153 id=153 data-nosnippet>153</a>        </span>);
+<a href=#154 id=154 data-nosnippet>154</a>
+<a href=#155 id=155 data-nosnippet>155</a>        <a href="#146">this</a>.<a href="data_race.rs.html#988-993">acquire_clock</a>(<span class="kw-2">&amp;</span><a href="#147">init_once</a>.clock);
+<a href=#156 id=156 data-nosnippet>156</a>    }
+<a href=#157 id=157 data-nosnippet>157</a>}</code></pre></div></section></main></body></html>

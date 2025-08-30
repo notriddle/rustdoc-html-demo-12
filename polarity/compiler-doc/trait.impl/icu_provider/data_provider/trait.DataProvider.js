@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["rustc_baked_icu_data",[["impl <a class=\"trait\" href=\"https://docs.rs/icu_provider/2.0.0/icu_provider/data_provider/trait.DataProvider.html\" title=\"trait icu_provider::data_provider::DataProvider\">DataProvider</a>&lt;<a class=\"struct\" href=\"https://docs.rs/icu_list/2.0.0/icu_list/provider/struct.ListAndV1.html\" title=\"struct icu_list::provider::ListAndV1\">ListAndV1</a>&gt; for <a class=\"struct\" href=\"rustc_baked_icu_data/struct.BakedDataProvider.html\" title=\"struct rustc_baked_icu_data::BakedDataProvider\">BakedDataProvider</a>"],["impl&lt;Y&gt; <a class=\"trait\" href=\"https://docs.rs/icu_provider/2.0.0/icu_provider/data_provider/trait.DataProvider.html\" title=\"trait icu_provider::data_provider::DataProvider\">DataProvider</a>&lt;<a class=\"struct\" href=\"https://docs.rs/icu_provider/2.0.0/icu_provider/marker_full/struct.NeverMarker.html\" title=\"struct icu_provider::marker_full::NeverMarker\">NeverMarker</a>&lt;Y&gt;&gt; for <a class=\"struct\" href=\"rustc_baked_icu_data/struct.BakedDataProvider.html\" title=\"struct rustc_baked_icu_data::BakedDataProvider\">BakedDataProvider</a><div class=\"where\">where\n    for&lt;'a&gt; Y: <a class=\"trait\" href=\"https://docs.rs/yoke/0.8.0/yoke/yokeable/trait.Yokeable.html\" title=\"trait yoke::yokeable::Yokeable\">Yokeable</a>&lt;'a&gt;,</div>"]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[1334]}

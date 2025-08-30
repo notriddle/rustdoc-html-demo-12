@@ -1,0 +1,163 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/error_reporting/infer/nice_region_error/util.rs`."><title>util.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-e56847b5.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-38ac1f3e.js" data-stringdex-js="stringdex-0e748618.js" data-settings-js="settings-c38705f0.js" ><script src="../../../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../../src-files.js"></script><script defer src="../../../../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_trait_selection/error_reporting/infer/nice_region_error/</div>util.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Helper functions corresponding to lifetime errors due to
+<a href=#2 id=2 data-nosnippet>2</a>//! anonymous regions.
+<a href=#3 id=3 data-nosnippet>3</a>
+<a href=#4 id=4 data-nosnippet>4</a></span><span class="kw">use </span><a href="../../../../../rustc_hir/index.html">rustc_hir</a> <span class="kw">as </span>hir;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>rustc_hir::def_id::{<a href="../../../../../rustc_span/def_id/struct.DefId.html">DefId</a>, <a href="../../../../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>};
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>rustc_middle::ty::{<a class="self" href="../../../../../rustc_middle/ty/index.html">self</a>, <a href="../../../../../rustc_middle/ty/sty/type.Binder.html">Binder</a>, <a href="../../../../../rustc_middle/ty/region/struct.Region.html">Region</a>, <a href="../../../../../rustc_middle/ty/struct.Ty.html">Ty</a>, <a href="../../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>, <a href="../../../../../rustc_trait_selection/infer/canonical/ir/trait.TypeFoldable.html">TypeFoldable</a>, <a href="../../../../../rustc_trait_selection/infer/canonical/ir/fn.fold_regions.html">fold_regions</a>};
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span><a href="../../../../../rustc_span/span_encoding/struct.Span.html">rustc_span::Span</a>;
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="https://docs.rs/tracing-attributes/0.1.30/tracing_attributes/attr.instrument.html">tracing::instrument</a>;
+<a href=#9 id=9 data-nosnippet>9</a>
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><a href="mod.rs.html#34-41"><span class="kw">crate</span>::error_reporting::infer::nice_region_error::NiceRegionError</a>;
+<a href=#11 id=11 data-nosnippet>11</a>
+<a href=#12 id=12 data-nosnippet>12</a><span class="doccomment">/// Information about the anonymous region we are searching for.
+<a href=#13 id=13 data-nosnippet>13</a></span><span class="attr">#[derive(Debug)]
+<a href=#14 id=14 data-nosnippet>14</a></span><span class="kw">pub struct </span><a href="../../../../../rustc_trait_selection/error_reporting/infer/nice_region_error/util/struct.AnonymousParamInfo.html">AnonymousParamInfo</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#15 id=15 data-nosnippet>15</a>    <span class="doccomment">/// The parameter corresponding to the anonymous region.
+<a href=#16 id=16 data-nosnippet>16</a>    </span><span class="kw">pub </span>param: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../../../rustc_hir/hir/struct.Param.html">hir::Param</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#17 id=17 data-nosnippet>17</a>    <span class="doccomment">/// The type corresponding to the anonymous region parameter.
+<a href=#18 id=18 data-nosnippet>18</a>    </span><span class="kw">pub </span>param_ty: <a href="../../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#19 id=19 data-nosnippet>19</a>    <span class="doccomment">/// The `ty::LateParamRegionKind` corresponding to the anonymous region.
+<a href=#20 id=20 data-nosnippet>20</a>    </span><span class="kw">pub </span>kind: <a href="../../../../../rustc_middle/ty/region/enum.LateParamRegionKind.html">ty::LateParamRegionKind</a>,
+<a href=#21 id=21 data-nosnippet>21</a>    <span class="doccomment">/// The `Span` of the parameter type.
+<a href=#22 id=22 data-nosnippet>22</a>    </span><span class="kw">pub </span>param_ty_span: <a href="../../../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#23 id=23 data-nosnippet>23</a>    <span class="doccomment">/// Signals that the argument is the first parameter in the declaration.
+<a href=#24 id=24 data-nosnippet>24</a>    </span><span class="kw">pub </span>is_first: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>,
+<a href=#25 id=25 data-nosnippet>25</a>}
+<a href=#26 id=26 data-nosnippet>26</a>
+<a href=#27 id=27 data-nosnippet>27</a><span class="comment">// This method walks the Type of the function body parameters using
+<a href=#28 id=28 data-nosnippet>28</a>// `fold_regions()` function and returns the
+<a href=#29 id=29 data-nosnippet>29</a>// &amp;hir::Param of the function parameter corresponding to the anonymous
+<a href=#30 id=30 data-nosnippet>30</a>// region and the Ty corresponding to the named region.
+<a href=#31 id=31 data-nosnippet>31</a>// Currently only the case where the function declaration consists of
+<a href=#32 id=32 data-nosnippet>32</a>// one named region and one anonymous region is handled.
+<a href=#33 id=33 data-nosnippet>33</a>// Consider the example `fn foo&lt;'a&gt;(x: &amp;'a i32, y: &amp;i32) -&gt; &amp;'a i32`
+<a href=#34 id=34 data-nosnippet>34</a>// Here, we would return the hir::Param for y, we return the type &amp;'a
+<a href=#35 id=35 data-nosnippet>35</a>// i32, which is the type of y but with the anonymous region replaced
+<a href=#36 id=36 data-nosnippet>36</a>// with 'a, the corresponding bound region and is_first which is true if
+<a href=#37 id=37 data-nosnippet>37</a>// the hir::Param is the first parameter in the function declaration.
+<a href=#38 id=38 data-nosnippet>38</a></span><span class="attr">#[instrument(skip(tcx), level = <span class="string">"debug"</span>)]
+<a href=#39 id=39 data-nosnippet>39</a></span><span class="kw">pub fn </span><a href="../../../../../rustc_trait_selection/error_reporting/infer/nice_region_error/fn.find_param_with_region.html">find_param_with_region</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#40 id=40 data-nosnippet>40</a>    tcx: <a href="../../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#41 id=41 data-nosnippet>41</a>    generic_param_scope: <a href="../../../../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
+<a href=#42 id=42 data-nosnippet>42</a>    anon_region: <a href="../../../../../rustc_middle/ty/region/struct.Region.html">Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#43 id=43 data-nosnippet>43</a>    replace_region: <a href="../../../../../rustc_middle/ty/region/struct.Region.html">Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#44 id=44 data-nosnippet>44</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="#14-25">AnonymousParamInfo</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#45 id=45 data-nosnippet>45</a>    <span class="kw">let </span>(id, kind) = <span class="kw">match </span>anon_region.kind() {
+<a href=#46 id=46 data-nosnippet>46</a>        ty::ReLateParam(late_param) =&gt; (late_param.scope, late_param.kind),
+<a href=#47 id=47 data-nosnippet>47</a>        ty::ReEarlyParam(ebr) =&gt; {
+<a href=#48 id=48 data-nosnippet>48</a>            <span class="kw">let </span>region_def = tcx.generics_of(generic_param_scope).region_param(ebr, tcx).def_id;
+<a href=#49 id=49 data-nosnippet>49</a>            (tcx.parent(region_def), ty::LateParamRegionKind::Named(region_def))
+<a href=#50 id=50 data-nosnippet>50</a>        }
+<a href=#51 id=51 data-nosnippet>51</a>        <span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="prelude-val">None</span>, <span class="comment">// not a free region
+<a href=#52 id=52 data-nosnippet>52</a>    </span>};
+<a href=#53 id=53 data-nosnippet>53</a>
+<a href=#54 id=54 data-nosnippet>54</a>    <span class="kw">let </span>def_id = id.as_local()<span class="question-mark">?</span>;
+<a href=#55 id=55 data-nosnippet>55</a>
+<a href=#56 id=56 data-nosnippet>56</a>    <span class="comment">// FIXME: use def_kind
+<a href=#57 id=57 data-nosnippet>57</a>    // Don't perform this on closures
+<a href=#58 id=58 data-nosnippet>58</a>    </span><span class="kw">match </span>tcx.hir_node_by_def_id(generic_param_scope) {
+<a href=#59 id=59 data-nosnippet>59</a>        hir::Node::Expr(<span class="kw-2">&amp;</span>hir::Expr { kind: hir::ExprKind::Closure { .. }, .. }) =&gt; {
+<a href=#60 id=60 data-nosnippet>60</a>            <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#61 id=61 data-nosnippet>61</a>        }
+<a href=#62 id=62 data-nosnippet>62</a>        <span class="kw">_ </span>=&gt; {}
+<a href=#63 id=63 data-nosnippet>63</a>    }
+<a href=#64 id=64 data-nosnippet>64</a>
+<a href=#65 id=65 data-nosnippet>65</a>    <span class="kw">let </span>body = tcx.hir_maybe_body_owned_by(def_id)<span class="question-mark">?</span>;
+<a href=#66 id=66 data-nosnippet>66</a>
+<a href=#67 id=67 data-nosnippet>67</a>    <span class="kw">let </span>owner_id = tcx.hir_body_owner(body.id());
+<a href=#68 id=68 data-nosnippet>68</a>    <span class="kw">let </span>fn_decl = tcx.hir_fn_decl_by_hir_id(owner_id)<span class="question-mark">?</span>;
+<a href=#69 id=69 data-nosnippet>69</a>    <span class="kw">let </span>poly_fn_sig = tcx.fn_sig(id).instantiate_identity();
+<a href=#70 id=70 data-nosnippet>70</a>
+<a href=#71 id=71 data-nosnippet>71</a>    <span class="kw">let </span>fn_sig = tcx.liberate_late_bound_regions(id, poly_fn_sig);
+<a href=#72 id=72 data-nosnippet>72</a>    body.params
+<a href=#73 id=73 data-nosnippet>73</a>        .iter()
+<a href=#74 id=74 data-nosnippet>74</a>        .take(<span class="kw">if </span>fn_sig.c_variadic {
+<a href=#75 id=75 data-nosnippet>75</a>            fn_sig.inputs().len()
+<a href=#76 id=76 data-nosnippet>76</a>        } <span class="kw">else </span>{
+<a href=#77 id=77 data-nosnippet>77</a>            <span class="macro">assert_eq!</span>(fn_sig.inputs().len(), body.params.len());
+<a href=#78 id=78 data-nosnippet>78</a>            body.params.len()
+<a href=#79 id=79 data-nosnippet>79</a>        })
+<a href=#80 id=80 data-nosnippet>80</a>        .enumerate()
+<a href=#81 id=81 data-nosnippet>81</a>        .find_map(|(index, param)| {
+<a href=#82 id=82 data-nosnippet>82</a>            <span class="comment">// May return None; sometimes the tables are not yet populated.
+<a href=#83 id=83 data-nosnippet>83</a>            </span><span class="kw">let </span>ty = fn_sig.inputs()[index];
+<a href=#84 id=84 data-nosnippet>84</a>            <span class="kw">let </span><span class="kw-2">mut </span>found_anon_region = <span class="bool-val">false</span>;
+<a href=#85 id=85 data-nosnippet>85</a>            <span class="kw">let </span>new_param_ty = fold_regions(tcx, ty, |r, <span class="kw">_</span>| {
+<a href=#86 id=86 data-nosnippet>86</a>                <span class="kw">if </span>r == anon_region {
+<a href=#87 id=87 data-nosnippet>87</a>                    found_anon_region = <span class="bool-val">true</span>;
+<a href=#88 id=88 data-nosnippet>88</a>                    replace_region
+<a href=#89 id=89 data-nosnippet>89</a>                } <span class="kw">else </span>{
+<a href=#90 id=90 data-nosnippet>90</a>                    r
+<a href=#91 id=91 data-nosnippet>91</a>                }
+<a href=#92 id=92 data-nosnippet>92</a>            });
+<a href=#93 id=93 data-nosnippet>93</a>            found_anon_region.then(|| {
+<a href=#94 id=94 data-nosnippet>94</a>                <span class="kw">let </span>ty_hir_id = fn_decl.inputs[index].hir_id;
+<a href=#95 id=95 data-nosnippet>95</a>                <span class="kw">let </span>param_ty_span = tcx.hir_span(ty_hir_id);
+<a href=#96 id=96 data-nosnippet>96</a>                <span class="kw">let </span>is_first = index == <span class="number">0</span>;
+<a href=#97 id=97 data-nosnippet>97</a>                AnonymousParamInfo { param, param_ty: new_param_ty, param_ty_span, kind, is_first }
+<a href=#98 id=98 data-nosnippet>98</a>            })
+<a href=#99 id=99 data-nosnippet>99</a>        })
+<a href=#100 id=100 data-nosnippet>100</a>}
+<a href=#101 id=101 data-nosnippet>101</a>
+<a href=#102 id=102 data-nosnippet>102</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; <a href="mod.rs.html#34-41">NiceRegionError</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#103 id=103 data-nosnippet>103</a>    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>find_param_with_region(
+<a href=#104 id=104 data-nosnippet>104</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#105 id=105 data-nosnippet>105</a>        anon_region: <a href="../../../../../rustc_middle/ty/region/struct.Region.html">Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#106 id=106 data-nosnippet>106</a>        replace_region: <a href="../../../../../rustc_middle/ty/region/struct.Region.html">Region</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#107 id=107 data-nosnippet>107</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="#14-25">AnonymousParamInfo</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#108 id=108 data-nosnippet>108</a>        <a href="#39-100">find_param_with_region</a>(<a class="self" href="#104">self</a>.<a href="mod.rs.html#62-64">tcx</a>(), <a class="self" href="#104">self</a>.generic_param_scope, <a href="#105">anon_region</a>, <a href="#106">replace_region</a>)
+<a href=#109 id=109 data-nosnippet>109</a>    }
+<a href=#110 id=110 data-nosnippet>110</a>
+<a href=#111 id=111 data-nosnippet>111</a>    <span class="comment">// Here, we check for the case where the anonymous region
+<a href=#112 id=112 data-nosnippet>112</a>    // is in the return type as written by the user.
+<a href=#113 id=113 data-nosnippet>113</a>    // FIXME(#42703) - Need to handle certain cases here.
+<a href=#114 id=114 data-nosnippet>114</a>    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>is_return_type_anon(
+<a href=#115 id=115 data-nosnippet>115</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#116 id=116 data-nosnippet>116</a>        scope_def_id: <a href="../../../../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>,
+<a href=#117 id=117 data-nosnippet>117</a>        region_def_id: <a href="../../../../../rustc_span/def_id/struct.DefId.html">DefId</a>,
+<a href=#118 id=118 data-nosnippet>118</a>        hir_sig: <span class="kw-2">&amp;</span><a href="../../../../../rustc_hir/hir/struct.FnSig.html">hir::FnSig</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#119 id=119 data-nosnippet>119</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html">Option</a>&lt;<a href="../../../../../rustc_span/span_encoding/struct.Span.html">Span</a>&gt; {
+<a href=#120 id=120 data-nosnippet>120</a>        <span class="kw">let </span>fn_ty = <a class="self" href="#115">self</a>.<a href="mod.rs.html#62-64">tcx</a>().<a href="../../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.type_of">type_of</a>(<a href="#116">scope_def_id</a>).<a href="../../../../../rustc_type_ir/binder/struct.EarlyBinder.html#method.instantiate_identity">instantiate_identity</a>();
+<a href=#121 id=121 data-nosnippet>121</a>        <span class="kw">if let </span><a href="../../../../../rustc_trait_selection/infer/canonical/ir/enum.TyKind.html">ty::FnDef</a>(<span class="kw">_</span>, <span class="kw">_</span>) = <a href="#120">fn_ty</a>.<a href="../../../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() {
+<a href=#122 id=122 data-nosnippet>122</a>            <span class="kw">let </span>ret_ty = <a href="#120">fn_ty</a>.<a href="../../../../../rustc_middle/ty/struct.Ty.html#method.fn_sig">fn_sig</a>(<a class="self" href="#115">self</a>.<a href="mod.rs.html#62-64">tcx</a>()).<a href="../../../../../rustc_type_ir/binder/struct.Binder.html#method.output">output</a>();
+<a href=#123 id=123 data-nosnippet>123</a>            <span class="kw">let </span>span = <a href="#118">hir_sig</a>.decl.output.<a href="../../../../../rustc_hir/hir/enum.FnRetTy.html#method.span">span</a>();
+<a href=#124 id=124 data-nosnippet>124</a>            <span class="kw">let </span>future_output = <span class="kw">if </span><a href="#118">hir_sig</a>.header.<a href="../../../../../rustc_hir/hir/struct.FnHeader.html#method.is_async">is_async</a>() {
+<a href=#125 id=125 data-nosnippet>125</a>                <a href="#122">ret_ty</a>.<a href="../../../../../rustc_type_ir/binder/struct.Binder.html#method.map_bound">map_bound</a>(|ty| <a class="self" href="#115">self</a>.cx.<a href="../mod.rs.html#181-216">get_impl_future_output_ty</a>(<a href="#125">ty</a>)).<a href="../../../../../rustc_type_ir/binder/struct.Binder.html#method.transpose">transpose</a>()
+<a href=#126 id=126 data-nosnippet>126</a>            } <span class="kw">else </span>{
+<a href=#127 id=127 data-nosnippet>127</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
+<a href=#128 id=128 data-nosnippet>128</a>            </a>};
+<a href=#129 id=129 data-nosnippet>129</a>            <span class="kw">return match </span><a href="#124">future_output</a> {
+<a href=#130 id=130 data-nosnippet>130</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(output) <span class="kw">if </span><a class="self" href="#115">self</a>.<a href="#138-150">includes_region</a>(<a href="#130">output</a>, <a href="#117">region_def_id</a>) =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#123">span</a>),
+<a href=#131 id=131 data-nosnippet>131</a>                <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a> </a><span class="kw">if </span><a class="self" href="#115">self</a>.<a href="#138-150">includes_region</a>(<a href="#122">ret_ty</a>, <a href="#117">region_def_id</a>) =&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#123">span</a>),
+<a href=#132 id=132 data-nosnippet>132</a>                <span class="kw">_ </span>=&gt; <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#133 id=133 data-nosnippet>133</a>            };
+<a href=#134 id=134 data-nosnippet>134</a>        }
+<a href=#135 id=135 data-nosnippet>135</a>        <a class="prelude-val" href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#variant.None">None</a>
+<a href=#136 id=136 data-nosnippet>136</a>    </a>}
+<a href=#137 id=137 data-nosnippet>137</a>
+<a href=#138 id=138 data-nosnippet>138</a>    <span class="kw">fn </span>includes_region(
+<a href=#139 id=139 data-nosnippet>139</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#140 id=140 data-nosnippet>140</a>        ty: <a href="../../../../../rustc_middle/ty/sty/type.Binder.html">Binder</a>&lt;<span class="lifetime">'tcx</span>, <span class="kw">impl </span><a href="../../../../../rustc_trait_selection/infer/canonical/ir/trait.TypeFoldable.html">TypeFoldable</a>&lt;<a href="../../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt;,
+<a href=#141 id=141 data-nosnippet>141</a>        region_def_id: <a href="../../../../../rustc_span/def_id/struct.DefId.html">DefId</a>,
+<a href=#142 id=142 data-nosnippet>142</a>    ) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#143 id=143 data-nosnippet>143</a>        <span class="kw">let </span>late_bound_regions = <a class="self" href="#139">self</a>.<a href="mod.rs.html#62-64">tcx</a>().<a href="../../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.collect_referenced_late_bound_regions">collect_referenced_late_bound_regions</a>(<a href="#140">ty</a>);
+<a href=#144 id=144 data-nosnippet>144</a>        <span class="comment">// We are only checking is any region meets the condition so order doesn't matter
+<a href=#145 id=145 data-nosnippet>145</a>        </span><span class="attr">#[allow(rustc::potential_query_instability)]
+<a href=#146 id=146 data-nosnippet>146</a>        </span><a href="#143">late_bound_regions</a>.<a href="https://docs.rs/indexmap/2.10.0/indexmap/set/struct.IndexSet.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html#tymethod.any">any</a>(|r| <span class="kw">match </span><span class="kw-2">*</span><a href="#146">r</a> {
+<a href=#147 id=147 data-nosnippet>147</a>            <a href="../../../../../rustc_middle/ty/region/enum.BoundRegionKind.html#variant.Named">ty::BoundRegionKind::Named</a>(def_id) =&gt; <a href="#147">def_id</a> == <a href="#141">region_def_id</a>,
+<a href=#148 id=148 data-nosnippet>148</a>            <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
+<a href=#149 id=149 data-nosnippet>149</a>        })
+<a href=#150 id=150 data-nosnippet>150</a>    }
+<a href=#151 id=151 data-nosnippet>151</a>
+<a href=#152 id=152 data-nosnippet>152</a>    <span class="comment">// Here we check for the case where anonymous region
+<a href=#153 id=153 data-nosnippet>153</a>    // corresponds to self and if yes, we display E0312.
+<a href=#154 id=154 data-nosnippet>154</a>    // FIXME(#42700) - Need to format self properly to
+<a href=#155 id=155 data-nosnippet>155</a>    // enable E0621 for it.
+<a href=#156 id=156 data-nosnippet>156</a>    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>is_self_anon(<span class="kw-2">&amp;</span><span class="self">self</span>, is_first: <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a>, scope_def_id: <a href="../../../../../rustc_span/def_id/struct.LocalDefId.html">LocalDefId</a>) -&gt; <a href="https://doc.rust-lang.org/nightly/std/primitive.bool.html">bool</a> {
+<a href=#157 id=157 data-nosnippet>157</a>        <a href="#156">is_first</a>
+<a href=#158 id=158 data-nosnippet>158</a>            &amp;&amp; <span class="self"><a href="#156">self</a>
+<a href=#159 id=159 data-nosnippet>159</a>                </span>.<a href="mod.rs.html#62-64">tcx</a>()
+<a href=#160 id=160 data-nosnippet>160</a>                .<a href="../../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.opt_associated_item">opt_associated_item</a>(<a href="#156">scope_def_id</a>.<a href="../../../../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>())
+<a href=#161 id=161 data-nosnippet>161</a>                .<a href="https://doc.rust-lang.org/nightly/core/option/enum.Option.html#method.is_some_and">is_some_and</a>(|i| <a href="#161">i</a>.<a href="../../../../../rustc_middle/ty/assoc/struct.AssocItem.html#method.is_method">is_method</a>())
+<a href=#162 id=162 data-nosnippet>162</a>    }
+<a href=#163 id=163 data-nosnippet>163</a>}</code></pre></div></section></main></body></html>

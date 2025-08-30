@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PerfCommand","Profile","Scenario"],"fn":["apply_shared_opts","perf"],"struct":["PerfArgs","SharedOpts"]};

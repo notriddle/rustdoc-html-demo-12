@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"trait":["Abi","AdtDef","BoundExistentialPredicates","BoundVarLike","Clause","Clauses","Const","DefId","ExprConst","Features","GenericArg","GenericArgs","GenericsOf","IntoKind","OpaqueTypeStorageEntries","ParamEnv","ParamLike","PlaceholderConst","PlaceholderLike","Predicate","Region","Safety","SliceLike","Span","Term","Ty","Tys","ValueConst"]};

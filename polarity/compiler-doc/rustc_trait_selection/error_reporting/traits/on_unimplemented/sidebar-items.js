@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AppendConstMessage"],"struct":["IgnoredDiagnosticOption","MalformedOnUnimplementedAttrLint","MissingOptionsForOnUnimplementedAttr","OnUnimplementedDirective","OnUnimplementedFormatString","OnUnimplementedNote","WrappedParserError"]};

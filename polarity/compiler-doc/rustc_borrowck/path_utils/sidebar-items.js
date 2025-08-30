@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["borrow_of_local_data","each_borrow_involving_path","is_active","is_upvar_field_projection"]};

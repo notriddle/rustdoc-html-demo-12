@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["declare_features","opt_nonzero_u32"],"static":["REMOVED_LANG_FEATURES"],"struct":["RemovedFeature"]};
