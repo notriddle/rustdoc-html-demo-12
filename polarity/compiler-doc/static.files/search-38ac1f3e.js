@@ -4305,6 +4305,9 @@ class DocSearch {
                             queryElem: new Map(),
                         }];
                     }
+                    // HEADS UP!
+                    // We must put this map back the way we found it before returning,
+                    // otherwise things break.
                     elems.delete(firstKey);
                     const [firstKeyIds, firstPostingsList, remainingAll] = await Promise.all([
                         index.search(firstKey),
@@ -4312,6 +4315,7 @@ class DocSearch {
                         unpackPostingsListBindings(elems, polarity),
                     ]);
                     if (!firstKeyIds) {
+                        elems.set(firstKey, firstList);
                         // User specified a non-existent key.
                         return [{
                             invertedIndex: empty_inverted_index,
