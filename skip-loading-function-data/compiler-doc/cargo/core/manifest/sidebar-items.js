@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MANIFEST_PREAMBLE"],"enum":["EitherManifest","TargetKind","TargetSourcePath"],"macro":["get_metadata_env","metadata_envs"],"struct":["DelayedWarning","Manifest","ManifestMetadata","MetadataEnvs","SerializedTarget","Target","TargetInner","VirtualManifest","Warnings"]};

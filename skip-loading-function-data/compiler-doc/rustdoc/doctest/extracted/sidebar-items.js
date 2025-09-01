@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FORMAT_VERSION"],"enum":["Ignore"],"struct":["DocTest","ExtractedDocTest","ExtractedDocTests","LangString","WrapperInfo"]};

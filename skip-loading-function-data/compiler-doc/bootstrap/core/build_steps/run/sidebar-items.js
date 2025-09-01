@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_completion_paths"],"struct":["BuildManifest","BumpStage0","CollectLicenseMetadata","CoverageDump","CyclicStep","FeaturesStatusDump","GenerateCompletions","GenerateCopyright","GenerateWindowsSys","Miri","ReplaceVersionPlaceholder","Rustfmt","UnicodeTableGenerator"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_builtin_attr","is_doc_alias_attrs_contain_symbol","parse_single_integer","parse_version"]};

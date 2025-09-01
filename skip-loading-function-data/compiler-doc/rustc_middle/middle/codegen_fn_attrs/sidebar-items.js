@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["TargetFeatureKind"],"struct":["CodegenFnAttrFlags","CodegenFnAttrs","PatchableFunctionEntry","TargetFeature"]};

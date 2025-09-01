@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["extract_component_raw","extract_component_with_significant_dtor","true_significant_drop_ty","ty_dtor_span"]};

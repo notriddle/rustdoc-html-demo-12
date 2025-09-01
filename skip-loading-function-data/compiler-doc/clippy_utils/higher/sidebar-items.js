@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["IfLetOrMatch","VecArgs","VecInitKind"],"fn":["binop","get_vec_init_kind","has_let_expr"],"struct":["ForLoop","If","IfLet","IfOrIfLet","Range","While","WhileLet"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_impl_slice"],"static":["MAP_UNIT_FN"],"struct":["MapUnitFn"]};

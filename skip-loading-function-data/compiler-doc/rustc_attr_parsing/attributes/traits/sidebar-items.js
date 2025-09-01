@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["AllowIncoherentImplParser","CoherenceIsCoreParser","CoinductiveParser","ConstTraitParser","DenyExplicitImplParser","DoNotImplementViaObjectParser","FundamentalParser","MarkerParser","ParenSugarParser","PointeeParser","SkipDuringMethodDispatchParser","SpecializationTraitParser","TypeConstParser","UnsafeSpecializationMarkerParser"]};

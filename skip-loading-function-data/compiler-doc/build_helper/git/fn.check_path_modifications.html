@@ -1,0 +1,43 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="This function figures out if a set of paths was last modified upstream or if there are some local modifications made to them. It can be used to figure out if we should download artifacts from CI or rather build them locally."><title>check_path_modifications in build_helper::git - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="build_helper" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-beta.1 (788da80fc 2025-08-04)" data-channel="beta" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../static.files/storage-68b7e25d.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../build_helper/index.html">build_<wbr>helper</a><span class="version">1.91.0-dev</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In build_<wbr>helper::<wbr>git</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">build_helper</a>::<wbr><a href="index.html">git</a></div><h1>Function <span class="fn">check_path_modifications</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/build_helper/git.rs.html#81-142">Source</a> </span></div><pre class="rust item-decl"><code>pub fn check_path_modifications(
+    git_dir: &amp;<a class="struct" href="https://doc.rust-lang.org/beta/std/path/struct.Path.html" title="struct std::path::Path">Path</a>,
+    config: &amp;<a class="struct" href="struct.GitConfig.html" title="struct build_helper::git::GitConfig">GitConfig</a>&lt;'_&gt;,
+    target_paths: &amp;[&amp;<a class="primitive" href="https://doc.rust-lang.org/beta/std/primitive.str.html">str</a>],
+    ci_env: <a class="enum" href="../ci/enum.CiEnv.html" title="enum build_helper::ci::CiEnv">CiEnv</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="enum" href="enum.PathFreshness.html" title="enum build_helper::git::PathFreshness">PathFreshness</a>, <a class="struct" href="https://doc.rust-lang.org/beta/alloc/string/struct.String.html" title="struct alloc::string::String">String</a>&gt;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>This function figures out if a set of paths was last modified upstream or
+if there are some local modifications made to them.
+It can be used to figure out if we should download artifacts from CI or rather
+build them locally.</p>
+<p>The function assumes that at least a single upstream bors merge commit is in the
+local git history.</p>
+<p><code>target_paths</code> should be a non-empty slice of paths (git <code>pathspec</code>s) relative to <code>git_dir</code>
+whose modifications would invalidate the artifact.
+Each pathspec can also be a negative match, i.e. <code>:!foo</code>. This matches changes outside
+the <code>foo</code> directory.
+See <a href="https://git-scm.com/docs/gitglossary#Documentation/gitglossary.txt-aiddefpathspecapathspec">https://git-scm.com/docs/gitglossary#Documentation/gitglossary.txt-aiddefpathspecapathspec</a>
+for how git <code>pathspec</code> works.</p>
+<p>The function behaves differently in CI and outside CI.</p>
+<ul>
+<li>
+<p>Outside CI, we want to find out if <code>target_paths</code> were modified in some local commit on
+top of the latest upstream commit that is available in local git history.
+If not, we try to find the most recent upstream commit (which we assume are commits
+made by bors) that modified <code>target_paths</code>.
+We don’t want to simply take the latest master commit to avoid changing the output of
+this function frequently after rebasing on the latest master branch even if <code>target_paths</code>
+were not modified upstream in the meantime. In that case we would be redownloading CI
+artifacts unnecessarily.</p>
+</li>
+<li>
+<p>In CI, we use a shallow clone of depth 2, i.e., we fetch only a single parent commit
+(which will be the most recent bors merge commit) and do not have access
+to the full git history. Luckily, we only need to distinguish between two situations:</p>
+<ol>
+<li>The current PR made modifications to <code>target_paths</code>.
+In that case, a build is typically necessary.</li>
+<li>The current PR did not make modifications to <code>target_paths</code>.
+In that case we simply take the latest upstream commit, because on CI there is no need to avoid
+redownloading.</li>
+</ol>
+</li>
+</ul>
+</div></details></section></div></main></body></html>

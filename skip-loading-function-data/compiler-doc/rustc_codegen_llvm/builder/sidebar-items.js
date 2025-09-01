@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["UNNAMED"],"macro":["math_builder_methods","set_math_builder_methods"],"mod":["autodiff","gpu_offload"],"struct":["GenericBuilder"],"type":["Builder","SBuilder"]};

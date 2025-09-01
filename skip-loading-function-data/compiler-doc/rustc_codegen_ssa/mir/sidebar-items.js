@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CachedLlbb","LocalRef"],"fn":["arg_local_refs","codegen_mir","find_cold_blocks","optimize_use_clone","store_cast"],"mod":["analyze","block","constant","coverageinfo","debuginfo","intrinsic","locals","naked_asm","operand","place","rvalue","statement"],"struct":["FunctionCx"],"type":["PerLocalVarDebugInfoIndexVec"]};

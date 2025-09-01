@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["OmitDoc","ShouldEmit"],"macro":["attribute_parsers"],"mod":["early","late","private"],"struct":["AcceptContext","Early","FinalizeContext","GroupTypeInner","GroupTypeInnerAccept","Late","SharedContext"],"trait":["Stage"],"type":["AcceptFn","FinalizeFn","GroupType"]};

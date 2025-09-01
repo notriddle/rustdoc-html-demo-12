@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BoundRegionKind","LateParamRegionKind"],"mod":["size_asserts"],"struct":["BoundRegion","EarlyParamRegion","LateParamRegion","Region","RegionVid"],"type":["RegionKind"]};

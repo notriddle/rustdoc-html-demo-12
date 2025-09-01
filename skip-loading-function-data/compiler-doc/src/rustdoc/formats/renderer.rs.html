@@ -1,0 +1,126 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/librustdoc/formats/renderer.rs`."><title>renderer.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustdoc" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-beta.1 (788da80fc 2025-08-04)" data-channel="beta" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../../static.files/storage-68b7e25d.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustdoc/formats/</div>renderer.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="../../../rustc_data_structures/profiling/struct.SelfProfilerRef.html">rustc_data_structures::profiling::SelfProfilerRef</a>;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span><a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">rustc_middle::ty::TyCtxt</a>;
+<a href=#3 id=3 data-nosnippet>3</a>
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><a href="../lib.rs.html#105"><span class="kw">crate</span>::clean</a>;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="../config.rs.html#229-310"><span class="kw">crate</span>::config::RenderOptions</a>;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="../error.rs.html#8-11"><span class="kw">crate</span>::error::Error</a>;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span><a href="cache.rs.html#32-135"><span class="kw">crate</span>::formats::cache::Cache</a>;
+<a href=#8 id=8 data-nosnippet>8</a>
+<a href=#9 id=9 data-nosnippet>9</a><span class="doccomment">/// Allows for different backends to rustdoc to be used with the `run_format()` function. Each
+<a href=#10 id=10 data-nosnippet>10</a>/// backend renderer has hooks for initialization, documenting an item, entering and exiting a
+<a href=#11 id=11 data-nosnippet>11</a>/// module, and cleanup/finalizing output.
+<a href=#12 id=12 data-nosnippet>12</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">trait </span><a href="../../../rustdoc/formats/renderer/trait.FormatRenderer.html">FormatRenderer</a>&lt;<span class="lifetime">'tcx</span>&gt;: <a href="https://doc.rust-lang.org/beta/core/marker/trait.Sized.html">Sized</a> {
+<a href=#13 id=13 data-nosnippet>13</a>    <span class="doccomment">/// Gives a description of the renderer. Used for performance profiling.
+<a href=#14 id=14 data-nosnippet>14</a>    </span><span class="kw">fn </span>descr() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'static </span><a href="https://doc.rust-lang.org/beta/std/primitive.str.html">str</a>;
+<a href=#15 id=15 data-nosnippet>15</a>
+<a href=#16 id=16 data-nosnippet>16</a>    <span class="doccomment">/// Whether to call `item` recursively for modules
+<a href=#17 id=17 data-nosnippet>17</a>    ///
+<a href=#18 id=18 data-nosnippet>18</a>    /// This is true for html, and false for json. See #80664
+<a href=#19 id=19 data-nosnippet>19</a>    </span><span class="kw">const </span>RUN_ON_MODULE: <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a>;
+<a href=#20 id=20 data-nosnippet>20</a>
+<a href=#21 id=21 data-nosnippet>21</a>    <span class="doccomment">/// This associated type is the type where the current module information is stored.
+<a href=#22 id=22 data-nosnippet>22</a>    ///
+<a href=#23 id=23 data-nosnippet>23</a>    /// For each module, we go through their items by calling for each item:
+<a href=#24 id=24 data-nosnippet>24</a>    ///
+<a href=#25 id=25 data-nosnippet>25</a>    /// 1. `save_module_data`
+<a href=#26 id=26 data-nosnippet>26</a>    /// 2. `item`
+<a href=#27 id=27 data-nosnippet>27</a>    /// 3. `restore_module_data`
+<a href=#28 id=28 data-nosnippet>28</a>    ///
+<a href=#29 id=29 data-nosnippet>29</a>    /// This is because the `item` method might update information in `self` (for example if the child
+<a href=#30 id=30 data-nosnippet>30</a>    /// is a module). To prevent it from impacting the other children of the current module, we need to
+<a href=#31 id=31 data-nosnippet>31</a>    /// reset the information between each call to `item` by using `restore_module_data`.
+<a href=#32 id=32 data-nosnippet>32</a>    </span><span class="kw">type </span>ModuleData;
+<a href=#33 id=33 data-nosnippet>33</a>
+<a href=#34 id=34 data-nosnippet>34</a>    <span class="doccomment">/// This method is called right before call [`Self::item`]. This method returns a type
+<a href=#35 id=35 data-nosnippet>35</a>    /// containing information that needs to be reset after the [`Self::item`] method has been
+<a href=#36 id=36 data-nosnippet>36</a>    /// called with the [`Self::restore_module_data`] method.
+<a href=#37 id=37 data-nosnippet>37</a>    ///
+<a href=#38 id=38 data-nosnippet>38</a>    /// In short it goes like this:
+<a href=#39 id=39 data-nosnippet>39</a>    ///
+<a href=#40 id=40 data-nosnippet>40</a>    /// ```ignore (not valid code)
+<a href=#41 id=41 data-nosnippet>41</a>    /// let reset_data = renderer.save_module_data();
+<a href=#42 id=42 data-nosnippet>42</a>    /// renderer.item(item)?;
+<a href=#43 id=43 data-nosnippet>43</a>    /// renderer.restore_module_data(reset_data);
+<a href=#44 id=44 data-nosnippet>44</a>    /// ```
+<a href=#45 id=45 data-nosnippet>45</a>    </span><span class="kw">fn </span>save_module_data(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="self">Self</span>::ModuleData;
+<a href=#46 id=46 data-nosnippet>46</a>    <span class="doccomment">/// Used to reset current module's information.
+<a href=#47 id=47 data-nosnippet>47</a>    </span><span class="kw">fn </span>restore_module_data(<span class="kw-2">&amp;mut </span><span class="self">self</span>, info: <span class="self">Self</span>::ModuleData);
+<a href=#48 id=48 data-nosnippet>48</a>
+<a href=#49 id=49 data-nosnippet>49</a>    <span class="doccomment">/// Renders a single non-module item. This means no recursive sub-item rendering is required.
+<a href=#50 id=50 data-nosnippet>50</a>    </span><span class="kw">fn </span>item(<span class="kw-2">&amp;mut </span><span class="self">self</span>, item: <span class="kw-2">&amp;</span><a href="../clean/types.rs.html#307-309">clean::Item</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html">Result</a>&lt;(), <a href="../error.rs.html#8-11">Error</a>&gt;;
+<a href=#51 id=51 data-nosnippet>51</a>
+<a href=#52 id=52 data-nosnippet>52</a>    <span class="doccomment">/// Renders a module (should not handle recursing into children).
+<a href=#53 id=53 data-nosnippet>53</a>    </span><span class="kw">fn </span>mod_item_in(<span class="kw-2">&amp;mut </span><span class="self">self</span>, item: <span class="kw-2">&amp;</span><a href="../clean/types.rs.html#307-309">clean::Item</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html">Result</a>&lt;(), <a href="../error.rs.html#8-11">Error</a>&gt;;
+<a href=#54 id=54 data-nosnippet>54</a>
+<a href=#55 id=55 data-nosnippet>55</a>    <span class="doccomment">/// Runs after recursively rendering all sub-items of a module.
+<a href=#56 id=56 data-nosnippet>56</a>    </span><span class="kw">fn </span>mod_item_out(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html">Result</a>&lt;(), <a href="../error.rs.html#8-11">Error</a>&gt; {
+<a href=#57 id=57 data-nosnippet>57</a>        <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(())
+<a href=#58 id=58 data-nosnippet>58</a>    }
+<a href=#59 id=59 data-nosnippet>59</a>
+<a href=#60 id=60 data-nosnippet>60</a>    <span class="doccomment">/// Post processing hook for cleanup and dumping output to files.
+<a href=#61 id=61 data-nosnippet>61</a>    </span><span class="kw">fn </span>after_krate(<span class="self">self</span>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html">Result</a>&lt;(), <a href="../error.rs.html#8-11">Error</a>&gt;;
+<a href=#62 id=62 data-nosnippet>62</a>}
+<a href=#63 id=63 data-nosnippet>63</a>
+<a href=#64 id=64 data-nosnippet>64</a><span class="kw">fn </span><a href="../../../rustdoc/formats/renderer/fn.run_format_inner.html">run_format_inner</a>&lt;<span class="lifetime">'tcx</span>, T: <a href="#12-62">FormatRenderer</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;(
+<a href=#65 id=65 data-nosnippet>65</a>    cx: <span class="kw-2">&amp;mut </span>T,
+<a href=#66 id=66 data-nosnippet>66</a>    item: <span class="kw-2">&amp;</span><a href="../clean/types.rs.html#307-309">clean::Item</a>,
+<a href=#67 id=67 data-nosnippet>67</a>    prof: <span class="kw-2">&amp;</span><a href="../../../rustc_data_structures/profiling/struct.SelfProfilerRef.html">SelfProfilerRef</a>,
+<a href=#68 id=68 data-nosnippet>68</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html">Result</a>&lt;(), <a href="../error.rs.html#8-11">Error</a>&gt; {
+<a href=#69 id=69 data-nosnippet>69</a>    <span class="kw">if </span><a href="#66">item</a>.<a href="../clean/types.rs.html#563-565">is_mod</a>() &amp;&amp; T::RUN_ON_MODULE {
+<a href=#70 id=70 data-nosnippet>70</a>        <span class="comment">// modules are special because they add a namespace. We also need to
+<a href=#71 id=71 data-nosnippet>71</a>        // recurse into the items of the module as well.
+<a href=#72 id=72 data-nosnippet>72</a>        </span><span class="kw">let </span>_timer =
+<a href=#73 id=73 data-nosnippet>73</a>            <a href="#67">prof</a>.<a href="../../../rustc_data_structures/profiling/struct.SelfProfilerRef.html#method.generic_activity_with_arg">generic_activity_with_arg</a>(<span class="string">"render_mod_item"</span>, <a href="#66">item</a>.name.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="https://doc.rust-lang.org/beta/alloc/string/trait.ToString.html#tymethod.to_string">to_string</a>());
+<a href=#74 id=74 data-nosnippet>74</a>
+<a href=#75 id=75 data-nosnippet>75</a>        <a href="#65">cx</a>.<a href="#53">mod_item_in</a>(<a href="#66">item</a>)<span class="question-mark">?</span>;
+<a href=#76 id=76 data-nosnippet>76</a>        <span class="kw">let </span>(<a href="../clean/types.rs.html#973">clean::StrippedItem</a>(<span class="kw">box </span>clean::ModuleItem(<span class="kw-2">ref </span>module))
+<a href=#77 id=77 data-nosnippet>77</a>        | <a href="../clean/types.rs.html#936">clean::ModuleItem</a>(<span class="kw-2">ref </span>module)) = <a href="#66">item</a>.inner.kind
+<a href=#78 id=78 data-nosnippet>78</a>        <span class="kw">else </span>{
+<a href=#79 id=79 data-nosnippet>79</a>            <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.unreachable.html">unreachable!</a>()
+<a href=#80 id=80 data-nosnippet>80</a>        };
+<a href=#81 id=81 data-nosnippet>81</a>        <span class="kw">for </span>it <span class="kw">in </span>module.items.iter() {
+<a href=#82 id=82 data-nosnippet>82</a>            <span class="kw">let </span>info = cx.save_module_data();
+<a href=#83 id=83 data-nosnippet>83</a>            run_format_inner(cx, it, prof)<span class="question-mark">?</span>;
+<a href=#84 id=84 data-nosnippet>84</a>            cx.restore_module_data(info);
+<a href=#85 id=85 data-nosnippet>85</a>        }
+<a href=#86 id=86 data-nosnippet>86</a>
+<a href=#87 id=87 data-nosnippet>87</a>        <a href="#65">cx</a>.<a href="#56-58">mod_item_out</a>()<span class="question-mark">?</span>;
+<a href=#88 id=88 data-nosnippet>88</a>    <span class="comment">// FIXME: checking `item.name.is_some()` is very implicit and leads to lots of special
+<a href=#89 id=89 data-nosnippet>89</a>    // cases. Use an explicit match instead.
+<a href=#90 id=90 data-nosnippet>90</a>    </span>} <span class="kw">else if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(item_name) = <a href="#66">item</a>.name
+<a href=#91 id=91 data-nosnippet>91</a>        &amp;&amp; !<a href="#66">item</a>.<a href="../clean/types.rs.html#602-604">is_extern_crate</a>()
+<a href=#92 id=92 data-nosnippet>92</a>    {
+<a href=#93 id=93 data-nosnippet>93</a>        <a href="#67">prof</a>.<a href="../../../rustc_data_structures/profiling/struct.SelfProfilerRef.html#method.generic_activity_with_arg">generic_activity_with_arg</a>(<span class="string">"render_item"</span>, <a href="#90">item_name</a>.<a href="../../../rustc_span/symbol/struct.Symbol.html#method.as_str">as_str</a>()).<a href="../../../rustc_data_structures/profiling/struct.TimingGuard.html#method.run">run</a>(|| <a href="#65">cx</a>.<a href="#50">item</a>(<a href="#66">item</a>))<span class="question-mark">?</span>;
+<a href=#94 id=94 data-nosnippet>94</a>    }
+<a href=#95 id=95 data-nosnippet>95</a>    <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(())
+<a href=#96 id=96 data-nosnippet>96</a>}
+<a href=#97 id=97 data-nosnippet>97</a>
+<a href=#98 id=98 data-nosnippet>98</a><span class="doccomment">/// Main method for rendering a crate.
+<a href=#99 id=99 data-nosnippet>99</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span><a href="../../../rustdoc/formats/renderer/fn.run_format.html">run_format</a>&lt;
+<a href=#100 id=100 data-nosnippet>100</a>    <span class="lifetime">'tcx</span>,
+<a href=#101 id=101 data-nosnippet>101</a>    T: <a href="#12-62">FormatRenderer</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#102 id=102 data-nosnippet>102</a>    F: <a href="https://doc.rust-lang.org/beta/core/ops/function/trait.FnOnce.html">FnOnce</a>(<a href="../clean/types.rs.html#109-113">clean::Crate</a>, <a href="../config.rs.html#229-310">RenderOptions</a>, <a href="cache.rs.html#32-135">Cache</a>, <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html">Result</a>&lt;(T, <a href="../clean/types.rs.html#109-113">clean::Crate</a>), <a href="../error.rs.html#8-11">Error</a>&gt;,
+<a href=#103 id=103 data-nosnippet>103</a>&gt;(
+<a href=#104 id=104 data-nosnippet>104</a>    krate: <a href="../clean/types.rs.html#109-113">clean::Crate</a>,
+<a href=#105 id=105 data-nosnippet>105</a>    options: <a href="../config.rs.html#229-310">RenderOptions</a>,
+<a href=#106 id=106 data-nosnippet>106</a>    cache: <a href="cache.rs.html#32-135">Cache</a>,
+<a href=#107 id=107 data-nosnippet>107</a>    tcx: <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#108 id=108 data-nosnippet>108</a>    init: F,
+<a href=#109 id=109 data-nosnippet>109</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html">Result</a>&lt;(), <a href="../error.rs.html#8-11">Error</a>&gt; {
+<a href=#110 id=110 data-nosnippet>110</a>    <span class="kw">let </span>prof = <span class="kw-2">&amp;</span><a href="#107">tcx</a>.sess.prof;
+<a href=#111 id=111 data-nosnippet>111</a>
+<a href=#112 id=112 data-nosnippet>112</a>    <span class="kw">let </span>emit_crate = <a href="#105">options</a>.<a href="../config.rs.html#347-349">should_emit_crate</a>();
+<a href=#113 id=113 data-nosnippet>113</a>    <span class="kw">let </span>(<span class="kw-2">mut </span>format_renderer, krate) = <a href="#110">prof</a>
+<a href=#114 id=114 data-nosnippet>114</a>        .<a href="../../../rustc_data_structures/profiling/struct.SelfProfilerRef.html#method.verbose_generic_activity_with_arg">verbose_generic_activity_with_arg</a>(<span class="string">"create_renderer"</span>, <a href="#14">T::descr</a>())
+<a href=#115 id=115 data-nosnippet>115</a>        .<a href="../../../rustc_data_structures/profiling/struct.VerboseTimingGuard.html#method.run">run</a>(|| <a href="#108">init</a>(<a href="#104">krate</a>, <a href="#105">options</a>, <a href="#106">cache</a>, <a href="#107">tcx</a>))<span class="question-mark">?</span>;
+<a href=#116 id=116 data-nosnippet>116</a>
+<a href=#117 id=117 data-nosnippet>117</a>    <span class="kw">if </span>!<a href="#112">emit_crate</a> {
+<a href=#118 id=118 data-nosnippet>118</a>        <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(());
+<a href=#119 id=119 data-nosnippet>119</a>    }
+<a href=#120 id=120 data-nosnippet>120</a>
+<a href=#121 id=121 data-nosnippet>121</a>    <span class="comment">// Render the crate documentation
+<a href=#122 id=122 data-nosnippet>122</a>    </span><a href="#64-96">run_format_inner</a>(<span class="kw-2">&amp;mut </span><a href="#113">format_renderer</a>, <span class="kw-2">&amp;</span><a href="#113">krate</a>.module, <a href="#110">prof</a>)<span class="question-mark">?</span>;
+<a href=#123 id=123 data-nosnippet>123</a>
+<a href=#124 id=124 data-nosnippet>124</a>    <a href="#110">prof</a>.<a href="../../../rustc_data_structures/profiling/struct.SelfProfilerRef.html#method.verbose_generic_activity_with_arg">verbose_generic_activity_with_arg</a>(<span class="string">"renderer_after_krate"</span>, <a href="#14">T::descr</a>())
+<a href=#125 id=125 data-nosnippet>125</a>        .<a href="../../../rustc_data_structures/profiling/struct.VerboseTimingGuard.html#method.run">run</a>(|| <a href="#113">format_renderer</a>.<a href="#61">after_krate</a>())
+<a href=#126 id=126 data-nosnippet>126</a>}</code></pre></div></section></main></body></html>

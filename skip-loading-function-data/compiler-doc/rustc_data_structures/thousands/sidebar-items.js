@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["f64p1_with_underscores","format_with_underscores","isize_with_underscores","usize_with_underscores"]};

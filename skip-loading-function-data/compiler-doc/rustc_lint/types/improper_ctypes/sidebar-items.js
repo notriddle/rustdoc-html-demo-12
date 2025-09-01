@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_non_exhaustive_variant","variant_has_complex_ctor"]};

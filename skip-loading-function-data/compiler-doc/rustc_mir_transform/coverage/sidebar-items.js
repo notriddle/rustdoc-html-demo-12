@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["inject_coverage_statements","inject_statement","instrument_function_for_coverage"],"mod":["counters","graph","hir_info","mappings","query","spans","unexpand"],"struct":["InstrumentCoverage"]};

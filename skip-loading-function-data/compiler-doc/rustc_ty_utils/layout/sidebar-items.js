@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["error","extract_const_value","layout_of","layout_of_uncached","map_error","provide","record_layout_for_printing","variant_info_for_adt","variant_info_for_coroutine"],"mod":["invariant"]};

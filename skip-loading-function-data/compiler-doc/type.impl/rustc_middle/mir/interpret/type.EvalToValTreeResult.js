@@ -1,0 +1,9 @@
+(function() {
+    var type_impls = Object.fromEntries([["rustc_middle",[["<details class=\"toggle implementors-toggle\" open><summary><section id=\"impl-EraseType-for-Result%3CValTree%3C'_%3E,+ValTreeCreationError%3C'_%3E%3E\" class=\"impl\"><a class=\"src rightside\" href=\"src/rustc_middle/query/erase.rs.html#160-162\">Source</a><a href=\"#impl-EraseType-for-Result%3CValTree%3C'_%3E,+ValTreeCreationError%3C'_%3E%3E\" class=\"anchor\">§</a><h3 class=\"code-header\">impl <a class=\"trait\" href=\"rustc_middle/query/erase/trait.EraseType.html\" title=\"trait rustc_middle::query::erase::EraseType\">EraseType</a> for <a class=\"type\" href=\"rustc_middle/mir/interpret/type.EvalToValTreeResult.html\" title=\"type rustc_middle::mir::interpret::EvalToValTreeResult\">EvalToValTreeResult</a>&lt;'_&gt;</h3></section></summary><div class=\"impl-items\"><section id=\"associatedtype.Result\" class=\"associatedtype trait-impl\"><a class=\"src rightside\" href=\"src/rustc_middle/query/erase.rs.html#161\">Source</a><a href=\"#associatedtype.Result\" class=\"anchor\">§</a><h4 class=\"code-header\">type <a href=\"rustc_middle/query/erase/trait.EraseType.html#associatedtype.Result\" class=\"associatedtype\">Result</a> = [<a class=\"primitive\" href=\"https://doc.rust-lang.org/beta/std/primitive.u8.html\">u8</a>; <a class=\"primitive\" href=\"https://doc.rust-lang.org/beta/std/primitive.array.html\">16</a>]</h4></section></div></details>","EraseType","rustc_middle::query::queries::eval_to_valtree::Value","rustc_middle::query::queries::eval_to_valtree::ProvidedValue"]]]]);
+    if (window.register_type_impls) {
+        window.register_type_impls(type_impls);
+    } else {
+        window.pending_type_impls = type_impls;
+    }
+})()
+//{"start":55,"fragment_lengths":[1523]}

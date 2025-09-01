@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_null_ptr","useless_check"],"static":["INVALID_NULL_ARGUMENTS","USELESS_PTR_NULL_CHECKS"],"struct":["PtrNullChecks"]};

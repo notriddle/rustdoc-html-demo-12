@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["VERSION_PLACEHOLDER"],"enum":["StabilityLevel","StableSince","UnstableReason"],"struct":["ConstStability","DefaultBodyStability","PartialConstStability","Stability"]};

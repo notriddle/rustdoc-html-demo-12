@@ -1,0 +1,9 @@
+(function() {
+    var type_impls = Object.fromEntries([["rustc_middle",[["<details class=\"toggle implementors-toggle\" open><summary><section id=\"impl-Decodable%3CD%3E-for-%26TypeckResults%3C'tcx%3E\" class=\"impl\"><a class=\"src rightside\" href=\"src/rustc_middle/ty/codec.rs.html#507-516\">Source</a><a href=\"#impl-Decodable%3CD%3E-for-%26TypeckResults%3C'tcx%3E\" class=\"anchor\">§</a><h3 class=\"code-header\">impl&lt;'tcx, D: <a class=\"trait\" href=\"rustc_middle/ty/codec/trait.TyDecoder.html\" title=\"trait rustc_middle::ty::codec::TyDecoder\">TyDecoder</a>&lt;'tcx&gt;&gt; <a class=\"trait\" href=\"rustc_serialize/serialize/trait.Decodable.html\" title=\"trait rustc_serialize::serialize::Decodable\">Decodable</a>&lt;D&gt; for &amp;'tcx <a class=\"struct\" href=\"rustc_middle/ty/struct.TypeckResults.html\" title=\"struct rustc_middle::ty::TypeckResults\">TypeckResults</a>&lt;'tcx&gt;</h3></section></summary><div class=\"impl-items\"><section id=\"method.decode\" class=\"method trait-impl\"><a class=\"src rightside\" href=\"src/rustc_middle/ty/codec.rs.html#507-516\">Source</a><a href=\"#method.decode\" class=\"anchor\">§</a><h4 class=\"code-header\">fn <a href=\"rustc_serialize/serialize/trait.Decodable.html#tymethod.decode\" class=\"fn\">decode</a>(decoder: <a class=\"primitive\" href=\"https://doc.rust-lang.org/beta/std/primitive.reference.html\">&amp;mut D</a>) -&gt; Self</h4></section></div></details>","Decodable<D>","rustc_middle::query::queries::typeck::Value","rustc_middle::query::queries::typeck::ProvidedValue"]]]]);
+    if (window.register_type_impls) {
+        window.register_type_impls(type_impls);
+    } else {
+        window.pending_type_impls = type_impls;
+    }
+})()
+//{"start":55,"fragment_lengths":[1502]}

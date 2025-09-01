@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AliasBoundKind","AllowInferenceConstraints","AssembleCandidatesFrom"],"mod":["structural_traits"],"struct":["Candidate","FailedCandidateInfo","FindParamInClause"],"trait":["GoalKind"]};

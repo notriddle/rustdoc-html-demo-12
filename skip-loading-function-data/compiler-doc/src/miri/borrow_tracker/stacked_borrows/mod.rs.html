@@ -1,0 +1,1048 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/miri/src/borrow_tracker/stacked_borrows/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="miri" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-beta.1 (788da80fc 2025-08-04)" data-channel="beta" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../../../static.files/storage-68b7e25d.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">miri/borrow_tracker/stacked_borrows/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-4"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Implements "Stacked Borrows".  See &lt;https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md&gt;
+<a href=#2 id=2 data-nosnippet>2</a>//! for further information.
+<a href=#3 id=3 data-nosnippet>3</a>
+<a href=#4 id=4 data-nosnippet>4</a></span><span class="kw">pub mod </span><a href="diagnostics.rs.html#1-523">diagnostics</a>;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">mod </span><a href="item.rs.html#1-107">item</a>;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">mod </span><a href="stack.rs.html#1-479">stack</a>;
+<a href=#7 id=7 data-nosnippet>7</a>
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/core/fmt/trait.Write.html">std::fmt::Write</a>;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span>std::{<a href="https://doc.rust-lang.org/beta/core/cmp/index.html">cmp</a>, <a href="https://doc.rust-lang.org/beta/core/mem/index.html">mem</a>};
+<a href=#10 id=10 data-nosnippet>10</a>
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>rustc_abi::{<a href="../../../../rustc_abi/enum.BackendRepr.html">BackendRepr</a>, <a href="../../../../rustc_abi/struct.Size.html">Size</a>};
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>rustc_data_structures::fx::FxHashSet;
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span>rustc_middle::mir::{<a href="../../../../rustc_ast_ir/enum.Mutability.html">Mutability</a>, <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html">RetagKind</a>};
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span><a href="../../../../rustc_middle/ty/layout/trait.HasTypingEnv.html">rustc_middle::ty::layout::HasTypingEnv</a>;
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span>rustc_middle::ty::{<a class="self" href="../../../../rustc_middle/ty/index.html">self</a>, <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>};
+<a href=#16 id=16 data-nosnippet>16</a>
+<a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span><span class="self">self</span>::diagnostics::{<a href="diagnostics.rs.html#201-206">RetagCause</a>, <a href="diagnostics.rs.html#195-198">RetagInfo</a>};
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">pub use </span><span class="self">self</span>::item::{<a href="item.rs.html#7">Item</a>, <a href="item.rs.html#71-81">Permission</a>};
+<a href=#19 id=19 data-nosnippet>19</a><span class="kw">pub use </span><a href="stack.rs.html#21-42"><span class="self">self</span>::stack::Stack</a>;
+<a href=#20 id=20 data-nosnippet>20</a><span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::stacked_borrows::diagnostics::{
+<a href=#21 id=21 data-nosnippet>21</a>    <a href="diagnostics.rs.html#21-27">AllocHistory</a>, <a href="diagnostics.rs.html#123-128">DiagnosticCx</a>, <a href="diagnostics.rs.html#118-121">DiagnosticCxBuilder</a>,
+<a href=#22 id=22 data-nosnippet>22</a>};
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span><span class="kw">crate</span>::borrow_tracker::{<a href="../mod.rs.html#87-105">GlobalStateInner</a>, <a href="../mod.rs.html#141-157">ProtectorKind</a>};
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">use </span><span class="kw">crate</span>::concurrency::data_race::{<a href="../../concurrency/data_race.rs.html#203-209">NaReadType</a>, <a href="../../concurrency/data_race.rs.html#223-238">NaWriteType</a>};
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">use crate</span>::<span class="kw-2">*</span>;
+<a href=#26 id=26 data-nosnippet>26</a>
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">pub type </span><a href="../../../../miri/borrow_tracker/stacked_borrows/type.AllocState.html">AllocState</a> = <a href="#31-38">Stacks</a>;
+<a href=#28 id=28 data-nosnippet>28</a>
+<a href=#29 id=29 data-nosnippet>29</a><span class="doccomment">/// Extra per-allocation state.
+<a href=#30 id=30 data-nosnippet>30</a></span><span class="attr">#[derive(Clone, Debug)]
+<a href=#31 id=31 data-nosnippet>31</a></span><span class="kw">pub struct </span><a href="../../../../miri/struct.Stacks.html">Stacks</a> {
+<a href=#32 id=32 data-nosnippet>32</a>    <span class="comment">// Even reading memory can have effects on the stack, so we need a `RefCell` here.
+<a href=#33 id=33 data-nosnippet>33</a>    </span>stacks: <a href="../../data_structures/dedup_range_map.rs.html#20-22">DedupRangeMap</a>&lt;<a href="stack.rs.html#21-42">Stack</a>&gt;,
+<a href=#34 id=34 data-nosnippet>34</a>    <span class="doccomment">/// Stores past operations on this allocation
+<a href=#35 id=35 data-nosnippet>35</a>    </span>history: <a href="diagnostics.rs.html#21-27">AllocHistory</a>,
+<a href=#36 id=36 data-nosnippet>36</a>    <span class="doccomment">/// The set of tags that have been exposed inside this allocation.
+<a href=#37 id=37 data-nosnippet>37</a>    </span>exposed_tags: FxHashSet&lt;<a href="../mod.rs.html#16">BorTag</a>&gt;,
+<a href=#38 id=38 data-nosnippet>38</a>}
+<a href=#39 id=39 data-nosnippet>39</a>
+<a href=#40 id=40 data-nosnippet>40</a><span class="doccomment">/// Indicates which permissions to grant to the retagged pointer.
+<a href=#41 id=41 data-nosnippet>41</a></span><span class="attr">#[derive(Clone, Debug)]
+<a href=#42 id=42 data-nosnippet>42</a></span><span class="kw">enum </span><a href="../../../../miri/borrow_tracker/stacked_borrows/enum.NewPermission.html">NewPermission</a> {
+<a href=#43 id=43 data-nosnippet>43</a>    Uniform {
+<a href=#44 id=44 data-nosnippet>44</a>        perm: <a href="item.rs.html#71-81">Permission</a>,
+<a href=#45 id=45 data-nosnippet>45</a>        access: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="../../helpers.rs.html#26-29">AccessKind</a>&gt;,
+<a href=#46 id=46 data-nosnippet>46</a>        protector: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="../mod.rs.html#141-157">ProtectorKind</a>&gt;,
+<a href=#47 id=47 data-nosnippet>47</a>    },
+<a href=#48 id=48 data-nosnippet>48</a>    FreezeSensitive {
+<a href=#49 id=49 data-nosnippet>49</a>        freeze_perm: <a href="item.rs.html#71-81">Permission</a>,
+<a href=#50 id=50 data-nosnippet>50</a>        freeze_access: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="../../helpers.rs.html#26-29">AccessKind</a>&gt;,
+<a href=#51 id=51 data-nosnippet>51</a>        freeze_protector: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="../mod.rs.html#141-157">ProtectorKind</a>&gt;,
+<a href=#52 id=52 data-nosnippet>52</a>        nonfreeze_perm: <a href="item.rs.html#71-81">Permission</a>,
+<a href=#53 id=53 data-nosnippet>53</a>        nonfreeze_access: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="../../helpers.rs.html#26-29">AccessKind</a>&gt;,
+<a href=#54 id=54 data-nosnippet>54</a>        <span class="comment">// nonfreeze_protector must always be None
+<a href=#55 id=55 data-nosnippet>55</a>    </span>},
+<a href=#56 id=56 data-nosnippet>56</a>}
+<a href=#57 id=57 data-nosnippet>57</a>
+<a href=#58 id=58 data-nosnippet>58</a><span class="kw">impl </span><a href="#42-56">NewPermission</a> {
+<a href=#59 id=59 data-nosnippet>59</a>    <span class="doccomment">/// A key function: determine the permissions to grant at a retag for the given kind of
+<a href=#60 id=60 data-nosnippet>60</a>    /// reference/pointer.
+<a href=#61 id=61 data-nosnippet>61</a>    </span><span class="kw">fn </span>from_ref_ty&lt;<span class="lifetime">'tcx</span>&gt;(ty: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;, kind: <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html">RetagKind</a>, cx: <span class="kw-2">&amp;</span><a href="../../machine.rs.html#961"><span class="kw">crate</span>::MiriInterpCx</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
+<a href=#62 id=62 data-nosnippet>62</a>        <span class="kw">let </span>protector = (<a href="#61">kind</a> == <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html#variant.FnEntry">RetagKind::FnEntry</a>).<a href="https://doc.rust-lang.org/beta/core/foreigntype.bool.html#method.then_some">then_some</a>(<a href="../mod.rs.html#156">ProtectorKind::StrongProtector</a>);
+<a href=#63 id=63 data-nosnippet>63</a>        <span class="kw">match </span><a href="#61">ty</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() {
+<a href=#64 id=64 data-nosnippet>64</a>            <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Ref">ty::Ref</a>(<span class="kw">_</span>, pointee, Mutability::Mut) =&gt; {
+<a href=#65 id=65 data-nosnippet>65</a>                <span class="kw">if </span><a href="#61">kind</a> == <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html#variant.TwoPhase">RetagKind::TwoPhase</a> {
+<a href=#66 id=66 data-nosnippet>66</a>                    <span class="comment">// We mostly just give up on 2phase-borrows, and treat these exactly like raw pointers.
+<a href=#67 id=67 data-nosnippet>67</a>                    </span><a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(protector.is_none()); <span class="comment">// RetagKind can't be both FnEntry and TwoPhase.
+<a href=#68 id=68 data-nosnippet>68</a>                    </span><a href="#43-47">NewPermission::Uniform</a> {
+<a href=#69 id=69 data-nosnippet>69</a>                        perm: <a href="item.rs.html#75">Permission::SharedReadWrite</a>,
+<a href=#70 id=70 data-nosnippet>70</a>                        access: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#71 id=71 data-nosnippet>71</a>                        protector: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#72 id=72 data-nosnippet>72</a>                    }
+<a href=#73 id=73 data-nosnippet>73</a>                } <span class="kw">else if </span><a href="#64">pointee</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.is_unpin">is_unpin</a>(<span class="kw-2">*</span><a href="#61">cx</a>.tcx, <a href="#61">cx</a>.<a href="../../../../rustc_middle/ty/layout/trait.HasTypingEnv.html#tymethod.typing_env">typing_env</a>()) {
+<a href=#74 id=74 data-nosnippet>74</a>                    <span class="comment">// A regular full mutable reference. On `FnEntry` this is `noalias` and `dereferenceable`.
+<a href=#75 id=75 data-nosnippet>75</a>                    </span><a href="#43-47">NewPermission::Uniform</a> {
+<a href=#76 id=76 data-nosnippet>76</a>                        perm: <a href="item.rs.html#73">Permission::Unique</a>,
+<a href=#77 id=77 data-nosnippet>77</a>                        access: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="../../helpers.rs.html#28">AccessKind::Write</a>),
+<a href=#78 id=78 data-nosnippet>78</a>                        <a href="#62">protector</a>,
+<a href=#79 id=79 data-nosnippet>79</a>                    }
+<a href=#80 id=80 data-nosnippet>80</a>                } <span class="kw">else </span>{
+<a href=#81 id=81 data-nosnippet>81</a>                    <span class="comment">// `!Unpin` dereferences do not get `noalias` nor `dereferenceable`.
+<a href=#82 id=82 data-nosnippet>82</a>                    </span><a href="#43-47">NewPermission::Uniform</a> {
+<a href=#83 id=83 data-nosnippet>83</a>                        perm: <a href="item.rs.html#75">Permission::SharedReadWrite</a>,
+<a href=#84 id=84 data-nosnippet>84</a>                        access: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#85 id=85 data-nosnippet>85</a>                        protector: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#86 id=86 data-nosnippet>86</a>                    }
+<a href=#87 id=87 data-nosnippet>87</a>                }
+<a href=#88 id=88 data-nosnippet>88</a>            }
+<a href=#89 id=89 data-nosnippet>89</a>            <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.RawPtr">ty::RawPtr</a>(<span class="kw">_</span>, Mutability::Mut) =&gt; {
+<a href=#90 id=90 data-nosnippet>90</a>                <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(protector.is_none()); <span class="comment">// RetagKind can't be both FnEntry and Raw.
+<a href=#91 id=91 data-nosnippet>91</a>                // Mutable raw pointer. No access, not protected.
+<a href=#92 id=92 data-nosnippet>92</a>                </span><a href="#43-47">NewPermission::Uniform</a> {
+<a href=#93 id=93 data-nosnippet>93</a>                    perm: <a href="item.rs.html#75">Permission::SharedReadWrite</a>,
+<a href=#94 id=94 data-nosnippet>94</a>                    access: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#95 id=95 data-nosnippet>95</a>                    protector: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#96 id=96 data-nosnippet>96</a>                }
+<a href=#97 id=97 data-nosnippet>97</a>            }
+<a href=#98 id=98 data-nosnippet>98</a>            <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Ref">ty::Ref</a>(<span class="kw">_</span>, _pointee, Mutability::Not) =&gt; {
+<a href=#99 id=99 data-nosnippet>99</a>                <span class="comment">// Shared references. If frozen, these get `noalias` and `dereferenceable`; otherwise neither.
+<a href=#100 id=100 data-nosnippet>100</a>                </span><a href="#48-55">NewPermission::FreezeSensitive</a> {
+<a href=#101 id=101 data-nosnippet>101</a>                    freeze_perm: <a href="item.rs.html#77">Permission::SharedReadOnly</a>,
+<a href=#102 id=102 data-nosnippet>102</a>                    freeze_access: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="../../helpers.rs.html#27">AccessKind::Read</a>),
+<a href=#103 id=103 data-nosnippet>103</a>                    freeze_protector: <a href="#62">protector</a>,
+<a href=#104 id=104 data-nosnippet>104</a>                    nonfreeze_perm: <a href="item.rs.html#75">Permission::SharedReadWrite</a>,
+<a href=#105 id=105 data-nosnippet>105</a>                    <span class="comment">// Inside UnsafeCell, this does *not* count as an access, as there
+<a href=#106 id=106 data-nosnippet>106</a>                    // might actually be mutable references further up the stack that
+<a href=#107 id=107 data-nosnippet>107</a>                    // we have to keep alive.
+<a href=#108 id=108 data-nosnippet>108</a>                    </span>nonfreeze_access: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#109 id=109 data-nosnippet>109</a>                    <span class="comment">// We do not protect inside UnsafeCell.
+<a href=#110 id=110 data-nosnippet>110</a>                    // This fixes https://github.com/rust-lang/rust/issues/55005.
+<a href=#111 id=111 data-nosnippet>111</a>                </span>}
+<a href=#112 id=112 data-nosnippet>112</a>            }
+<a href=#113 id=113 data-nosnippet>113</a>            <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.RawPtr">ty::RawPtr</a>(<span class="kw">_</span>, Mutability::Not) =&gt; {
+<a href=#114 id=114 data-nosnippet>114</a>                <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(protector.is_none()); <span class="comment">// RetagKind can't be both FnEntry and Raw.
+<a href=#115 id=115 data-nosnippet>115</a>                // `*const T`, when freshly created, are read-only in the frozen part.
+<a href=#116 id=116 data-nosnippet>116</a>                </span><a href="#48-55">NewPermission::FreezeSensitive</a> {
+<a href=#117 id=117 data-nosnippet>117</a>                    freeze_perm: <a href="item.rs.html#77">Permission::SharedReadOnly</a>,
+<a href=#118 id=118 data-nosnippet>118</a>                    freeze_access: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="../../helpers.rs.html#27">AccessKind::Read</a>),
+<a href=#119 id=119 data-nosnippet>119</a>                    freeze_protector: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#120 id=120 data-nosnippet>120</a>                    nonfreeze_perm: <a href="item.rs.html#75">Permission::SharedReadWrite</a>,
+<a href=#121 id=121 data-nosnippet>121</a>                    nonfreeze_access: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#122 id=122 data-nosnippet>122</a>                }
+<a href=#123 id=123 data-nosnippet>123</a>            }
+<a href=#124 id=124 data-nosnippet>124</a>            <span class="kw">_ </span>=&gt; <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#125 id=125 data-nosnippet>125</a>        }
+<a href=#126 id=126 data-nosnippet>126</a>    }
+<a href=#127 id=127 data-nosnippet>127</a>
+<a href=#128 id=128 data-nosnippet>128</a>    <span class="kw">fn </span>from_box_ty&lt;<span class="lifetime">'tcx</span>&gt;(ty: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;, kind: <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html">RetagKind</a>, cx: <span class="kw-2">&amp;</span><a href="../../machine.rs.html#961"><span class="kw">crate</span>::MiriInterpCx</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
+<a href=#129 id=129 data-nosnippet>129</a>        <span class="comment">// `ty` is not the `Box` but the field of the Box with this pointer (due to allocator handling).
+<a href=#130 id=130 data-nosnippet>130</a>        </span><span class="kw">let </span>pointee = <a href="#128">ty</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.builtin_deref">builtin_deref</a>(<span class="bool-val">true</span>).<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>();
+<a href=#131 id=131 data-nosnippet>131</a>        <span class="kw">if </span><a href="#130">pointee</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.is_unpin">is_unpin</a>(<span class="kw-2">*</span><a href="#128">cx</a>.tcx, <a href="#128">cx</a>.<a href="../../../../rustc_middle/ty/layout/trait.HasTypingEnv.html#tymethod.typing_env">typing_env</a>()) {
+<a href=#132 id=132 data-nosnippet>132</a>            <span class="comment">// A regular box. On `FnEntry` this is `noalias`, but not `dereferenceable` (hence only
+<a href=#133 id=133 data-nosnippet>133</a>            // a weak protector).
+<a href=#134 id=134 data-nosnippet>134</a>            </span><a href="#43-47">NewPermission::Uniform</a> {
+<a href=#135 id=135 data-nosnippet>135</a>                perm: <a href="item.rs.html#73">Permission::Unique</a>,
+<a href=#136 id=136 data-nosnippet>136</a>                access: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="../../helpers.rs.html#28">AccessKind::Write</a>),
+<a href=#137 id=137 data-nosnippet>137</a>                protector: (<a href="#128">kind</a> == <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html#variant.FnEntry">RetagKind::FnEntry</a>).<a href="https://doc.rust-lang.org/beta/core/foreigntype.bool.html#method.then_some">then_some</a>(<a href="../mod.rs.html#148">ProtectorKind::WeakProtector</a>),
+<a href=#138 id=138 data-nosnippet>138</a>            }
+<a href=#139 id=139 data-nosnippet>139</a>        } <span class="kw">else </span>{
+<a href=#140 id=140 data-nosnippet>140</a>            <span class="comment">// `!Unpin` boxes do not get `noalias` nor `dereferenceable`.
+<a href=#141 id=141 data-nosnippet>141</a>            </span><a href="#43-47">NewPermission::Uniform</a> {
+<a href=#142 id=142 data-nosnippet>142</a>                perm: <a href="item.rs.html#75">Permission::SharedReadWrite</a>,
+<a href=#143 id=143 data-nosnippet>143</a>                access: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#144 id=144 data-nosnippet>144</a>                protector: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#145 id=145 data-nosnippet>145</a>            }
+<a href=#146 id=146 data-nosnippet>146</a>        }
+<a href=#147 id=147 data-nosnippet>147</a>    }
+<a href=#148 id=148 data-nosnippet>148</a>
+<a href=#149 id=149 data-nosnippet>149</a>    <span class="kw">fn </span>protector(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="../mod.rs.html#141-157">ProtectorKind</a>&gt; {
+<a href=#150 id=150 data-nosnippet>150</a>        <span class="kw">match </span><span class="self"><a href="#149">self</a> </span>{
+<a href=#151 id=151 data-nosnippet>151</a>            <a href="#43-47">NewPermission::Uniform</a> { protector, .. } =&gt; <span class="kw-2">*</span><a href="#151">protector</a>,
+<a href=#152 id=152 data-nosnippet>152</a>            <a href="#48-55">NewPermission::FreezeSensitive</a> { freeze_protector, .. } =&gt; <span class="kw-2">*</span><a href="#152">freeze_protector</a>,
+<a href=#153 id=153 data-nosnippet>153</a>        }
+<a href=#154 id=154 data-nosnippet>154</a>    }
+<a href=#155 id=155 data-nosnippet>155</a>}
+<a href=#156 id=156 data-nosnippet>156</a>
+<a href=#157 id=157 data-nosnippet>157</a><span class="comment">// # Stacked Borrows Core Begin
+<a href=#158 id=158 data-nosnippet>158</a>
+<a href=#159 id=159 data-nosnippet>159</a></span><span class="doccomment">/// We need to make at least the following things true:
+<a href=#160 id=160 data-nosnippet>160</a>///
+<a href=#161 id=161 data-nosnippet>161</a>/// U1: After creating a `Uniq`, it is at the top.
+<a href=#162 id=162 data-nosnippet>162</a>/// U2: If the top is `Uniq`, accesses must be through that `Uniq` or remove it.
+<a href=#163 id=163 data-nosnippet>163</a>/// U3: If an access happens with a `Uniq`, it requires the `Uniq` to be in the stack.
+<a href=#164 id=164 data-nosnippet>164</a>///
+<a href=#165 id=165 data-nosnippet>165</a>/// F1: After creating a `&amp;`, the parts outside `UnsafeCell` have our `SharedReadOnly` on top.
+<a href=#166 id=166 data-nosnippet>166</a>/// F2: If a write access happens, it pops the `SharedReadOnly`.  This has three pieces:
+<a href=#167 id=167 data-nosnippet>167</a>///     F2a: If a write happens granted by an item below our `SharedReadOnly`, the `SharedReadOnly`
+<a href=#168 id=168 data-nosnippet>168</a>///          gets popped.
+<a href=#169 id=169 data-nosnippet>169</a>///     F2b: No `SharedReadWrite` or `Unique` will ever be added on top of our `SharedReadOnly`.
+<a href=#170 id=170 data-nosnippet>170</a>/// F3: If an access happens with an `&amp;` outside `UnsafeCell`,
+<a href=#171 id=171 data-nosnippet>171</a>///     it requires the `SharedReadOnly` to still be in the stack.
+<a href=#172 id=172 data-nosnippet>172</a>///
+<a href=#173 id=173 data-nosnippet>173</a>/// Core relation on `Permission` to define which accesses are allowed
+<a href=#174 id=174 data-nosnippet>174</a></span><span class="kw">impl </span><a href="item.rs.html#71-81">Permission</a> {
+<a href=#175 id=175 data-nosnippet>175</a>    <span class="doccomment">/// This defines for a given permission, whether it permits the given kind of access.
+<a href=#176 id=176 data-nosnippet>176</a>    </span><span class="kw">fn </span>grants(<span class="self">self</span>, access: <a href="../../helpers.rs.html#26-29">AccessKind</a>) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a> {
+<a href=#177 id=177 data-nosnippet>177</a>        <span class="comment">// Disabled grants nothing. Otherwise, all items grant read access, and except for SharedReadOnly they grant write access.
+<a href=#178 id=178 data-nosnippet>178</a>        </span><span class="self"><a href="#176">self</a> </span>!= <a href="item.rs.html#80">Permission::Disabled</a>
+<a href=#179 id=179 data-nosnippet>179</a>            &amp;&amp; (<a href="#176">access</a> == <a href="../../helpers.rs.html#27">AccessKind::Read</a> || <span class="self"><a href="#176">self</a> </span>!= <a href="item.rs.html#77">Permission::SharedReadOnly</a>)
+<a href=#180 id=180 data-nosnippet>180</a>    }
+<a href=#181 id=181 data-nosnippet>181</a>}
+<a href=#182 id=182 data-nosnippet>182</a>
+<a href=#183 id=183 data-nosnippet>183</a><span class="doccomment">/// Determines whether an item was invalidated by a conflicting access, or by deallocation.
+<a href=#184 id=184 data-nosnippet>184</a></span><span class="attr">#[derive(Copy, Clone, Debug)]
+<a href=#185 id=185 data-nosnippet>185</a></span><span class="kw">enum </span><a href="../../../../miri/borrow_tracker/stacked_borrows/enum.ItemInvalidationCause.html">ItemInvalidationCause</a> {
+<a href=#186 id=186 data-nosnippet>186</a>    Conflict,
+<a href=#187 id=187 data-nosnippet>187</a>    Dealloc,
+<a href=#188 id=188 data-nosnippet>188</a>}
+<a href=#189 id=189 data-nosnippet>189</a>
+<a href=#190 id=190 data-nosnippet>190</a><span class="doccomment">/// Core per-location operations: access, dealloc, reborrow.
+<a href=#191 id=191 data-nosnippet>191</a></span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="stack.rs.html#21-42">Stack</a> {
+<a href=#192 id=192 data-nosnippet>192</a>    <span class="doccomment">/// Find the first write-incompatible item above the given one --
+<a href=#193 id=193 data-nosnippet>193</a>    /// i.e, find the height to which the stack will be truncated when writing to `granting`.
+<a href=#194 id=194 data-nosnippet>194</a>    </span><span class="kw">fn </span>find_first_write_incompatible(<span class="kw-2">&amp;</span><span class="self">self</span>, granting: <a href="https://doc.rust-lang.org/beta/std/primitive.usize.html">usize</a>) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.usize.html">usize</a> {
+<a href=#195 id=195 data-nosnippet>195</a>        <span class="kw">let </span>perm = <a class="self" href="#194">self</a>.<a href="stack.rs.html#353-355">get</a>(<a href="#194">granting</a>).<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="item.rs.html#45-47">perm</a>();
+<a href=#196 id=196 data-nosnippet>196</a>        <span class="kw">match </span><a href="#195">perm</a> {
+<a href=#197 id=197 data-nosnippet>197</a>            <a href="item.rs.html#77">Permission::SharedReadOnly</a> =&gt; <a class="macro" href="../../../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"Cannot use SharedReadOnly for writing"</span>),
+<a href=#198 id=198 data-nosnippet>198</a>            <a href="item.rs.html#80">Permission::Disabled</a> =&gt; <a class="macro" href="../../../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"Cannot use Disabled for anything"</span>),
+<a href=#199 id=199 data-nosnippet>199</a>            <a href="item.rs.html#73">Permission::Unique</a> =&gt; {
+<a href=#200 id=200 data-nosnippet>200</a>                <span class="comment">// On a write, everything above us is incompatible.
+<a href=#201 id=201 data-nosnippet>201</a>                </span><a href="#194">granting</a> + <span class="number">1
+<a href=#202 id=202 data-nosnippet>202</a>            </span>}
+<a href=#203 id=203 data-nosnippet>203</a>            <a href="item.rs.html#75">Permission::SharedReadWrite</a> =&gt; {
+<a href=#204 id=204 data-nosnippet>204</a>                <span class="comment">// The SharedReadWrite *just* above us are compatible, to skip those.
+<a href=#205 id=205 data-nosnippet>205</a>                </span><span class="kw">let </span><span class="kw-2">mut </span>idx = <a href="#194">granting</a> + <span class="number">1</span>;
+<a href=#206 id=206 data-nosnippet>206</a>                <span class="kw">while let </span><span class="prelude-val">Some</span>(item) = <span class="self">self</span>.get(idx) {
+<a href=#207 id=207 data-nosnippet>207</a>                    <span class="kw">if </span>item.perm() == Permission::SharedReadWrite {
+<a href=#208 id=208 data-nosnippet>208</a>                        <span class="comment">// Go on.
+<a href=#209 id=209 data-nosnippet>209</a>                        </span>idx += <span class="number">1</span>;
+<a href=#210 id=210 data-nosnippet>210</a>                    } <span class="kw">else </span>{
+<a href=#211 id=211 data-nosnippet>211</a>                        <span class="comment">// Found first incompatible!
+<a href=#212 id=212 data-nosnippet>212</a>                        </span><span class="kw">break</span>;
+<a href=#213 id=213 data-nosnippet>213</a>                    }
+<a href=#214 id=214 data-nosnippet>214</a>                }
+<a href=#215 id=215 data-nosnippet>215</a>                <a href="#205">idx</a>
+<a href=#216 id=216 data-nosnippet>216</a>            }
+<a href=#217 id=217 data-nosnippet>217</a>        }
+<a href=#218 id=218 data-nosnippet>218</a>    }
+<a href=#219 id=219 data-nosnippet>219</a>
+<a href=#220 id=220 data-nosnippet>220</a>    <span class="doccomment">/// The given item was invalidated -- check its protectors for whether that will cause UB.
+<a href=#221 id=221 data-nosnippet>221</a>    </span><span class="kw">fn </span>item_invalidated(
+<a href=#222 id=222 data-nosnippet>222</a>        item: <span class="kw-2">&amp;</span><a href="item.rs.html#7">Item</a>,
+<a href=#223 id=223 data-nosnippet>223</a>        global: <span class="kw-2">&amp;</span><a href="../mod.rs.html#87-105">GlobalStateInner</a>,
+<a href=#224 id=224 data-nosnippet>224</a>        dcx: <span class="kw-2">&amp;</span><a href="diagnostics.rs.html#123-128">DiagnosticCx</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#225 id=225 data-nosnippet>225</a>        cause: <a href="#185-188">ItemInvalidationCause</a>,
+<a href=#226 id=226 data-nosnippet>226</a>    ) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#227 id=227 data-nosnippet>227</a>        <span class="kw">if </span>!<a href="#223">global</a>.tracked_pointer_tags.<a href="https://doc.rust-lang.org/beta/std/collections/hash/set/struct.HashSet.html#method.is_empty">is_empty</a>() {
+<a href=#228 id=228 data-nosnippet>228</a>            <a href="#224">dcx</a>.<a href="diagnostics.rs.html#469-487">check_tracked_tag_popped</a>(<a href="#222">item</a>, <a href="#223">global</a>);
+<a href=#229 id=229 data-nosnippet>229</a>        }
+<a href=#230 id=230 data-nosnippet>230</a>
+<a href=#231 id=231 data-nosnippet>231</a>        <span class="kw">if </span>!<a href="#222">item</a>.<a href="item.rs.html#50-52">protected</a>() {
+<a href=#232 id=232 data-nosnippet>232</a>            <span class="kw">return </span><a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(());
+<a href=#233 id=233 data-nosnippet>233</a>        }
+<a href=#234 id=234 data-nosnippet>234</a>
+<a href=#235 id=235 data-nosnippet>235</a>        <span class="comment">// We store tags twice, once in global.protected_tags and once in each call frame.
+<a href=#236 id=236 data-nosnippet>236</a>        // We do this because consulting a single global set in this function is faster
+<a href=#237 id=237 data-nosnippet>237</a>        // than attempting to search all call frames in the program for the `FrameExtra`
+<a href=#238 id=238 data-nosnippet>238</a>        // (if any) which is protecting the popped tag.
+<a href=#239 id=239 data-nosnippet>239</a>        //
+<a href=#240 id=240 data-nosnippet>240</a>        // This duplication trades off making `end_call` slower to make this function faster. This
+<a href=#241 id=241 data-nosnippet>241</a>        // trade-off is profitable in practice for a combination of two reasons.
+<a href=#242 id=242 data-nosnippet>242</a>        // 1. A single protected tag can (and does in some programs) protect thousands of `Item`s.
+<a href=#243 id=243 data-nosnippet>243</a>        //    Therefore, adding overhead in function call/return is profitable even if it only
+<a href=#244 id=244 data-nosnippet>244</a>        //    saves a little work in this function.
+<a href=#245 id=245 data-nosnippet>245</a>        // 2. Most frames protect only one or two tags. So this duplicative global turns a search
+<a href=#246 id=246 data-nosnippet>246</a>        //    which ends up about linear in the number of protected tags in the program into a
+<a href=#247 id=247 data-nosnippet>247</a>        //    constant time check (and a slow linear, because the tags in the frames aren't contiguous).
+<a href=#248 id=248 data-nosnippet>248</a>        </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<span class="kw-2">&amp;</span>protector_kind) = <a href="#223">global</a>.protected_tags.<a href="https://doc.rust-lang.org/beta/std/collections/hash/map/struct.HashMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#222">item</a>.<a href="item.rs.html#40-42">tag</a>()) {
+<a href=#249 id=249 data-nosnippet>249</a>            <span class="comment">// The only way this is okay is if the protector is weak and we are deallocating with
+<a href=#250 id=250 data-nosnippet>250</a>            // the right pointer.
+<a href=#251 id=251 data-nosnippet>251</a>            </span><span class="kw">let </span>allowed = <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.matches.html">matches!</a>(cause, ItemInvalidationCause::Dealloc)
+<a href=#252 id=252 data-nosnippet>252</a>                &amp;&amp; <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.matches.html">matches!</a>(protector_kind, ProtectorKind::WeakProtector);
+<a href=#253 id=253 data-nosnippet>253</a>            <span class="kw">if </span>!<a href="#251">allowed</a> {
+<a href=#254 id=254 data-nosnippet>254</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#224">dcx</a>.<a href="diagnostics.rs.html#427-449">protector_error</a>(<a href="#222">item</a>, <a href="#248">protector_kind</a>)).<a href="https://doc.rust-lang.org/beta/core/convert/trait.Into.html#tymethod.into">into</a>();
+<a href=#255 id=255 data-nosnippet>255</a>            }
+<a href=#256 id=256 data-nosnippet>256</a>        }
+<a href=#257 id=257 data-nosnippet>257</a>        <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#258 id=258 data-nosnippet>258</a>    }
+<a href=#259 id=259 data-nosnippet>259</a>
+<a href=#260 id=260 data-nosnippet>260</a>    <span class="doccomment">/// Test if a memory `access` using pointer tagged `tag` is granted.
+<a href=#261 id=261 data-nosnippet>261</a>    /// If yes, return the index of the item that granted it.
+<a href=#262 id=262 data-nosnippet>262</a>    /// `range` refers the entire operation, and `offset` refers to the specific offset into the
+<a href=#263 id=263 data-nosnippet>263</a>    /// allocation that we are currently checking.
+<a href=#264 id=264 data-nosnippet>264</a>    </span><span class="kw">fn </span>access(
+<a href=#265 id=265 data-nosnippet>265</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#266 id=266 data-nosnippet>266</a>        access: <a href="../../helpers.rs.html#26-29">AccessKind</a>,
+<a href=#267 id=267 data-nosnippet>267</a>        tag: <a href="../../machine.rs.html#225-228">ProvenanceExtra</a>,
+<a href=#268 id=268 data-nosnippet>268</a>        global: <span class="kw-2">&amp;</span><a href="../mod.rs.html#87-105">GlobalStateInner</a>,
+<a href=#269 id=269 data-nosnippet>269</a>        dcx: <span class="kw-2">&amp;mut </span><a href="diagnostics.rs.html#123-128">DiagnosticCx</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#270 id=270 data-nosnippet>270</a>        exposed_tags: <span class="kw-2">&amp;</span>FxHashSet&lt;<a href="../mod.rs.html#16">BorTag</a>&gt;,
+<a href=#271 id=271 data-nosnippet>271</a>    ) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#272 id=272 data-nosnippet>272</a>        <span class="comment">// Two main steps: Find granting item, remove incompatible items above.
+<a href=#273 id=273 data-nosnippet>273</a>
+<a href=#274 id=274 data-nosnippet>274</a>        // Step 1: Find granting item.
+<a href=#275 id=275 data-nosnippet>275</a>        </span><span class="kw">let </span>granting_idx =
+<a href=#276 id=276 data-nosnippet>276</a>            <a class="self" href="#265">self</a>.<a href="stack.rs.html#194-235">find_granting</a>(<a href="#266">access</a>, <a href="#267">tag</a>, <a href="#270">exposed_tags</a>).<a href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#method.map_err">map_err</a>(|()| <a href="#269">dcx</a>.<a href="diagnostics.rs.html#405-424">access_error</a>(<a class="self" href="#265">self</a>))<span class="question-mark">?</span>;
+<a href=#277 id=277 data-nosnippet>277</a>
+<a href=#278 id=278 data-nosnippet>278</a>        <span class="comment">// Step 2: Remove incompatible items above them.  Make sure we do not remove protected
+<a href=#279 id=279 data-nosnippet>279</a>        // items.  Behavior differs for reads and writes.
+<a href=#280 id=280 data-nosnippet>280</a>        // In case of wildcards/unknown matches, we remove everything that is *definitely* gone.
+<a href=#281 id=281 data-nosnippet>281</a>        </span><span class="kw">if </span><a href="#266">access</a> == <a href="../../helpers.rs.html#28">AccessKind::Write</a> {
+<a href=#282 id=282 data-nosnippet>282</a>            <span class="comment">// Remove everything above the write-compatible items, like a proper stack. This makes sure read-only and unique
+<a href=#283 id=283 data-nosnippet>283</a>            // pointers become invalid on write accesses (ensures F2a, and ensures U2 for write accesses).
+<a href=#284 id=284 data-nosnippet>284</a>            </span><span class="kw">let </span>first_incompatible_idx = <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(granting_idx) = <a href="#275">granting_idx</a> {
+<a href=#285 id=285 data-nosnippet>285</a>                <span class="comment">// The granting_idx *might* be approximate, but any lower idx would remove more
+<a href=#286 id=286 data-nosnippet>286</a>                // things. Even if this is a Unique and the lower idx is an SRW (which removes
+<a href=#287 id=287 data-nosnippet>287</a>                // less), there is an SRW group boundary here so strictly more would get removed.
+<a href=#288 id=288 data-nosnippet>288</a>                </span><a class="self" href="#265">self</a>.<a href="#194-218">find_first_write_incompatible</a>(<a href="#284">granting_idx</a>)
+<a href=#289 id=289 data-nosnippet>289</a>            } <span class="kw">else </span>{
+<a href=#290 id=290 data-nosnippet>290</a>                <span class="comment">// We are writing to something in the unknown part.
+<a href=#291 id=291 data-nosnippet>291</a>                // There is a SRW group boundary between the unknown and the known, so everything is incompatible.
+<a href=#292 id=292 data-nosnippet>292</a>                </span><span class="number">0
+<a href=#293 id=293 data-nosnippet>293</a>            </span>};
+<a href=#294 id=294 data-nosnippet>294</a>            <a class="self" href="#265">self</a>.<a href="stack.rs.html#428-478">pop_items_after</a>(<a href="#284">first_incompatible_idx</a>, |item| {
+<a href=#295 id=295 data-nosnippet>295</a>                <a href="#221-258">Stack::item_invalidated</a>(<span class="kw-2">&amp;</span><a href="#294">item</a>, <a href="#268">global</a>, <a href="#269">dcx</a>, <a href="#186">ItemInvalidationCause::Conflict</a>)<span class="question-mark">?</span>;
+<a href=#296 id=296 data-nosnippet>296</a>                <a href="#269">dcx</a>.<a href="diagnostics.rs.html#275-293">log_invalidation</a>(<a href="#294">item</a>.<a href="item.rs.html#40-42">tag</a>());
+<a href=#297 id=297 data-nosnippet>297</a>                <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#298 id=298 data-nosnippet>298</a>            })<span class="question-mark">?</span>;
+<a href=#299 id=299 data-nosnippet>299</a>        } <span class="kw">else </span>{
+<a href=#300 id=300 data-nosnippet>300</a>            <span class="comment">// On a read, *disable* all `Unique` above the granting item.  This ensures U2 for read accesses.
+<a href=#301 id=301 data-nosnippet>301</a>            // The reason this is not following the stack discipline (by removing the first Unique and
+<a href=#302 id=302 data-nosnippet>302</a>            // everything on top of it) is that in `let raw = &amp;mut *x as *mut _; let _val = *x;`, the second statement
+<a href=#303 id=303 data-nosnippet>303</a>            // would pop the `Unique` from the reborrow of the first statement, and subsequently also pop the
+<a href=#304 id=304 data-nosnippet>304</a>            // `SharedReadWrite` for `raw`.
+<a href=#305 id=305 data-nosnippet>305</a>            // This pattern occurs a lot in the standard library: create a raw pointer, then also create a shared
+<a href=#306 id=306 data-nosnippet>306</a>            // reference and use that.
+<a href=#307 id=307 data-nosnippet>307</a>            // We *disable* instead of removing `Unique` to avoid "connecting" two neighbouring blocks of SRWs.
+<a href=#308 id=308 data-nosnippet>308</a>            </span><span class="kw">let </span>first_incompatible_idx = <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(granting_idx) = <a href="#275">granting_idx</a> {
+<a href=#309 id=309 data-nosnippet>309</a>                <span class="comment">// The granting_idx *might* be approximate, but any lower idx would disable more things.
+<a href=#310 id=310 data-nosnippet>310</a>                </span><a href="#308">granting_idx</a> + <span class="number">1
+<a href=#311 id=311 data-nosnippet>311</a>            </span>} <span class="kw">else </span>{
+<a href=#312 id=312 data-nosnippet>312</a>                <span class="comment">// We are reading from something in the unknown part. That means *all* `Unique` we know about are dead now.
+<a href=#313 id=313 data-nosnippet>313</a>                </span><span class="number">0
+<a href=#314 id=314 data-nosnippet>314</a>            </span>};
+<a href=#315 id=315 data-nosnippet>315</a>            <a class="self" href="#265">self</a>.<a href="stack.rs.html#380-424">disable_uniques_starting_at</a>(<a href="#308">first_incompatible_idx</a>, |item| {
+<a href=#316 id=316 data-nosnippet>316</a>                <a href="#221-258">Stack::item_invalidated</a>(<span class="kw-2">&amp;</span><a href="#315">item</a>, <a href="#268">global</a>, <a href="#269">dcx</a>, <a href="#186">ItemInvalidationCause::Conflict</a>)<span class="question-mark">?</span>;
+<a href=#317 id=317 data-nosnippet>317</a>                <a href="#269">dcx</a>.<a href="diagnostics.rs.html#275-293">log_invalidation</a>(<a href="#315">item</a>.<a href="item.rs.html#40-42">tag</a>());
+<a href=#318 id=318 data-nosnippet>318</a>                <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#319 id=319 data-nosnippet>319</a>            })<span class="question-mark">?</span>;
+<a href=#320 id=320 data-nosnippet>320</a>        }
+<a href=#321 id=321 data-nosnippet>321</a>
+<a href=#322 id=322 data-nosnippet>322</a>        <span class="comment">// If this was an approximate action, we now collapse everything into an unknown.
+<a href=#323 id=323 data-nosnippet>323</a>        </span><span class="kw">if </span><a href="#275">granting_idx</a>.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.is_none">is_none</a>() || <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.matches.html">matches!</a>(tag, ProvenanceExtra::Wildcard) {
+<a href=#324 id=324 data-nosnippet>324</a>            <span class="comment">// Compute the upper bound of the items that remain.
+<a href=#325 id=325 data-nosnippet>325</a>            // (This is why we did all the work above: to reduce the items we have to consider here.)
+<a href=#326 id=326 data-nosnippet>326</a>            </span><span class="kw">let </span><span class="kw-2">mut </span>max = <a href="../mod.rs.html#36-38">BorTag::one</a>();
+<a href=#327 id=327 data-nosnippet>327</a>            <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..<span class="self">self</span>.len() {
+<a href=#328 id=328 data-nosnippet>328</a>                <span class="kw">let </span>item = <span class="self">self</span>.get(i).unwrap();
+<a href=#329 id=329 data-nosnippet>329</a>                <span class="comment">// Skip disabled items, they cannot be matched anyway.
+<a href=#330 id=330 data-nosnippet>330</a>                </span><span class="kw">if </span>!<span class="macro">matches!</span>(item.perm(), Permission::Disabled) {
+<a href=#331 id=331 data-nosnippet>331</a>                    <span class="comment">// We are looking for a strict upper bound, so add 1 to this tag.
+<a href=#332 id=332 data-nosnippet>332</a>                    </span>max = cmp::max(item.tag().succ().unwrap(), max);
+<a href=#333 id=333 data-nosnippet>333</a>                }
+<a href=#334 id=334 data-nosnippet>334</a>            }
+<a href=#335 id=335 data-nosnippet>335</a>            <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(unk) = <a class="self" href="#265">self</a>.<a href="stack.rs.html#362-364">unknown_bottom</a>() {
+<a href=#336 id=336 data-nosnippet>336</a>                <a href="#326">max</a> = <a href="https://doc.rust-lang.org/beta/core/cmp/fn.max.html">cmp::max</a>(<a href="#335">unk</a>, <a href="#326">max</a>);
+<a href=#337 id=337 data-nosnippet>337</a>            }
+<a href=#338 id=338 data-nosnippet>338</a>            <span class="comment">// Use `max` as new strict upper bound for everything.
+<a href=#339 id=339 data-nosnippet>339</a>            </span><a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(
+<a href=#340 id=340 data-nosnippet>340</a>                <span class="string">"access: forgetting stack to upper bound {max} due to wildcard or unknown access"</span>,
+<a href=#341 id=341 data-nosnippet>341</a>                max = max.get(),
+<a href=#342 id=342 data-nosnippet>342</a>            );
+<a href=#343 id=343 data-nosnippet>343</a>            <a class="self" href="#265">self</a>.<a href="stack.rs.html#366-376">set_unknown_bottom</a>(<a href="#326">max</a>);
+<a href=#344 id=344 data-nosnippet>344</a>        }
+<a href=#345 id=345 data-nosnippet>345</a>
+<a href=#346 id=346 data-nosnippet>346</a>        <span class="comment">// Done.
+<a href=#347 id=347 data-nosnippet>347</a>        </span><a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#348 id=348 data-nosnippet>348</a>    }
+<a href=#349 id=349 data-nosnippet>349</a>
+<a href=#350 id=350 data-nosnippet>350</a>    <span class="doccomment">/// Deallocate a location: Like a write access, but also there must be no
+<a href=#351 id=351 data-nosnippet>351</a>    /// active protectors at all because we will remove all items.
+<a href=#352 id=352 data-nosnippet>352</a>    </span><span class="kw">fn </span>dealloc(
+<a href=#353 id=353 data-nosnippet>353</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#354 id=354 data-nosnippet>354</a>        tag: <a href="../../machine.rs.html#225-228">ProvenanceExtra</a>,
+<a href=#355 id=355 data-nosnippet>355</a>        global: <span class="kw-2">&amp;</span><a href="../mod.rs.html#87-105">GlobalStateInner</a>,
+<a href=#356 id=356 data-nosnippet>356</a>        dcx: <span class="kw-2">&amp;mut </span><a href="diagnostics.rs.html#123-128">DiagnosticCx</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#357 id=357 data-nosnippet>357</a>        exposed_tags: <span class="kw-2">&amp;</span>FxHashSet&lt;<a href="../mod.rs.html#16">BorTag</a>&gt;,
+<a href=#358 id=358 data-nosnippet>358</a>    ) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#359 id=359 data-nosnippet>359</a>        <span class="comment">// Step 1: Make a write access.
+<a href=#360 id=360 data-nosnippet>360</a>        // As part of this we do regular protector checking, i.e. even weakly protected items cause UB when popped.
+<a href=#361 id=361 data-nosnippet>361</a>        </span><a class="self" href="#353">self</a>.<a href="#264-348">access</a>(<a href="../../helpers.rs.html#28">AccessKind::Write</a>, <a href="#354">tag</a>, <a href="#355">global</a>, <a href="#356">dcx</a>, <a href="#357">exposed_tags</a>)<span class="question-mark">?</span>;
+<a href=#362 id=362 data-nosnippet>362</a>
+<a href=#363 id=363 data-nosnippet>363</a>        <span class="comment">// Step 2: Pretend we remove the remaining items, checking if any are strongly protected.
+<a href=#364 id=364 data-nosnippet>364</a>        </span><span class="kw">for </span>idx <span class="kw">in </span>(<span class="number">0</span>..<span class="self">self</span>.len()).rev() {
+<a href=#365 id=365 data-nosnippet>365</a>            <span class="kw">let </span>item = <span class="self">self</span>.get(idx).unwrap();
+<a href=#366 id=366 data-nosnippet>366</a>            Stack::item_invalidated(<span class="kw-2">&amp;</span>item, global, dcx, ItemInvalidationCause::Dealloc)<span class="question-mark">?</span>;
+<a href=#367 id=367 data-nosnippet>367</a>        }
+<a href=#368 id=368 data-nosnippet>368</a>
+<a href=#369 id=369 data-nosnippet>369</a>        <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#370 id=370 data-nosnippet>370</a>    }
+<a href=#371 id=371 data-nosnippet>371</a>
+<a href=#372 id=372 data-nosnippet>372</a>    <span class="doccomment">/// Derive a new pointer from one with the given tag.
+<a href=#373 id=373 data-nosnippet>373</a>    ///
+<a href=#374 id=374 data-nosnippet>374</a>    /// `access` indicates which kind of memory access this retag itself should correspond to.
+<a href=#375 id=375 data-nosnippet>375</a>    </span><span class="kw">fn </span>grant(
+<a href=#376 id=376 data-nosnippet>376</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#377 id=377 data-nosnippet>377</a>        derived_from: <a href="../../machine.rs.html#225-228">ProvenanceExtra</a>,
+<a href=#378 id=378 data-nosnippet>378</a>        new: <a href="item.rs.html#7">Item</a>,
+<a href=#379 id=379 data-nosnippet>379</a>        access: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="../../helpers.rs.html#26-29">AccessKind</a>&gt;,
+<a href=#380 id=380 data-nosnippet>380</a>        global: <span class="kw-2">&amp;</span><a href="../mod.rs.html#87-105">GlobalStateInner</a>,
+<a href=#381 id=381 data-nosnippet>381</a>        dcx: <span class="kw-2">&amp;mut </span><a href="diagnostics.rs.html#123-128">DiagnosticCx</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#382 id=382 data-nosnippet>382</a>        exposed_tags: <span class="kw-2">&amp;</span>FxHashSet&lt;<a href="../mod.rs.html#16">BorTag</a>&gt;,
+<a href=#383 id=383 data-nosnippet>383</a>    ) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#384 id=384 data-nosnippet>384</a>        <a href="#381">dcx</a>.<a href="diagnostics.rs.html#239-264">start_grant</a>(<a href="#378">new</a>.<a href="item.rs.html#45-47">perm</a>());
+<a href=#385 id=385 data-nosnippet>385</a>
+<a href=#386 id=386 data-nosnippet>386</a>        <span class="comment">// Compute where to put the new item.
+<a href=#387 id=387 data-nosnippet>387</a>        // Either way, we ensure that we insert the new item in a way such that between
+<a href=#388 id=388 data-nosnippet>388</a>        // `derived_from` and the new one, there are only items *compatible with* `derived_from`.
+<a href=#389 id=389 data-nosnippet>389</a>        </span><span class="kw">let </span>new_idx = <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(access) = <a href="#379">access</a> {
+<a href=#390 id=390 data-nosnippet>390</a>            <span class="comment">// Simple case: We are just a regular memory access, and then push our thing on top,
+<a href=#391 id=391 data-nosnippet>391</a>            // like a regular stack.
+<a href=#392 id=392 data-nosnippet>392</a>            // This ensures F2b for `Unique`, by removing offending `SharedReadOnly`.
+<a href=#393 id=393 data-nosnippet>393</a>            </span><a class="self" href="#376">self</a>.<a href="#264-348">access</a>(<a href="#389">access</a>, <a href="#377">derived_from</a>, <a href="#380">global</a>, <a href="#381">dcx</a>, <a href="#382">exposed_tags</a>)<span class="question-mark">?</span>;
+<a href=#394 id=394 data-nosnippet>394</a>
+<a href=#395 id=395 data-nosnippet>395</a>            <span class="comment">// We insert "as far up as possible": We know only compatible items are remaining
+<a href=#396 id=396 data-nosnippet>396</a>            // on top of `derived_from`, and we want the new item at the top so that we
+<a href=#397 id=397 data-nosnippet>397</a>            // get the strongest possible guarantees.
+<a href=#398 id=398 data-nosnippet>398</a>            // This ensures U1 and F1.
+<a href=#399 id=399 data-nosnippet>399</a>            </span><a class="self" href="#376">self</a>.<a href="stack.rs.html#358-360">len</a>()
+<a href=#400 id=400 data-nosnippet>400</a>        } <span class="kw">else </span>{
+<a href=#401 id=401 data-nosnippet>401</a>            <span class="comment">// The tricky case: creating a new SRW permission without actually being an access.
+<a href=#402 id=402 data-nosnippet>402</a>            </span><a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(new.perm() == Permission::SharedReadWrite);
+<a href=#403 id=403 data-nosnippet>403</a>
+<a href=#404 id=404 data-nosnippet>404</a>            <span class="comment">// First we figure out which item grants our parent (`derived_from`) this kind of access.
+<a href=#405 id=405 data-nosnippet>405</a>            // We use that to determine where to put the new item.
+<a href=#406 id=406 data-nosnippet>406</a>            </span><span class="kw">let </span>granting_idx = <span class="self"><a href="#376">self</a>
+<a href=#407 id=407 data-nosnippet>407</a>                </span>.<a href="stack.rs.html#194-235">find_granting</a>(<a href="../../helpers.rs.html#28">AccessKind::Write</a>, <a href="#377">derived_from</a>, <a href="#382">exposed_tags</a>)
+<a href=#408 id=408 data-nosnippet>408</a>                .<a href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#method.map_err">map_err</a>(|()| <a href="#381">dcx</a>.<a href="diagnostics.rs.html#379-401">grant_error</a>(<a class="self" href="#376">self</a>))<span class="question-mark">?</span>;
+<a href=#409 id=409 data-nosnippet>409</a>
+<a href=#410 id=410 data-nosnippet>410</a>            <span class="kw">let </span>(<span class="prelude-val">Some</span>(granting_idx), ProvenanceExtra::Concrete(<span class="kw">_</span>)) = (<a href="#406">granting_idx</a>, <a href="#377">derived_from</a>)
+<a href=#411 id=411 data-nosnippet>411</a>            <span class="kw">else </span>{
+<a href=#412 id=412 data-nosnippet>412</a>                <span class="comment">// The parent is a wildcard pointer or matched the unknown bottom.
+<a href=#413 id=413 data-nosnippet>413</a>                // This is approximate. Nobody knows what happened, so forget everything.
+<a href=#414 id=414 data-nosnippet>414</a>                // The new thing is SRW anyway, so we cannot push it "on top of the unknown part"
+<a href=#415 id=415 data-nosnippet>415</a>                // (for all we know, it might join an SRW group inside the unknown).
+<a href=#416 id=416 data-nosnippet>416</a>                </span><a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(
+<a href=#417 id=417 data-nosnippet>417</a>                    <span class="string">"reborrow: forgetting stack entirely due to SharedReadWrite reborrow from wildcard or unknown"
+<a href=#418 id=418 data-nosnippet>418</a>                </span>);
+<a href=#419 id=419 data-nosnippet>419</a>                <a class="self" href="#376">self</a>.<a href="stack.rs.html#366-376">set_unknown_bottom</a>(<a href="#380">global</a>.next_ptr_tag);
+<a href=#420 id=420 data-nosnippet>420</a>                <span class="kw">return </span><a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(());
+<a href=#421 id=421 data-nosnippet>421</a>            };
+<a href=#422 id=422 data-nosnippet>422</a>
+<a href=#423 id=423 data-nosnippet>423</a>            <span class="comment">// SharedReadWrite can coexist with "existing loans", meaning they don't act like a write
+<a href=#424 id=424 data-nosnippet>424</a>            // access.  Instead of popping the stack, we insert the item at the place the stack would
+<a href=#425 id=425 data-nosnippet>425</a>            // be popped to (i.e., we insert it above all the write-compatible items).
+<a href=#426 id=426 data-nosnippet>426</a>            // This ensures F2b by adding the new item below any potentially existing `SharedReadOnly`.
+<a href=#427 id=427 data-nosnippet>427</a>            </span><a class="self" href="#376">self</a>.<a href="#194-218">find_first_write_incompatible</a>(<a href="#410">granting_idx</a>)
+<a href=#428 id=428 data-nosnippet>428</a>        };
+<a href=#429 id=429 data-nosnippet>429</a>
+<a href=#430 id=430 data-nosnippet>430</a>        <span class="comment">// Put the new item there.
+<a href=#431 id=431 data-nosnippet>431</a>        </span><a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"reborrow: adding item {:?}"</span>, new);
+<a href=#432 id=432 data-nosnippet>432</a>        <a class="self" href="#376">self</a>.<a href="stack.rs.html#295-300">insert</a>(<a href="#389">new_idx</a>, <a href="#378">new</a>);
+<a href=#433 id=433 data-nosnippet>433</a>        <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#434 id=434 data-nosnippet>434</a>    }
+<a href=#435 id=435 data-nosnippet>435</a>}
+<a href=#436 id=436 data-nosnippet>436</a><span class="comment">// # Stacked Borrows Core End
+<a href=#437 id=437 data-nosnippet>437</a>
+<a href=#438 id=438 data-nosnippet>438</a></span><span class="doccomment">/// Integration with the BorTag garbage collector
+<a href=#439 id=439 data-nosnippet>439</a></span><span class="kw">impl </span><a href="#31-38">Stacks</a> {
+<a href=#440 id=440 data-nosnippet>440</a>    <span class="kw">pub fn </span>remove_unreachable_tags(<span class="kw-2">&amp;mut </span><span class="self">self</span>, live_tags: <span class="kw-2">&amp;</span>FxHashSet&lt;<a href="../mod.rs.html#16">BorTag</a>&gt;) {
+<a href=#441 id=441 data-nosnippet>441</a>        <span class="kw">for </span>(_stack_range, stack) <span class="kw">in </span><span class="self">self</span>.stacks.iter_mut_all() {
+<a href=#442 id=442 data-nosnippet>442</a>            stack.retain(live_tags);
+<a href=#443 id=443 data-nosnippet>443</a>        }
+<a href=#444 id=444 data-nosnippet>444</a>        <a class="self" href="#440">self</a>.history.<a href="diagnostics.rs.html#231-235">retain</a>(<a href="#440">live_tags</a>);
+<a href=#445 id=445 data-nosnippet>445</a>    }
+<a href=#446 id=446 data-nosnippet>446</a>}
+<a href=#447 id=447 data-nosnippet>447</a>
+<a href=#448 id=448 data-nosnippet>448</a><span class="kw">impl </span><a href="../../provenance_gc.rs.html#8-10">VisitProvenance</a> <span class="kw">for </span><a href="#31-38">Stacks</a> {
+<a href=#449 id=449 data-nosnippet>449</a>    <span class="kw">fn </span>visit_provenance(<span class="kw-2">&amp;</span><span class="self">self</span>, visit: <span class="kw-2">&amp;mut </span><a href="../../provenance_gc.rs.html#6">VisitWith</a>&lt;<span class="lifetime">'_</span>&gt;) {
+<a href=#450 id=450 data-nosnippet>450</a>        <span class="kw">for </span>tag <span class="kw">in </span><span class="self">self</span>.exposed_tags.iter().copied() {
+<a href=#451 id=451 data-nosnippet>451</a>            visit(<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(tag));
+<a href=#452 id=452 data-nosnippet>452</a>        }
+<a href=#453 id=453 data-nosnippet>453</a>    }
+<a href=#454 id=454 data-nosnippet>454</a>}
+<a href=#455 id=455 data-nosnippet>455</a>
+<a href=#456 id=456 data-nosnippet>456</a><span class="doccomment">/// Map per-stack operations to higher-level per-location-range operations.
+<a href=#457 id=457 data-nosnippet>457</a></span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="#31-38">Stacks</a> {
+<a href=#458 id=458 data-nosnippet>458</a>    <span class="doccomment">/// Creates a new stack with an initial tag. For diagnostic purposes, we also need to know
+<a href=#459 id=459 data-nosnippet>459</a>    /// the [`AllocId`] of the allocation this is associated with.
+<a href=#460 id=460 data-nosnippet>460</a>    </span><span class="kw">fn </span>new(
+<a href=#461 id=461 data-nosnippet>461</a>        size: <a href="../../../../rustc_abi/struct.Size.html">Size</a>,
+<a href=#462 id=462 data-nosnippet>462</a>        perm: <a href="item.rs.html#71-81">Permission</a>,
+<a href=#463 id=463 data-nosnippet>463</a>        tag: <a href="../mod.rs.html#16">BorTag</a>,
+<a href=#464 id=464 data-nosnippet>464</a>        id: <a href="../../../../rustc_middle/mir/interpret/struct.AllocId.html">AllocId</a>,
+<a href=#465 id=465 data-nosnippet>465</a>        machine: <span class="kw-2">&amp;</span><a href="../../machine.rs.html#428-603">MiriMachine</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#466 id=466 data-nosnippet>466</a>    ) -&gt; <span class="self">Self </span>{
+<a href=#467 id=467 data-nosnippet>467</a>        <span class="kw">let </span>item = <a href="item.rs.html#24-37">Item::new</a>(<a href="#463">tag</a>, <a href="#462">perm</a>, <span class="bool-val">false</span>);
+<a href=#468 id=468 data-nosnippet>468</a>        <span class="kw">let </span>stack = <a href="stack.rs.html#342-351">Stack::new</a>(<a href="#467">item</a>);
+<a href=#469 id=469 data-nosnippet>469</a>
+<a href=#470 id=470 data-nosnippet>470</a>        <a href="#31-38">Stacks</a> {
+<a href=#471 id=471 data-nosnippet>471</a>            stacks: <a href="../../data_structures/dedup_range_map.rs.html#28-32">DedupRangeMap::new</a>(<a href="#461">size</a>, <a href="#468">stack</a>),
+<a href=#472 id=472 data-nosnippet>472</a>            history: <a href="diagnostics.rs.html#221-229">AllocHistory::new</a>(<a href="#464">id</a>, <a href="#467">item</a>, <a href="#465">machine</a>),
+<a href=#473 id=473 data-nosnippet>473</a>            exposed_tags: <a href="https://doc.rust-lang.org/beta/core/default/trait.Default.html#tymethod.default">FxHashSet::default</a>(),
+<a href=#474 id=474 data-nosnippet>474</a>        }
+<a href=#475 id=475 data-nosnippet>475</a>    }
+<a href=#476 id=476 data-nosnippet>476</a>
+<a href=#477 id=477 data-nosnippet>477</a>    <span class="doccomment">/// Call `f` on every stack in the range.
+<a href=#478 id=478 data-nosnippet>478</a>    </span><span class="kw">fn </span>for_each(
+<a href=#479 id=479 data-nosnippet>479</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#480 id=480 data-nosnippet>480</a>        range: <a href="../../../../rustc_middle/mir/interpret/allocation/struct.AllocRange.html">AllocRange</a>,
+<a href=#481 id=481 data-nosnippet>481</a>        <span class="kw-2">mut </span>dcx_builder: <a href="diagnostics.rs.html#118-121">DiagnosticCxBuilder</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#482 id=482 data-nosnippet>482</a>        <span class="kw-2">mut </span>f: <span class="kw">impl </span><a href="https://doc.rust-lang.org/beta/core/ops/function/trait.FnMut.html">FnMut</a>(
+<a href=#483 id=483 data-nosnippet>483</a>            <span class="kw-2">&amp;mut </span><a href="stack.rs.html#21-42">Stack</a>,
+<a href=#484 id=484 data-nosnippet>484</a>            <span class="kw-2">&amp;mut </span><a href="diagnostics.rs.html#123-128">DiagnosticCx</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#485 id=485 data-nosnippet>485</a>            <span class="kw-2">&amp;mut </span>FxHashSet&lt;<a href="../mod.rs.html#16">BorTag</a>&gt;,
+<a href=#486 id=486 data-nosnippet>486</a>        ) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#487 id=487 data-nosnippet>487</a>    ) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#488 id=488 data-nosnippet>488</a>        <span class="kw">for </span>(stack_range, stack) <span class="kw">in </span><span class="self">self</span>.stacks.iter_mut(range.start, range.size) {
+<a href=#489 id=489 data-nosnippet>489</a>            <span class="kw">let </span><span class="kw-2">mut </span>dcx = dcx_builder.build(<span class="kw-2">&amp;mut </span><span class="self">self</span>.history, Size::from_bytes(stack_range.start));
+<a href=#490 id=490 data-nosnippet>490</a>            f(stack, <span class="kw-2">&amp;mut </span>dcx, <span class="kw-2">&amp;mut </span><span class="self">self</span>.exposed_tags)<span class="question-mark">?</span>;
+<a href=#491 id=491 data-nosnippet>491</a>            dcx_builder = dcx.unbuild();
+<a href=#492 id=492 data-nosnippet>492</a>        }
+<a href=#493 id=493 data-nosnippet>493</a>        <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#494 id=494 data-nosnippet>494</a>    }
+<a href=#495 id=495 data-nosnippet>495</a>}
+<a href=#496 id=496 data-nosnippet>496</a>
+<a href=#497 id=497 data-nosnippet>497</a><span class="doccomment">/// Glue code to connect with Miri Machine Hooks
+<a href=#498 id=498 data-nosnippet>498</a></span><span class="kw">impl </span><a href="#31-38">Stacks</a> {
+<a href=#499 id=499 data-nosnippet>499</a>    <span class="kw">pub fn </span>new_allocation(
+<a href=#500 id=500 data-nosnippet>500</a>        id: <a href="../../../../rustc_middle/mir/interpret/struct.AllocId.html">AllocId</a>,
+<a href=#501 id=501 data-nosnippet>501</a>        size: <a href="../../../../rustc_abi/struct.Size.html">Size</a>,
+<a href=#502 id=502 data-nosnippet>502</a>        state: <span class="kw-2">&amp;mut </span><a href="../mod.rs.html#87-105">GlobalStateInner</a>,
+<a href=#503 id=503 data-nosnippet>503</a>        kind: <a href="../../machine.rs.html#188">MemoryKind</a>,
+<a href=#504 id=504 data-nosnippet>504</a>        machine: <span class="kw-2">&amp;</span><a href="../../machine.rs.html#428-603">MiriMachine</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#505 id=505 data-nosnippet>505</a>    ) -&gt; <span class="self">Self </span>{
+<a href=#506 id=506 data-nosnippet>506</a>        <span class="kw">let </span>(base_tag, perm) = <span class="kw">match </span><a href="#503">kind</a> {
+<a href=#507 id=507 data-nosnippet>507</a>            <span class="comment">// New unique borrow. This tag is not accessible by the program,
+<a href=#508 id=508 data-nosnippet>508</a>            // so it will only ever be used when using the local directly (i.e.,
+<a href=#509 id=509 data-nosnippet>509</a>            // not through a pointer). That is, whenever we directly write to a local, this will pop
+<a href=#510 id=510 data-nosnippet>510</a>            // everything else off the stack, invalidating all previous pointers,
+<a href=#511 id=511 data-nosnippet>511</a>            // and in particular, *all* raw pointers.
+<a href=#512 id=512 data-nosnippet>512</a>            </span><a href="../../../../rustc_const_eval/interpret/memory/enum.MemoryKind.html#variant.Stack">MemoryKind::Stack</a> =&gt; (<a href="#502">state</a>.<a href="../mod.rs.html#198-212">root_ptr_tag</a>(<a href="#500">id</a>, <a href="#504">machine</a>), <a href="item.rs.html#73">Permission::Unique</a>),
+<a href=#513 id=513 data-nosnippet>513</a>            <span class="comment">// Everything else is shared by default.
+<a href=#514 id=514 data-nosnippet>514</a>            </span><span class="kw">_ </span>=&gt; (<a href="#502">state</a>.<a href="../mod.rs.html#198-212">root_ptr_tag</a>(<a href="#500">id</a>, <a href="#504">machine</a>), <a href="item.rs.html#75">Permission::SharedReadWrite</a>),
+<a href=#515 id=515 data-nosnippet>515</a>        };
+<a href=#516 id=516 data-nosnippet>516</a>        <a href="#460-475">Stacks::new</a>(<a href="#501">size</a>, <a href="#506">perm</a>, <a href="#506">base_tag</a>, <a href="#500">id</a>, <a href="#504">machine</a>)
+<a href=#517 id=517 data-nosnippet>517</a>    }
+<a href=#518 id=518 data-nosnippet>518</a>
+<a href=#519 id=519 data-nosnippet>519</a>    <span class="attr">#[inline(always)]
+<a href=#520 id=520 data-nosnippet>520</a>    </span><span class="kw">pub fn </span>before_memory_read&lt;<span class="lifetime">'ecx</span>, <span class="lifetime">'tcx</span>&gt;(
+<a href=#521 id=521 data-nosnippet>521</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#522 id=522 data-nosnippet>522</a>        alloc_id: <a href="../../../../rustc_middle/mir/interpret/struct.AllocId.html">AllocId</a>,
+<a href=#523 id=523 data-nosnippet>523</a>        tag: <a href="../../machine.rs.html#225-228">ProvenanceExtra</a>,
+<a href=#524 id=524 data-nosnippet>524</a>        range: <a href="../../../../rustc_middle/mir/interpret/allocation/struct.AllocRange.html">AllocRange</a>,
+<a href=#525 id=525 data-nosnippet>525</a>        machine: <span class="kw-2">&amp;</span><span class="lifetime">'ecx </span><a href="../../machine.rs.html#428-603">MiriMachine</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#526 id=526 data-nosnippet>526</a>    ) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt;
+<a href=#527 id=527 data-nosnippet>527</a>    <span class="kw">where
+<a href=#528 id=528 data-nosnippet>528</a>        </span><span class="lifetime">'tcx</span>: <span class="lifetime">'ecx</span>,
+<a href=#529 id=529 data-nosnippet>529</a>    {
+<a href=#530 id=530 data-nosnippet>530</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(
+<a href=#531 id=531 data-nosnippet>531</a>            <span class="string">"read access with tag {:?}: {:?}, size {}"</span>,
+<a href=#532 id=532 data-nosnippet>532</a>            tag,
+<a href=#533 id=533 data-nosnippet>533</a>            interpret::Pointer::new(alloc_id, range.start),
+<a href=#534 id=534 data-nosnippet>534</a>            range.size.bytes()
+<a href=#535 id=535 data-nosnippet>535</a>        );
+<a href=#536 id=536 data-nosnippet>536</a>        <span class="kw">let </span>dcx = <a href="diagnostics.rs.html#152-155">DiagnosticCxBuilder::read</a>(<a href="#525">machine</a>, <a href="#523">tag</a>, <a href="#524">range</a>);
+<a href=#537 id=537 data-nosnippet>537</a>        <span class="kw">let </span>state = <a href="#525">machine</a>.borrow_tracker.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_ref">as_ref</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.borrow">borrow</a>();
+<a href=#538 id=538 data-nosnippet>538</a>        <a class="self" href="#521">self</a>.<a href="#478-494">for_each</a>(<a href="#524">range</a>, <a href="#536">dcx</a>, |stack, dcx, exposed_tags| {
+<a href=#539 id=539 data-nosnippet>539</a>            <a href="#538">stack</a>.<a href="#264-348">access</a>(<a href="../../helpers.rs.html#27">AccessKind::Read</a>, <a href="#523">tag</a>, <span class="kw-2">&amp;</span><a href="#537">state</a>, <a href="#538">dcx</a>, <a href="#538">exposed_tags</a>)
+<a href=#540 id=540 data-nosnippet>540</a>        })
+<a href=#541 id=541 data-nosnippet>541</a>    }
+<a href=#542 id=542 data-nosnippet>542</a>
+<a href=#543 id=543 data-nosnippet>543</a>    <span class="attr">#[inline(always)]
+<a href=#544 id=544 data-nosnippet>544</a>    </span><span class="kw">pub fn </span>before_memory_write&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#545 id=545 data-nosnippet>545</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#546 id=546 data-nosnippet>546</a>        alloc_id: <a href="../../../../rustc_middle/mir/interpret/struct.AllocId.html">AllocId</a>,
+<a href=#547 id=547 data-nosnippet>547</a>        tag: <a href="../../machine.rs.html#225-228">ProvenanceExtra</a>,
+<a href=#548 id=548 data-nosnippet>548</a>        range: <a href="../../../../rustc_middle/mir/interpret/allocation/struct.AllocRange.html">AllocRange</a>,
+<a href=#549 id=549 data-nosnippet>549</a>        machine: <span class="kw-2">&amp;</span><a href="../../machine.rs.html#428-603">MiriMachine</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#550 id=550 data-nosnippet>550</a>    ) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#551 id=551 data-nosnippet>551</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(
+<a href=#552 id=552 data-nosnippet>552</a>            <span class="string">"write access with tag {:?}: {:?}, size {}"</span>,
+<a href=#553 id=553 data-nosnippet>553</a>            tag,
+<a href=#554 id=554 data-nosnippet>554</a>            interpret::Pointer::new(alloc_id, range.start),
+<a href=#555 id=555 data-nosnippet>555</a>            range.size.bytes()
+<a href=#556 id=556 data-nosnippet>556</a>        );
+<a href=#557 id=557 data-nosnippet>557</a>        <span class="kw">let </span>dcx = <a href="diagnostics.rs.html#157-164">DiagnosticCxBuilder::write</a>(<a href="#549">machine</a>, <a href="#547">tag</a>, <a href="#548">range</a>);
+<a href=#558 id=558 data-nosnippet>558</a>        <span class="kw">let </span>state = <a href="#549">machine</a>.borrow_tracker.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_ref">as_ref</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.borrow">borrow</a>();
+<a href=#559 id=559 data-nosnippet>559</a>        <a class="self" href="#545">self</a>.<a href="#478-494">for_each</a>(<a href="#548">range</a>, <a href="#557">dcx</a>, |stack, dcx, exposed_tags| {
+<a href=#560 id=560 data-nosnippet>560</a>            <a href="#559">stack</a>.<a href="#264-348">access</a>(<a href="../../helpers.rs.html#28">AccessKind::Write</a>, <a href="#547">tag</a>, <span class="kw-2">&amp;</span><a href="#558">state</a>, <a href="#559">dcx</a>, <a href="#559">exposed_tags</a>)
+<a href=#561 id=561 data-nosnippet>561</a>        })
+<a href=#562 id=562 data-nosnippet>562</a>    }
+<a href=#563 id=563 data-nosnippet>563</a>
+<a href=#564 id=564 data-nosnippet>564</a>    <span class="attr">#[inline(always)]
+<a href=#565 id=565 data-nosnippet>565</a>    </span><span class="kw">pub fn </span>before_memory_deallocation&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#566 id=566 data-nosnippet>566</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#567 id=567 data-nosnippet>567</a>        alloc_id: <a href="../../../../rustc_middle/mir/interpret/struct.AllocId.html">AllocId</a>,
+<a href=#568 id=568 data-nosnippet>568</a>        tag: <a href="../../machine.rs.html#225-228">ProvenanceExtra</a>,
+<a href=#569 id=569 data-nosnippet>569</a>        size: <a href="../../../../rustc_abi/struct.Size.html">Size</a>,
+<a href=#570 id=570 data-nosnippet>570</a>        machine: <span class="kw-2">&amp;</span><a href="../../machine.rs.html#428-603">MiriMachine</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#571 id=571 data-nosnippet>571</a>    ) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#572 id=572 data-nosnippet>572</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"deallocation with tag {:?}: {:?}, size {}"</span>, tag, alloc_id, size.bytes());
+<a href=#573 id=573 data-nosnippet>573</a>        <span class="kw">let </span>dcx = <a href="diagnostics.rs.html#166-169">DiagnosticCxBuilder::dealloc</a>(<a href="#570">machine</a>, <a href="#568">tag</a>);
+<a href=#574 id=574 data-nosnippet>574</a>        <span class="kw">let </span>state = <a href="#570">machine</a>.borrow_tracker.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_ref">as_ref</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.borrow">borrow</a>();
+<a href=#575 id=575 data-nosnippet>575</a>        <a class="self" href="#566">self</a>.<a href="#478-494">for_each</a>(<a href="../../../../rustc_middle/mir/interpret/allocation/fn.alloc_range.html">alloc_range</a>(Size::ZERO, <a href="#569">size</a>), <a href="#573">dcx</a>, |stack, dcx, exposed_tags| {
+<a href=#576 id=576 data-nosnippet>576</a>            <a href="#575">stack</a>.<a href="#352-370">dealloc</a>(<a href="#568">tag</a>, <span class="kw-2">&amp;</span><a href="#574">state</a>, <a href="#575">dcx</a>, <a href="#575">exposed_tags</a>)
+<a href=#577 id=577 data-nosnippet>577</a>        })<span class="question-mark">?</span>;
+<a href=#578 id=578 data-nosnippet>578</a>        <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#579 id=579 data-nosnippet>579</a>    }
+<a href=#580 id=580 data-nosnippet>580</a>}
+<a href=#581 id=581 data-nosnippet>581</a>
+<a href=#582 id=582 data-nosnippet>582</a><span class="doccomment">/// Retagging/reborrowing.  There is some policy in here, such as which permissions
+<a href=#583 id=583 data-nosnippet>583</a>/// to grant for which references, and when to add protectors.
+<a href=#584 id=584 data-nosnippet>584</a></span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'ecx</span>&gt; <a href="#585-856">EvalContextPrivExt</a>&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'ecx</span>&gt; <span class="kw">for </span><a href="../../machine.rs.html#961"><span class="kw">crate</span>::MiriInterpCx</a>&lt;<span class="lifetime">'tcx</span>&gt; {}
+<a href=#585 id=585 data-nosnippet>585</a><span class="kw">trait </span><a href="../../../../miri/borrow_tracker/stacked_borrows/trait.EvalContextPrivExt.html">EvalContextPrivExt</a>&lt;<span class="lifetime">'tcx</span>, <span class="lifetime">'ecx</span>&gt;: <a href="../../machine.rs.html#964-967"><span class="kw">crate</span>::MiriInterpCxExt</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#586 id=586 data-nosnippet>586</a>    <span class="doccomment">/// Returns the provenance that should be used henceforth.
+<a href=#587 id=587 data-nosnippet>587</a>    </span><span class="kw">fn </span>sb_reborrow(
+<a href=#588 id=588 data-nosnippet>588</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#589 id=589 data-nosnippet>589</a>        place: <span class="kw-2">&amp;</span><a href="../../lib.rs.html#113">MPlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#590 id=590 data-nosnippet>590</a>        size: <a href="../../../../rustc_abi/struct.Size.html">Size</a>,
+<a href=#591 id=591 data-nosnippet>591</a>        new_perm: <a href="#42-56">NewPermission</a>,
+<a href=#592 id=592 data-nosnippet>592</a>        new_tag: <a href="../mod.rs.html#16">BorTag</a>,
+<a href=#593 id=593 data-nosnippet>593</a>        retag_info: <a href="diagnostics.rs.html#195-198">RetagInfo</a>, <span class="comment">// diagnostics info about this retag
+<a href=#594 id=594 data-nosnippet>594</a>    </span>) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="../../machine.rs.html#196-221">Provenance</a>&gt;&gt; {
+<a href=#595 id=595 data-nosnippet>595</a>        <span class="kw">let </span>this = <a class="self" href="#588">self</a>.<a href="../../machine.rs.html#966">eval_context_mut</a>();
+<a href=#596 id=596 data-nosnippet>596</a>        <span class="comment">// Ensure we bail out if the pointer goes out-of-bounds (see miri#1050).
+<a href=#597 id=597 data-nosnippet>597</a>        </span><a href="#595">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.check_ptr_access">check_ptr_access</a>(<a href="#589">place</a>.<a href="../../../../rustc_const_eval/interpret/place/struct.MPlaceTy.html#method.ptr">ptr</a>(), <a href="#590">size</a>, <a href="../../../../rustc_middle/mir/interpret/error/enum.CheckInAllocMsg.html#variant.Dereferenceable">CheckInAllocMsg::Dereferenceable</a>)<span class="question-mark">?</span>;
+<a href=#598 id=598 data-nosnippet>598</a>
+<a href=#599 id=599 data-nosnippet>599</a>        <span class="comment">// It is crucial that this gets called on all code paths, to ensure we track tag creation.
+<a href=#600 id=600 data-nosnippet>600</a>        </span><span class="kw">let </span>log_creation = |this: <span class="kw-2">&amp;</span><a href="../../machine.rs.html#961">MiriInterpCx</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#601 id=601 data-nosnippet>601</a>                            loc: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;(<a href="../../../../rustc_middle/mir/interpret/struct.AllocId.html">AllocId</a>, <a href="../../../../rustc_abi/struct.Size.html">Size</a>, <a href="../../machine.rs.html#225-228">ProvenanceExtra</a>)&gt;| <span class="comment">// alloc_id, base_offset, orig_tag
+<a href=#602 id=602 data-nosnippet>602</a>         </span>-&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#603 id=603 data-nosnippet>603</a>            <span class="kw">let </span>global = <a href="#600">this</a>.machine.borrow_tracker.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_ref">as_ref</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.borrow">borrow</a>();
+<a href=#604 id=604 data-nosnippet>604</a>            <span class="kw">let </span>ty = <a href="#589">place</a>.layout.ty;
+<a href=#605 id=605 data-nosnippet>605</a>            <span class="kw">if </span><a href="#603">global</a>.tracked_pointer_tags.<a href="https://doc.rust-lang.org/beta/std/collections/hash/set/struct.HashSet.html#method.contains">contains</a>(<span class="kw-2">&amp;</span><a href="#592">new_tag</a>) {
+<a href=#606 id=606 data-nosnippet>606</a>                <span class="kw">let </span><span class="kw-2">mut </span>kind_str = <a href="https://doc.rust-lang.org/beta/alloc/string/struct.String.html#method.new">String::new</a>();
+<a href=#607 id=607 data-nosnippet>607</a>                <span class="kw">match </span><a href="#591">new_perm</a> {
+<a href=#608 id=608 data-nosnippet>608</a>                    <a href="#43-47">NewPermission::Uniform</a> { perm, .. } =&gt;
+<a href=#609 id=609 data-nosnippet>609</a>                        <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.write.html">write!</a>(<a href="#606">kind_str</a>, <span class="string">"{perm:?} permission"</span>).<a href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#method.unwrap">unwrap</a>(),
+<a href=#610 id=610 data-nosnippet>610</a>                    <a href="#48-55">NewPermission::FreezeSensitive</a> { freeze_perm, .. } <span class="kw">if </span><a href="#604">ty</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.is_freeze">is_freeze</a>(<span class="kw-2">*</span><a href="#600">this</a>.tcx, <a href="#600">this</a>.<a href="../../../../rustc_middle/ty/layout/trait.HasTypingEnv.html#tymethod.typing_env">typing_env</a>()) =&gt;
+<a href=#611 id=611 data-nosnippet>611</a>                        <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.write.html">write!</a>(<a href="#606">kind_str</a>, <span class="string">"{freeze_perm:?} permission"</span>).<a href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#method.unwrap">unwrap</a>(),
+<a href=#612 id=612 data-nosnippet>612</a>                    <a href="#48-55">NewPermission::FreezeSensitive</a> { freeze_perm, nonfreeze_perm, .. }  =&gt;
+<a href=#613 id=613 data-nosnippet>613</a>                        <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.write.html">write!</a>(<a href="#606">kind_str</a>, <span class="string">"{freeze_perm:?}/{nonfreeze_perm:?} permission for frozen/non-frozen parts"</span>).<a href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#method.unwrap">unwrap</a>(),
+<a href=#614 id=614 data-nosnippet>614</a>                }
+<a href=#615 id=615 data-nosnippet>615</a>                <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.write.html">write!</a>(<a href="#606">kind_str</a>, <span class="string">" (pointee type {ty})"</span>).<a href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#method.unwrap">unwrap</a>();
+<a href=#616 id=616 data-nosnippet>616</a>                <a href="#600">this</a>.<a href="../../diagnostics.rs.html#785-788">emit_diagnostic</a>(<a href="../../diagnostics.rs.html#122">NonHaltingDiagnostic::CreatedPointerTag</a>(
+<a href=#617 id=617 data-nosnippet>617</a>                    <a href="#592">new_tag</a>.<a href="../mod.rs.html#27-29">inner</a>(),
+<a href=#618 id=618 data-nosnippet>618</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#606">kind_str</a>),
+<a href=#619 id=619 data-nosnippet>619</a>                    <a href="#601">loc</a>.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.map">map</a>(|(alloc_id, base_offset, orig_tag)| (<a href="#619">alloc_id</a>, <a href="../../../../rustc_middle/mir/interpret/allocation/fn.alloc_range.html">alloc_range</a>(<a href="#619">base_offset</a>, <a href="#590">size</a>), <a href="#619">orig_tag</a>)),
+<a href=#620 id=620 data-nosnippet>620</a>                ));
+<a href=#621 id=621 data-nosnippet>621</a>            }
+<a href=#622 id=622 data-nosnippet>622</a>            <a href="https://doc.rust-lang.org/beta/core/mem/fn.drop.html">drop</a>(<a href="#603">global</a>); <span class="comment">// don't hold that reference any longer than we have to
+<a href=#623 id=623 data-nosnippet>623</a>
+<a href=#624 id=624 data-nosnippet>624</a>            </span><span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>((alloc_id, base_offset, orig_tag)) = <a href="#601">loc</a> <span class="kw">else </span>{
+<a href=#625 id=625 data-nosnippet>625</a>                <span class="kw">return </span><a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#626 id=626 data-nosnippet>626</a>            };
+<a href=#627 id=627 data-nosnippet>627</a>
+<a href=#628 id=628 data-nosnippet>628</a>            <span class="kw">let </span>alloc_kind = <a href="#600">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.get_alloc_info">get_alloc_info</a>(<a href="#624">alloc_id</a>).kind;
+<a href=#629 id=629 data-nosnippet>629</a>            <span class="kw">match </span><a href="#628">alloc_kind</a> {
+<a href=#630 id=630 data-nosnippet>630</a>                <a href="../../../../rustc_const_eval/interpret/memory/enum.AllocKind.html#variant.LiveData">AllocKind::LiveData</a> =&gt; {
+<a href=#631 id=631 data-nosnippet>631</a>                    <span class="comment">// This should have alloc_extra data, but `get_alloc_extra` can still fail
+<a href=#632 id=632 data-nosnippet>632</a>                    // if converting this alloc_id from a global to a local one
+<a href=#633 id=633 data-nosnippet>633</a>                    // uncovers a non-supported `extern static`.
+<a href=#634 id=634 data-nosnippet>634</a>                    </span><span class="kw">let </span>extra = <a href="#600">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.get_alloc_extra">get_alloc_extra</a>(<a href="#624">alloc_id</a>)<span class="question-mark">?</span>;
+<a href=#635 id=635 data-nosnippet>635</a>                    <span class="kw">let </span><span class="kw-2">mut </span>stacked_borrows = <a href="#634">extra</a>
+<a href=#636 id=636 data-nosnippet>636</a>                        .<a href="../mod.rs.html#409-414">borrow_tracker_sb</a>()
+<a href=#637 id=637 data-nosnippet>637</a>                        .<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.borrow_mut">borrow_mut</a>();
+<a href=#638 id=638 data-nosnippet>638</a>                    <span class="comment">// Note that we create a *second* `DiagnosticCxBuilder` below for the actual retag.
+<a href=#639 id=639 data-nosnippet>639</a>                    // FIXME: can this be done cleaner?
+<a href=#640 id=640 data-nosnippet>640</a>                    </span><span class="kw">let </span>dcx = <a href="diagnostics.rs.html#139-150">DiagnosticCxBuilder::retag</a>(
+<a href=#641 id=641 data-nosnippet>641</a>                        <span class="kw-2">&amp;</span><a href="#600">this</a>.machine,
+<a href=#642 id=642 data-nosnippet>642</a>                        <a href="#593">retag_info</a>,
+<a href=#643 id=643 data-nosnippet>643</a>                        <a href="#592">new_tag</a>,
+<a href=#644 id=644 data-nosnippet>644</a>                        <a href="#624">orig_tag</a>,
+<a href=#645 id=645 data-nosnippet>645</a>                        <a href="../../../../rustc_middle/mir/interpret/allocation/fn.alloc_range.html">alloc_range</a>(<a href="#624">base_offset</a>, <a href="#590">size</a>),
+<a href=#646 id=646 data-nosnippet>646</a>                    );
+<a href=#647 id=647 data-nosnippet>647</a>                    <span class="kw">let </span><span class="kw-2">mut </span>dcx = <a href="#640">dcx</a>.<a href="diagnostics.rs.html#131-137">build</a>(<span class="kw-2">&amp;mut </span><a href="#635">stacked_borrows</a>.history, <a href="#624">base_offset</a>);
+<a href=#648 id=648 data-nosnippet>648</a>                    <a href="#647">dcx</a>.<a href="diagnostics.rs.html#266-273">log_creation</a>();
+<a href=#649 id=649 data-nosnippet>649</a>                    <span class="kw">if </span><a href="#591">new_perm</a>.<a href="#149-154">protector</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.is_some">is_some</a>() {
+<a href=#650 id=650 data-nosnippet>650</a>                        <a href="#647">dcx</a>.<a href="diagnostics.rs.html#295-302">log_protector</a>();
+<a href=#651 id=651 data-nosnippet>651</a>                    }
+<a href=#652 id=652 data-nosnippet>652</a>                },
+<a href=#653 id=653 data-nosnippet>653</a>                <a href="../../../../rustc_const_eval/interpret/memory/enum.AllocKind.html#variant.Function">AllocKind::Function</a> | <a href="../../../../rustc_const_eval/interpret/memory/enum.AllocKind.html#variant.VTable">AllocKind::VTable</a> | <a href="../../../../rustc_const_eval/interpret/memory/enum.AllocKind.html#variant.TypeId">AllocKind::TypeId</a> | <a href="../../../../rustc_const_eval/interpret/memory/enum.AllocKind.html#variant.Dead">AllocKind::Dead</a> =&gt; {
+<a href=#654 id=654 data-nosnippet>654</a>                    <span class="comment">// No stacked borrows on these allocations.
+<a href=#655 id=655 data-nosnippet>655</a>                </span>}
+<a href=#656 id=656 data-nosnippet>656</a>            }
+<a href=#657 id=657 data-nosnippet>657</a>            <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#658 id=658 data-nosnippet>658</a>        };
+<a href=#659 id=659 data-nosnippet>659</a>
+<a href=#660 id=660 data-nosnippet>660</a>        <span class="kw">if </span><a href="#590">size</a> == Size::ZERO {
+<a href=#661 id=661 data-nosnippet>661</a>            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(
+<a href=#662 id=662 data-nosnippet>662</a>                <span class="string">"reborrow of size 0: reference {:?} derived from {:?} (pointee {})"</span>,
+<a href=#663 id=663 data-nosnippet>663</a>                new_tag,
+<a href=#664 id=664 data-nosnippet>664</a>                place.ptr(),
+<a href=#665 id=665 data-nosnippet>665</a>                place.layout.ty,
+<a href=#666 id=666 data-nosnippet>666</a>            );
+<a href=#667 id=667 data-nosnippet>667</a>            <span class="comment">// Don't update any stacks for a zero-sized access; borrow stacks are per-byte and this
+<a href=#668 id=668 data-nosnippet>668</a>            // touches no bytes so there is no stack to put this tag in.
+<a href=#669 id=669 data-nosnippet>669</a>            // However, if the pointer for this operation points at a real allocation we still
+<a href=#670 id=670 data-nosnippet>670</a>            // record where it was created so that we can issue a helpful diagnostic if there is an
+<a href=#671 id=671 data-nosnippet>671</a>            // attempt to use it for a non-zero-sized access.
+<a href=#672 id=672 data-nosnippet>672</a>            // Dangling slices are a common case here; it's valid to get their length but with raw
+<a href=#673 id=673 data-nosnippet>673</a>            // pointer tagging for example all calls to get_unchecked on them are invalid.
+<a href=#674 id=674 data-nosnippet>674</a>            </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>((alloc_id, base_offset, orig_tag)) = <a href="#595">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.ptr_try_get_alloc_id">ptr_try_get_alloc_id</a>(<a href="#589">place</a>.<a href="../../../../rustc_const_eval/interpret/place/struct.MPlaceTy.html#method.ptr">ptr</a>(), <span class="number">0</span>)
+<a href=#675 id=675 data-nosnippet>675</a>            {
+<a href=#676 id=676 data-nosnippet>676</a>                <a href="#600">log_creation</a>(<a href="#595">this</a>, <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>((<a href="#674">alloc_id</a>, <a href="#674">base_offset</a>, <a href="#674">orig_tag</a>)))<span class="question-mark">?</span>;
+<a href=#677 id=677 data-nosnippet>677</a>                <span class="comment">// Still give it the new provenance, it got retagged after all.
+<a href=#678 id=678 data-nosnippet>678</a>                </span><span class="kw">return </span><a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="../../machine.rs.html#199-203">Provenance::Concrete</a> { <a href="#674">alloc_id</a>, tag: <a href="#592">new_tag</a> }));
+<a href=#679 id=679 data-nosnippet>679</a>            } <span class="kw">else </span>{
+<a href=#680 id=680 data-nosnippet>680</a>                <span class="comment">// This pointer doesn't come with an AllocId. :shrug:
+<a href=#681 id=681 data-nosnippet>681</a>                </span><a href="#600">log_creation</a>(<a href="#595">this</a>, <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>)<span class="question-mark">?</span>;
+<a href=#682 id=682 data-nosnippet>682</a>                <span class="comment">// Provenance unchanged.
+<a href=#683 id=683 data-nosnippet>683</a>                </span><span class="kw">return </span><a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a href="#589">place</a>.<a href="../../../../rustc_const_eval/interpret/place/struct.MPlaceTy.html#method.ptr">ptr</a>().provenance);
+<a href=#684 id=684 data-nosnippet>684</a>            }
+<a href=#685 id=685 data-nosnippet>685</a>        }
+<a href=#686 id=686 data-nosnippet>686</a>
+<a href=#687 id=687 data-nosnippet>687</a>        <span class="kw">let </span>(alloc_id, base_offset, orig_tag) = <a href="#595">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.ptr_get_alloc_id">ptr_get_alloc_id</a>(<a href="#589">place</a>.<a href="../../../../rustc_const_eval/interpret/place/struct.MPlaceTy.html#method.ptr">ptr</a>(), <span class="number">0</span>)<span class="question-mark">?</span>;
+<a href=#688 id=688 data-nosnippet>688</a>        <a href="#600">log_creation</a>(<a href="#595">this</a>, <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>((<a href="#687">alloc_id</a>, <a href="#687">base_offset</a>, <a href="#687">orig_tag</a>)))<span class="question-mark">?</span>;
+<a href=#689 id=689 data-nosnippet>689</a>
+<a href=#690 id=690 data-nosnippet>690</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(
+<a href=#691 id=691 data-nosnippet>691</a>            <span class="string">"reborrow: reference {:?} derived from {:?} (pointee {}): {:?}, size {}"</span>,
+<a href=#692 id=692 data-nosnippet>692</a>            new_tag,
+<a href=#693 id=693 data-nosnippet>693</a>            orig_tag,
+<a href=#694 id=694 data-nosnippet>694</a>            place.layout.ty,
+<a href=#695 id=695 data-nosnippet>695</a>            interpret::Pointer::new(alloc_id, base_offset),
+<a href=#696 id=696 data-nosnippet>696</a>            size.bytes()
+<a href=#697 id=697 data-nosnippet>697</a>        );
+<a href=#698 id=698 data-nosnippet>698</a>
+<a href=#699 id=699 data-nosnippet>699</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(protect) = <a href="#591">new_perm</a>.<a href="#149-154">protector</a>() {
+<a href=#700 id=700 data-nosnippet>700</a>            <span class="comment">// See comment in `Stack::item_invalidated` for why we store the tag twice.
+<a href=#701 id=701 data-nosnippet>701</a>            </span><a href="#595">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.frame_mut">frame_mut</a>()
+<a href=#702 id=702 data-nosnippet>702</a>                .extra
+<a href=#703 id=703 data-nosnippet>703</a>                .borrow_tracker
+<a href=#704 id=704 data-nosnippet>704</a>                .<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_mut">as_mut</a>()
+<a href=#705 id=705 data-nosnippet>705</a>                .<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>()
+<a href=#706 id=706 data-nosnippet>706</a>                .protected_tags
+<a href=#707 id=707 data-nosnippet>707</a>                .push((<a href="#687">alloc_id</a>, <a href="#592">new_tag</a>));
+<a href=#708 id=708 data-nosnippet>708</a>            <a href="#595">this</a>.machine
+<a href=#709 id=709 data-nosnippet>709</a>                .borrow_tracker
+<a href=#710 id=710 data-nosnippet>710</a>                .<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_mut">as_mut</a>()
+<a href=#711 id=711 data-nosnippet>711</a>                .<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>()
+<a href=#712 id=712 data-nosnippet>712</a>                .<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.get_mut">get_mut</a>()
+<a href=#713 id=713 data-nosnippet>713</a>                .protected_tags
+<a href=#714 id=714 data-nosnippet>714</a>                .<a href="https://doc.rust-lang.org/beta/std/collections/hash/map/struct.HashMap.html#method.insert">insert</a>(<a href="#592">new_tag</a>, <a href="#699">protect</a>);
+<a href=#715 id=715 data-nosnippet>715</a>        }
+<a href=#716 id=716 data-nosnippet>716</a>
+<a href=#717 id=717 data-nosnippet>717</a>        <span class="comment">// Update the stacks, according to the new permission information we are given.
+<a href=#718 id=718 data-nosnippet>718</a>        </span><span class="kw">match </span><a href="#591">new_perm</a> {
+<a href=#719 id=719 data-nosnippet>719</a>            <a href="#43-47">NewPermission::Uniform</a> { perm, access, protector } =&gt; {
+<a href=#720 id=720 data-nosnippet>720</a>                <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(perm != Permission::SharedReadOnly);
+<a href=#721 id=721 data-nosnippet>721</a>                <span class="comment">// Here we can avoid `borrow()` calls because we have mutable references.
+<a href=#722 id=722 data-nosnippet>722</a>                // Note that this asserts that the allocation is mutable -- but since we are creating a
+<a href=#723 id=723 data-nosnippet>723</a>                // mutable pointer, that seems reasonable.
+<a href=#724 id=724 data-nosnippet>724</a>                </span><span class="kw">let </span>(alloc_extra, machine) = <a href="#595">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.get_alloc_extra_mut">get_alloc_extra_mut</a>(<a href="#687">alloc_id</a>)<span class="question-mark">?</span>;
+<a href=#725 id=725 data-nosnippet>725</a>                <span class="kw">let </span>stacked_borrows = <a href="#724">alloc_extra</a>.<a href="../mod.rs.html#417-422">borrow_tracker_sb_mut</a>().<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.get_mut">get_mut</a>();
+<a href=#726 id=726 data-nosnippet>726</a>                <span class="kw">let </span>item = <a href="item.rs.html#24-37">Item::new</a>(<a href="#592">new_tag</a>, <a href="#719">perm</a>, <a href="#719">protector</a>.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.is_some">is_some</a>());
+<a href=#727 id=727 data-nosnippet>727</a>                <span class="kw">let </span>range = <a href="../../../../rustc_middle/mir/interpret/allocation/fn.alloc_range.html">alloc_range</a>(<a href="#687">base_offset</a>, <a href="#590">size</a>);
+<a href=#728 id=728 data-nosnippet>728</a>                <span class="kw">let </span>global = <a href="#724">machine</a>.borrow_tracker.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_ref">as_ref</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.borrow">borrow</a>();
+<a href=#729 id=729 data-nosnippet>729</a>                <span class="kw">let </span>dcx = <a href="diagnostics.rs.html#139-150">DiagnosticCxBuilder::retag</a>(
+<a href=#730 id=730 data-nosnippet>730</a>                    <a href="#724">machine</a>,
+<a href=#731 id=731 data-nosnippet>731</a>                    <a href="#593">retag_info</a>,
+<a href=#732 id=732 data-nosnippet>732</a>                    <a href="#592">new_tag</a>,
+<a href=#733 id=733 data-nosnippet>733</a>                    <a href="#687">orig_tag</a>,
+<a href=#734 id=734 data-nosnippet>734</a>                    <a href="../../../../rustc_middle/mir/interpret/allocation/fn.alloc_range.html">alloc_range</a>(<a href="#687">base_offset</a>, <a href="#590">size</a>),
+<a href=#735 id=735 data-nosnippet>735</a>                );
+<a href=#736 id=736 data-nosnippet>736</a>                <a href="#725">stacked_borrows</a>.<a href="#478-494">for_each</a>(<a href="#727">range</a>, <a href="#729">dcx</a>, |stack, dcx, exposed_tags| {
+<a href=#737 id=737 data-nosnippet>737</a>                    <a href="#736">stack</a>.<a href="#375-434">grant</a>(<a href="#687">orig_tag</a>, <a href="#726">item</a>, <a href="#719">access</a>, <span class="kw-2">&amp;</span><a href="#728">global</a>, <a href="#736">dcx</a>, <a href="#736">exposed_tags</a>)
+<a href=#738 id=738 data-nosnippet>738</a>                })<span class="question-mark">?</span>;
+<a href=#739 id=739 data-nosnippet>739</a>                <a href="https://doc.rust-lang.org/beta/core/mem/fn.drop.html">drop</a>(<a href="#728">global</a>);
+<a href=#740 id=740 data-nosnippet>740</a>                <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(access) = <a href="#719">access</a> {
+<a href=#741 id=741 data-nosnippet>741</a>                    <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert_eq.html">assert_eq!</a>(access, AccessKind::Write);
+<a href=#742 id=742 data-nosnippet>742</a>                    <span class="comment">// Make sure the data race model also knows about this.
+<a href=#743 id=743 data-nosnippet>743</a>                    </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(data_race) = <a href="#724">alloc_extra</a>.data_race.<a href="../../concurrency/data_race_handler.rs.html#57-59">as_vclocks_mut</a>() {
+<a href=#744 id=744 data-nosnippet>744</a>                        <a href="#743">data_race</a>.<a href="../../concurrency/data_race.rs.html#1225-1259">write</a>(
+<a href=#745 id=745 data-nosnippet>745</a>                            <a href="#687">alloc_id</a>,
+<a href=#746 id=746 data-nosnippet>746</a>                            <a href="#727">range</a>,
+<a href=#747 id=747 data-nosnippet>747</a>                            <a href="../../concurrency/data_race.rs.html#231">NaWriteType::Retag</a>,
+<a href=#748 id=748 data-nosnippet>748</a>                            <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#589">place</a>.layout.ty),
+<a href=#749 id=749 data-nosnippet>749</a>                            <a href="#724">machine</a>,
+<a href=#750 id=750 data-nosnippet>750</a>                        )<span class="question-mark">?</span>;
+<a href=#751 id=751 data-nosnippet>751</a>                    }
+<a href=#752 id=752 data-nosnippet>752</a>                }
+<a href=#753 id=753 data-nosnippet>753</a>            }
+<a href=#754 id=754 data-nosnippet>754</a>            <a href="#48-55">NewPermission::FreezeSensitive</a> {
+<a href=#755 id=755 data-nosnippet>755</a>                freeze_perm,
+<a href=#756 id=756 data-nosnippet>756</a>                freeze_access,
+<a href=#757 id=757 data-nosnippet>757</a>                freeze_protector,
+<a href=#758 id=758 data-nosnippet>758</a>                nonfreeze_perm,
+<a href=#759 id=759 data-nosnippet>759</a>                nonfreeze_access,
+<a href=#760 id=760 data-nosnippet>760</a>            } =&gt; {
+<a href=#761 id=761 data-nosnippet>761</a>                <span class="comment">// The permission is not uniform across the entire range!
+<a href=#762 id=762 data-nosnippet>762</a>                // We need a frozen-sensitive reborrow.
+<a href=#763 id=763 data-nosnippet>763</a>                // We have to use shared references to alloc/memory_extra here since
+<a href=#764 id=764 data-nosnippet>764</a>                // `visit_freeze_sensitive` needs to access the global state.
+<a href=#765 id=765 data-nosnippet>765</a>                </span><span class="kw">let </span>alloc_extra = <a href="#595">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.get_alloc_extra">get_alloc_extra</a>(<a href="#687">alloc_id</a>)<span class="question-mark">?</span>;
+<a href=#766 id=766 data-nosnippet>766</a>                <span class="kw">let </span><span class="kw-2">mut </span>stacked_borrows = <a href="#765">alloc_extra</a>.<a href="../mod.rs.html#409-414">borrow_tracker_sb</a>().<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.borrow_mut">borrow_mut</a>();
+<a href=#767 id=767 data-nosnippet>767</a>                <a href="#595">this</a>.<a href="../../helpers.rs.html#483-634">visit_freeze_sensitive</a>(<a href="#589">place</a>, <a href="#590">size</a>, |<span class="kw-2">mut </span>range, frozen| {
+<a href=#768 id=768 data-nosnippet>768</a>                    <span class="comment">// Adjust range.
+<a href=#769 id=769 data-nosnippet>769</a>                    </span><a href="#767">range</a>.start += <a href="#687">base_offset</a>;
+<a href=#770 id=770 data-nosnippet>770</a>                    <span class="comment">// We are only ever `SharedReadOnly` inside the frozen bits.
+<a href=#771 id=771 data-nosnippet>771</a>                    </span><span class="kw">let </span>(perm, access, protector) = <span class="kw">if </span><a href="#767">frozen</a> {
+<a href=#772 id=772 data-nosnippet>772</a>                        (<a href="#755">freeze_perm</a>, <a href="#756">freeze_access</a>, <a href="#757">freeze_protector</a>)
+<a href=#773 id=773 data-nosnippet>773</a>                    } <span class="kw">else </span>{
+<a href=#774 id=774 data-nosnippet>774</a>                        (<a href="#758">nonfreeze_perm</a>, <a href="#759">nonfreeze_access</a>, <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>)
+<a href=#775 id=775 data-nosnippet>775</a>                    };
+<a href=#776 id=776 data-nosnippet>776</a>                    <span class="kw">let </span>item = <a href="item.rs.html#24-37">Item::new</a>(<a href="#592">new_tag</a>, <a href="#771">perm</a>, <a href="#771">protector</a>.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.is_some">is_some</a>());
+<a href=#777 id=777 data-nosnippet>777</a>                    <span class="kw">let </span>global = <a href="#595">this</a>.machine.borrow_tracker.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_ref">as_ref</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.borrow">borrow</a>();
+<a href=#778 id=778 data-nosnippet>778</a>                    <span class="kw">let </span>dcx = <a href="diagnostics.rs.html#139-150">DiagnosticCxBuilder::retag</a>(
+<a href=#779 id=779 data-nosnippet>779</a>                        <span class="kw-2">&amp;</span><a href="#595">this</a>.machine,
+<a href=#780 id=780 data-nosnippet>780</a>                        <a href="#593">retag_info</a>,
+<a href=#781 id=781 data-nosnippet>781</a>                        <a href="#592">new_tag</a>,
+<a href=#782 id=782 data-nosnippet>782</a>                        <a href="#687">orig_tag</a>,
+<a href=#783 id=783 data-nosnippet>783</a>                        <a href="../../../../rustc_middle/mir/interpret/allocation/fn.alloc_range.html">alloc_range</a>(<a href="#687">base_offset</a>, <a href="#590">size</a>),
+<a href=#784 id=784 data-nosnippet>784</a>                    );
+<a href=#785 id=785 data-nosnippet>785</a>                    <a href="#766">stacked_borrows</a>.<a href="#478-494">for_each</a>(<a href="#767">range</a>, <a href="#778">dcx</a>, |stack, dcx, exposed_tags| {
+<a href=#786 id=786 data-nosnippet>786</a>                        <a href="#785">stack</a>.<a href="#375-434">grant</a>(<a href="#687">orig_tag</a>, <a href="#776">item</a>, <a href="#771">access</a>, <span class="kw-2">&amp;</span><a href="#777">global</a>, <a href="#785">dcx</a>, <a href="#785">exposed_tags</a>)
+<a href=#787 id=787 data-nosnippet>787</a>                    })<span class="question-mark">?</span>;
+<a href=#788 id=788 data-nosnippet>788</a>                    <a href="https://doc.rust-lang.org/beta/core/mem/fn.drop.html">drop</a>(<a href="#777">global</a>);
+<a href=#789 id=789 data-nosnippet>789</a>                    <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(access) = <a href="#771">access</a> {
+<a href=#790 id=790 data-nosnippet>790</a>                        <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert_eq.html">assert_eq!</a>(access, AccessKind::Read);
+<a href=#791 id=791 data-nosnippet>791</a>                        <span class="comment">// Make sure the data race model also knows about this.
+<a href=#792 id=792 data-nosnippet>792</a>                        </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(data_race) = <a href="#765">alloc_extra</a>.data_race.<a href="../../concurrency/data_race_handler.rs.html#53-55">as_vclocks_ref</a>() {
+<a href=#793 id=793 data-nosnippet>793</a>                            <a href="#792">data_race</a>.<a href="../../concurrency/data_race.rs.html#1183-1218">read</a>(
+<a href=#794 id=794 data-nosnippet>794</a>                                <a href="#687">alloc_id</a>,
+<a href=#795 id=795 data-nosnippet>795</a>                                <a href="#767">range</a>,
+<a href=#796 id=796 data-nosnippet>796</a>                                <a href="../../concurrency/data_race.rs.html#208">NaReadType::Retag</a>,
+<a href=#797 id=797 data-nosnippet>797</a>                                <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#589">place</a>.layout.ty),
+<a href=#798 id=798 data-nosnippet>798</a>                                <span class="kw-2">&amp;</span><a href="#595">this</a>.machine,
+<a href=#799 id=799 data-nosnippet>799</a>                            )<span class="question-mark">?</span>;
+<a href=#800 id=800 data-nosnippet>800</a>                        }
+<a href=#801 id=801 data-nosnippet>801</a>                    }
+<a href=#802 id=802 data-nosnippet>802</a>                    <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#803 id=803 data-nosnippet>803</a>                })<span class="question-mark">?</span>;
+<a href=#804 id=804 data-nosnippet>804</a>            }
+<a href=#805 id=805 data-nosnippet>805</a>        }
+<a href=#806 id=806 data-nosnippet>806</a>
+<a href=#807 id=807 data-nosnippet>807</a>        <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="../../machine.rs.html#199-203">Provenance::Concrete</a> { <a href="#687">alloc_id</a>, tag: <a href="#592">new_tag</a> }))
+<a href=#808 id=808 data-nosnippet>808</a>    }
+<a href=#809 id=809 data-nosnippet>809</a>
+<a href=#810 id=810 data-nosnippet>810</a>    <span class="kw">fn </span>sb_retag_place(
+<a href=#811 id=811 data-nosnippet>811</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#812 id=812 data-nosnippet>812</a>        place: <span class="kw-2">&amp;</span><a href="../../lib.rs.html#113">MPlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#813 id=813 data-nosnippet>813</a>        new_perm: <a href="#42-56">NewPermission</a>,
+<a href=#814 id=814 data-nosnippet>814</a>        info: <a href="diagnostics.rs.html#195-198">RetagInfo</a>, <span class="comment">// diagnostics info about this retag
+<a href=#815 id=815 data-nosnippet>815</a>    </span>) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="../../lib.rs.html#113">MPlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#816 id=816 data-nosnippet>816</a>        <span class="kw">let </span>this = <a class="self" href="#811">self</a>.<a href="../../machine.rs.html#966">eval_context_mut</a>();
+<a href=#817 id=817 data-nosnippet>817</a>        <span class="kw">let </span>size = <a href="#816">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.size_and_align_of_val">size_and_align_of_val</a>(<a href="#812">place</a>)<span class="question-mark">?</span>.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.map">map</a>(|(size, <span class="kw">_</span>)| <a href="#817">size</a>);
+<a href=#818 id=818 data-nosnippet>818</a>        <span class="comment">// FIXME: If we cannot determine the size (because the unsized tail is an `extern type`),
+<a href=#819 id=819 data-nosnippet>819</a>        // bail out -- we cannot reasonably figure out which memory range to reborrow.
+<a href=#820 id=820 data-nosnippet>820</a>        // See https://github.com/rust-lang/unsafe-code-guidelines/issues/276.
+<a href=#821 id=821 data-nosnippet>821</a>        </span><span class="kw">let </span>size = <span class="kw">match </span><a href="#817">size</a> {
+<a href=#822 id=822 data-nosnippet>822</a>            <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(size) =&gt; <a href="#822">size</a>,
+<a href=#823 id=823 data-nosnippet>823</a>            <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a> </a>=&gt; {
+<a href=#824 id=824 data-nosnippet>824</a>                <span class="kw">if </span>!<a href="#816">this</a>.machine.sb_extern_type_warned.<a href="https://doc.rust-lang.org/beta/core/cell/struct.Cell.html#method.replace">replace</a>(<span class="bool-val">true</span>) {
+<a href=#825 id=825 data-nosnippet>825</a>                    <a href="#816">this</a>.<a href="../../diagnostics.rs.html#785-788">emit_diagnostic</a>(<a href="../../diagnostics.rs.html#141">NonHaltingDiagnostic::ExternTypeReborrow</a>);
+<a href=#826 id=826 data-nosnippet>826</a>                }
+<a href=#827 id=827 data-nosnippet>827</a>                <span class="kw">return </span><a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a href="#812">place</a>.<a href="https://doc.rust-lang.org/beta/core/clone/trait.Clone.html#tymethod.clone">clone</a>());
+<a href=#828 id=828 data-nosnippet>828</a>            }
+<a href=#829 id=829 data-nosnippet>829</a>        };
+<a href=#830 id=830 data-nosnippet>830</a>
+<a href=#831 id=831 data-nosnippet>831</a>        <span class="comment">// Compute new borrow.
+<a href=#832 id=832 data-nosnippet>832</a>        </span><span class="kw">let </span>new_tag = <a href="#816">this</a>.machine.borrow_tracker.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_mut">as_mut</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.get_mut">get_mut</a>().<a href="../mod.rs.html#177-181">new_ptr</a>();
+<a href=#833 id=833 data-nosnippet>833</a>
+<a href=#834 id=834 data-nosnippet>834</a>        <span class="comment">// Reborrow.
+<a href=#835 id=835 data-nosnippet>835</a>        </span><span class="kw">let </span>new_prov = <a href="#816">this</a>.<a href="#587-808">sb_reborrow</a>(<a href="#812">place</a>, <a href="#821">size</a>, <a href="#813">new_perm</a>, <a href="#832">new_tag</a>, <a href="#814">info</a>)<span class="question-mark">?</span>;
+<a href=#836 id=836 data-nosnippet>836</a>
+<a href=#837 id=837 data-nosnippet>837</a>        <span class="comment">// Adjust place.
+<a href=#838 id=838 data-nosnippet>838</a>        // (If the closure gets called, that means the old provenance was `Some`, and hence the new
+<a href=#839 id=839 data-nosnippet>839</a>        // one must also be `Some`.)
+<a href=#840 id=840 data-nosnippet>840</a>        </span><a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a href="#812">place</a>.<a href="https://doc.rust-lang.org/beta/core/clone/trait.Clone.html#tymethod.clone">clone</a>().<a href="../../../../rustc_const_eval/interpret/place/struct.MPlaceTy.html#method.map_provenance">map_provenance</a>(|<span class="kw">_</span>| <a href="#835">new_prov</a>.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>()))
+<a href=#841 id=841 data-nosnippet>841</a>    }
+<a href=#842 id=842 data-nosnippet>842</a>
+<a href=#843 id=843 data-nosnippet>843</a>    <span class="doccomment">/// Retags an individual pointer, returning the retagged version.
+<a href=#844 id=844 data-nosnippet>844</a>    /// `kind` indicates what kind of reference is being created.
+<a href=#845 id=845 data-nosnippet>845</a>    </span><span class="kw">fn </span>sb_retag_reference(
+<a href=#846 id=846 data-nosnippet>846</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#847 id=847 data-nosnippet>847</a>        val: <span class="kw-2">&amp;</span><a href="../../lib.rs.html#110">ImmTy</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#848 id=848 data-nosnippet>848</a>        new_perm: <a href="#42-56">NewPermission</a>,
+<a href=#849 id=849 data-nosnippet>849</a>        info: <a href="diagnostics.rs.html#195-198">RetagInfo</a>, <span class="comment">// diagnostics info about this retag
+<a href=#850 id=850 data-nosnippet>850</a>    </span>) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="../../lib.rs.html#110">ImmTy</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#851 id=851 data-nosnippet>851</a>        <span class="kw">let </span>this = <a class="self" href="#846">self</a>.<a href="../../machine.rs.html#966">eval_context_mut</a>();
+<a href=#852 id=852 data-nosnippet>852</a>        <span class="kw">let </span>place = <a href="#851">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.ref_to_mplace">ref_to_mplace</a>(<a href="#847">val</a>)<span class="question-mark">?</span>;
+<a href=#853 id=853 data-nosnippet>853</a>        <span class="kw">let </span>new_place = <a href="#851">this</a>.<a href="#810-841">sb_retag_place</a>(<span class="kw-2">&amp;</span><a href="#852">place</a>, <a href="#848">new_perm</a>, <a href="#849">info</a>)<span class="question-mark">?</span>;
+<a href=#854 id=854 data-nosnippet>854</a>        <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a href="../../../../rustc_const_eval/interpret/operand/struct.ImmTy.html#method.from_immediate">ImmTy::from_immediate</a>(<a href="#853">new_place</a>.<a href="../../../../rustc_const_eval/interpret/place/struct.MPlaceTy.html#method.to_ref">to_ref</a>(<a href="#851">this</a>), <a href="#847">val</a>.layout))
+<a href=#855 id=855 data-nosnippet>855</a>    }
+<a href=#856 id=856 data-nosnippet>856</a>}
+<a href=#857 id=857 data-nosnippet>857</a>
+<a href=#858 id=858 data-nosnippet>858</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="#859-1048">EvalContextExt</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="../../machine.rs.html#961"><span class="kw">crate</span>::MiriInterpCx</a>&lt;<span class="lifetime">'tcx</span>&gt; {}
+<a href=#859 id=859 data-nosnippet>859</a><span class="kw">pub trait </span><a href="../../../../miri/borrow_tracker/stacked_borrows/trait.EvalContextExt.html">EvalContextExt</a>&lt;<span class="lifetime">'tcx</span>&gt;: <a href="../../machine.rs.html#964-967"><span class="kw">crate</span>::MiriInterpCxExt</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#860 id=860 data-nosnippet>860</a>    <span class="kw">fn </span>sb_retag_ptr_value(
+<a href=#861 id=861 data-nosnippet>861</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#862 id=862 data-nosnippet>862</a>        kind: <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html">RetagKind</a>,
+<a href=#863 id=863 data-nosnippet>863</a>        val: <span class="kw-2">&amp;</span><a href="../../lib.rs.html#110">ImmTy</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#864 id=864 data-nosnippet>864</a>    ) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="../../lib.rs.html#110">ImmTy</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#865 id=865 data-nosnippet>865</a>        <span class="kw">let </span>this = <a class="self" href="#861">self</a>.<a href="../../machine.rs.html#966">eval_context_mut</a>();
+<a href=#866 id=866 data-nosnippet>866</a>        <span class="kw">let </span>new_perm = <a href="#61-126">NewPermission::from_ref_ty</a>(<a href="#863">val</a>.layout.ty, <a href="#862">kind</a>, <a href="#865">this</a>);
+<a href=#867 id=867 data-nosnippet>867</a>        <span class="kw">let </span>cause = <span class="kw">match </span><a href="#862">kind</a> {
+<a href=#868 id=868 data-nosnippet>868</a>            <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html#variant.TwoPhase">RetagKind::TwoPhase</a> =&gt; <a href="diagnostics.rs.html#205">RetagCause::TwoPhase</a>,
+<a href=#869 id=869 data-nosnippet>869</a>            <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html#variant.FnEntry">RetagKind::FnEntry</a> =&gt; <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#870 id=870 data-nosnippet>870</a>            <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html#variant.Raw">RetagKind::Raw</a> | <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html#variant.Default">RetagKind::Default</a> =&gt; <a href="diagnostics.rs.html#202">RetagCause::Normal</a>,
+<a href=#871 id=871 data-nosnippet>871</a>        };
+<a href=#872 id=872 data-nosnippet>872</a>        <a href="#865">this</a>.<a href="#845-855">sb_retag_reference</a>(<a href="#863">val</a>, <a href="#866">new_perm</a>, <a href="diagnostics.rs.html#195-198">RetagInfo</a> { <a href="#867">cause</a>, in_field: <span class="bool-val">false </span>})
+<a href=#873 id=873 data-nosnippet>873</a>    }
+<a href=#874 id=874 data-nosnippet>874</a>
+<a href=#875 id=875 data-nosnippet>875</a>    <span class="kw">fn </span>sb_retag_place_contents(
+<a href=#876 id=876 data-nosnippet>876</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#877 id=877 data-nosnippet>877</a>        kind: <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html">RetagKind</a>,
+<a href=#878 id=878 data-nosnippet>878</a>        place: <span class="kw-2">&amp;</span><a href="../../lib.rs.html#112">PlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#879 id=879 data-nosnippet>879</a>    ) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#880 id=880 data-nosnippet>880</a>        <span class="kw">let </span>this = <a class="self" href="#876">self</a>.<a href="../../machine.rs.html#966">eval_context_mut</a>();
+<a href=#881 id=881 data-nosnippet>881</a>        <span class="kw">let </span>retag_fields = <a href="#880">this</a>.machine.borrow_tracker.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_mut">as_mut</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>().<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.get_mut">get_mut</a>().retag_fields;
+<a href=#882 id=882 data-nosnippet>882</a>        <span class="kw">let </span>retag_cause = <span class="kw">match </span><a href="#877">kind</a> {
+<a href=#883 id=883 data-nosnippet>883</a>            <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html#variant.TwoPhase">RetagKind::TwoPhase</a> =&gt; <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.unreachable.html">unreachable!</a>(), <span class="comment">// can only happen in `retag_ptr_value`
+<a href=#884 id=884 data-nosnippet>884</a>            </span><a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html#variant.FnEntry">RetagKind::FnEntry</a> =&gt; <a href="diagnostics.rs.html#204">RetagCause::FnEntry</a>,
+<a href=#885 id=885 data-nosnippet>885</a>            <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html#variant.Default">RetagKind::Default</a> | <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html#variant.Raw">RetagKind::Raw</a> =&gt; <a href="diagnostics.rs.html#202">RetagCause::Normal</a>,
+<a href=#886 id=886 data-nosnippet>886</a>        };
+<a href=#887 id=887 data-nosnippet>887</a>        <span class="kw">let </span><span class="kw-2">mut </span>visitor =
+<a href=#888 id=888 data-nosnippet>888</a>            <a href="#892-898">RetagVisitor</a> { ecx: <a href="#880">this</a>, <a href="#877">kind</a>, <a href="#882">retag_cause</a>, <a href="#881">retag_fields</a>, in_field: <span class="bool-val">false </span>};
+<a href=#889 id=889 data-nosnippet>889</a>        <span class="kw">return </span><a href="#887">visitor</a>.<a href="../../../../rustc_const_eval/interpret/visitor/trait.ValueVisitor.html#tymethod.visit_value">visit_value</a>(<a href="#878">place</a>);
+<a href=#890 id=890 data-nosnippet>890</a>
+<a href=#891 id=891 data-nosnippet>891</a>        <span class="comment">// The actual visitor.
+<a href=#892 id=892 data-nosnippet>892</a>        </span><span class="kw">struct </span>RetagVisitor&lt;<span class="lifetime">'ecx</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#893 id=893 data-nosnippet>893</a>            ecx: <span class="kw-2">&amp;</span><span class="lifetime">'ecx </span><span class="kw-2">mut </span><a href="../../machine.rs.html#961">MiriInterpCx</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#894 id=894 data-nosnippet>894</a>            kind: <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html">RetagKind</a>,
+<a href=#895 id=895 data-nosnippet>895</a>            retag_cause: <a href="diagnostics.rs.html#201-206">RetagCause</a>,
+<a href=#896 id=896 data-nosnippet>896</a>            retag_fields: <a href="../mod.rs.html#129-137">RetagFields</a>,
+<a href=#897 id=897 data-nosnippet>897</a>            in_field: <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a>,
+<a href=#898 id=898 data-nosnippet>898</a>        }
+<a href=#899 id=899 data-nosnippet>899</a>        <span class="kw">impl</span>&lt;<span class="lifetime">'ecx</span>, <span class="lifetime">'tcx</span>&gt; <a href="#892-898">RetagVisitor</a>&lt;<span class="lifetime">'ecx</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#900 id=900 data-nosnippet>900</a>            <span class="attr">#[inline(always)] </span><span class="comment">// yes this helps in our benchmarks
+<a href=#901 id=901 data-nosnippet>901</a>            </span><span class="kw">fn </span>retag_ptr_inplace(
+<a href=#902 id=902 data-nosnippet>902</a>                <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#903 id=903 data-nosnippet>903</a>                place: <span class="kw-2">&amp;</span><a href="../../lib.rs.html#112">PlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#904 id=904 data-nosnippet>904</a>                new_perm: <a href="#42-56">NewPermission</a>,
+<a href=#905 id=905 data-nosnippet>905</a>            ) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#906 id=906 data-nosnippet>906</a>                <span class="kw">let </span>val = <a class="self" href="#902">self</a>.ecx.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.read_immediate">read_immediate</a>(<span class="kw-2">&amp;</span><a class="self" href="#902">self</a>.ecx.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.place_to_op">place_to_op</a>(<a href="#903">place</a>)<span class="question-mark">?</span>)<span class="question-mark">?</span>;
+<a href=#907 id=907 data-nosnippet>907</a>                <span class="kw">let </span>val = <a class="self" href="#902">self</a>.ecx.<a href="#845-855">sb_retag_reference</a>(
+<a href=#908 id=908 data-nosnippet>908</a>                    <span class="kw-2">&amp;</span><a href="#906">val</a>,
+<a href=#909 id=909 data-nosnippet>909</a>                    <a href="#904">new_perm</a>,
+<a href=#910 id=910 data-nosnippet>910</a>                    <a href="diagnostics.rs.html#195-198">RetagInfo</a> { cause: <a class="self" href="#902">self</a>.retag_cause, in_field: <a class="self" href="#902">self</a>.in_field },
+<a href=#911 id=911 data-nosnippet>911</a>                )<span class="question-mark">?</span>;
+<a href=#912 id=912 data-nosnippet>912</a>                <a class="self" href="#902">self</a>.ecx.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.write_immediate">write_immediate</a>(<span class="kw-2">*</span><a href="#907">val</a>, <a href="#903">place</a>)<span class="question-mark">?</span>;
+<a href=#913 id=913 data-nosnippet>913</a>                <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#914 id=914 data-nosnippet>914</a>            }
+<a href=#915 id=915 data-nosnippet>915</a>        }
+<a href=#916 id=916 data-nosnippet>916</a>        <span class="kw">impl</span>&lt;<span class="lifetime">'ecx</span>, <span class="lifetime">'tcx</span>&gt; <a href="../../../../rustc_const_eval/interpret/visitor/trait.ValueVisitor.html">ValueVisitor</a>&lt;<span class="lifetime">'tcx</span>, <a href="../../machine.rs.html#428-603">MiriMachine</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span><a href="#892-898">RetagVisitor</a>&lt;<span class="lifetime">'ecx</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#917 id=917 data-nosnippet>917</a>            <span class="kw">type </span>V = <a href="../../lib.rs.html#112">PlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt;;
+<a href=#918 id=918 data-nosnippet>918</a>
+<a href=#919 id=919 data-nosnippet>919</a>            <span class="attr">#[inline(always)]
+<a href=#920 id=920 data-nosnippet>920</a>            </span><span class="kw">fn </span>ecx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><a href="../../machine.rs.html#961">MiriInterpCx</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#921 id=921 data-nosnippet>921</a>                <a class="self" href="#920">self</a>.ecx
+<a href=#922 id=922 data-nosnippet>922</a>            }
+<a href=#923 id=923 data-nosnippet>923</a>
+<a href=#924 id=924 data-nosnippet>924</a>            <span class="kw">fn </span>visit_box(<span class="kw-2">&amp;mut </span><span class="self">self</span>, box_ty: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;, place: <span class="kw-2">&amp;</span><a href="../../lib.rs.html#112">PlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#925 id=925 data-nosnippet>925</a>                <span class="comment">// Only boxes for the global allocator get any special treatment.
+<a href=#926 id=926 data-nosnippet>926</a>                </span><span class="kw">if </span><a href="#924">box_ty</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.is_box_global">is_box_global</a>(<span class="kw-2">*</span><a class="self" href="#924">self</a>.ecx.tcx) {
+<a href=#927 id=927 data-nosnippet>927</a>                    <span class="comment">// Boxes get a weak protectors, since they may be deallocated.
+<a href=#928 id=928 data-nosnippet>928</a>                    </span><span class="kw">let </span>new_perm = <a href="#128-147">NewPermission::from_box_ty</a>(<a href="#924">place</a>.layout.ty, <a class="self" href="#924">self</a>.kind, <a class="self" href="#924">self</a>.ecx);
+<a href=#929 id=929 data-nosnippet>929</a>                    <a class="self" href="#924">self</a>.<a href="#901-914">retag_ptr_inplace</a>(<a href="#924">place</a>, <a href="#928">new_perm</a>)<span class="question-mark">?</span>;
+<a href=#930 id=930 data-nosnippet>930</a>                }
+<a href=#931 id=931 data-nosnippet>931</a>                <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#932 id=932 data-nosnippet>932</a>            }
+<a href=#933 id=933 data-nosnippet>933</a>
+<a href=#934 id=934 data-nosnippet>934</a>            <span class="kw">fn </span>visit_value(<span class="kw-2">&amp;mut </span><span class="self">self</span>, place: <span class="kw-2">&amp;</span><a href="../../lib.rs.html#112">PlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#935 id=935 data-nosnippet>935</a>                <span class="comment">// If this place is smaller than a pointer, we know that it can't contain any
+<a href=#936 id=936 data-nosnippet>936</a>                // pointers we need to retag, so we can stop recursion early.
+<a href=#937 id=937 data-nosnippet>937</a>                // This optimization is crucial for ZSTs, because they can contain way more fields
+<a href=#938 id=938 data-nosnippet>938</a>                // than we can ever visit.
+<a href=#939 id=939 data-nosnippet>939</a>                </span><span class="kw">if </span><a href="#934">place</a>.layout.<a href="../../../../rustc_abi/struct.LayoutData.html#method.is_sized">is_sized</a>() &amp;&amp; <a href="#934">place</a>.layout.size &lt; <a class="self" href="#934">self</a>.ecx.<a href="../../../../rustc_middle/mir/interpret/pointer/trait.PointerArithmetic.html#tymethod.pointer_size">pointer_size</a>() {
+<a href=#940 id=940 data-nosnippet>940</a>                    <span class="kw">return </span><a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(());
+<a href=#941 id=941 data-nosnippet>941</a>                }
+<a href=#942 id=942 data-nosnippet>942</a>
+<a href=#943 id=943 data-nosnippet>943</a>                <span class="comment">// Check the type of this value to see what to do with it (retag, or recurse).
+<a href=#944 id=944 data-nosnippet>944</a>                </span><span class="kw">match </span><a href="#934">place</a>.layout.ty.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() {
+<a href=#945 id=945 data-nosnippet>945</a>                    <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Ref">ty::Ref</a>(..) | <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.RawPtr">ty::RawPtr</a>(..) =&gt; {
+<a href=#946 id=946 data-nosnippet>946</a>                        <span class="kw">if </span><a class="macro" href="https://doc.rust-lang.org/beta/core/macro.matches.html">matches!</a>(place.layout.ty.kind(), ty::Ref(..))
+<a href=#947 id=947 data-nosnippet>947</a>                            || <a class="self" href="#934">self</a>.kind == <a href="../../../../rustc_middle/mir/syntax/enum.RetagKind.html#variant.Raw">RetagKind::Raw</a>
+<a href=#948 id=948 data-nosnippet>948</a>                        {
+<a href=#949 id=949 data-nosnippet>949</a>                            <span class="kw">let </span>new_perm =
+<a href=#950 id=950 data-nosnippet>950</a>                                <a href="#61-126">NewPermission::from_ref_ty</a>(<a href="#934">place</a>.layout.ty, <a class="self" href="#934">self</a>.kind, <a class="self" href="#934">self</a>.ecx);
+<a href=#951 id=951 data-nosnippet>951</a>                            <a class="self" href="#934">self</a>.<a href="#901-914">retag_ptr_inplace</a>(<a href="#934">place</a>, <a href="#949">new_perm</a>)<span class="question-mark">?</span>;
+<a href=#952 id=952 data-nosnippet>952</a>                        }
+<a href=#953 id=953 data-nosnippet>953</a>                    }
+<a href=#954 id=954 data-nosnippet>954</a>                    <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Adt">ty::Adt</a>(adt, <span class="kw">_</span>) <span class="kw">if </span><a href="#954">adt</a>.<a href="../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.is_box">is_box</a>() =&gt; {
+<a href=#955 id=955 data-nosnippet>955</a>                        <span class="comment">// Recurse for boxes, they require some tricky handling and will end up in `visit_box` above.
+<a href=#956 id=956 data-nosnippet>956</a>                        // (Yes this means we technically also recursively retag the allocator itself
+<a href=#957 id=957 data-nosnippet>957</a>                        // even if field retagging is not enabled. *shrug*)
+<a href=#958 id=958 data-nosnippet>958</a>                        </span><a class="self" href="#934">self</a>.<a href="../../../../rustc_const_eval/interpret/visitor/trait.ValueVisitor.html#tymethod.walk_value">walk_value</a>(<a href="#934">place</a>)<span class="question-mark">?</span>;
+<a href=#959 id=959 data-nosnippet>959</a>                    }
+<a href=#960 id=960 data-nosnippet>960</a>                    <span class="kw">_ </span>=&gt; {
+<a href=#961 id=961 data-nosnippet>961</a>                        <span class="comment">// Not a reference/pointer/box. Only recurse if configured appropriately.
+<a href=#962 id=962 data-nosnippet>962</a>                        </span><span class="kw">let </span>recurse = <span class="kw">match </span><a class="self" href="#934">self</a>.retag_fields {
+<a href=#963 id=963 data-nosnippet>963</a>                            <a href="../mod.rs.html#131">RetagFields::No</a> =&gt; <span class="bool-val">false</span>,
+<a href=#964 id=964 data-nosnippet>964</a>                            <a href="../mod.rs.html#133">RetagFields::Yes</a> =&gt; <span class="bool-val">true</span>,
+<a href=#965 id=965 data-nosnippet>965</a>                            <a href="../mod.rs.html#136">RetagFields::OnlyScalar</a> =&gt; {
+<a href=#966 id=966 data-nosnippet>966</a>                                <span class="comment">// Matching `ArgAbi::new` at the time of writing, only fields of
+<a href=#967 id=967 data-nosnippet>967</a>                                // `Scalar` and `ScalarPair` ABI are considered.
+<a href=#968 id=968 data-nosnippet>968</a>                                </span><a class="macro" href="https://doc.rust-lang.org/beta/core/macro.matches.html">matches!</a>(
+<a href=#969 id=969 data-nosnippet>969</a>                                    place.layout.backend_repr,
+<a href=#970 id=970 data-nosnippet>970</a>                                    BackendRepr::Scalar(..) | BackendRepr::ScalarPair(..)
+<a href=#971 id=971 data-nosnippet>971</a>                                )
+<a href=#972 id=972 data-nosnippet>972</a>                            }
+<a href=#973 id=973 data-nosnippet>973</a>                        };
+<a href=#974 id=974 data-nosnippet>974</a>                        <span class="kw">if </span><a href="#962">recurse</a> {
+<a href=#975 id=975 data-nosnippet>975</a>                            <span class="kw">let </span>in_field = <a href="https://doc.rust-lang.org/beta/core/mem/fn.replace.html">mem::replace</a>(<span class="kw-2">&amp;mut </span><a class="self" href="#934">self</a>.in_field, <span class="bool-val">true</span>); <span class="comment">// remember and restore old value
+<a href=#976 id=976 data-nosnippet>976</a>                            </span><a class="self" href="#934">self</a>.<a href="../../../../rustc_const_eval/interpret/visitor/trait.ValueVisitor.html#tymethod.walk_value">walk_value</a>(<a href="#934">place</a>)<span class="question-mark">?</span>;
+<a href=#977 id=977 data-nosnippet>977</a>                            <a class="self" href="#934">self</a>.in_field = <a href="#975">in_field</a>;
+<a href=#978 id=978 data-nosnippet>978</a>                        }
+<a href=#979 id=979 data-nosnippet>979</a>                    }
+<a href=#980 id=980 data-nosnippet>980</a>                }
+<a href=#981 id=981 data-nosnippet>981</a>
+<a href=#982 id=982 data-nosnippet>982</a>                <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#983 id=983 data-nosnippet>983</a>            }
+<a href=#984 id=984 data-nosnippet>984</a>        }
+<a href=#985 id=985 data-nosnippet>985</a>    }
+<a href=#986 id=986 data-nosnippet>986</a>
+<a href=#987 id=987 data-nosnippet>987</a>    <span class="doccomment">/// Protect a place so that it cannot be used any more for the duration of the current function
+<a href=#988 id=988 data-nosnippet>988</a>    /// call.
+<a href=#989 id=989 data-nosnippet>989</a>    ///
+<a href=#990 id=990 data-nosnippet>990</a>    /// This is used to ensure soundness of in-place function argument/return passing.
+<a href=#991 id=991 data-nosnippet>991</a>    </span><span class="kw">fn </span>sb_protect_place(<span class="kw-2">&amp;mut </span><span class="self">self</span>, place: <span class="kw-2">&amp;</span><a href="../../lib.rs.html#113">MPlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="../../lib.rs.html#113">MPlaceTy</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#992 id=992 data-nosnippet>992</a>        <span class="kw">let </span>this = <a class="self" href="#991">self</a>.<a href="../../machine.rs.html#966">eval_context_mut</a>();
+<a href=#993 id=993 data-nosnippet>993</a>
+<a href=#994 id=994 data-nosnippet>994</a>        <span class="comment">// Retag it. With protection! That is the entire point.
+<a href=#995 id=995 data-nosnippet>995</a>        </span><span class="kw">let </span>new_perm = <a href="#43-47">NewPermission::Uniform</a> {
+<a href=#996 id=996 data-nosnippet>996</a>            perm: <a href="item.rs.html#73">Permission::Unique</a>,
+<a href=#997 id=997 data-nosnippet>997</a>            access: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="../../helpers.rs.html#28">AccessKind::Write</a>),
+<a href=#998 id=998 data-nosnippet>998</a>            protector: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="../mod.rs.html#156">ProtectorKind::StrongProtector</a>),
+<a href=#999 id=999 data-nosnippet>999</a>        };
+<a href=#1000 id=1000 data-nosnippet>1000</a>        <a href="#992">this</a>.<a href="#810-841">sb_retag_place</a>(
+<a href=#1001 id=1001 data-nosnippet>1001</a>            <a href="#991">place</a>,
+<a href=#1002 id=1002 data-nosnippet>1002</a>            <a href="#995">new_perm</a>,
+<a href=#1003 id=1003 data-nosnippet>1003</a>            <a href="diagnostics.rs.html#195-198">RetagInfo</a> { cause: <a href="diagnostics.rs.html#203">RetagCause::InPlaceFnPassing</a>, in_field: <span class="bool-val">false </span>},
+<a href=#1004 id=1004 data-nosnippet>1004</a>        )
+<a href=#1005 id=1005 data-nosnippet>1005</a>    }
+<a href=#1006 id=1006 data-nosnippet>1006</a>
+<a href=#1007 id=1007 data-nosnippet>1007</a>    <span class="doccomment">/// Mark the given tag as exposed. It was found on a pointer with the given AllocId.
+<a href=#1008 id=1008 data-nosnippet>1008</a>    </span><span class="kw">fn </span>sb_expose_tag(<span class="kw-2">&amp;</span><span class="self">self</span>, alloc_id: <a href="../../../../rustc_middle/mir/interpret/struct.AllocId.html">AllocId</a>, tag: <a href="../mod.rs.html#16">BorTag</a>) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#1009 id=1009 data-nosnippet>1009</a>        <span class="kw">let </span>this = <a class="self" href="#1008">self</a>.<a href="../../machine.rs.html#965">eval_context_ref</a>();
+<a href=#1010 id=1010 data-nosnippet>1010</a>
+<a href=#1011 id=1011 data-nosnippet>1011</a>        <span class="comment">// Function pointers and dead objects don't have an alloc_extra so we ignore them.
+<a href=#1012 id=1012 data-nosnippet>1012</a>        // This is okay because accessing them is UB anyway, no need for any Stacked Borrows checks.
+<a href=#1013 id=1013 data-nosnippet>1013</a>        // NOT using `get_alloc_extra_mut` since this might be a read-only allocation!
+<a href=#1014 id=1014 data-nosnippet>1014</a>        </span><span class="kw">let </span>kind = <a href="#1009">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.get_alloc_info">get_alloc_info</a>(<a href="#1008">alloc_id</a>).kind;
+<a href=#1015 id=1015 data-nosnippet>1015</a>        <span class="kw">match </span><a href="#1014">kind</a> {
+<a href=#1016 id=1016 data-nosnippet>1016</a>            <a href="../../../../rustc_const_eval/interpret/memory/enum.AllocKind.html#variant.LiveData">AllocKind::LiveData</a> =&gt; {
+<a href=#1017 id=1017 data-nosnippet>1017</a>                <span class="comment">// This should have alloc_extra data, but `get_alloc_extra` can still fail
+<a href=#1018 id=1018 data-nosnippet>1018</a>                // if converting this alloc_id from a global to a local one
+<a href=#1019 id=1019 data-nosnippet>1019</a>                // uncovers a non-supported `extern static`.
+<a href=#1020 id=1020 data-nosnippet>1020</a>                </span><span class="kw">let </span>alloc_extra = <a href="#1009">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.get_alloc_extra">get_alloc_extra</a>(<a href="#1008">alloc_id</a>)<span class="question-mark">?</span>;
+<a href=#1021 id=1021 data-nosnippet>1021</a>                <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"Stacked Borrows tag {tag:?} exposed in {alloc_id:?}"</span>);
+<a href=#1022 id=1022 data-nosnippet>1022</a>                <a href="#1020">alloc_extra</a>.<a href="../mod.rs.html#409-414">borrow_tracker_sb</a>().<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.borrow_mut">borrow_mut</a>().exposed_tags.<a href="https://doc.rust-lang.org/beta/std/collections/hash/set/struct.HashSet.html#method.insert">insert</a>(<a href="#1008">tag</a>);
+<a href=#1023 id=1023 data-nosnippet>1023</a>            }
+<a href=#1024 id=1024 data-nosnippet>1024</a>            <a href="../../../../rustc_const_eval/interpret/memory/enum.AllocKind.html#variant.Function">AllocKind::Function</a> | <a href="../../../../rustc_const_eval/interpret/memory/enum.AllocKind.html#variant.VTable">AllocKind::VTable</a> | <a href="../../../../rustc_const_eval/interpret/memory/enum.AllocKind.html#variant.TypeId">AllocKind::TypeId</a> | <a href="../../../../rustc_const_eval/interpret/memory/enum.AllocKind.html#variant.Dead">AllocKind::Dead</a> =&gt; {
+<a href=#1025 id=1025 data-nosnippet>1025</a>                <span class="comment">// No stacked borrows on these allocations.
+<a href=#1026 id=1026 data-nosnippet>1026</a>            </span>}
+<a href=#1027 id=1027 data-nosnippet>1027</a>        }
+<a href=#1028 id=1028 data-nosnippet>1028</a>        <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#1029 id=1029 data-nosnippet>1029</a>    }
+<a href=#1030 id=1030 data-nosnippet>1030</a>
+<a href=#1031 id=1031 data-nosnippet>1031</a>    <span class="kw">fn </span>print_stacks(<span class="kw-2">&amp;mut </span><span class="self">self</span>, alloc_id: <a href="../../../../rustc_middle/mir/interpret/struct.AllocId.html">AllocId</a>) -&gt; <a href="../../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#1032 id=1032 data-nosnippet>1032</a>        <span class="kw">let </span>this = <a class="self" href="#1031">self</a>.<a href="../../machine.rs.html#966">eval_context_mut</a>();
+<a href=#1033 id=1033 data-nosnippet>1033</a>        <span class="kw">let </span>alloc_extra = <a href="#1032">this</a>.<a href="../../../../rustc_const_eval/interpret/eval_context/struct.InterpCx.html#method.get_alloc_extra">get_alloc_extra</a>(<a href="#1031">alloc_id</a>)<span class="question-mark">?</span>;
+<a href=#1034 id=1034 data-nosnippet>1034</a>        <span class="kw">let </span>stacks = <a href="#1033">alloc_extra</a>.<a href="../mod.rs.html#409-414">borrow_tracker_sb</a>().<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.borrow">borrow</a>();
+<a href=#1035 id=1035 data-nosnippet>1035</a>        <span class="kw">for </span>(range, stack) <span class="kw">in </span>stacks.stacks.iter_all() {
+<a href=#1036 id=1036 data-nosnippet>1036</a>            <span class="macro">print!</span>(<span class="string">"{range:?}: ["</span>);
+<a href=#1037 id=1037 data-nosnippet>1037</a>            <span class="kw">if let </span><span class="prelude-val">Some</span>(bottom) = stack.unknown_bottom() {
+<a href=#1038 id=1038 data-nosnippet>1038</a>                <span class="macro">print!</span>(<span class="string">" unknown-bottom(..{bottom:?})"</span>);
+<a href=#1039 id=1039 data-nosnippet>1039</a>            }
+<a href=#1040 id=1040 data-nosnippet>1040</a>            <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..stack.len() {
+<a href=#1041 id=1041 data-nosnippet>1041</a>                <span class="kw">let </span>item = stack.get(i).unwrap();
+<a href=#1042 id=1042 data-nosnippet>1042</a>                <span class="macro">print!</span>(<span class="string">" {:?}{:?}"</span>, item.perm(), item.tag());
+<a href=#1043 id=1043 data-nosnippet>1043</a>            }
+<a href=#1044 id=1044 data-nosnippet>1044</a>            <span class="macro">println!</span>(<span class="string">" ]"</span>);
+<a href=#1045 id=1045 data-nosnippet>1045</a>        }
+<a href=#1046 id=1046 data-nosnippet>1046</a>        <a href="../../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(())
+<a href=#1047 id=1047 data-nosnippet>1047</a>    }
+<a href=#1048 id=1048 data-nosnippet>1048</a>}</code></pre></div></section></main></body></html>

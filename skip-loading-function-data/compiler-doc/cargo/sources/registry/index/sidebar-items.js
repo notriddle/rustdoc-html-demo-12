@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INDEX_V_MAX"],"enum":["IndexSummary","MaybeIndexSummary"],"fn":["index_package_to_summary","registry_dependency_into_dep","split"],"mod":["cache"],"struct":["IndexPackageMinimum","IndexPackageRustVersion","IndexPackageV","RegistryIndex","Summaries"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CovmapVersion"],"fn":["finalize","generate_covmap_record"],"mod":["covfun","spans","unused"],"struct":["GlobalFileId","GlobalFileTable","LocalFileId","VirtualFileMapping"]};

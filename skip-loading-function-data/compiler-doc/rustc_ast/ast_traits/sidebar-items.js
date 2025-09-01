@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["impl_has_attrs","impl_has_attrs_none","impl_has_node_id","impl_has_tokens","impl_has_tokens_none"],"struct":["AstNodeWrapper"],"trait":["HasAttrs","HasNodeId","HasTokens"]};

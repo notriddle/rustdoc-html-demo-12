@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["add_trait_bound","check_assoc_const_binding_type","collect_bounds","collect_relaxed_bounds","collect_sizedness_bounds","search_bounds_for"],"struct":["CollectedBound","CollectedSizednessBounds","GenericParamAndBoundVarCollector"]};

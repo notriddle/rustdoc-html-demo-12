@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["START_BCB"],"enum":["CovTerm","CoverageKind","MappingKind","Op"],"struct":["BasicCoverageBlock","BlockMarkerId","BranchSpan","CounterId","CoverageIdsInfo","CoverageInfoHi","Expression","ExpressionId","FunctionCoverageInfo","Mapping","NodeFlowData"]};

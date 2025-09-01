@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FnKind","InheritanceKind"],"fn":["build_generic_args","build_generics","build_predicates","check_constraints","create_generic_args","fn_kind","inherit_generics_for_delegation_item","inherit_predicates_for_delegation_item","inherit_sig_for_delegation_item"],"struct":["ParamIndexRemapper"],"type":["RemapTable"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AliasTyKind","DynKind","FloatVarValue","InferTy","IntVarValue","TyKind"],"mod":["closure"],"struct":["AliasTy","CoroutineWitnessTypes","FloatVid","FnHeader","FnSig","FnSigTys","IntVid","TyVid","TypeAndMut","UnsafeBinderInner"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ComesFromAllowExpect","ReportOn","ShouldWarnAboutField"],"fn":["check_mod_deathness","create_and_seed_worklist","has_allow_dead_code_or_lang_attr","live_symbols_and_ignored_derived_traits","maybe_record_as_seed","provide","should_explore"],"struct":["DeadItem","DeadVisitor","MarkSymbolVisitor"]};

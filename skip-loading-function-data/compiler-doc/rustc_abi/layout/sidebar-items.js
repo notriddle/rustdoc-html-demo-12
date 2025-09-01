@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LayoutCalculatorError","NicheBias"],"fn":["absent"],"mod":["coroutine","simple","ty"],"struct":["LayoutCalculator"],"type":["LayoutCalculatorResult"]};

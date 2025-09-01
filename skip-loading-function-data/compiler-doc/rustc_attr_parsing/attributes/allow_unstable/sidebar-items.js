@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["parse_unstable"],"struct":["AllowConstFnUnstableParser","AllowInternalUnstableParser","UnstableFeatureBoundParser"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["codegen_fn_attrs","debugger_visualizer","dependency_format","exported_symbols","lang_items","lib_features","privacy","region","resolve_bound_vars","stability"]};

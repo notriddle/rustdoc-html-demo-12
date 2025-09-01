@@ -1,0 +1,439 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_codegen_llvm/src/builder/gpu_offload.rs`."><title>gpu_offload.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_codegen_llvm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-beta.1 (788da80fc 2025-08-04)" data-channel="beta" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../../static.files/storage-68b7e25d.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_codegen_llvm/builder/</div>gpu_offload.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/alloc/ffi/c_str/struct.CString.html">std::ffi::CString</a>;
+<a href=#2 id=2 data-nosnippet>2</a>
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span><a href="../llvm/ffi.rs.html#189-211">llvm::Linkage</a>::<span class="kw-2">*</span>;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><a href="../../../rustc_abi/struct.Align.html">rustc_abi::Align</a>;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="../../../rustc_codegen_ssa/back/write/struct.CodegenContext.html">rustc_codegen_ssa::back::write::CodegenContext</a>;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html">rustc_codegen_ssa::traits::BaseTypeCodegenMethods</a>;
+<a href=#7 id=7 data-nosnippet>7</a>
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="../builder.rs.html#50"><span class="kw">crate</span>::builder::SBuilder</a>;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="../common.rs.html#417-420"><span class="kw">crate</span>::common::AsCCharPtr</a>;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><a href="../llvm/mod.rs.html#142"><span class="kw">crate</span>::llvm::AttributePlace::Function</a>;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><span class="kw">crate</span>::llvm::{<a class="self" href="../lib.rs.html#65">self</a>, <a href="../llvm/ffi.rs.html#189-211">Linkage</a>, <a href="../llvm/ffi.rs.html#802">Type</a>, <a href="../llvm/ffi.rs.html#803">Value</a>};
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use crate</span>::{<a href="../lib.rs.html#76">LlvmCodegenBackend</a>, <a href="../context.rs.html#85">SimpleCx</a>, <a href="../lib.rs.html#52">attributes</a>};
+<a href=#13 id=13 data-nosnippet>13</a>
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/gpu_offload/fn.handle_gpu_code.html">handle_gpu_code</a>&lt;<span class="lifetime">'ll</span>&gt;(
+<a href=#15 id=15 data-nosnippet>15</a>    _cgcx: <span class="kw-2">&amp;</span><a href="../../../rustc_codegen_ssa/back/write/struct.CodegenContext.html">CodegenContext</a>&lt;<a href="../lib.rs.html#76">LlvmCodegenBackend</a>&gt;,
+<a href=#16 id=16 data-nosnippet>16</a>    cx: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../context.rs.html#85">SimpleCx</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#17 id=17 data-nosnippet>17</a>) {
+<a href=#18 id=18 data-nosnippet>18</a>    <span class="comment">// The offload memory transfer type for each kernel
+<a href=#19 id=19 data-nosnippet>19</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>o_types = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[];
+<a href=#20 id=20 data-nosnippet>20</a>    <span class="kw">let </span><span class="kw-2">mut </span>kernels = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[];
+<a href=#21 id=21 data-nosnippet>21</a>    <span class="kw">let </span>offload_entry_ty = <a href="#62-84">add_tgt_offload_entry</a>(<span class="kw-2">&amp;</span><a href="#16">cx</a>);
+<a href=#22 id=22 data-nosnippet>22</a>    <span class="kw">for </span>num <span class="kw">in </span><span class="number">0</span>..<span class="number">9 </span>{
+<a href=#23 id=23 data-nosnippet>23</a>        <span class="kw">let </span>kernel = cx.get_function(<span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">"kernel_{num}"</span>));
+<a href=#24 id=24 data-nosnippet>24</a>        <span class="kw">if let </span><span class="prelude-val">Some</span>(kernel) = kernel {
+<a href=#25 id=25 data-nosnippet>25</a>            o_types.push(gen_define_handling(<span class="kw-2">&amp;</span>cx, kernel, offload_entry_ty, num));
+<a href=#26 id=26 data-nosnippet>26</a>            kernels.push(kernel);
+<a href=#27 id=27 data-nosnippet>27</a>        }
+<a href=#28 id=28 data-nosnippet>28</a>    }
+<a href=#29 id=29 data-nosnippet>29</a>
+<a href=#30 id=30 data-nosnippet>30</a>    <a href="#286-439">gen_call_handling</a>(<span class="kw-2">&amp;</span><a href="#16">cx</a>, <span class="kw-2">&amp;</span><a href="#20">kernels</a>, <span class="kw-2">&amp;</span><a href="#19">o_types</a>);
+<a href=#31 id=31 data-nosnippet>31</a>}
+<a href=#32 id=32 data-nosnippet>32</a>
+<a href=#33 id=33 data-nosnippet>33</a><span class="comment">// What is our @1 here? A magic global, used in our data_{begin/update/end}_mapper:
+<a href=#34 id=34 data-nosnippet>34</a>// @0 = private unnamed_addr constant [23 x i8] c";unknown;unknown;0;0;;\00", align 1
+<a href=#35 id=35 data-nosnippet>35</a>// @1 = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 0, i32 22, ptr @0 }, align 8
+<a href=#36 id=36 data-nosnippet>36</a></span><span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/gpu_offload/fn.generate_at_one.html">generate_at_one</a>&lt;<span class="lifetime">'ll</span>&gt;(cx: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../context.rs.html#85">SimpleCx</a>&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a> {
+<a href=#37 id=37 data-nosnippet>37</a>    <span class="comment">// @0 = private unnamed_addr constant [23 x i8] c";unknown;unknown;0;0;;\00", align 1
+<a href=#38 id=38 data-nosnippet>38</a>    </span><span class="kw">let </span>unknown_txt = <span class="string">";unknown;unknown;0;0;;"</span>;
+<a href=#39 id=39 data-nosnippet>39</a>    <span class="kw">let </span>c_entry_name = <a href="https://doc.rust-lang.org/beta/alloc/ffi/c_str/struct.CString.html#method.new">CString::new</a>(<a href="#38">unknown_txt</a>).<a href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#method.unwrap">unwrap</a>();
+<a href=#40 id=40 data-nosnippet>40</a>    <span class="kw">let </span>c_val = <a href="#39">c_entry_name</a>.<a href="https://doc.rust-lang.org/beta/alloc/ffi/c_str/struct.CString.html#method.as_bytes_with_nul">as_bytes_with_nul</a>();
+<a href=#41 id=41 data-nosnippet>41</a>    <span class="kw">let </span>initializer = <a href="../common.rs.html#377-382"><span class="kw">crate</span>::common::bytes_in_context</a>(<a href="#36">cx</a>.llcx, <a href="#40">c_val</a>);
+<a href=#42 id=42 data-nosnippet>42</a>    <span class="kw">let </span>at_zero = <a href="#160-169">add_unnamed_global</a>(<span class="kw-2">&amp;</span><a href="#36">cx</a>, <span class="kw-2">&amp;</span><span class="string">""</span>, <a href="#41">initializer</a>, <a href="../llvm/ffi.rs.html#200">PrivateLinkage</a>);
+<a href=#43 id=43 data-nosnippet>43</a>    <a href="../llvm/mod.rs.html#255-259">llvm::set_alignment</a>(<a href="#42">at_zero</a>, Align::ONE);
+<a href=#44 id=44 data-nosnippet>44</a>
+<a href=#45 id=45 data-nosnippet>45</a>    <span class="comment">// @1 = private unnamed_addr constant %struct.ident_t { i32 0, i32 2, i32 0, i32 22, ptr @0 }, align 8
+<a href=#46 id=46 data-nosnippet>46</a>    </span><span class="kw">let </span>struct_ident_ty = <a href="#36">cx</a>.<a href="../type_.rs.html#50-53">type_named_struct</a>(<span class="string">"struct.ident_t"</span>);
+<a href=#47 id=47 data-nosnippet>47</a>    <span class="kw">let </span>struct_elems = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[
+<a href=#48 id=48 data-nosnippet>48</a>        cx.get_const_i32(<span class="number">0</span>),
+<a href=#49 id=49 data-nosnippet>49</a>        cx.get_const_i32(<span class="number">2</span>),
+<a href=#50 id=50 data-nosnippet>50</a>        cx.get_const_i32(<span class="number">0</span>),
+<a href=#51 id=51 data-nosnippet>51</a>        cx.get_const_i32(<span class="number">22</span>),
+<a href=#52 id=52 data-nosnippet>52</a>        at_zero,
+<a href=#53 id=53 data-nosnippet>53</a>    ];
+<a href=#54 id=54 data-nosnippet>54</a>    <span class="kw">let </span>struct_elems_ty: <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw">_</span>&gt; = <a href="#47">struct_elems</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|<span class="kw-2">&amp;</span>x| <a href="#36">cx</a>.<a href="../context.rs.html#683-685">val_ty</a>(<a href="#54">x</a>)).<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#55 id=55 data-nosnippet>55</a>    <span class="kw">let </span>initializer = <a href="../common.rs.html#384-387"><span class="kw">crate</span>::common::named_struct</a>(<a href="#46">struct_ident_ty</a>, <span class="kw-2">&amp;</span><a href="#47">struct_elems</a>);
+<a href=#56 id=56 data-nosnippet>56</a>    <a href="#36">cx</a>.<a href="../type_.rs.html#55-59">set_struct_body</a>(<a href="#46">struct_ident_ty</a>, <span class="kw-2">&amp;</span><a href="#54">struct_elems_ty</a>, <span class="bool-val">false</span>);
+<a href=#57 id=57 data-nosnippet>57</a>    <span class="kw">let </span>at_one = <a href="#160-169">add_unnamed_global</a>(<span class="kw-2">&amp;</span><a href="#36">cx</a>, <span class="kw-2">&amp;</span><span class="string">""</span>, <a href="#55">initializer</a>, <a href="../llvm/ffi.rs.html#200">PrivateLinkage</a>);
+<a href=#58 id=58 data-nosnippet>58</a>    <a href="../llvm/mod.rs.html#255-259">llvm::set_alignment</a>(<a href="#57">at_one</a>, Align::EIGHT);
+<a href=#59 id=59 data-nosnippet>59</a>    <a href="#57">at_one</a>
+<a href=#60 id=60 data-nosnippet>60</a>}
+<a href=#61 id=61 data-nosnippet>61</a>
+<a href=#62 id=62 data-nosnippet>62</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/gpu_offload/fn.add_tgt_offload_entry.html">add_tgt_offload_entry</a>&lt;<span class="lifetime">'ll</span>&gt;(cx: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../context.rs.html#85">SimpleCx</a>&lt;<span class="lifetime">'_</span>&gt;) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#802">llvm::Type</a> {
+<a href=#63 id=63 data-nosnippet>63</a>    <span class="kw">let </span>offload_entry_ty = <a href="#62">cx</a>.<a href="../type_.rs.html#50-53">type_named_struct</a>(<span class="string">"struct.__tgt_offload_entry"</span>);
+<a href=#64 id=64 data-nosnippet>64</a>    <span class="kw">let </span>tptr = <a href="#62">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_ptr">type_ptr</a>();
+<a href=#65 id=65 data-nosnippet>65</a>    <span class="kw">let </span>ti64 = <a href="#62">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_i64">type_i64</a>();
+<a href=#66 id=66 data-nosnippet>66</a>    <span class="kw">let </span>ti32 = <a href="#62">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_i32">type_i32</a>();
+<a href=#67 id=67 data-nosnippet>67</a>    <span class="kw">let </span>ti16 = <a href="#62">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_i16">type_i16</a>();
+<a href=#68 id=68 data-nosnippet>68</a>    <span class="comment">// For each kernel to run on the gpu, we will later generate one entry of this type.
+<a href=#69 id=69 data-nosnippet>69</a>    // copied from LLVM
+<a href=#70 id=70 data-nosnippet>70</a>    // typedef struct {
+<a href=#71 id=71 data-nosnippet>71</a>    //   uint64_t Reserved;
+<a href=#72 id=72 data-nosnippet>72</a>    //   uint16_t Version;
+<a href=#73 id=73 data-nosnippet>73</a>    //   uint16_t Kind;
+<a href=#74 id=74 data-nosnippet>74</a>    //   uint32_t Flags; Flags associated with the entry (see Target Region Entry Flags)
+<a href=#75 id=75 data-nosnippet>75</a>    //   void *Address; Address of global symbol within device image (function or global)
+<a href=#76 id=76 data-nosnippet>76</a>    //   char *SymbolName;
+<a href=#77 id=77 data-nosnippet>77</a>    //   uint64_t Size; Size of the entry info (0 if it is a function)
+<a href=#78 id=78 data-nosnippet>78</a>    //   uint64_t Data;
+<a href=#79 id=79 data-nosnippet>79</a>    //   void *AuxAddr;
+<a href=#80 id=80 data-nosnippet>80</a>    // } __tgt_offload_entry;
+<a href=#81 id=81 data-nosnippet>81</a>    </span><span class="kw">let </span>entry_elements = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[ti64, ti16, ti16, ti32, tptr, tptr, ti64, ti64, tptr];
+<a href=#82 id=82 data-nosnippet>82</a>    <a href="#62">cx</a>.<a href="../type_.rs.html#55-59">set_struct_body</a>(<a href="#63">offload_entry_ty</a>, <span class="kw-2">&amp;</span><a href="#81">entry_elements</a>, <span class="bool-val">false</span>);
+<a href=#83 id=83 data-nosnippet>83</a>    <a href="#63">offload_entry_ty</a>
+<a href=#84 id=84 data-nosnippet>84</a>}
+<a href=#85 id=85 data-nosnippet>85</a>
+<a href=#86 id=86 data-nosnippet>86</a><span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/gpu_offload/fn.gen_tgt_kernel_global.html">gen_tgt_kernel_global</a>&lt;<span class="lifetime">'ll</span>&gt;(cx: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../context.rs.html#85">SimpleCx</a>&lt;<span class="lifetime">'_</span>&gt;) {
+<a href=#87 id=87 data-nosnippet>87</a>    <span class="kw">let </span>kernel_arguments_ty = <a href="#86">cx</a>.<a href="../type_.rs.html#50-53">type_named_struct</a>(<span class="string">"struct.__tgt_kernel_arguments"</span>);
+<a href=#88 id=88 data-nosnippet>88</a>    <span class="kw">let </span>tptr = <a href="#86">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_ptr">type_ptr</a>();
+<a href=#89 id=89 data-nosnippet>89</a>    <span class="kw">let </span>ti64 = <a href="#86">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_i64">type_i64</a>();
+<a href=#90 id=90 data-nosnippet>90</a>    <span class="kw">let </span>ti32 = <a href="#86">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_i32">type_i32</a>();
+<a href=#91 id=91 data-nosnippet>91</a>    <span class="kw">let </span>tarr = <a href="#86">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_array">type_array</a>(<a href="#90">ti32</a>, <span class="number">3</span>);
+<a href=#92 id=92 data-nosnippet>92</a>
+<a href=#93 id=93 data-nosnippet>93</a>    <span class="comment">// Taken from the LLVM APITypes.h declaration:
+<a href=#94 id=94 data-nosnippet>94</a>    //struct KernelArgsTy {
+<a href=#95 id=95 data-nosnippet>95</a>    //  uint32_t Version = 0; // Version of this struct for ABI compatibility.
+<a href=#96 id=96 data-nosnippet>96</a>    //  uint32_t NumArgs = 0; // Number of arguments in each input pointer.
+<a href=#97 id=97 data-nosnippet>97</a>    //  void **ArgBasePtrs =
+<a href=#98 id=98 data-nosnippet>98</a>    //      nullptr;                 // Base pointer of each argument (e.g. a struct).
+<a href=#99 id=99 data-nosnippet>99</a>    //  void **ArgPtrs = nullptr;    // Pointer to the argument data.
+<a href=#100 id=100 data-nosnippet>100</a>    //  int64_t *ArgSizes = nullptr; // Size of the argument data in bytes.
+<a href=#101 id=101 data-nosnippet>101</a>    //  int64_t *ArgTypes = nullptr; // Type of the data (e.g. to / from).
+<a href=#102 id=102 data-nosnippet>102</a>    //  void **ArgNames = nullptr;   // Name of the data for debugging, possibly null.
+<a href=#103 id=103 data-nosnippet>103</a>    //  void **ArgMappers = nullptr; // User-defined mappers, possibly null.
+<a href=#104 id=104 data-nosnippet>104</a>    //  uint64_t Tripcount =
+<a href=#105 id=105 data-nosnippet>105</a>    //      0; // Tripcount for the teams / distribute loop, 0 otherwise.
+<a href=#106 id=106 data-nosnippet>106</a>    //  struct {
+<a href=#107 id=107 data-nosnippet>107</a>    //    uint64_t NoWait : 1; // Was this kernel spawned with a `nowait` clause.
+<a href=#108 id=108 data-nosnippet>108</a>    //    uint64_t IsCUDA : 1; // Was this kernel spawned via CUDA.
+<a href=#109 id=109 data-nosnippet>109</a>    //    uint64_t Unused : 62;
+<a href=#110 id=110 data-nosnippet>110</a>    //  } Flags = {0, 0, 0};
+<a href=#111 id=111 data-nosnippet>111</a>    //  // The number of teams (for x,y,z dimension).
+<a href=#112 id=112 data-nosnippet>112</a>    //  uint32_t NumTeams[3] = {0, 0, 0};
+<a href=#113 id=113 data-nosnippet>113</a>    //  // The number of threads (for x,y,z dimension).
+<a href=#114 id=114 data-nosnippet>114</a>    //  uint32_t ThreadLimit[3] = {0, 0, 0};
+<a href=#115 id=115 data-nosnippet>115</a>    //  uint32_t DynCGroupMem = 0; // Amount of dynamic cgroup memory requested.
+<a href=#116 id=116 data-nosnippet>116</a>    //};
+<a href=#117 id=117 data-nosnippet>117</a>    </span><span class="kw">let </span>kernel_elements =
+<a href=#118 id=118 data-nosnippet>118</a>        <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[ti32, ti32, tptr, tptr, tptr, tptr, tptr, tptr, ti64, ti64, tarr, tarr, ti32];
+<a href=#119 id=119 data-nosnippet>119</a>
+<a href=#120 id=120 data-nosnippet>120</a>    <a href="#86">cx</a>.<a href="../type_.rs.html#55-59">set_struct_body</a>(<a href="#87">kernel_arguments_ty</a>, <span class="kw-2">&amp;</span><a href="#117">kernel_elements</a>, <span class="bool-val">false</span>);
+<a href=#121 id=121 data-nosnippet>121</a>    <span class="comment">// For now we don't handle kernels, so for now we just add a global dummy
+<a href=#122 id=122 data-nosnippet>122</a>    // to make sure that the __tgt_offload_entry is defined and handled correctly.
+<a href=#123 id=123 data-nosnippet>123</a>    </span><a href="#86">cx</a>.<a href="../declare.rs.html#91-101">declare_global</a>(<span class="string">"my_struct_global2"</span>, <a href="#87">kernel_arguments_ty</a>);
+<a href=#124 id=124 data-nosnippet>124</a>}
+<a href=#125 id=125 data-nosnippet>125</a>
+<a href=#126 id=126 data-nosnippet>126</a><span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/gpu_offload/fn.gen_tgt_data_mappers.html">gen_tgt_data_mappers</a>&lt;<span class="lifetime">'ll</span>&gt;(
+<a href=#127 id=127 data-nosnippet>127</a>    cx: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../context.rs.html#85">SimpleCx</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#128 id=128 data-nosnippet>128</a>) -&gt; (<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a>, <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a>, <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a>, <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#802">llvm::Type</a>) {
+<a href=#129 id=129 data-nosnippet>129</a>    <span class="kw">let </span>tptr = <a href="#127">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_ptr">type_ptr</a>();
+<a href=#130 id=130 data-nosnippet>130</a>    <span class="kw">let </span>ti64 = <a href="#127">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_i64">type_i64</a>();
+<a href=#131 id=131 data-nosnippet>131</a>    <span class="kw">let </span>ti32 = <a href="#127">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_i32">type_i32</a>();
+<a href=#132 id=132 data-nosnippet>132</a>
+<a href=#133 id=133 data-nosnippet>133</a>    <span class="kw">let </span>args = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[tptr, ti64, ti32, tptr, tptr, tptr, tptr, tptr, tptr];
+<a href=#134 id=134 data-nosnippet>134</a>    <span class="kw">let </span>mapper_fn_ty = <a href="#127">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_func">type_func</a>(<span class="kw-2">&amp;</span><a href="#133">args</a>, <a href="#127">cx</a>.<a href="../type_.rs.html#60-62">type_void</a>());
+<a href=#135 id=135 data-nosnippet>135</a>    <span class="kw">let </span>mapper_begin = <span class="string">"__tgt_target_data_begin_mapper"</span>;
+<a href=#136 id=136 data-nosnippet>136</a>    <span class="kw">let </span>mapper_update = <span class="string">"__tgt_target_data_update_mapper"</span>;
+<a href=#137 id=137 data-nosnippet>137</a>    <span class="kw">let </span>mapper_end = <span class="string">"__tgt_target_data_end_mapper"</span>;
+<a href=#138 id=138 data-nosnippet>138</a>    <span class="kw">let </span>begin_mapper_decl = <a href="#251-264">declare_offload_fn</a>(<span class="kw-2">&amp;</span><a href="#127">cx</a>, <a href="#135">mapper_begin</a>, <a href="#134">mapper_fn_ty</a>);
+<a href=#139 id=139 data-nosnippet>139</a>    <span class="kw">let </span>update_mapper_decl = <a href="#251-264">declare_offload_fn</a>(<span class="kw-2">&amp;</span><a href="#127">cx</a>, <a href="#136">mapper_update</a>, <a href="#134">mapper_fn_ty</a>);
+<a href=#140 id=140 data-nosnippet>140</a>    <span class="kw">let </span>end_mapper_decl = <a href="#251-264">declare_offload_fn</a>(<span class="kw-2">&amp;</span><a href="#127">cx</a>, <a href="#137">mapper_end</a>, <a href="#134">mapper_fn_ty</a>);
+<a href=#141 id=141 data-nosnippet>141</a>
+<a href=#142 id=142 data-nosnippet>142</a>    <span class="kw">let </span>nounwind = <a href="../llvm/ffi.rs.html#271">llvm::AttributeKind::NoUnwind</a>.<a href="../llvm/mod.rs.html#199-201">create_attr</a>(<a href="#127">cx</a>.llcx);
+<a href=#143 id=143 data-nosnippet>143</a>    <a href="../attributes.rs.html#19-23">attributes::apply_to_llfn</a>(<a href="#138">begin_mapper_decl</a>, <a href="../llvm/mod.rs.html#142">Function</a>, <span class="kw-2">&amp;</span>[<a href="#142">nounwind</a>]);
+<a href=#144 id=144 data-nosnippet>144</a>    <a href="../attributes.rs.html#19-23">attributes::apply_to_llfn</a>(<a href="#139">update_mapper_decl</a>, <a href="../llvm/mod.rs.html#142">Function</a>, <span class="kw-2">&amp;</span>[<a href="#142">nounwind</a>]);
+<a href=#145 id=145 data-nosnippet>145</a>    <a href="../attributes.rs.html#19-23">attributes::apply_to_llfn</a>(<a href="#140">end_mapper_decl</a>, <a href="../llvm/mod.rs.html#142">Function</a>, <span class="kw-2">&amp;</span>[<a href="#142">nounwind</a>]);
+<a href=#146 id=146 data-nosnippet>146</a>
+<a href=#147 id=147 data-nosnippet>147</a>    (<a href="#138">begin_mapper_decl</a>, <a href="#139">update_mapper_decl</a>, <a href="#140">end_mapper_decl</a>, <a href="#134">mapper_fn_ty</a>)
+<a href=#148 id=148 data-nosnippet>148</a>}
+<a href=#149 id=149 data-nosnippet>149</a>
+<a href=#150 id=150 data-nosnippet>150</a><span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/gpu_offload/fn.add_priv_unnamed_arr.html">add_priv_unnamed_arr</a>&lt;<span class="lifetime">'ll</span>&gt;(cx: <span class="kw-2">&amp;</span><a href="../context.rs.html#85">SimpleCx</a>&lt;<span class="lifetime">'ll</span>&gt;, name: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/beta/std/primitive.str.html">str</a>, vals: <span class="kw-2">&amp;</span>[<a href="https://doc.rust-lang.org/beta/std/primitive.u64.html">u64</a>]) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a> {
+<a href=#151 id=151 data-nosnippet>151</a>    <span class="kw">let </span>ti64 = <a href="#150">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_i64">type_i64</a>();
+<a href=#152 id=152 data-nosnippet>152</a>    <span class="kw">let </span><span class="kw-2">mut </span>size_val = <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.with_capacity">Vec::with_capacity</a>(<a href="#150">vals</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.len">len</a>());
+<a href=#153 id=153 data-nosnippet>153</a>    <span class="kw">for </span><span class="kw-2">&amp;</span>val <span class="kw">in </span>vals {
+<a href=#154 id=154 data-nosnippet>154</a>        size_val.push(cx.get_const_i64(val));
+<a href=#155 id=155 data-nosnippet>155</a>    }
+<a href=#156 id=156 data-nosnippet>156</a>    <span class="kw">let </span>initializer = <a href="#150">cx</a>.<a href="../common.rs.html#102-105">const_array</a>(<a href="#151">ti64</a>, <span class="kw-2">&amp;</span><a href="#152">size_val</a>);
+<a href=#157 id=157 data-nosnippet>157</a>    <a href="#160-169">add_unnamed_global</a>(<a href="#150">cx</a>, <a href="#150">name</a>, <a href="#156">initializer</a>, <a href="../llvm/ffi.rs.html#200">PrivateLinkage</a>)
+<a href=#158 id=158 data-nosnippet>158</a>}
+<a href=#159 id=159 data-nosnippet>159</a>
+<a href=#160 id=160 data-nosnippet>160</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/gpu_offload/fn.add_unnamed_global.html">add_unnamed_global</a>&lt;<span class="lifetime">'ll</span>&gt;(
+<a href=#161 id=161 data-nosnippet>161</a>    cx: <span class="kw-2">&amp;</span><a href="../context.rs.html#85">SimpleCx</a>&lt;<span class="lifetime">'ll</span>&gt;,
+<a href=#162 id=162 data-nosnippet>162</a>    name: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/beta/std/primitive.str.html">str</a>,
+<a href=#163 id=163 data-nosnippet>163</a>    initializer: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a>,
+<a href=#164 id=164 data-nosnippet>164</a>    l: <a href="../llvm/ffi.rs.html#189-211">Linkage</a>,
+<a href=#165 id=165 data-nosnippet>165</a>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a> {
+<a href=#166 id=166 data-nosnippet>166</a>    <span class="kw">let </span>llglobal = <a href="#171-183">add_global</a>(<a href="#161">cx</a>, <a href="#162">name</a>, <a href="#163">initializer</a>, <a href="#164">l</a>);
+<a href=#167 id=167 data-nosnippet>167</a>    <a href="../llvm/ffi.rs.html#1779">llvm::LLVMSetUnnamedAddress</a>(<a href="#166">llglobal</a>, <a href="../llvm/ffi.rs.html#238">llvm::UnnamedAddr::Global</a>);
+<a href=#168 id=168 data-nosnippet>168</a>    <a href="#166">llglobal</a>
+<a href=#169 id=169 data-nosnippet>169</a>}
+<a href=#170 id=170 data-nosnippet>170</a>
+<a href=#171 id=171 data-nosnippet>171</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/gpu_offload/fn.add_global.html">add_global</a>&lt;<span class="lifetime">'ll</span>&gt;(
+<a href=#172 id=172 data-nosnippet>172</a>    cx: <span class="kw-2">&amp;</span><a href="../context.rs.html#85">SimpleCx</a>&lt;<span class="lifetime">'ll</span>&gt;,
+<a href=#173 id=173 data-nosnippet>173</a>    name: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/beta/std/primitive.str.html">str</a>,
+<a href=#174 id=174 data-nosnippet>174</a>    initializer: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a>,
+<a href=#175 id=175 data-nosnippet>175</a>    l: <a href="../llvm/ffi.rs.html#189-211">Linkage</a>,
+<a href=#176 id=176 data-nosnippet>176</a>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a> {
+<a href=#177 id=177 data-nosnippet>177</a>    <span class="kw">let </span>c_name = <a href="https://doc.rust-lang.org/beta/alloc/ffi/c_str/struct.CString.html#method.new">CString::new</a>(<a href="#173">name</a>).<a href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#method.unwrap">unwrap</a>();
+<a href=#178 id=178 data-nosnippet>178</a>    <span class="kw">let </span>llglobal: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a> = <a href="../llvm/mod.rs.html#217-219">llvm::add_global</a>(<a href="#172">cx</a>.llmod, <a href="#172">cx</a>.<a href="../context.rs.html#683-685">val_ty</a>(<a href="#174">initializer</a>), <span class="kw-2">&amp;</span><a href="#177">c_name</a>);
+<a href=#179 id=179 data-nosnippet>179</a>    <a href="../llvm/mod.rs.html#227-229">llvm::set_global_constant</a>(<a href="#178">llglobal</a>, <span class="bool-val">true</span>);
+<a href=#180 id=180 data-nosnippet>180</a>    <a href="../llvm/mod.rs.html#235-239">llvm::set_linkage</a>(<a href="#178">llglobal</a>, <a href="#175">l</a>);
+<a href=#181 id=181 data-nosnippet>181</a>    <a href="../llvm/mod.rs.html#221-225">llvm::set_initializer</a>(<a href="#178">llglobal</a>, <a href="#174">initializer</a>);
+<a href=#182 id=182 data-nosnippet>182</a>    <a href="#178">llglobal</a>
+<a href=#183 id=183 data-nosnippet>183</a>}
+<a href=#184 id=184 data-nosnippet>184</a>
+<a href=#185 id=185 data-nosnippet>185</a><span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/gpu_offload/fn.gen_define_handling.html">gen_define_handling</a>&lt;<span class="lifetime">'ll</span>&gt;(
+<a href=#186 id=186 data-nosnippet>186</a>    cx: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../context.rs.html#85">SimpleCx</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#187 id=187 data-nosnippet>187</a>    kernel: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a>,
+<a href=#188 id=188 data-nosnippet>188</a>    offload_entry_ty: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#802">llvm::Type</a>,
+<a href=#189 id=189 data-nosnippet>189</a>    num: <a href="https://doc.rust-lang.org/beta/std/primitive.i64.html">i64</a>,
+<a href=#190 id=190 data-nosnippet>190</a>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a> {
+<a href=#191 id=191 data-nosnippet>191</a>    <span class="kw">let </span>types = <a href="#186">cx</a>.<a href="../type_.rs.html#73-81">func_params_types</a>(<a href="#186">cx</a>.<a href="../context.rs.html#680-682">get_type_of_global</a>(<a href="#187">kernel</a>));
+<a href=#192 id=192 data-nosnippet>192</a>    <span class="comment">// It seems like non-pointer values are automatically mapped. So here, we focus on pointer (or
+<a href=#193 id=193 data-nosnippet>193</a>    // reference) types.
+<a href=#194 id=194 data-nosnippet>194</a>    </span><span class="kw">let </span>num_ptr_types = <a href="#191">types</a>
+<a href=#195 id=195 data-nosnippet>195</a>        .<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.iter">iter</a>()
+<a href=#196 id=196 data-nosnippet>196</a>        .<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|<span class="kw-2">&amp;</span>x| <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.matches.html">matches!</a>(cx.type_kind(x), rustc_codegen_ssa::common::TypeKind::Pointer))
+<a href=#197 id=197 data-nosnippet>197</a>        .<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.count">count</a>();
+<a href=#198 id=198 data-nosnippet>198</a>
+<a href=#199 id=199 data-nosnippet>199</a>    <span class="comment">// We do not know their size anymore at this level, so hardcode a placeholder.
+<a href=#200 id=200 data-nosnippet>200</a>    // A follow-up pr will track these from the frontend, where we still have Rust types.
+<a href=#201 id=201 data-nosnippet>201</a>    // Then, we will be able to figure out that e.g. `&amp;[f32;256]` will result in 4*256 bytes.
+<a href=#202 id=202 data-nosnippet>202</a>    // I decided that 1024 bytes is a great placeholder value for now.
+<a href=#203 id=203 data-nosnippet>203</a>    </span><a href="#150-158">add_priv_unnamed_arr</a>(<span class="kw-2">&amp;</span><a href="#186">cx</a>, <span class="kw-2">&amp;</span><a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.format.html">format!</a>(<span class="string">".offload_sizes.{num}"</span>), <span class="kw-2">&amp;</span><a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[<span class="number">1024</span>; <a href="#194">num_ptr_types</a>]);
+<a href=#204 id=204 data-nosnippet>204</a>    <span class="comment">// Here we figure out whether something needs to be copied to the gpu (=1), from the gpu (=2),
+<a href=#205 id=205 data-nosnippet>205</a>    // or both to and from the gpu (=3). Other values shouldn't affect us for now.
+<a href=#206 id=206 data-nosnippet>206</a>    // A non-mutable reference or pointer will be 1, an array that's not read, but fully overwritten
+<a href=#207 id=207 data-nosnippet>207</a>    // will be 2. For now, everything is 3, until we have our frontend set up.
+<a href=#208 id=208 data-nosnippet>208</a>    </span><span class="kw">let </span>o_types =
+<a href=#209 id=209 data-nosnippet>209</a>        <a href="#150-158">add_priv_unnamed_arr</a>(<span class="kw-2">&amp;</span><a href="#186">cx</a>, <span class="kw-2">&amp;</span><a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.format.html">format!</a>(<span class="string">".offload_maptypes.{num}"</span>), <span class="kw-2">&amp;</span><a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[<span class="number">3</span>; <a href="#194">num_ptr_types</a>]);
+<a href=#210 id=210 data-nosnippet>210</a>    <span class="comment">// Next: For each function, generate these three entries. A weak constant,
+<a href=#211 id=211 data-nosnippet>211</a>    // the llvm.rodata entry name, and  the omp_offloading_entries value
+<a href=#212 id=212 data-nosnippet>212</a>
+<a href=#213 id=213 data-nosnippet>213</a>    </span><span class="kw">let </span>name = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.format.html">format!</a>(<span class="string">".kernel_{num}.region_id"</span>);
+<a href=#214 id=214 data-nosnippet>214</a>    <span class="kw">let </span>initializer = <a href="#186">cx</a>.<a href="../context.rs.html#719-721">get_const_i8</a>(<span class="number">0</span>);
+<a href=#215 id=215 data-nosnippet>215</a>    <span class="kw">let </span>region_id = <a href="#160-169">add_unnamed_global</a>(<span class="kw-2">&amp;</span><a href="#186">cx</a>, <span class="kw-2">&amp;</span><a href="#213">name</a>, <a href="#214">initializer</a>, <a href="../llvm/ffi.rs.html#196">WeakAnyLinkage</a>);
+<a href=#216 id=216 data-nosnippet>216</a>
+<a href=#217 id=217 data-nosnippet>217</a>    <span class="kw">let </span>c_entry_name = <a href="https://doc.rust-lang.org/beta/alloc/ffi/c_str/struct.CString.html#method.new">CString::new</a>(<a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.format.html">format!</a>(<span class="string">"kernel_{num}"</span>)).<a href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#method.unwrap">unwrap</a>();
+<a href=#218 id=218 data-nosnippet>218</a>    <span class="kw">let </span>c_val = <a href="#217">c_entry_name</a>.<a href="https://doc.rust-lang.org/beta/alloc/ffi/c_str/struct.CString.html#method.as_bytes_with_nul">as_bytes_with_nul</a>();
+<a href=#219 id=219 data-nosnippet>219</a>    <span class="kw">let </span>offload_entry_name = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.format.html">format!</a>(<span class="string">".offloading.entry_name.{num}"</span>);
+<a href=#220 id=220 data-nosnippet>220</a>
+<a href=#221 id=221 data-nosnippet>221</a>    <span class="kw">let </span>initializer = <a href="../common.rs.html#377-382"><span class="kw">crate</span>::common::bytes_in_context</a>(<a href="#186">cx</a>.llcx, <a href="#218">c_val</a>);
+<a href=#222 id=222 data-nosnippet>222</a>    <span class="kw">let </span>llglobal = <a href="#160-169">add_unnamed_global</a>(<span class="kw-2">&amp;</span><a href="#186">cx</a>, <span class="kw-2">&amp;</span><a href="#219">offload_entry_name</a>, <a href="#221">initializer</a>, <a href="../llvm/ffi.rs.html#199">InternalLinkage</a>);
+<a href=#223 id=223 data-nosnippet>223</a>    <a href="../llvm/mod.rs.html#255-259">llvm::set_alignment</a>(<a href="#222">llglobal</a>, Align::ONE);
+<a href=#224 id=224 data-nosnippet>224</a>    <a href="../llvm/mod.rs.html#211-215">llvm::set_section</a>(<a href="#222">llglobal</a>, <span class="string">c".llvm.rodata.offloading"</span>);
+<a href=#225 id=225 data-nosnippet>225</a>
+<a href=#226 id=226 data-nosnippet>226</a>    <span class="comment">// Not actively used yet, for calling real kernels
+<a href=#227 id=227 data-nosnippet>227</a>    </span><span class="kw">let </span>name = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.format.html">format!</a>(<span class="string">".offloading.entry.kernel_{num}"</span>);
+<a href=#228 id=228 data-nosnippet>228</a>
+<a href=#229 id=229 data-nosnippet>229</a>    <span class="comment">// See the __tgt_offload_entry documentation above.
+<a href=#230 id=230 data-nosnippet>230</a>    </span><span class="kw">let </span>reserved = <a href="#186">cx</a>.<a href="../context.rs.html#707-709">get_const_i64</a>(<span class="number">0</span>);
+<a href=#231 id=231 data-nosnippet>231</a>    <span class="kw">let </span>version = <a href="#186">cx</a>.<a href="../context.rs.html#715-717">get_const_i16</a>(<span class="number">1</span>);
+<a href=#232 id=232 data-nosnippet>232</a>    <span class="kw">let </span>kind = <a href="#186">cx</a>.<a href="../context.rs.html#715-717">get_const_i16</a>(<span class="number">1</span>);
+<a href=#233 id=233 data-nosnippet>233</a>    <span class="kw">let </span>flags = <a href="#186">cx</a>.<a href="../context.rs.html#711-713">get_const_i32</a>(<span class="number">0</span>);
+<a href=#234 id=234 data-nosnippet>234</a>    <span class="kw">let </span>size = <a href="#186">cx</a>.<a href="../context.rs.html#707-709">get_const_i64</a>(<span class="number">0</span>);
+<a href=#235 id=235 data-nosnippet>235</a>    <span class="kw">let </span>data = <a href="#186">cx</a>.<a href="../context.rs.html#707-709">get_const_i64</a>(<span class="number">0</span>);
+<a href=#236 id=236 data-nosnippet>236</a>    <span class="kw">let </span>aux_addr = <a href="#186">cx</a>.<a href="../common.rs.html#122-124">const_null</a>(<a href="#186">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_ptr">type_ptr</a>());
+<a href=#237 id=237 data-nosnippet>237</a>    <span class="kw">let </span>elems = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[reserved, version, kind, flags, region_id, llglobal, size, data, aux_addr];
+<a href=#238 id=238 data-nosnippet>238</a>
+<a href=#239 id=239 data-nosnippet>239</a>    <span class="kw">let </span>initializer = <a href="../common.rs.html#384-387"><span class="kw">crate</span>::common::named_struct</a>(<a href="#188">offload_entry_ty</a>, <span class="kw-2">&amp;</span><a href="#237">elems</a>);
+<a href=#240 id=240 data-nosnippet>240</a>    <span class="kw">let </span>c_name = <a href="https://doc.rust-lang.org/beta/alloc/ffi/c_str/struct.CString.html#method.new">CString::new</a>(<a href="#227">name</a>).<a href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#method.unwrap">unwrap</a>();
+<a href=#241 id=241 data-nosnippet>241</a>    <span class="kw">let </span>llglobal = <a href="../llvm/mod.rs.html#217-219">llvm::add_global</a>(<a href="#186">cx</a>.llmod, <a href="#188">offload_entry_ty</a>, <span class="kw-2">&amp;</span><a href="#240">c_name</a>);
+<a href=#242 id=242 data-nosnippet>242</a>    <a href="../llvm/mod.rs.html#227-229">llvm::set_global_constant</a>(<a href="#241">llglobal</a>, <span class="bool-val">true</span>);
+<a href=#243 id=243 data-nosnippet>243</a>    <a href="../llvm/mod.rs.html#235-239">llvm::set_linkage</a>(<a href="#241">llglobal</a>, <a href="../llvm/ffi.rs.html#196">WeakAnyLinkage</a>);
+<a href=#244 id=244 data-nosnippet>244</a>    <a href="../llvm/mod.rs.html#221-225">llvm::set_initializer</a>(<a href="#241">llglobal</a>, <a href="#239">initializer</a>);
+<a href=#245 id=245 data-nosnippet>245</a>    <a href="../llvm/mod.rs.html#255-259">llvm::set_alignment</a>(<a href="#241">llglobal</a>, Align::ONE);
+<a href=#246 id=246 data-nosnippet>246</a>    <span class="kw">let </span>c_section_name = <a href="https://doc.rust-lang.org/beta/alloc/ffi/c_str/struct.CString.html#method.new">CString::new</a>(<span class="string">".omp_offloading_entries"</span>).<a href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#method.unwrap">unwrap</a>();
+<a href=#247 id=247 data-nosnippet>247</a>    <a href="../llvm/mod.rs.html#211-215">llvm::set_section</a>(<a href="#241">llglobal</a>, <span class="kw-2">&amp;</span><a href="#246">c_section_name</a>);
+<a href=#248 id=248 data-nosnippet>248</a>    <a href="#208">o_types</a>
+<a href=#249 id=249 data-nosnippet>249</a>}
+<a href=#250 id=250 data-nosnippet>250</a>
+<a href=#251 id=251 data-nosnippet>251</a><span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/gpu_offload/fn.declare_offload_fn.html">declare_offload_fn</a>&lt;<span class="lifetime">'ll</span>&gt;(
+<a href=#252 id=252 data-nosnippet>252</a>    cx: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../context.rs.html#85">SimpleCx</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#253 id=253 data-nosnippet>253</a>    name: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/beta/std/primitive.str.html">str</a>,
+<a href=#254 id=254 data-nosnippet>254</a>    ty: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#802">llvm::Type</a>,
+<a href=#255 id=255 data-nosnippet>255</a>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a> {
+<a href=#256 id=256 data-nosnippet>256</a>    <a href="../declare.rs.html#38-56"><span class="kw">crate</span>::declare::declare_simple_fn</a>(
+<a href=#257 id=257 data-nosnippet>257</a>        <a href="#252">cx</a>,
+<a href=#258 id=258 data-nosnippet>258</a>        <a href="#253">name</a>,
+<a href=#259 id=259 data-nosnippet>259</a>        <a href="../llvm/ffi.rs.html#165">llvm::CallConv::CCallConv</a>,
+<a href=#260 id=260 data-nosnippet>260</a>        <a href="../llvm/ffi.rs.html#235">llvm::UnnamedAddr::No</a>,
+<a href=#261 id=261 data-nosnippet>261</a>        <a href="../llvm/ffi.rs.html#217">llvm::Visibility::Default</a>,
+<a href=#262 id=262 data-nosnippet>262</a>        <a href="#254">ty</a>,
+<a href=#263 id=263 data-nosnippet>263</a>    )
+<a href=#264 id=264 data-nosnippet>264</a>}
+<a href=#265 id=265 data-nosnippet>265</a>
+<a href=#266 id=266 data-nosnippet>266</a><span class="comment">// For each kernel *call*, we now use some of our previous declared globals to move data to and from
+<a href=#267 id=267 data-nosnippet>267</a>// the gpu. We don't have a proper frontend yet, so we assume that every call to a kernel function
+<a href=#268 id=268 data-nosnippet>268</a>// from main is intended to run on the GPU. For now, we only handle the data transfer part of it.
+<a href=#269 id=269 data-nosnippet>269</a>// If two consecutive kernels use the same memory, we still move it to the host and back to the gpu.
+<a href=#270 id=270 data-nosnippet>270</a>// Since in our frontend users (by default) don't have to specify data transfer, this is something
+<a href=#271 id=271 data-nosnippet>271</a>// we should optimize in the future! We also assume that everything should be copied back and forth,
+<a href=#272 id=272 data-nosnippet>272</a>// but sometimes we can directly zero-allocate on the device and only move back, or if something is
+<a href=#273 id=273 data-nosnippet>273</a>// immutable, we might only copy it to the device, but not back.
+<a href=#274 id=274 data-nosnippet>274</a>//
+<a href=#275 id=275 data-nosnippet>275</a>// Current steps:
+<a href=#276 id=276 data-nosnippet>276</a>// 0. Alloca some variables for the following steps
+<a href=#277 id=277 data-nosnippet>277</a>// 1. set insert point before kernel call.
+<a href=#278 id=278 data-nosnippet>278</a>// 2. generate all the GEPS and stores, to be used in 3)
+<a href=#279 id=279 data-nosnippet>279</a>// 3. generate __tgt_target_data_begin calls to move data to the GPU
+<a href=#280 id=280 data-nosnippet>280</a>//
+<a href=#281 id=281 data-nosnippet>281</a>// unchanged: keep kernel call. Later move the kernel to the GPU
+<a href=#282 id=282 data-nosnippet>282</a>//
+<a href=#283 id=283 data-nosnippet>283</a>// 4. set insert point after kernel call.
+<a href=#284 id=284 data-nosnippet>284</a>// 5. generate all the GEPS and stores, to be used in 6)
+<a href=#285 id=285 data-nosnippet>285</a>// 6. generate __tgt_target_data_end calls to move data from the GPU
+<a href=#286 id=286 data-nosnippet>286</a></span><span class="kw">fn </span><a href="../../../rustc_codegen_llvm/builder/gpu_offload/fn.gen_call_handling.html">gen_call_handling</a>&lt;<span class="lifetime">'ll</span>&gt;(
+<a href=#287 id=287 data-nosnippet>287</a>    cx: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../context.rs.html#85">SimpleCx</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#288 id=288 data-nosnippet>288</a>    _kernels: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a>],
+<a href=#289 id=289 data-nosnippet>289</a>    o_types: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">llvm::Value</a>],
+<a href=#290 id=290 data-nosnippet>290</a>) {
+<a href=#291 id=291 data-nosnippet>291</a>    <span class="comment">// %struct.__tgt_bin_desc = type { i32, ptr, ptr, ptr }
+<a href=#292 id=292 data-nosnippet>292</a>    </span><span class="kw">let </span>tptr = <a href="#287">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_ptr">type_ptr</a>();
+<a href=#293 id=293 data-nosnippet>293</a>    <span class="kw">let </span>ti32 = <a href="#287">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_i32">type_i32</a>();
+<a href=#294 id=294 data-nosnippet>294</a>    <span class="kw">let </span>tgt_bin_desc_ty = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[ti32, tptr, tptr, tptr];
+<a href=#295 id=295 data-nosnippet>295</a>    <span class="kw">let </span>tgt_bin_desc = <a href="#287">cx</a>.<a href="../type_.rs.html#50-53">type_named_struct</a>(<span class="string">"struct.__tgt_bin_desc"</span>);
+<a href=#296 id=296 data-nosnippet>296</a>    <a href="#287">cx</a>.<a href="../type_.rs.html#55-59">set_struct_body</a>(<a href="#295">tgt_bin_desc</a>, <span class="kw-2">&amp;</span><a href="#294">tgt_bin_desc_ty</a>, <span class="bool-val">false</span>);
+<a href=#297 id=297 data-nosnippet>297</a>
+<a href=#298 id=298 data-nosnippet>298</a>    <a href="#86-124">gen_tgt_kernel_global</a>(<span class="kw-2">&amp;</span><a href="#287">cx</a>);
+<a href=#299 id=299 data-nosnippet>299</a>    <span class="kw">let </span>(begin_mapper_decl, <span class="kw">_</span>, end_mapper_decl, fn_ty) = <a href="#126-148">gen_tgt_data_mappers</a>(<span class="kw-2">&amp;</span><a href="#287">cx</a>);
+<a href=#300 id=300 data-nosnippet>300</a>
+<a href=#301 id=301 data-nosnippet>301</a>    <span class="kw">let </span>main_fn = <a href="#287">cx</a>.<a href="../context.rs.html#723-726">get_function</a>(<span class="string">"main"</span>);
+<a href=#302 id=302 data-nosnippet>302</a>    <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(main_fn) = <a href="#301">main_fn</a> <span class="kw">else </span>{ <span class="kw">return </span>};
+<a href=#303 id=303 data-nosnippet>303</a>    <span class="kw">let </span>kernel_name = <span class="string">"kernel_1"</span>;
+<a href=#304 id=304 data-nosnippet>304</a>    <span class="kw">let </span>call = <span class="kw">unsafe </span>{
+<a href=#305 id=305 data-nosnippet>305</a>        <a href="../llvm/enzyme_ffi.rs.html#36-40">llvm::LLVMRustGetFunctionCall</a>(<a href="#302">main_fn</a>, <a href="#303">kernel_name</a>.<a href="../common.rs.html#419">as_c_char_ptr</a>(), <a href="#303">kernel_name</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.str.html#method.len">len</a>())
+<a href=#306 id=306 data-nosnippet>306</a>    };
+<a href=#307 id=307 data-nosnippet>307</a>    <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(kernel_call) = <a href="#304">call</a> <span class="kw">else </span>{
+<a href=#308 id=308 data-nosnippet>308</a>        <span class="kw">return</span>;
+<a href=#309 id=309 data-nosnippet>309</a>    };
+<a href=#310 id=310 data-nosnippet>310</a>    <span class="kw">let </span>kernel_call_bb = <span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#1276">llvm::LLVMGetInstructionParent</a>(<a href="#307">kernel_call</a>) };
+<a href=#311 id=311 data-nosnippet>311</a>    <span class="kw">let </span>called = <span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#1277">llvm::LLVMGetCalledValue</a>(<a href="#307">kernel_call</a>).<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>() };
+<a href=#312 id=312 data-nosnippet>312</a>    <span class="kw">let </span><span class="kw-2">mut </span>builder = <a href="../builder.rs.html#115-121">SBuilder::build</a>(<a href="#287">cx</a>, <a href="#310">kernel_call_bb</a>);
+<a href=#313 id=313 data-nosnippet>313</a>
+<a href=#314 id=314 data-nosnippet>314</a>    <span class="kw">let </span>types = <a href="#287">cx</a>.<a href="../type_.rs.html#73-81">func_params_types</a>(<a href="#287">cx</a>.<a href="../context.rs.html#680-682">get_type_of_global</a>(<a href="#311">called</a>));
+<a href=#315 id=315 data-nosnippet>315</a>    <span class="kw">let </span>num_args = <a href="#314">types</a>.<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.len">len</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/beta/std/primitive.u64.html">u64</a>;
+<a href=#316 id=316 data-nosnippet>316</a>
+<a href=#317 id=317 data-nosnippet>317</a>    <span class="comment">// Step 0)
+<a href=#318 id=318 data-nosnippet>318</a>    // %struct.__tgt_bin_desc = type { i32, ptr, ptr, ptr }
+<a href=#319 id=319 data-nosnippet>319</a>    // %6 = alloca %struct.__tgt_bin_desc, align 8
+<a href=#320 id=320 data-nosnippet>320</a>    </span><span class="kw">unsafe </span>{ <a href="../llvm/ffi.rs.html#2589">llvm::LLVMRustPositionBuilderPastAllocas</a>(<a href="#312">builder</a>.llbuilder, <a href="#302">main_fn</a>) };
+<a href=#321 id=321 data-nosnippet>321</a>
+<a href=#322 id=322 data-nosnippet>322</a>    <span class="kw">let </span>tgt_bin_desc_alloca = <a href="#312">builder</a>.<a href="../builder.rs.html#127-139">direct_alloca</a>(<a href="#295">tgt_bin_desc</a>, Align::EIGHT, <span class="string">"EmptyDesc"</span>);
+<a href=#323 id=323 data-nosnippet>323</a>
+<a href=#324 id=324 data-nosnippet>324</a>    <span class="kw">let </span>ty = <a href="#287">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_array">type_array</a>(<a href="#287">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_ptr">type_ptr</a>(), <a href="#315">num_args</a>);
+<a href=#325 id=325 data-nosnippet>325</a>    <span class="comment">// Baseptr are just the input pointer to the kernel, stored in a local alloca
+<a href=#326 id=326 data-nosnippet>326</a>    </span><span class="kw">let </span>a1 = <a href="#312">builder</a>.<a href="../builder.rs.html#127-139">direct_alloca</a>(<a href="#324">ty</a>, Align::EIGHT, <span class="string">".offload_baseptrs"</span>);
+<a href=#327 id=327 data-nosnippet>327</a>    <span class="comment">// Ptrs are the result of a gep into the baseptr, at least for our trivial types.
+<a href=#328 id=328 data-nosnippet>328</a>    </span><span class="kw">let </span>a2 = <a href="#312">builder</a>.<a href="../builder.rs.html#127-139">direct_alloca</a>(<a href="#324">ty</a>, Align::EIGHT, <span class="string">".offload_ptrs"</span>);
+<a href=#329 id=329 data-nosnippet>329</a>    <span class="comment">// These represent the sizes in bytes, e.g. the entry for `&amp;[f64; 16]` will be 8*16.
+<a href=#330 id=330 data-nosnippet>330</a>    </span><span class="kw">let </span>ty2 = <a href="#287">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_array">type_array</a>(<a href="#287">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_i64">type_i64</a>(), <a href="#315">num_args</a>);
+<a href=#331 id=331 data-nosnippet>331</a>    <span class="kw">let </span>a4 = <a href="#312">builder</a>.<a href="../builder.rs.html#127-139">direct_alloca</a>(<a href="#330">ty2</a>, Align::EIGHT, <span class="string">".offload_sizes"</span>);
+<a href=#332 id=332 data-nosnippet>332</a>    <span class="comment">// Now we allocate once per function param, a copy to be passed to one of our maps.
+<a href=#333 id=333 data-nosnippet>333</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>vals = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[];
+<a href=#334 id=334 data-nosnippet>334</a>    <span class="kw">let </span><span class="kw-2">mut </span>geps = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[];
+<a href=#335 id=335 data-nosnippet>335</a>    <span class="kw">let </span>i32_0 = <a href="#287">cx</a>.<a href="../context.rs.html#711-713">get_const_i32</a>(<span class="number">0</span>);
+<a href=#336 id=336 data-nosnippet>336</a>    <span class="kw">for </span>(index, in_ty) <span class="kw">in </span>types.iter().enumerate() {
+<a href=#337 id=337 data-nosnippet>337</a>        <span class="comment">// get function arg, store it into the alloca, and read it.
+<a href=#338 id=338 data-nosnippet>338</a>        </span><span class="kw">let </span>p = llvm::get_param(called, index <span class="kw">as </span>u32);
+<a href=#339 id=339 data-nosnippet>339</a>        <span class="kw">let </span>name = llvm::get_value_name(p);
+<a href=#340 id=340 data-nosnippet>340</a>        <span class="kw">let </span>name = str::from_utf8(<span class="kw-2">&amp;</span>name).unwrap();
+<a href=#341 id=341 data-nosnippet>341</a>        <span class="kw">let </span>arg_name = <span class="macro">format!</span>(<span class="string">"{name}.addr"</span>);
+<a href=#342 id=342 data-nosnippet>342</a>        <span class="kw">let </span>alloca = builder.direct_alloca(in_ty, Align::EIGHT, <span class="kw-2">&amp;</span>arg_name);
+<a href=#343 id=343 data-nosnippet>343</a>
+<a href=#344 id=344 data-nosnippet>344</a>        builder.store(p, alloca, Align::EIGHT);
+<a href=#345 id=345 data-nosnippet>345</a>        <span class="kw">let </span>val = builder.load(in_ty, alloca, Align::EIGHT);
+<a href=#346 id=346 data-nosnippet>346</a>        <span class="kw">let </span>gep = builder.inbounds_gep(cx.type_f32(), val, <span class="kw-2">&amp;</span>[i32_0]);
+<a href=#347 id=347 data-nosnippet>347</a>        vals.push(val);
+<a href=#348 id=348 data-nosnippet>348</a>        geps.push(gep);
+<a href=#349 id=349 data-nosnippet>349</a>    }
+<a href=#350 id=350 data-nosnippet>350</a>
+<a href=#351 id=351 data-nosnippet>351</a>    <span class="comment">// Step 1)
+<a href=#352 id=352 data-nosnippet>352</a>    </span><span class="kw">unsafe </span>{ <a href="../llvm/enzyme_ffi.rs.html#34">llvm::LLVMRustPositionBefore</a>(<a href="#312">builder</a>.llbuilder, <a href="#307">kernel_call</a>) };
+<a href=#353 id=353 data-nosnippet>353</a>    <a href="#312">builder</a>.<a href="../builder.rs.html#178-189">memset</a>(<a href="#322">tgt_bin_desc_alloca</a>, <a href="#287">cx</a>.<a href="../context.rs.html#719-721">get_const_i8</a>(<span class="number">0</span>), <a href="#287">cx</a>.<a href="../context.rs.html#707-709">get_const_i64</a>(<span class="number">32</span>), Align::EIGHT);
+<a href=#354 id=354 data-nosnippet>354</a>
+<a href=#355 id=355 data-nosnippet>355</a>    <span class="kw">let </span>mapper_fn_ty = <a href="#287">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_func">type_func</a>(<span class="kw-2">&amp;</span>[<a href="#287">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_ptr">type_ptr</a>()], <a href="#287">cx</a>.<a href="../type_.rs.html#60-62">type_void</a>());
+<a href=#356 id=356 data-nosnippet>356</a>    <span class="kw">let </span>register_lib_decl = <a href="#251-264">declare_offload_fn</a>(<span class="kw-2">&amp;</span><a href="#287">cx</a>, <span class="string">"__tgt_register_lib"</span>, <a href="#355">mapper_fn_ty</a>);
+<a href=#357 id=357 data-nosnippet>357</a>    <span class="kw">let </span>unregister_lib_decl = <a href="#251-264">declare_offload_fn</a>(<span class="kw-2">&amp;</span><a href="#287">cx</a>, <span class="string">"__tgt_unregister_lib"</span>, <a href="#355">mapper_fn_ty</a>);
+<a href=#358 id=358 data-nosnippet>358</a>    <span class="kw">let </span>init_ty = <a href="#287">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_func">type_func</a>(<span class="kw-2">&amp;</span>[], <a href="#287">cx</a>.<a href="../type_.rs.html#60-62">type_void</a>());
+<a href=#359 id=359 data-nosnippet>359</a>    <span class="kw">let </span>init_rtls_decl = <a href="#251-264">declare_offload_fn</a>(<a href="#287">cx</a>, <span class="string">"__tgt_init_all_rtls"</span>, <a href="#358">init_ty</a>);
+<a href=#360 id=360 data-nosnippet>360</a>
+<a href=#361 id=361 data-nosnippet>361</a>    <span class="comment">// call void @__tgt_register_lib(ptr noundef %6)
+<a href=#362 id=362 data-nosnippet>362</a>    </span><a href="#312">builder</a>.<a href="../builder.rs.html#62-91">call</a>(<a href="#355">mapper_fn_ty</a>, <a href="#356">register_lib_decl</a>, <span class="kw-2">&amp;</span>[<a href="#322">tgt_bin_desc_alloca</a>], <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>);
+<a href=#363 id=363 data-nosnippet>363</a>    <span class="comment">// call void @__tgt_init_all_rtls()
+<a href=#364 id=364 data-nosnippet>364</a>    </span><a href="#312">builder</a>.<a href="../builder.rs.html#62-91">call</a>(<a href="#358">init_ty</a>, <a href="#359">init_rtls_decl</a>, <span class="kw-2">&amp;</span>[], <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>);
+<a href=#365 id=365 data-nosnippet>365</a>
+<a href=#366 id=366 data-nosnippet>366</a>    <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..num_args {
+<a href=#367 id=367 data-nosnippet>367</a>        <span class="kw">let </span>idx = cx.get_const_i32(i);
+<a href=#368 id=368 data-nosnippet>368</a>        <span class="kw">let </span>gep1 = builder.inbounds_gep(ty, a1, <span class="kw-2">&amp;</span>[i32_0, idx]);
+<a href=#369 id=369 data-nosnippet>369</a>        builder.store(vals[i <span class="kw">as </span>usize], gep1, Align::EIGHT);
+<a href=#370 id=370 data-nosnippet>370</a>        <span class="kw">let </span>gep2 = builder.inbounds_gep(ty, a2, <span class="kw-2">&amp;</span>[i32_0, idx]);
+<a href=#371 id=371 data-nosnippet>371</a>        builder.store(geps[i <span class="kw">as </span>usize], gep2, Align::EIGHT);
+<a href=#372 id=372 data-nosnippet>372</a>        <span class="kw">let </span>gep3 = builder.inbounds_gep(ty2, a4, <span class="kw-2">&amp;</span>[i32_0, idx]);
+<a href=#373 id=373 data-nosnippet>373</a>        <span class="comment">// As mentioned above, we don't use Rust type information yet. So for now we will just
+<a href=#374 id=374 data-nosnippet>374</a>        // assume that we have 1024 bytes, 256 f32 values.
+<a href=#375 id=375 data-nosnippet>375</a>        // FIXME(offload): write an offload frontend and handle arbitrary types.
+<a href=#376 id=376 data-nosnippet>376</a>        </span>builder.store(cx.get_const_i64(<span class="number">1024</span>), gep3, Align::EIGHT);
+<a href=#377 id=377 data-nosnippet>377</a>    }
+<a href=#378 id=378 data-nosnippet>378</a>
+<a href=#379 id=379 data-nosnippet>379</a>    <span class="comment">// For now we have a very simplistic indexing scheme into our
+<a href=#380 id=380 data-nosnippet>380</a>    // offload_{baseptrs,ptrs,sizes}. We will probably improve this along with our gpu frontend pr.
+<a href=#381 id=381 data-nosnippet>381</a>    </span><span class="kw">fn </span>get_geps&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ll</span>&gt;(
+<a href=#382 id=382 data-nosnippet>382</a>        builder: <span class="kw-2">&amp;mut </span><a href="../builder.rs.html#50">SBuilder</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ll</span>&gt;,
+<a href=#383 id=383 data-nosnippet>383</a>        cx: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../context.rs.html#85">SimpleCx</a>&lt;<span class="lifetime">'ll</span>&gt;,
+<a href=#384 id=384 data-nosnippet>384</a>        ty: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#802">Type</a>,
+<a href=#385 id=385 data-nosnippet>385</a>        ty2: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#802">Type</a>,
+<a href=#386 id=386 data-nosnippet>386</a>        a1: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">Value</a>,
+<a href=#387 id=387 data-nosnippet>387</a>        a2: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">Value</a>,
+<a href=#388 id=388 data-nosnippet>388</a>        a4: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">Value</a>,
+<a href=#389 id=389 data-nosnippet>389</a>    ) -&gt; (<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">Value</a>, <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">Value</a>, <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">Value</a>) {
+<a href=#390 id=390 data-nosnippet>390</a>        <span class="kw">let </span>i32_0 = <a href="#383">cx</a>.<a href="../context.rs.html#711-713">get_const_i32</a>(<span class="number">0</span>);
+<a href=#391 id=391 data-nosnippet>391</a>
+<a href=#392 id=392 data-nosnippet>392</a>        <span class="kw">let </span>gep1 = <a href="#382">builder</a>.<a href="../builder.rs.html#141-158">inbounds_gep</a>(<a href="#384">ty</a>, <a href="#386">a1</a>, <span class="kw-2">&amp;</span>[<a href="#390">i32_0</a>, <a href="#390">i32_0</a>]);
+<a href=#393 id=393 data-nosnippet>393</a>        <span class="kw">let </span>gep2 = <a href="#382">builder</a>.<a href="../builder.rs.html#141-158">inbounds_gep</a>(<a href="#384">ty</a>, <a href="#387">a2</a>, <span class="kw-2">&amp;</span>[<a href="#390">i32_0</a>, <a href="#390">i32_0</a>]);
+<a href=#394 id=394 data-nosnippet>394</a>        <span class="kw">let </span>gep3 = <a href="#382">builder</a>.<a href="../builder.rs.html#141-158">inbounds_gep</a>(<a href="#385">ty2</a>, <a href="#388">a4</a>, <span class="kw-2">&amp;</span>[<a href="#390">i32_0</a>, <a href="#390">i32_0</a>]);
+<a href=#395 id=395 data-nosnippet>395</a>        (<a href="#392">gep1</a>, <a href="#393">gep2</a>, <a href="#394">gep3</a>)
+<a href=#396 id=396 data-nosnippet>396</a>    }
+<a href=#397 id=397 data-nosnippet>397</a>
+<a href=#398 id=398 data-nosnippet>398</a>    <span class="kw">fn </span>generate_mapper_call&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ll</span>&gt;(
+<a href=#399 id=399 data-nosnippet>399</a>        builder: <span class="kw-2">&amp;mut </span><a href="../builder.rs.html#50">SBuilder</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'ll</span>&gt;,
+<a href=#400 id=400 data-nosnippet>400</a>        cx: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../context.rs.html#85">SimpleCx</a>&lt;<span class="lifetime">'ll</span>&gt;,
+<a href=#401 id=401 data-nosnippet>401</a>        geps: (<span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">Value</a>, <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">Value</a>, <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">Value</a>),
+<a href=#402 id=402 data-nosnippet>402</a>        o_type: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">Value</a>,
+<a href=#403 id=403 data-nosnippet>403</a>        fn_to_call: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">Value</a>,
+<a href=#404 id=404 data-nosnippet>404</a>        fn_ty: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#802">Type</a>,
+<a href=#405 id=405 data-nosnippet>405</a>        num_args: <a href="https://doc.rust-lang.org/beta/std/primitive.u64.html">u64</a>,
+<a href=#406 id=406 data-nosnippet>406</a>        s_ident_t: <span class="kw-2">&amp;</span><span class="lifetime">'ll </span><a href="../llvm/ffi.rs.html#803">Value</a>,
+<a href=#407 id=407 data-nosnippet>407</a>    ) {
+<a href=#408 id=408 data-nosnippet>408</a>        <span class="kw">let </span>nullptr = <a href="#400">cx</a>.<a href="../common.rs.html#122-124">const_null</a>(<a href="#400">cx</a>.<a href="../../../rustc_codegen_ssa/traits/type_/trait.BaseTypeCodegenMethods.html#tymethod.type_ptr">type_ptr</a>());
+<a href=#409 id=409 data-nosnippet>409</a>        <span class="kw">let </span>i64_max = <a href="#400">cx</a>.<a href="../context.rs.html#707-709">get_const_i64</a>(u64::MAX);
+<a href=#410 id=410 data-nosnippet>410</a>        <span class="kw">let </span>num_args = <a href="#400">cx</a>.<a href="../context.rs.html#711-713">get_const_i32</a>(<a href="#405">num_args</a>);
+<a href=#411 id=411 data-nosnippet>411</a>        <span class="kw">let </span>args =
+<a href=#412 id=412 data-nosnippet>412</a>            <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[s_ident_t, i64_max, num_args, geps.<span class="number">0</span>, geps.<span class="number">1</span>, geps.<span class="number">2</span>, o_type, nullptr, nullptr];
+<a href=#413 id=413 data-nosnippet>413</a>        <a href="#399">builder</a>.<a href="../builder.rs.html#62-91">call</a>(<a href="#404">fn_ty</a>, <a href="#403">fn_to_call</a>, <span class="kw-2">&amp;</span><a href="#411">args</a>, <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>);
+<a href=#414 id=414 data-nosnippet>414</a>    }
+<a href=#415 id=415 data-nosnippet>415</a>
+<a href=#416 id=416 data-nosnippet>416</a>    <span class="comment">// Step 2)
+<a href=#417 id=417 data-nosnippet>417</a>    </span><span class="kw">let </span>s_ident_t = <a href="#36-60">generate_at_one</a>(<span class="kw-2">&amp;</span><a href="#287">cx</a>);
+<a href=#418 id=418 data-nosnippet>418</a>    <span class="kw">let </span>o = <a href="#289">o_types</a>[<span class="number">0</span>];
+<a href=#419 id=419 data-nosnippet>419</a>    <span class="kw">let </span>geps = <a href="#381-396">get_geps</a>(<span class="kw-2">&amp;mut </span><a href="#312">builder</a>, <span class="kw-2">&amp;</span><a href="#287">cx</a>, <a href="#324">ty</a>, <a href="#330">ty2</a>, <a href="#326">a1</a>, <a href="#328">a2</a>, <a href="#331">a4</a>);
+<a href=#420 id=420 data-nosnippet>420</a>    <a href="#398-414">generate_mapper_call</a>(<span class="kw-2">&amp;mut </span><a href="#312">builder</a>, <span class="kw-2">&amp;</span><a href="#287">cx</a>, <a href="#419">geps</a>, <a href="#418">o</a>, <a href="#299">begin_mapper_decl</a>, <a href="#299">fn_ty</a>, <a href="#315">num_args</a>, <a href="#417">s_ident_t</a>);
+<a href=#421 id=421 data-nosnippet>421</a>
+<a href=#422 id=422 data-nosnippet>422</a>    <span class="comment">// Step 3)
+<a href=#423 id=423 data-nosnippet>423</a>    // Here we will add code for the actual kernel launches in a follow-up PR.
+<a href=#424 id=424 data-nosnippet>424</a>    // FIXME(offload): launch kernels
+<a href=#425 id=425 data-nosnippet>425</a>
+<a href=#426 id=426 data-nosnippet>426</a>    // Step 4)
+<a href=#427 id=427 data-nosnippet>427</a>    </span><span class="kw">unsafe </span>{ <a href="../llvm/enzyme_ffi.rs.html#35">llvm::LLVMRustPositionAfter</a>(<a href="#312">builder</a>.llbuilder, <a href="#307">kernel_call</a>) };
+<a href=#428 id=428 data-nosnippet>428</a>
+<a href=#429 id=429 data-nosnippet>429</a>    <span class="kw">let </span>geps = <a href="#381-396">get_geps</a>(<span class="kw-2">&amp;mut </span><a href="#312">builder</a>, <span class="kw-2">&amp;</span><a href="#287">cx</a>, <a href="#324">ty</a>, <a href="#330">ty2</a>, <a href="#326">a1</a>, <a href="#328">a2</a>, <a href="#331">a4</a>);
+<a href=#430 id=430 data-nosnippet>430</a>    <a href="#398-414">generate_mapper_call</a>(<span class="kw-2">&amp;mut </span><a href="#312">builder</a>, <span class="kw-2">&amp;</span><a href="#287">cx</a>, <a href="#429">geps</a>, <a href="#418">o</a>, <a href="#299">end_mapper_decl</a>, <a href="#299">fn_ty</a>, <a href="#315">num_args</a>, <a href="#417">s_ident_t</a>);
+<a href=#431 id=431 data-nosnippet>431</a>
+<a href=#432 id=432 data-nosnippet>432</a>    <a href="#312">builder</a>.<a href="../builder.rs.html#62-91">call</a>(<a href="#355">mapper_fn_ty</a>, <a href="#357">unregister_lib_decl</a>, <span class="kw-2">&amp;</span>[<a href="#322">tgt_bin_desc_alloca</a>], <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>);
+<a href=#433 id=433 data-nosnippet>433</a>
+<a href=#434 id=434 data-nosnippet>434</a>    <span class="comment">// With this we generated the following begin and end mappers. We could easily generate the
+<a href=#435 id=435 data-nosnippet>435</a>    // update mapper in an update.
+<a href=#436 id=436 data-nosnippet>436</a>    // call void @__tgt_target_data_begin_mapper(ptr @1, i64 -1, i32 3, ptr %27, ptr %28, ptr %29, ptr @.offload_maptypes, ptr null, ptr null)
+<a href=#437 id=437 data-nosnippet>437</a>    // call void @__tgt_target_data_update_mapper(ptr @1, i64 -1, i32 2, ptr %46, ptr %47, ptr %48, ptr @.offload_maptypes.1, ptr null, ptr null)
+<a href=#438 id=438 data-nosnippet>438</a>    // call void @__tgt_target_data_end_mapper(ptr @1, i64 -1, i32 3, ptr %49, ptr %50, ptr %51, ptr @.offload_maptypes, ptr null, ptr null)
+<a href=#439 id=439 data-nosnippet>439</a></span>}</code></pre></div></section></main></body></html>

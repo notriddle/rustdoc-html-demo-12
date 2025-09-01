@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AttributeKind","CfgEntry","CoverageAttrKind","DeprecatedSince","InlineAttr","InstructionSetAttr","IntType","Linkage","MacroUseArgs","MirDialect","MirPhase","NativeLibKind","OptimizeAttr","PeImportNameType","ReprAttr","TransparencyError","UsedBy"],"struct":["Deprecation","LinkEntry","SanitizerSet","StrippedCfgItem"]};

@@ -1,0 +1,415 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_const_eval/src/interpret/projection.rs`."><title>projection.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_const_eval" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-beta.1 (788da80fc 2025-08-04)" data-channel="beta" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../../static.files/storage-68b7e25d.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_const_eval/interpret/</div>projection.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! This file implements "place projections"; basically a symmetric API for 3 types: MPlaceTy, OpTy, PlaceTy.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! OpTy and PlaceTy generally work by "let's see if we are actually an MPlaceTy, and do something custom if not".
+<a href=#4 id=4 data-nosnippet>4</a>//! For PlaceTy, the custom thing is basically always to call `force_allocation` and then use the MPlaceTy logic anyway.
+<a href=#5 id=5 data-nosnippet>5</a>//! For OpTy, the custom thing on field pojections has to be pretty clever (since `Operand::Immediate` can have fields),
+<a href=#6 id=6 data-nosnippet>6</a>//! but for array/slice operations it only has to worry about `Operand::Uninit`. That makes the value part trivial,
+<a href=#7 id=7 data-nosnippet>7</a>//! but we still need to do bounds checking and adjust the layout. To not duplicate that with MPlaceTy, we actually
+<a href=#8 id=8 data-nosnippet>8</a>//! implement the logic on OpTy, and MPlaceTy calls that.
+<a href=#9 id=9 data-nosnippet>9</a>
+<a href=#10 id=10 data-nosnippet>10</a></span><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/core/marker/struct.PhantomData.html">std::marker::PhantomData</a>;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/core/ops/range/struct.Range.html">std::ops::Range</a>;
+<a href=#12 id=12 data-nosnippet>12</a>
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span>rustc_abi::{<span class="self"><a href="../../../rustc_abi/index.html">self</a> </span><span class="kw">as </span>abi, <a href="../../../rustc_abi/layout/ty/struct.FieldIdx.html">FieldIdx</a>, <a href="../../../rustc_abi/struct.Size.html">Size</a>, <a href="../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>};
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span><a href="../../../rustc_middle/ty/struct.Ty.html">rustc_middle::ty::Ty</a>;
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span><a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">rustc_middle::ty::layout::TyAndLayout</a>;
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span>rustc_middle::{<a href="../../../rustc_middle/macro.bug.html">bug</a>, <a href="../../../rustc_middle/mir/index.html">mir</a>, <a href="../../../rustc_middle/macro.span_bug.html">span_bug</a>, <a href="../../../rustc_middle/ty/index.html">ty</a>};
+<a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug</a>, <a href="https://docs.rs/tracing-attributes/0.1.30/tracing_attributes/attr.instrument.html">instrument</a>};
+<a href=#18 id=18 data-nosnippet>18</a>
+<a href=#19 id=19 data-nosnippet>19</a><span class="kw">use super</span>::{
+<a href=#20 id=20 data-nosnippet>20</a>    <a href="eval_context.rs.html#27-47">InterpCx</a>, <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>, <a href="place.rs.html#100-103">MPlaceTy</a>, <a href="machine.rs.html#99-620">Machine</a>, <a href="place.rs.html#24-29">MemPlaceMeta</a>, <a href="operand.rs.html#491-494">OpTy</a>, <a href="../../../rustc_middle/mir/interpret/pointer/trait.Provenance.html">Provenance</a>, <a href="../../../rustc_middle/mir/interpret/value/enum.Scalar.html">Scalar</a>, <a href="../../../rustc_middle/macro.err_ub.html">err_ub</a>,
+<a href=#21 id=21 data-nosnippet>21</a>    <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>, <a href="../../../rustc_middle/macro.throw_ub.html">throw_ub</a>, <a href="../../../rustc_middle/macro.throw_unsup.html">throw_unsup</a>,
+<a href=#22 id=22 data-nosnippet>22</a>};
+<a href=#23 id=23 data-nosnippet>23</a>
+<a href=#24 id=24 data-nosnippet>24</a><span class="doccomment">/// Describes the constraints placed on offset-projections.
+<a href=#25 id=25 data-nosnippet>25</a></span><span class="attr">#[derive(Copy, Clone, Debug)]
+<a href=#26 id=26 data-nosnippet>26</a></span><span class="kw">pub enum </span><a href="../../../rustc_const_eval/interpret/enum.OffsetMode.html">OffsetMode</a> {
+<a href=#27 id=27 data-nosnippet>27</a>    <span class="doccomment">/// The offset has to be inbounds, like `ptr::offset`.
+<a href=#28 id=28 data-nosnippet>28</a>    </span>Inbounds,
+<a href=#29 id=29 data-nosnippet>29</a>    <span class="doccomment">/// No constraints, just wrap around the edge of the address space.
+<a href=#30 id=30 data-nosnippet>30</a>    </span>Wrapping,
+<a href=#31 id=31 data-nosnippet>31</a>}
+<a href=#32 id=32 data-nosnippet>32</a>
+<a href=#33 id=33 data-nosnippet>33</a><span class="doccomment">/// A thing that we can project into, and that has a layout.
+<a href=#34 id=34 data-nosnippet>34</a></span><span class="kw">pub trait </span><a href="../../../rustc_const_eval/interpret/trait.Projectable.html">Projectable</a>&lt;<span class="lifetime">'tcx</span>, Prov: <a href="../../../rustc_middle/mir/interpret/pointer/trait.Provenance.html">Provenance</a>&gt;: <a href="https://doc.rust-lang.org/beta/core/marker/trait.Sized.html">Sized</a> + <a href="https://doc.rust-lang.org/beta/core/fmt/trait.Debug.html">std::fmt::Debug</a> {
+<a href=#35 id=35 data-nosnippet>35</a>    <span class="doccomment">/// Get the layout.
+<a href=#36 id=36 data-nosnippet>36</a>    </span><span class="kw">fn </span>layout(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;;
+<a href=#37 id=37 data-nosnippet>37</a>
+<a href=#38 id=38 data-nosnippet>38</a>    <span class="doccomment">/// Get the metadata of a wide value.
+<a href=#39 id=39 data-nosnippet>39</a>    </span><span class="kw">fn </span>meta(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="place.rs.html#24-29">MemPlaceMeta</a>&lt;Prov&gt;;
+<a href=#40 id=40 data-nosnippet>40</a>
+<a href=#41 id=41 data-nosnippet>41</a>    <span class="doccomment">/// Get the length of a slice/string/array stored here.
+<a href=#42 id=42 data-nosnippet>42</a>    </span><span class="kw">fn </span>len&lt;M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>, Provenance = Prov&gt;&gt;(
+<a href=#43 id=43 data-nosnippet>43</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#44 id=44 data-nosnippet>44</a>        ecx: <span class="kw-2">&amp;</span><a href="eval_context.rs.html#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt;,
+<a href=#45 id=45 data-nosnippet>45</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="https://doc.rust-lang.org/beta/std/primitive.u64.html">u64</a>&gt; {
+<a href=#46 id=46 data-nosnippet>46</a>        <span class="kw">let </span>layout = <a class="self" href="#43">self</a>.<a href="#36">layout</a>();
+<a href=#47 id=47 data-nosnippet>47</a>        <span class="kw">if </span><a href="#46">layout</a>.<a href="../../../rustc_abi/struct.LayoutData.html#method.is_unsized">is_unsized</a>() {
+<a href=#48 id=48 data-nosnippet>48</a>            <span class="comment">// We need to consult `meta` metadata
+<a href=#49 id=49 data-nosnippet>49</a>            </span><span class="kw">match </span><a href="#46">layout</a>.ty.<a href="../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() {
+<a href=#50 id=50 data-nosnippet>50</a>                <a href="../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Slice">ty::Slice</a>(..) | <a href="../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Str">ty::Str</a> =&gt; <a class="self" href="#43">self</a>.<a href="#39">meta</a>().<a href="place.rs.html#33-40">unwrap_meta</a>().<a href="../../../rustc_middle/mir/interpret/value/enum.Scalar.html#method.to_target_usize">to_target_usize</a>(<a href="#44">ecx</a>),
+<a href=#51 id=51 data-nosnippet>51</a>                <span class="kw">_ </span>=&gt; <a class="macro" href="../../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"len not supported on unsized type {:?}"</span>, layout.ty),
+<a href=#52 id=52 data-nosnippet>52</a>            }
+<a href=#53 id=53 data-nosnippet>53</a>        } <span class="kw">else </span>{
+<a href=#54 id=54 data-nosnippet>54</a>            <span class="comment">// Go through the layout. There are lots of types that support a length,
+<a href=#55 id=55 data-nosnippet>55</a>            // e.g., SIMD types. (But not all repr(simd) types even have FieldsShape::Array!)
+<a href=#56 id=56 data-nosnippet>56</a>            </span><span class="kw">match </span><a href="#46">layout</a>.fields {
+<a href=#57 id=57 data-nosnippet>57</a>                <a href="../../../rustc_abi/enum.FieldsShape.html#variant.Array">abi::FieldsShape::Array</a> { count, .. } =&gt; <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a href="#57">count</a>),
+<a href=#58 id=58 data-nosnippet>58</a>                <span class="kw">_ </span>=&gt; <a class="macro" href="../../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"len not supported on sized type {:?}"</span>, layout.ty),
+<a href=#59 id=59 data-nosnippet>59</a>            }
+<a href=#60 id=60 data-nosnippet>60</a>        }
+<a href=#61 id=61 data-nosnippet>61</a>    }
+<a href=#62 id=62 data-nosnippet>62</a>
+<a href=#63 id=63 data-nosnippet>63</a>    <span class="doccomment">/// Offset the value by the given amount, replacing the layout and metadata.
+<a href=#64 id=64 data-nosnippet>64</a>    </span><span class="kw">fn </span>offset_with_meta&lt;M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>, Provenance = Prov&gt;&gt;(
+<a href=#65 id=65 data-nosnippet>65</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#66 id=66 data-nosnippet>66</a>        offset: <a href="../../../rustc_abi/struct.Size.html">Size</a>,
+<a href=#67 id=67 data-nosnippet>67</a>        mode: <a href="#26-31">OffsetMode</a>,
+<a href=#68 id=68 data-nosnippet>68</a>        meta: <a href="place.rs.html#24-29">MemPlaceMeta</a>&lt;Prov&gt;,
+<a href=#69 id=69 data-nosnippet>69</a>        layout: <a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#70 id=70 data-nosnippet>70</a>        ecx: <span class="kw-2">&amp;</span><a href="eval_context.rs.html#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt;,
+<a href=#71 id=71 data-nosnippet>71</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt;;
+<a href=#72 id=72 data-nosnippet>72</a>
+<a href=#73 id=73 data-nosnippet>73</a>    <span class="kw">fn </span>offset&lt;M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>, Provenance = Prov&gt;&gt;(
+<a href=#74 id=74 data-nosnippet>74</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#75 id=75 data-nosnippet>75</a>        offset: <a href="../../../rustc_abi/struct.Size.html">Size</a>,
+<a href=#76 id=76 data-nosnippet>76</a>        layout: <a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#77 id=77 data-nosnippet>77</a>        ecx: <span class="kw-2">&amp;</span><a href="eval_context.rs.html#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt;,
+<a href=#78 id=78 data-nosnippet>78</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt; {
+<a href=#79 id=79 data-nosnippet>79</a>        <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(layout.is_sized());
+<a href=#80 id=80 data-nosnippet>80</a>        <span class="comment">// We sometimes do pointer arithmetic with this function, disregarding the source type.
+<a href=#81 id=81 data-nosnippet>81</a>        // So we don't check the sizes here.
+<a href=#82 id=82 data-nosnippet>82</a>        </span><a class="self" href="#74">self</a>.<a href="#64-71">offset_with_meta</a>(<a href="#75">offset</a>, <a href="#28">OffsetMode::Inbounds</a>, <a href="place.rs.html#28">MemPlaceMeta::None</a>, <a href="#76">layout</a>, <a href="#77">ecx</a>)
+<a href=#83 id=83 data-nosnippet>83</a>    }
+<a href=#84 id=84 data-nosnippet>84</a>
+<a href=#85 id=85 data-nosnippet>85</a>    <span class="doccomment">/// This does an offset-by-zero, which is effectively a transmute. Note however that
+<a href=#86 id=86 data-nosnippet>86</a>    /// not all transmutes are supported by all projectables -- specifically, if this is an
+<a href=#87 id=87 data-nosnippet>87</a>    /// `OpTy` or `ImmTy`, the new layout must have almost the same ABI as the old one
+<a href=#88 id=88 data-nosnippet>88</a>    /// (only changing the `valid_range` is allowed and turning integers into pointers).
+<a href=#89 id=89 data-nosnippet>89</a>    </span><span class="kw">fn </span>transmute&lt;M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>, Provenance = Prov&gt;&gt;(
+<a href=#90 id=90 data-nosnippet>90</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#91 id=91 data-nosnippet>91</a>        layout: <a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#92 id=92 data-nosnippet>92</a>        ecx: <span class="kw-2">&amp;</span><a href="eval_context.rs.html#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt;,
+<a href=#93 id=93 data-nosnippet>93</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <span class="self">Self</span>&gt; {
+<a href=#94 id=94 data-nosnippet>94</a>        <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(<span class="self">self</span>.layout().is_sized() &amp;&amp; layout.is_sized());
+<a href=#95 id=95 data-nosnippet>95</a>        <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert_eq.html">assert_eq!</a>(<span class="self">self</span>.layout().size, layout.size);
+<a href=#96 id=96 data-nosnippet>96</a>        <a class="self" href="#90">self</a>.<a href="#64-71">offset_with_meta</a>(Size::ZERO, <a href="#30">OffsetMode::Wrapping</a>, <a href="place.rs.html#28">MemPlaceMeta::None</a>, <a href="#91">layout</a>, <a href="#92">ecx</a>)
+<a href=#97 id=97 data-nosnippet>97</a>    }
+<a href=#98 id=98 data-nosnippet>98</a>
+<a href=#99 id=99 data-nosnippet>99</a>    <span class="doccomment">/// Convert this to an `OpTy`. This might be an irreversible transformation, but is useful for
+<a href=#100 id=100 data-nosnippet>100</a>    /// reading from this thing.
+<a href=#101 id=101 data-nosnippet>101</a>    </span><span class="kw">fn </span>to_op&lt;M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>, Provenance = Prov&gt;&gt;(
+<a href=#102 id=102 data-nosnippet>102</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#103 id=103 data-nosnippet>103</a>        ecx: <span class="kw-2">&amp;</span><a href="eval_context.rs.html#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt;,
+<a href=#104 id=104 data-nosnippet>104</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="operand.rs.html#491-494">OpTy</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt;;
+<a href=#105 id=105 data-nosnippet>105</a>}
+<a href=#106 id=106 data-nosnippet>106</a>
+<a href=#107 id=107 data-nosnippet>107</a><span class="doccomment">/// A type representing iteration over the elements of an array.
+<a href=#108 id=108 data-nosnippet>108</a></span><span class="kw">pub struct </span><a href="../../../rustc_const_eval/interpret/projection/struct.ArrayIterator.html">ArrayIterator</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Prov: <a href="../../../rustc_middle/mir/interpret/pointer/trait.Provenance.html">Provenance</a>, P: <a href="#34-105">Projectable</a>&lt;<span class="lifetime">'tcx</span>, Prov&gt;&gt; {
+<a href=#109 id=109 data-nosnippet>109</a>    base: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>P,
+<a href=#110 id=110 data-nosnippet>110</a>    range: <a href="https://doc.rust-lang.org/beta/core/ops/range/struct.Range.html">Range</a>&lt;<a href="https://doc.rust-lang.org/beta/std/primitive.u64.html">u64</a>&gt;,
+<a href=#111 id=111 data-nosnippet>111</a>    stride: <a href="../../../rustc_abi/struct.Size.html">Size</a>,
+<a href=#112 id=112 data-nosnippet>112</a>    field_layout: <a href="../../../rustc_middle/ty/layout/type.TyAndLayout.html">TyAndLayout</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#113 id=113 data-nosnippet>113</a>    _phantom: <a href="https://doc.rust-lang.org/beta/core/marker/struct.PhantomData.html">PhantomData</a>&lt;Prov&gt;, <span class="comment">// otherwise it says `Prov` is never used...
+<a href=#114 id=114 data-nosnippet>114</a></span>}
+<a href=#115 id=115 data-nosnippet>115</a>
+<a href=#116 id=116 data-nosnippet>116</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Prov: <a href="../../../rustc_middle/mir/interpret/pointer/trait.Provenance.html">Provenance</a>, P: <a href="#34-105">Projectable</a>&lt;<span class="lifetime">'tcx</span>, Prov&gt;&gt; <a href="#108-114">ArrayIterator</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, Prov, P&gt; {
+<a href=#117 id=117 data-nosnippet>117</a>    <span class="doccomment">/// Should be the same `ecx` on each call, and match the one used to create the iterator.
+<a href=#118 id=118 data-nosnippet>118</a>    </span><span class="kw">pub fn </span>next&lt;M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>, Provenance = Prov&gt;&gt;(
+<a href=#119 id=119 data-nosnippet>119</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#120 id=120 data-nosnippet>120</a>        ecx: <span class="kw-2">&amp;</span><a href="eval_context.rs.html#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt;,
+<a href=#121 id=121 data-nosnippet>121</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;(<a href="https://doc.rust-lang.org/beta/std/primitive.u64.html">u64</a>, P)&gt;&gt; {
+<a href=#122 id=122 data-nosnippet>122</a>        <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(idx) = <a class="self" href="#119">self</a>.range.<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.next">next</a>() <span class="kw">else </span>{ <span class="kw">return </span><a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>) };
+<a href=#123 id=123 data-nosnippet>123</a>        <span class="comment">// We use `Wrapping` here since the offset has already been checked when the iterator was created.
+<a href=#124 id=124 data-nosnippet>124</a>        </span><a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>((
+<a href=#125 id=125 data-nosnippet>125</a>            <a href="#122">idx</a>,
+<a href=#126 id=126 data-nosnippet>126</a>            <a class="self" href="#119">self</a>.base.<a href="#64-71">offset_with_meta</a>(
+<a href=#127 id=127 data-nosnippet>127</a>                <a class="self" href="#119">self</a>.stride * <a href="#122">idx</a>,
+<a href=#128 id=128 data-nosnippet>128</a>                <a href="#30">OffsetMode::Wrapping</a>,
+<a href=#129 id=129 data-nosnippet>129</a>                <a href="place.rs.html#28">MemPlaceMeta::None</a>,
+<a href=#130 id=130 data-nosnippet>130</a>                <a class="self" href="#119">self</a>.field_layout,
+<a href=#131 id=131 data-nosnippet>131</a>                <a href="#120">ecx</a>,
+<a href=#132 id=132 data-nosnippet>132</a>            )<span class="question-mark">?</span>,
+<a href=#133 id=133 data-nosnippet>133</a>        )))
+<a href=#134 id=134 data-nosnippet>134</a>    }
+<a href=#135 id=135 data-nosnippet>135</a>}
+<a href=#136 id=136 data-nosnippet>136</a>
+<a href=#137 id=137 data-nosnippet>137</a><span class="comment">// FIXME: Working around https://github.com/rust-lang/rust/issues/54385
+<a href=#138 id=138 data-nosnippet>138</a></span><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>, Prov, M&gt; <a href="eval_context.rs.html#27-47">InterpCx</a>&lt;<span class="lifetime">'tcx</span>, M&gt;
+<a href=#139 id=139 data-nosnippet>139</a><span class="kw">where
+<a href=#140 id=140 data-nosnippet>140</a>    </span>Prov: <a href="../../../rustc_middle/mir/interpret/pointer/trait.Provenance.html">Provenance</a>,
+<a href=#141 id=141 data-nosnippet>141</a>    M: <a href="machine.rs.html#99-620">Machine</a>&lt;<span class="lifetime">'tcx</span>, Provenance = Prov&gt;,
+<a href=#142 id=142 data-nosnippet>142</a>{
+<a href=#143 id=143 data-nosnippet>143</a>    <span class="doccomment">/// Offset a pointer to project to a field of a struct/union. Unlike `place_field`, this is
+<a href=#144 id=144 data-nosnippet>144</a>    /// always possible without allocating, so it can take `&amp;self`. Also return the field's layout.
+<a href=#145 id=145 data-nosnippet>145</a>    /// This supports both struct and array fields, but not slices!
+<a href=#146 id=146 data-nosnippet>146</a>    ///
+<a href=#147 id=147 data-nosnippet>147</a>    /// This also works for arrays, but then the `FieldIdx` index type is restricting.
+<a href=#148 id=148 data-nosnippet>148</a>    /// For indexing into arrays, use [`Self::project_index`].
+<a href=#149 id=149 data-nosnippet>149</a>    </span><span class="kw">pub fn </span>project_field&lt;P: <a href="#34-105">Projectable</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt;(
+<a href=#150 id=150 data-nosnippet>150</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#151 id=151 data-nosnippet>151</a>        base: <span class="kw-2">&amp;</span>P,
+<a href=#152 id=152 data-nosnippet>152</a>        field: <a href="../../../rustc_abi/layout/ty/struct.FieldIdx.html">FieldIdx</a>,
+<a href=#153 id=153 data-nosnippet>153</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, P&gt; {
+<a href=#154 id=154 data-nosnippet>154</a>        <span class="comment">// Slices nominally have length 0, so they will panic somewhere in `fields.offset`.
+<a href=#155 id=155 data-nosnippet>155</a>        </span><a class="macro" href="https://doc.rust-lang.org/beta/core/macro.debug_assert.html">debug_assert!</a>(
+<a href=#156 id=156 data-nosnippet>156</a>            !<span class="macro">matches!</span>(base.layout().ty.kind(), ty::Slice(..)),
+<a href=#157 id=157 data-nosnippet>157</a>            <span class="string">"`field` projection called on a slice -- call `index` projection instead"
+<a href=#158 id=158 data-nosnippet>158</a>        </span>);
+<a href=#159 id=159 data-nosnippet>159</a>        <span class="kw">let </span>offset = <a href="#151">base</a>.<a href="#36">layout</a>().fields.<a href="../../../rustc_abi/enum.FieldsShape.html#method.offset">offset</a>(<a href="#152">field</a>.<a href="../../../rustc_abi/layout/ty/struct.FieldIdx.html#method.as_usize">as_usize</a>());
+<a href=#160 id=160 data-nosnippet>160</a>        <span class="comment">// Computing the layout does normalization, so we get a normalized type out of this
+<a href=#161 id=161 data-nosnippet>161</a>        // even if the field type is non-normalized (possible e.g. via associated types).
+<a href=#162 id=162 data-nosnippet>162</a>        </span><span class="kw">let </span>field_layout = <a href="#151">base</a>.<a href="#36">layout</a>().<a href="../../../rustc_abi/layout/ty/struct.TyAndLayout.html#method.field">field</a>(<a class="self" href="#150">self</a>, <a href="#152">field</a>.<a href="../../../rustc_abi/layout/ty/struct.FieldIdx.html#method.as_usize">as_usize</a>());
+<a href=#163 id=163 data-nosnippet>163</a>
+<a href=#164 id=164 data-nosnippet>164</a>        <span class="comment">// Offset may need adjustment for unsized fields.
+<a href=#165 id=165 data-nosnippet>165</a>        </span><span class="kw">let </span>(meta, offset) = <span class="kw">if </span><a href="#162">field_layout</a>.<a href="../../../rustc_abi/struct.LayoutData.html#method.is_unsized">is_unsized</a>() {
+<a href=#166 id=166 data-nosnippet>166</a>            <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(!base.layout().is_sized());
+<a href=#167 id=167 data-nosnippet>167</a>            <span class="kw">let </span>base_meta = <a href="#151">base</a>.<a href="#39">meta</a>();
+<a href=#168 id=168 data-nosnippet>168</a>            <span class="comment">// Re-use parent metadata to determine dynamic field layout.
+<a href=#169 id=169 data-nosnippet>169</a>            // With custom DSTS, this *will* execute user-defined code, but the same
+<a href=#170 id=170 data-nosnippet>170</a>            // happens at run-time so that's okay.
+<a href=#171 id=171 data-nosnippet>171</a>            </span><span class="kw">match </span><a class="self" href="#150">self</a>.<a href="eval_context.rs.html#409-495">size_and_align_from_meta</a>(<span class="kw-2">&amp;</span><a href="#167">base_meta</a>, <span class="kw-2">&amp;</span><a href="#162">field_layout</a>)<span class="question-mark">? </span>{
+<a href=#172 id=172 data-nosnippet>172</a>                <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>((<span class="kw">_</span>, align)) =&gt; {
+<a href=#173 id=173 data-nosnippet>173</a>                    <span class="comment">// For packed types, we need to cap alignment.
+<a href=#174 id=174 data-nosnippet>174</a>                    </span><span class="kw">let </span>align = <span class="kw">if let </span><a href="../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Adt">ty::Adt</a>(def, <span class="kw">_</span>) = <a href="#151">base</a>.<a href="#36">layout</a>().ty.<a href="../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>()
+<a href=#175 id=175 data-nosnippet>175</a>                        &amp;&amp; <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(packed) = <a href="#174">def</a>.<a href="../../../rustc_middle/ty/adt/struct.AdtDef.html#method.repr">repr</a>().pack
+<a href=#176 id=176 data-nosnippet>176</a>                    {
+<a href=#177 id=177 data-nosnippet>177</a>                        <a href="#172">align</a>.<a href="https://doc.rust-lang.org/beta/core/cmp/trait.Ord.html#tymethod.min">min</a>(<a href="#175">packed</a>)
+<a href=#178 id=178 data-nosnippet>178</a>                    } <span class="kw">else </span>{
+<a href=#179 id=179 data-nosnippet>179</a>                        <a href="#172">align</a>
+<a href=#180 id=180 data-nosnippet>180</a>                    };
+<a href=#181 id=181 data-nosnippet>181</a>                    (<a href="#167">base_meta</a>, <a href="#159">offset</a>.<a href="../../../rustc_abi/struct.Size.html#method.align_to">align_to</a>(<a href="#174">align</a>))
+<a href=#182 id=182 data-nosnippet>182</a>                }
+<a href=#183 id=183 data-nosnippet>183</a>                <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a> </a><span class="kw">if </span><a href="#159">offset</a> == Size::ZERO =&gt; {
+<a href=#184 id=184 data-nosnippet>184</a>                    <span class="comment">// If the offset is 0, then rounding it up to alignment wouldn't change anything,
+<a href=#185 id=185 data-nosnippet>185</a>                    // so we can do this even for types where we cannot determine the alignment.
+<a href=#186 id=186 data-nosnippet>186</a>                    </span>(<a href="#167">base_meta</a>, <a href="#159">offset</a>)
+<a href=#187 id=187 data-nosnippet>187</a>                }
+<a href=#188 id=188 data-nosnippet>188</a>                <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a> </a>=&gt; {
+<a href=#189 id=189 data-nosnippet>189</a>                    <span class="comment">// We cannot know the alignment of this field, so we cannot adjust.
+<a href=#190 id=190 data-nosnippet>190</a>                    </span><a class="macro" href="../../../rustc_middle/macro.throw_unsup.html">throw_unsup!</a>(ExternTypeField)
+<a href=#191 id=191 data-nosnippet>191</a>                }
+<a href=#192 id=192 data-nosnippet>192</a>            }
+<a href=#193 id=193 data-nosnippet>193</a>        } <span class="kw">else </span>{
+<a href=#194 id=194 data-nosnippet>194</a>            <span class="comment">// base_meta could be present; we might be accessing a sized field of an unsized
+<a href=#195 id=195 data-nosnippet>195</a>            // struct.
+<a href=#196 id=196 data-nosnippet>196</a>            </span>(<a href="place.rs.html#28">MemPlaceMeta::None</a>, <a href="#159">offset</a>)
+<a href=#197 id=197 data-nosnippet>197</a>        };
+<a href=#198 id=198 data-nosnippet>198</a>
+<a href=#199 id=199 data-nosnippet>199</a>        <a href="#151">base</a>.<a href="#64-71">offset_with_meta</a>(<a href="#165">offset</a>, <a href="#28">OffsetMode::Inbounds</a>, <a href="#165">meta</a>, <a href="#162">field_layout</a>, <a class="self" href="#150">self</a>)
+<a href=#200 id=200 data-nosnippet>200</a>    }
+<a href=#201 id=201 data-nosnippet>201</a>
+<a href=#202 id=202 data-nosnippet>202</a>    <span class="doccomment">/// Projects multiple fields at once. See [`Self::project_field`] for details.
+<a href=#203 id=203 data-nosnippet>203</a>    </span><span class="kw">pub fn </span>project_fields&lt;P: <a href="#34-105">Projectable</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;, <span class="kw">const </span>N: <a href="https://doc.rust-lang.org/beta/std/primitive.usize.html">usize</a>&gt;(
+<a href=#204 id=204 data-nosnippet>204</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#205 id=205 data-nosnippet>205</a>        base: <span class="kw-2">&amp;</span>P,
+<a href=#206 id=206 data-nosnippet>206</a>        fields: [<a href="../../../rustc_abi/layout/ty/struct.FieldIdx.html">FieldIdx</a>; <a href="#203">N</a>],
+<a href=#207 id=207 data-nosnippet>207</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, [P; <a href="#203">N</a>]&gt; {
+<a href=#208 id=208 data-nosnippet>208</a>        <a href="#206">fields</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.array.html#method.try_map">try_map</a>(|field| <a class="self" href="#204">self</a>.<a href="#149-200">project_field</a>(<a href="#205">base</a>, <a href="#208">field</a>))
+<a href=#209 id=209 data-nosnippet>209</a>    }
+<a href=#210 id=210 data-nosnippet>210</a>
+<a href=#211 id=211 data-nosnippet>211</a>    <span class="doccomment">/// Downcasting to an enum variant.
+<a href=#212 id=212 data-nosnippet>212</a>    </span><span class="kw">pub fn </span>project_downcast&lt;P: <a href="#34-105">Projectable</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt;(
+<a href=#213 id=213 data-nosnippet>213</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#214 id=214 data-nosnippet>214</a>        base: <span class="kw-2">&amp;</span>P,
+<a href=#215 id=215 data-nosnippet>215</a>        variant: <a href="../../../rustc_abi/layout/ty/struct.VariantIdx.html">VariantIdx</a>,
+<a href=#216 id=216 data-nosnippet>216</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, P&gt; {
+<a href=#217 id=217 data-nosnippet>217</a>        <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(!base.meta().has_meta());
+<a href=#218 id=218 data-nosnippet>218</a>        <span class="comment">// Downcasts only change the layout.
+<a href=#219 id=219 data-nosnippet>219</a>        // (In particular, no check about whether this is even the active variant -- that's by design,
+<a href=#220 id=220 data-nosnippet>220</a>        // see https://github.com/rust-lang/rust/issues/93688#issuecomment-1032929496.)
+<a href=#221 id=221 data-nosnippet>221</a>        // So we just "offset" by 0.
+<a href=#222 id=222 data-nosnippet>222</a>        </span><span class="kw">let </span>layout = <a href="#214">base</a>.<a href="#36">layout</a>().<a href="../../../rustc_abi/layout/ty/struct.TyAndLayout.html#method.for_variant">for_variant</a>(<a class="self" href="#213">self</a>, <a href="#215">variant</a>);
+<a href=#223 id=223 data-nosnippet>223</a>        <span class="comment">// This variant may in fact be uninhabited.
+<a href=#224 id=224 data-nosnippet>224</a>        // See &lt;https://github.com/rust-lang/rust/issues/120337&gt;.
+<a href=#225 id=225 data-nosnippet>225</a>
+<a href=#226 id=226 data-nosnippet>226</a>        // This cannot be `transmute` as variants *can* have a smaller size than the entire enum.
+<a href=#227 id=227 data-nosnippet>227</a>        </span><a href="#214">base</a>.<a href="#73-83">offset</a>(Size::ZERO, <a href="#222">layout</a>, <a class="self" href="#213">self</a>)
+<a href=#228 id=228 data-nosnippet>228</a>    }
+<a href=#229 id=229 data-nosnippet>229</a>
+<a href=#230 id=230 data-nosnippet>230</a>    <span class="doccomment">/// Compute the offset and field layout for accessing the given index.
+<a href=#231 id=231 data-nosnippet>231</a>    </span><span class="kw">pub fn </span>project_index&lt;P: <a href="#34-105">Projectable</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt;(
+<a href=#232 id=232 data-nosnippet>232</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#233 id=233 data-nosnippet>233</a>        base: <span class="kw-2">&amp;</span>P,
+<a href=#234 id=234 data-nosnippet>234</a>        index: <a href="https://doc.rust-lang.org/beta/std/primitive.u64.html">u64</a>,
+<a href=#235 id=235 data-nosnippet>235</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, P&gt; {
+<a href=#236 id=236 data-nosnippet>236</a>        <span class="comment">// Not using the layout method because we want to compute on u64
+<a href=#237 id=237 data-nosnippet>237</a>        </span><span class="kw">let </span>(offset, field_layout) = <span class="kw">match </span><a href="#233">base</a>.<a href="#36">layout</a>().fields {
+<a href=#238 id=238 data-nosnippet>238</a>            <a href="../../../rustc_abi/enum.FieldsShape.html#variant.Array">abi::FieldsShape::Array</a> { stride, count: <span class="kw">_ </span>} =&gt; {
+<a href=#239 id=239 data-nosnippet>239</a>                <span class="comment">// `count` is nonsense for slices, use the dynamic length instead.
+<a href=#240 id=240 data-nosnippet>240</a>                </span><span class="kw">let </span>len = <a href="#233">base</a>.<a href="#42-61">len</a>(<a class="self" href="#232">self</a>)<span class="question-mark">?</span>;
+<a href=#241 id=241 data-nosnippet>241</a>                <span class="kw">if </span><a href="#234">index</a> &gt;= <a href="#240">len</a> {
+<a href=#242 id=242 data-nosnippet>242</a>                    <span class="comment">// This can only be reached in ConstProp and non-rustc-MIR.
+<a href=#243 id=243 data-nosnippet>243</a>                    </span><a class="macro" href="../../../rustc_middle/macro.throw_ub.html">throw_ub!</a>(BoundsCheckFailed { len, index });
+<a href=#244 id=244 data-nosnippet>244</a>                }
+<a href=#245 id=245 data-nosnippet>245</a>                <span class="comment">// With raw slices, `len` can be so big that this *can* overflow.
+<a href=#246 id=246 data-nosnippet>246</a>                </span><span class="kw">let </span>offset = <span class="self"><a href="#232">self</a>
+<a href=#247 id=247 data-nosnippet>247</a>                    </span>.<a href="operator.rs.html#292-302">compute_size_in_bytes</a>(<a href="#238">stride</a>, <a href="#234">index</a>)
+<a href=#248 id=248 data-nosnippet>248</a>                    .<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.ok_or_else">ok_or_else</a>(|| <a class="macro" href="../../../rustc_middle/macro.err_ub.html">err_ub!</a>(PointerArithOverflow))<span class="question-mark">?</span>;
+<a href=#249 id=249 data-nosnippet>249</a>
+<a href=#250 id=250 data-nosnippet>250</a>                <span class="comment">// All fields have the same layout.
+<a href=#251 id=251 data-nosnippet>251</a>                </span><span class="kw">let </span>field_layout = <a href="#233">base</a>.<a href="#36">layout</a>().<a href="../../../rustc_abi/layout/ty/struct.TyAndLayout.html#method.field">field</a>(<a class="self" href="#232">self</a>, <span class="number">0</span>);
+<a href=#252 id=252 data-nosnippet>252</a>                (<a href="#246">offset</a>, <a href="#251">field_layout</a>)
+<a href=#253 id=253 data-nosnippet>253</a>            }
+<a href=#254 id=254 data-nosnippet>254</a>            <span class="kw">_ </span>=&gt; <a class="macro" href="../../../rustc_middle/macro.span_bug.html">span_bug!</a>(
+<a href=#255 id=255 data-nosnippet>255</a>                <a class="self" href="#232">self</a>.<a href="eval_context.rs.html#246-250">cur_span</a>(),
+<a href=#256 id=256 data-nosnippet>256</a>                <span class="string">"`project_index` called on non-array type {:?}"</span>,
+<a href=#257 id=257 data-nosnippet>257</a>                base.layout().ty
+<a href=#258 id=258 data-nosnippet>258</a>            ),
+<a href=#259 id=259 data-nosnippet>259</a>        };
+<a href=#260 id=260 data-nosnippet>260</a>
+<a href=#261 id=261 data-nosnippet>261</a>        <a href="#233">base</a>.<a href="#73-83">offset</a>(<a href="#237">offset</a>, <a href="#237">field_layout</a>, <a class="self" href="#232">self</a>)
+<a href=#262 id=262 data-nosnippet>262</a>    }
+<a href=#263 id=263 data-nosnippet>263</a>
+<a href=#264 id=264 data-nosnippet>264</a>    <span class="doccomment">/// Converts a repr(simd) value into an array of the right size, such that `project_index`
+<a href=#265 id=265 data-nosnippet>265</a>    /// accesses the SIMD elements. Also returns the number of elements.
+<a href=#266 id=266 data-nosnippet>266</a>    </span><span class="kw">pub fn </span>project_to_simd&lt;P: <a href="#34-105">Projectable</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt;(
+<a href=#267 id=267 data-nosnippet>267</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#268 id=268 data-nosnippet>268</a>        base: <span class="kw-2">&amp;</span>P,
+<a href=#269 id=269 data-nosnippet>269</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, (P, <a href="https://doc.rust-lang.org/beta/std/primitive.u64.html">u64</a>)&gt; {
+<a href=#270 id=270 data-nosnippet>270</a>        <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(base.layout().ty.ty_adt_def().unwrap().repr().simd());
+<a href=#271 id=271 data-nosnippet>271</a>        <span class="comment">// SIMD types must be newtypes around arrays, so all we have to do is project to their only field.
+<a href=#272 id=272 data-nosnippet>272</a>        </span><span class="kw">let </span>array = <a class="self" href="#267">self</a>.<a href="#149-200">project_field</a>(<a href="#268">base</a>, FieldIdx::ZERO)<span class="question-mark">?</span>;
+<a href=#273 id=273 data-nosnippet>273</a>        <span class="kw">let </span>len = <a href="#272">array</a>.<a href="#42-61">len</a>(<a class="self" href="#267">self</a>)<span class="question-mark">?</span>;
+<a href=#274 id=274 data-nosnippet>274</a>        <a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>((<a href="#272">array</a>, <a href="#273">len</a>))
+<a href=#275 id=275 data-nosnippet>275</a>    }
+<a href=#276 id=276 data-nosnippet>276</a>
+<a href=#277 id=277 data-nosnippet>277</a>    <span class="kw">fn </span>project_constant_index&lt;P: <a href="#34-105">Projectable</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt;(
+<a href=#278 id=278 data-nosnippet>278</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#279 id=279 data-nosnippet>279</a>        base: <span class="kw-2">&amp;</span>P,
+<a href=#280 id=280 data-nosnippet>280</a>        offset: <a href="https://doc.rust-lang.org/beta/std/primitive.u64.html">u64</a>,
+<a href=#281 id=281 data-nosnippet>281</a>        min_length: <a href="https://doc.rust-lang.org/beta/std/primitive.u64.html">u64</a>,
+<a href=#282 id=282 data-nosnippet>282</a>        from_end: <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a>,
+<a href=#283 id=283 data-nosnippet>283</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, P&gt; {
+<a href=#284 id=284 data-nosnippet>284</a>        <span class="kw">let </span>n = <a href="#279">base</a>.<a href="#42-61">len</a>(<a class="self" href="#278">self</a>)<span class="question-mark">?</span>;
+<a href=#285 id=285 data-nosnippet>285</a>        <span class="kw">if </span><a href="#284">n</a> &lt; <a href="#281">min_length</a> {
+<a href=#286 id=286 data-nosnippet>286</a>            <span class="comment">// This can only be reached in ConstProp and non-rustc-MIR.
+<a href=#287 id=287 data-nosnippet>287</a>            </span><a class="macro" href="../../../rustc_middle/macro.throw_ub.html">throw_ub!</a>(BoundsCheckFailed { len: min_length, index: n });
+<a href=#288 id=288 data-nosnippet>288</a>        }
+<a href=#289 id=289 data-nosnippet>289</a>
+<a href=#290 id=290 data-nosnippet>290</a>        <span class="kw">let </span>index = <span class="kw">if </span><a href="#282">from_end</a> {
+<a href=#291 id=291 data-nosnippet>291</a>            <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(<span class="number">0 </span>&lt; offset &amp;&amp; offset &lt;= min_length);
+<a href=#292 id=292 data-nosnippet>292</a>            <a href="#284">n</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.num.html#method.checked_sub">checked_sub</a>(<a href="#280">offset</a>).<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>()
+<a href=#293 id=293 data-nosnippet>293</a>        } <span class="kw">else </span>{
+<a href=#294 id=294 data-nosnippet>294</a>            <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(offset &lt; min_length);
+<a href=#295 id=295 data-nosnippet>295</a>            <a href="#280">offset</a>
+<a href=#296 id=296 data-nosnippet>296</a>        };
+<a href=#297 id=297 data-nosnippet>297</a>
+<a href=#298 id=298 data-nosnippet>298</a>        <a class="self" href="#278">self</a>.<a href="#231-262">project_index</a>(<a href="#279">base</a>, <a href="#290">index</a>)
+<a href=#299 id=299 data-nosnippet>299</a>    }
+<a href=#300 id=300 data-nosnippet>300</a>
+<a href=#301 id=301 data-nosnippet>301</a>    <span class="doccomment">/// Iterates over all fields of an array. Much more efficient than doing the
+<a href=#302 id=302 data-nosnippet>302</a>    /// same by repeatedly calling `project_index`.
+<a href=#303 id=303 data-nosnippet>303</a>    </span><span class="kw">pub fn </span>project_array_fields&lt;<span class="lifetime">'a</span>, P: <a href="#34-105">Projectable</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt;(
+<a href=#304 id=304 data-nosnippet>304</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#305 id=305 data-nosnippet>305</a>        base: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>P,
+<a href=#306 id=306 data-nosnippet>306</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, <a href="#108-114">ArrayIterator</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>, M::Provenance, P&gt;&gt; {
+<a href=#307 id=307 data-nosnippet>307</a>        <span class="kw">let </span><a href="../../../rustc_abi/enum.FieldsShape.html#variant.Array">abi::FieldsShape::Array</a> { stride, .. } = <a href="#305">base</a>.<a href="#36">layout</a>().fields <span class="kw">else </span>{
+<a href=#308 id=308 data-nosnippet>308</a>            <a class="macro" href="../../../rustc_middle/macro.span_bug.html">span_bug!</a>(
+<a href=#309 id=309 data-nosnippet>309</a>                <a class="self" href="#304">self</a>.<a href="eval_context.rs.html#246-250">cur_span</a>(),
+<a href=#310 id=310 data-nosnippet>310</a>                <span class="string">"project_array_fields: expected an array layout, got {:#?}"</span>,
+<a href=#311 id=311 data-nosnippet>311</a>                base.layout()
+<a href=#312 id=312 data-nosnippet>312</a>            );
+<a href=#313 id=313 data-nosnippet>313</a>        };
+<a href=#314 id=314 data-nosnippet>314</a>        <span class="kw">let </span>len = <a href="#305">base</a>.<a href="#42-61">len</a>(<a class="self" href="#304">self</a>)<span class="question-mark">?</span>;
+<a href=#315 id=315 data-nosnippet>315</a>        <span class="kw">let </span>field_layout = <a href="#305">base</a>.<a href="#36">layout</a>().<a href="../../../rustc_abi/layout/ty/struct.TyAndLayout.html#method.field">field</a>(<a class="self" href="#304">self</a>, <span class="number">0</span>);
+<a href=#316 id=316 data-nosnippet>316</a>        <span class="comment">// Ensure that all the offsets are in-bounds once, up-front.
+<a href=#317 id=317 data-nosnippet>317</a>        </span><a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"project_array_fields: {base:?} {len}"</span>);
+<a href=#318 id=318 data-nosnippet>318</a>        <a href="#305">base</a>.<a href="#73-83">offset</a>(<a href="#314">len</a> * <a href="#307">stride</a>, <a class="self" href="#304">self</a>.<a href="eval_context.rs.html#115-118">layout_of</a>(<a class="self" href="#304">self</a>.tcx.types.unit).<a href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#method.unwrap">unwrap</a>(), <a class="self" href="#304">self</a>)<span class="question-mark">?</span>;
+<a href=#319 id=319 data-nosnippet>319</a>        <span class="comment">// Create the iterator.
+<a href=#320 id=320 data-nosnippet>320</a>        </span><a href="../../../rustc_middle/mir/interpret/error/fn.interp_ok.html">interp_ok</a>(<a href="#108-114">ArrayIterator</a> {
+<a href=#321 id=321 data-nosnippet>321</a>            <a href="#305">base</a>,
+<a href=#322 id=322 data-nosnippet>322</a>            range: <span class="number">0</span>..<a href="#314">len</a>,
+<a href=#323 id=323 data-nosnippet>323</a>            <a href="#307">stride</a>,
+<a href=#324 id=324 data-nosnippet>324</a>            <a href="#315">field_layout</a>,
+<a href=#325 id=325 data-nosnippet>325</a>            _phantom: <a href="https://doc.rust-lang.org/beta/core/marker/struct.PhantomData.html">PhantomData</a>,
+<a href=#326 id=326 data-nosnippet>326</a>        })
+<a href=#327 id=327 data-nosnippet>327</a>    }
+<a href=#328 id=328 data-nosnippet>328</a>
+<a href=#329 id=329 data-nosnippet>329</a>    <span class="doccomment">/// Subslicing
+<a href=#330 id=330 data-nosnippet>330</a>    </span><span class="kw">fn </span>project_subslice&lt;P: <a href="#34-105">Projectable</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt;(
+<a href=#331 id=331 data-nosnippet>331</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#332 id=332 data-nosnippet>332</a>        base: <span class="kw-2">&amp;</span>P,
+<a href=#333 id=333 data-nosnippet>333</a>        from: <a href="https://doc.rust-lang.org/beta/std/primitive.u64.html">u64</a>,
+<a href=#334 id=334 data-nosnippet>334</a>        to: <a href="https://doc.rust-lang.org/beta/std/primitive.u64.html">u64</a>,
+<a href=#335 id=335 data-nosnippet>335</a>        from_end: <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a>,
+<a href=#336 id=336 data-nosnippet>336</a>    ) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, P&gt; {
+<a href=#337 id=337 data-nosnippet>337</a>        <span class="kw">let </span>len = <a href="#332">base</a>.<a href="#42-61">len</a>(<a class="self" href="#331">self</a>)<span class="question-mark">?</span>; <span class="comment">// also asserts that we have a type where this makes sense
+<a href=#338 id=338 data-nosnippet>338</a>        </span><span class="kw">let </span>actual_to = <span class="kw">if </span><a href="#335">from_end</a> {
+<a href=#339 id=339 data-nosnippet>339</a>            <span class="kw">if </span><a href="#333">from</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.num.html#method.checked_add">checked_add</a>(<a href="#334">to</a>).<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.is_none_or">is_none_or</a>(|to| <a href="#339">to</a> &gt; <a href="#337">len</a>) {
+<a href=#340 id=340 data-nosnippet>340</a>                <span class="comment">// This can only be reached in ConstProp and non-rustc-MIR.
+<a href=#341 id=341 data-nosnippet>341</a>                </span><a class="macro" href="../../../rustc_middle/macro.throw_ub.html">throw_ub!</a>(BoundsCheckFailed { len, index: from.saturating_add(to) });
+<a href=#342 id=342 data-nosnippet>342</a>            }
+<a href=#343 id=343 data-nosnippet>343</a>            <a href="#337">len</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.num.html#method.checked_sub">checked_sub</a>(<a href="#334">to</a>).<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>()
+<a href=#344 id=344 data-nosnippet>344</a>        } <span class="kw">else </span>{
+<a href=#345 id=345 data-nosnippet>345</a>            <a href="#334">to</a>
+<a href=#346 id=346 data-nosnippet>346</a>        };
+<a href=#347 id=347 data-nosnippet>347</a>
+<a href=#348 id=348 data-nosnippet>348</a>        <span class="comment">// Not using layout method because that works with usize, and does not work with slices
+<a href=#349 id=349 data-nosnippet>349</a>        // (that have count 0 in their layout).
+<a href=#350 id=350 data-nosnippet>350</a>        </span><span class="kw">let </span>from_offset = <span class="kw">match </span><a href="#332">base</a>.<a href="#36">layout</a>().fields {
+<a href=#351 id=351 data-nosnippet>351</a>            <a href="../../../rustc_abi/enum.FieldsShape.html#variant.Array">abi::FieldsShape::Array</a> { stride, .. } =&gt; <a href="#351">stride</a> * <a href="#333">from</a>, <span class="comment">// `Size` multiplication is checked
+<a href=#352 id=352 data-nosnippet>352</a>            </span><span class="kw">_ </span>=&gt; {
+<a href=#353 id=353 data-nosnippet>353</a>                <a class="macro" href="../../../rustc_middle/macro.span_bug.html">span_bug!</a>(
+<a href=#354 id=354 data-nosnippet>354</a>                    <a class="self" href="#331">self</a>.<a href="eval_context.rs.html#246-250">cur_span</a>(),
+<a href=#355 id=355 data-nosnippet>355</a>                    <span class="string">"unexpected layout of index access: {:#?}"</span>,
+<a href=#356 id=356 data-nosnippet>356</a>                    base.layout()
+<a href=#357 id=357 data-nosnippet>357</a>                )
+<a href=#358 id=358 data-nosnippet>358</a>            }
+<a href=#359 id=359 data-nosnippet>359</a>        };
+<a href=#360 id=360 data-nosnippet>360</a>
+<a href=#361 id=361 data-nosnippet>361</a>        <span class="comment">// Compute meta and new layout
+<a href=#362 id=362 data-nosnippet>362</a>        </span><span class="kw">let </span>inner_len = <a href="#338">actual_to</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.num.html#method.checked_sub">checked_sub</a>(<a href="#333">from</a>).<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>();
+<a href=#363 id=363 data-nosnippet>363</a>        <span class="kw">let </span>(meta, ty) = <span class="kw">match </span><a href="#332">base</a>.<a href="#36">layout</a>().ty.<a href="../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() {
+<a href=#364 id=364 data-nosnippet>364</a>            <span class="comment">// It is not nice to match on the type, but that seems to be the only way to
+<a href=#365 id=365 data-nosnippet>365</a>            // implement this.
+<a href=#366 id=366 data-nosnippet>366</a>            </span><a href="../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Array">ty::Array</a>(inner, <span class="kw">_</span>) =&gt; {
+<a href=#367 id=367 data-nosnippet>367</a>                (<a href="place.rs.html#28">MemPlaceMeta::None</a>, <a href="../../../rustc_middle/ty/struct.Ty.html#method.new_array">Ty::new_array</a>(<a class="self" href="#331">self</a>.tcx.tcx, <span class="kw-2">*</span><a href="#366">inner</a>, <a href="#362">inner_len</a>))
+<a href=#368 id=368 data-nosnippet>368</a>            }
+<a href=#369 id=369 data-nosnippet>369</a>            <a href="../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Slice">ty::Slice</a>(..) =&gt; {
+<a href=#370 id=370 data-nosnippet>370</a>                <span class="kw">let </span>len = <a href="../../../rustc_middle/mir/interpret/value/enum.Scalar.html#method.from_target_usize">Scalar::from_target_usize</a>(<a href="#362">inner_len</a>, <a class="self" href="#331">self</a>);
+<a href=#371 id=371 data-nosnippet>371</a>                (<a href="place.rs.html#26">MemPlaceMeta::Meta</a>(<a href="#370">len</a>), <a href="#332">base</a>.<a href="#36">layout</a>().ty)
+<a href=#372 id=372 data-nosnippet>372</a>            }
+<a href=#373 id=373 data-nosnippet>373</a>            <span class="kw">_ </span>=&gt; {
+<a href=#374 id=374 data-nosnippet>374</a>                <a class="macro" href="../../../rustc_middle/macro.span_bug.html">span_bug!</a>(
+<a href=#375 id=375 data-nosnippet>375</a>                    <a class="self" href="#331">self</a>.<a href="eval_context.rs.html#246-250">cur_span</a>(),
+<a href=#376 id=376 data-nosnippet>376</a>                    <span class="string">"cannot subslice non-array type: `{:?}`"</span>,
+<a href=#377 id=377 data-nosnippet>377</a>                    base.layout().ty
+<a href=#378 id=378 data-nosnippet>378</a>                )
+<a href=#379 id=379 data-nosnippet>379</a>            }
+<a href=#380 id=380 data-nosnippet>380</a>        };
+<a href=#381 id=381 data-nosnippet>381</a>        <span class="kw">let </span>layout = <a class="self" href="#331">self</a>.<a href="eval_context.rs.html#115-118">layout_of</a>(<a href="#363">ty</a>)<span class="question-mark">?</span>;
+<a href=#382 id=382 data-nosnippet>382</a>
+<a href=#383 id=383 data-nosnippet>383</a>        <a href="#332">base</a>.<a href="#64-71">offset_with_meta</a>(<a href="#350">from_offset</a>, <a href="#28">OffsetMode::Inbounds</a>, <a href="#363">meta</a>, <a href="#381">layout</a>, <a class="self" href="#331">self</a>)
+<a href=#384 id=384 data-nosnippet>384</a>    }
+<a href=#385 id=385 data-nosnippet>385</a>
+<a href=#386 id=386 data-nosnippet>386</a>    <span class="doccomment">/// Applying a general projection
+<a href=#387 id=387 data-nosnippet>387</a>    </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"trace"</span>)]
+<a href=#388 id=388 data-nosnippet>388</a>    </span><span class="kw">pub fn </span>project&lt;P&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, base: <span class="kw-2">&amp;</span>P, proj_elem: <a href="../../../rustc_middle/mir/syntax/type.PlaceElem.html">mir::PlaceElem</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a href="../../../rustc_middle/mir/interpret/error/struct.InterpResult.html">InterpResult</a>&lt;<span class="lifetime">'tcx</span>, P&gt;
+<a href=#389 id=389 data-nosnippet>389</a>    <span class="kw">where
+<a href=#390 id=390 data-nosnippet>390</a>        </span>P: <a href="#34-105">Projectable</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt; + <a href="https://doc.rust-lang.org/beta/core/convert/trait.From.html">From</a>&lt;<a href="place.rs.html#100-103">MPlaceTy</a>&lt;<span class="lifetime">'tcx</span>, M::Provenance&gt;&gt; + <a href="https://doc.rust-lang.org/beta/core/fmt/trait.Debug.html">std::fmt::Debug</a>,
+<a href=#391 id=391 data-nosnippet>391</a>    {
+<a href=#392 id=392 data-nosnippet>392</a>        <span class="kw">use </span>rustc_middle::mir::ProjectionElem::<span class="kw-2">*</span>;
+<a href=#393 id=393 data-nosnippet>393</a>        interp_ok(<span class="kw">match </span>proj_elem {
+<a href=#394 id=394 data-nosnippet>394</a>            OpaqueCast(ty) =&gt; {
+<a href=#395 id=395 data-nosnippet>395</a>                <span class="macro">span_bug!</span>(<span class="self">self</span>.cur_span(), <span class="string">"OpaqueCast({ty}) encountered after borrowck"</span>)
+<a href=#396 id=396 data-nosnippet>396</a>            }
+<a href=#397 id=397 data-nosnippet>397</a>            UnwrapUnsafeBinder(target) =&gt; base.transmute(<span class="self">self</span>.layout_of(target)<span class="question-mark">?</span>, <span class="self">self</span>)<span class="question-mark">?</span>,
+<a href=#398 id=398 data-nosnippet>398</a>            <span class="comment">// We don't want anything happening here, this is here as a dummy.
+<a href=#399 id=399 data-nosnippet>399</a>            </span>Subtype(<span class="kw">_</span>) =&gt; base.transmute(base.layout(), <span class="self">self</span>)<span class="question-mark">?</span>,
+<a href=#400 id=400 data-nosnippet>400</a>            Field(field, <span class="kw">_</span>) =&gt; <span class="self">self</span>.project_field(base, field)<span class="question-mark">?</span>,
+<a href=#401 id=401 data-nosnippet>401</a>            Downcast(<span class="kw">_</span>, variant) =&gt; <span class="self">self</span>.project_downcast(base, variant)<span class="question-mark">?</span>,
+<a href=#402 id=402 data-nosnippet>402</a>            Deref =&gt; <span class="self">self</span>.deref_pointer(<span class="kw-2">&amp;</span>base.to_op(<span class="self">self</span>)<span class="question-mark">?</span>)<span class="question-mark">?</span>.into(),
+<a href=#403 id=403 data-nosnippet>403</a>            Index(local) =&gt; {
+<a href=#404 id=404 data-nosnippet>404</a>                <span class="kw">let </span>layout = <span class="self">self</span>.layout_of(<span class="self">self</span>.tcx.types.usize)<span class="question-mark">?</span>;
+<a href=#405 id=405 data-nosnippet>405</a>                <span class="kw">let </span>n = <span class="self">self</span>.local_to_op(local, <span class="prelude-val">Some</span>(layout))<span class="question-mark">?</span>;
+<a href=#406 id=406 data-nosnippet>406</a>                <span class="kw">let </span>n = <span class="self">self</span>.read_target_usize(<span class="kw-2">&amp;</span>n)<span class="question-mark">?</span>;
+<a href=#407 id=407 data-nosnippet>407</a>                <span class="self">self</span>.project_index(base, n)<span class="question-mark">?
+<a href=#408 id=408 data-nosnippet>408</a>            </span>}
+<a href=#409 id=409 data-nosnippet>409</a>            ConstantIndex { offset, min_length, from_end } =&gt; {
+<a href=#410 id=410 data-nosnippet>410</a>                <span class="self">self</span>.project_constant_index(base, offset, min_length, from_end)<span class="question-mark">?
+<a href=#411 id=411 data-nosnippet>411</a>            </span>}
+<a href=#412 id=412 data-nosnippet>412</a>            Subslice { from, to, from_end } =&gt; <span class="self">self</span>.project_subslice(base, from, to, from_end)<span class="question-mark">?</span>,
+<a href=#413 id=413 data-nosnippet>413</a>        })
+<a href=#414 id=414 data-nosnippet>414</a>    }
+<a href=#415 id=415 data-nosnippet>415</a>}</code></pre></div></section></main></body></html>

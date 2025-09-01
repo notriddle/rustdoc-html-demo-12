@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BorrowedFieldProjectionMode"],"fn":["check_pointers","split_block"],"struct":["PointerCheck","PointerFinder"]};

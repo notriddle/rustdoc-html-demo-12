@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["highest_var_in_clauses","instantiate_value"],"struct":["CanonicalInstantiator"],"trait":["CanonicalExt"]};

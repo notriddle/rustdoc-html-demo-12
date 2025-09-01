@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FieldAccessError","Locations"],"fn":["mirbug","type_check"],"macro":["span_mirbug"],"mod":["canonical","constraint_conversion","free_region_relations","input_output","liveness","relate_tys"],"struct":["InstantiateOpaqueType","MirTypeckRegionConstraints","MirTypeckResults","TypeChecker"],"trait":["NormalizeLocation"]};

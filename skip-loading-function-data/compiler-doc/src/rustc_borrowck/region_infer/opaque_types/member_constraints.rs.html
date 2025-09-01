@@ -1,0 +1,194 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/region_infer/opaque_types/member_constraints.rs`."><title>member_constraints.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-beta.1 (788da80fc 2025-08-04)" data-channel="beta" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../../../static.files/storage-68b7e25d.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/region_infer/opaque_types/</div>member_constraints.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span><a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">rustc_data_structures::fx::FxHashMap</a>;
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span><a href="../../../../rustc_span/def_id/struct.DefId.html">rustc_hir::def_id::DefId</a>;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span><a href="../../../../rustc_middle/macro.bug.html">rustc_middle::bug</a>;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>rustc_middle::ty::{
+<a href=#5 id=5 data-nosnippet>5</a>    <a class="self" href="../../../../rustc_middle/ty/index.html">self</a>, <a href="../../../../rustc_middle/ty/generic_args/type.GenericArgsRef.html">GenericArgsRef</a>, <a href="../../../../rustc_middle/ty/region/struct.Region.html">Region</a>, <a href="../../../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>, <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>, <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>, <a href="../../../../rustc_type_ir/visit/trait.TypeSuperVisitable.html">TypeSuperVisitable</a>, <a href="../../../../rustc_type_ir/visit/trait.TypeVisitable.html">TypeVisitable</a>,
+<a href=#6 id=6 data-nosnippet>6</a>    <a href="../../../../rustc_type_ir/visit/trait.TypeVisitor.html">TypeVisitor</a>,
+<a href=#7 id=7 data-nosnippet>7</a>};
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug</a>, <a href="https://docs.rs/tracing-attributes/0.1.30/tracing_attributes/attr.instrument.html">instrument</a>};
+<a href=#9 id=9 data-nosnippet>9</a>
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><a href="mod.rs.html#176-183"><span class="kw">super</span>::DefiningUse</a>;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><a href="region_ctxt.rs.html#21-29"><span class="kw">super</span>::region_ctxt::RegionCtxt</a>;
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span><a href="../../constraints/mod.rs.html#110-114"><span class="kw">crate</span>::constraints::ConstraintSccIndex</a>;
+<a href=#13 id=13 data-nosnippet>13</a>
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../../rustc_borrowck/region_infer/opaque_types/member_constraints/fn.apply_member_constraints.html">apply_member_constraints</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#15 id=15 data-nosnippet>15</a>    rcx: <span class="kw-2">&amp;mut </span><a href="region_ctxt.rs.html#21-29">RegionCtxt</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#16 id=16 data-nosnippet>16</a>    defining_uses: <span class="kw-2">&amp;</span>[<a href="mod.rs.html#176-183">DefiningUse</a>&lt;<span class="lifetime">'tcx</span>&gt;],
+<a href=#17 id=17 data-nosnippet>17</a>) {
+<a href=#18 id=18 data-nosnippet>18</a>    <span class="comment">// Start by collecting the member constraints of all defining uses.
+<a href=#19 id=19 data-nosnippet>19</a>    //
+<a href=#20 id=20 data-nosnippet>20</a>    // Applying member constraints can influence other member constraints,
+<a href=#21 id=21 data-nosnippet>21</a>    // so we first collect and then apply them.
+<a href=#22 id=22 data-nosnippet>22</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>member_constraints = <a href="https://doc.rust-lang.org/beta/core/default/trait.Default.html#tymethod.default">Default::default</a>();
+<a href=#23 id=23 data-nosnippet>23</a>    <span class="kw">for </span>defining_use <span class="kw">in </span>defining_uses {
+<a href=#24 id=24 data-nosnippet>24</a>        <span class="kw">let </span><span class="kw-2">mut </span>visitor = CollectMemberConstraintsVisitor {
+<a href=#25 id=25 data-nosnippet>25</a>            rcx,
+<a href=#26 id=26 data-nosnippet>26</a>            defining_use,
+<a href=#27 id=27 data-nosnippet>27</a>            member_constraints: <span class="kw-2">&amp;mut </span>member_constraints,
+<a href=#28 id=28 data-nosnippet>28</a>        };
+<a href=#29 id=29 data-nosnippet>29</a>        defining_use.hidden_type.ty.visit_with(<span class="kw-2">&amp;mut </span>visitor);
+<a href=#30 id=30 data-nosnippet>30</a>    }
+<a href=#31 id=31 data-nosnippet>31</a>
+<a href=#32 id=32 data-nosnippet>32</a>    <span class="comment">// Now walk over the region graph, visiting the smallest regions first and then all
+<a href=#33 id=33 data-nosnippet>33</a>    // regions which have to outlive that one.
+<a href=#34 id=34 data-nosnippet>34</a>    //
+<a href=#35 id=35 data-nosnippet>35</a>    // Whenever we encounter a member region, we mutate the value of this SCC. This is
+<a href=#36 id=36 data-nosnippet>36</a>    // as if we'd introduce new outlives constraints. However, we discard these region
+<a href=#37 id=37 data-nosnippet>37</a>    // values after we've inferred the hidden types of opaques and apply the region
+<a href=#38 id=38 data-nosnippet>38</a>    // constraints by simply equating the actual hidden type with the inferred one.
+<a href=#39 id=39 data-nosnippet>39</a>    </span><a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="question-mark">?</span>member_constraints);
+<a href=#40 id=40 data-nosnippet>40</a>    <span class="kw">for </span>scc_a <span class="kw">in </span>rcx.constraint_sccs.all_sccs() {
+<a href=#41 id=41 data-nosnippet>41</a>        <span class="macro">debug!</span>(<span class="question-mark">?</span>scc_a);
+<a href=#42 id=42 data-nosnippet>42</a>        <span class="comment">// Start by  adding the region values required by outlives constraints. This
+<a href=#43 id=43 data-nosnippet>43</a>        // matches how we compute the final region values in `fn compute_regions`.
+<a href=#44 id=44 data-nosnippet>44</a>        //
+<a href=#45 id=45 data-nosnippet>45</a>        // We need to do this here to get a lower bound when applying member constraints.
+<a href=#46 id=46 data-nosnippet>46</a>        // This propagates the region values added by previous member constraints.
+<a href=#47 id=47 data-nosnippet>47</a>        </span><span class="kw">for </span><span class="kw-2">&amp;</span>scc_b <span class="kw">in </span>rcx.constraint_sccs.successors(scc_a) {
+<a href=#48 id=48 data-nosnippet>48</a>            <span class="macro">debug!</span>(<span class="question-mark">?</span>scc_b);
+<a href=#49 id=49 data-nosnippet>49</a>            rcx.scc_values.add_region(scc_a, scc_b);
+<a href=#50 id=50 data-nosnippet>50</a>        }
+<a href=#51 id=51 data-nosnippet>51</a>
+<a href=#52 id=52 data-nosnippet>52</a>        <span class="kw">for </span>defining_use <span class="kw">in </span>member_constraints.get(<span class="kw-2">&amp;</span>scc_a).into_iter().flatten() {
+<a href=#53 id=53 data-nosnippet>53</a>            apply_member_constraint(rcx, scc_a, <span class="kw-2">&amp;</span>defining_use.arg_regions);
+<a href=#54 id=54 data-nosnippet>54</a>        }
+<a href=#55 id=55 data-nosnippet>55</a>    }
+<a href=#56 id=56 data-nosnippet>56</a>}
+<a href=#57 id=57 data-nosnippet>57</a>
+<a href=#58 id=58 data-nosnippet>58</a><span class="attr">#[instrument(level = <span class="string">"debug"</span>, skip(rcx))]
+<a href=#59 id=59 data-nosnippet>59</a></span><span class="kw">fn </span><a href="../../../../rustc_borrowck/region_infer/opaque_types/member_constraints/fn.apply_member_constraint.html">apply_member_constraint</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#60 id=60 data-nosnippet>60</a>    rcx: <span class="kw-2">&amp;mut </span><a href="region_ctxt.rs.html#21-29">RegionCtxt</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#61 id=61 data-nosnippet>61</a>    member: <a href="../../constraints/mod.rs.html#110-114">ConstraintSccIndex</a>,
+<a href=#62 id=62 data-nosnippet>62</a>    arg_regions: <span class="kw-2">&amp;</span>[<a href="../../../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>],
+<a href=#63 id=63 data-nosnippet>63</a>) {
+<a href=#64 id=64 data-nosnippet>64</a>    <span class="comment">// If the member region lives in a higher universe, we currently choose
+<a href=#65 id=65 data-nosnippet>65</a>    // the most conservative option by leaving it unchanged.
+<a href=#66 id=66 data-nosnippet>66</a>    </span><span class="kw">if </span>!rcx.max_placeholder_universe_reached(member).is_root() {
+<a href=#67 id=67 data-nosnippet>67</a>        <span class="kw">return</span>;
+<a href=#68 id=68 data-nosnippet>68</a>    }
+<a href=#69 id=69 data-nosnippet>69</a>
+<a href=#70 id=70 data-nosnippet>70</a>    <span class="comment">// The existing value of `'member` is a lower-bound. If its is already larger than
+<a href=#71 id=71 data-nosnippet>71</a>    // some universal region, we cannot equate it with that region. Said differently, we
+<a href=#72 id=72 data-nosnippet>72</a>    // ignore choice regions which are smaller than this member region.
+<a href=#73 id=73 data-nosnippet>73</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>choice_regions = arg_regions
+<a href=#74 id=74 data-nosnippet>74</a>        .iter()
+<a href=#75 id=75 data-nosnippet>75</a>        .copied()
+<a href=#76 id=76 data-nosnippet>76</a>        .map(|r| rcx.representative(r).rvid())
+<a href=#77 id=77 data-nosnippet>77</a>        .filter(|<span class="kw-2">&amp;</span>choice_region| {
+<a href=#78 id=78 data-nosnippet>78</a>            rcx.scc_values.universal_regions_outlived_by(member).all(|lower_bound| {
+<a href=#79 id=79 data-nosnippet>79</a>                rcx.universal_region_relations.outlives(choice_region, lower_bound)
+<a href=#80 id=80 data-nosnippet>80</a>            })
+<a href=#81 id=81 data-nosnippet>81</a>        })
+<a href=#82 id=82 data-nosnippet>82</a>        .collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;();
+<a href=#83 id=83 data-nosnippet>83</a>    <span class="macro">debug!</span>(<span class="question-mark">?</span>choice_regions, <span class="string">"after enforcing lower-bound"</span>);
+<a href=#84 id=84 data-nosnippet>84</a>
+<a href=#85 id=85 data-nosnippet>85</a>    <span class="comment">// Now find all the *upper bounds* -- that is, each UB is a
+<a href=#86 id=86 data-nosnippet>86</a>    // free region that must outlive the member region `R0` (`UB:
+<a href=#87 id=87 data-nosnippet>87</a>    // R0`). Therefore, we need only keep an option `O` if `UB: O`
+<a href=#88 id=88 data-nosnippet>88</a>    // for all UB.
+<a href=#89 id=89 data-nosnippet>89</a>    //
+<a href=#90 id=90 data-nosnippet>90</a>    // If we have a requirement `'upper_bound: 'member`, equating `'member`
+<a href=#91 id=91 data-nosnippet>91</a>    // with some region `'choice` means we now also require `'upper_bound: 'choice`.
+<a href=#92 id=92 data-nosnippet>92</a>    // Avoid choice regions for which this does not hold.
+<a href=#93 id=93 data-nosnippet>93</a>    </span><span class="kw">for </span>ub <span class="kw">in </span>rcx.rev_scc_graph.upper_bounds(member) {
+<a href=#94 id=94 data-nosnippet>94</a>        choice_regions
+<a href=#95 id=95 data-nosnippet>95</a>            .retain(|<span class="kw-2">&amp;</span>choice_region| rcx.universal_region_relations.outlives(ub, choice_region));
+<a href=#96 id=96 data-nosnippet>96</a>    }
+<a href=#97 id=97 data-nosnippet>97</a>    <span class="macro">debug!</span>(<span class="question-mark">?</span>choice_regions, <span class="string">"after enforcing upper-bound"</span>);
+<a href=#98 id=98 data-nosnippet>98</a>
+<a href=#99 id=99 data-nosnippet>99</a>    <span class="comment">// At this point we can pick any member of `choice_regions` and would like to choose
+<a href=#100 id=100 data-nosnippet>100</a>    // it to be a small as possible. To avoid potential non-determinism we will pick the
+<a href=#101 id=101 data-nosnippet>101</a>    // smallest such choice.
+<a href=#102 id=102 data-nosnippet>102</a>    //
+<a href=#103 id=103 data-nosnippet>103</a>    // Because universal regions are only partially ordered (i.e, not every two regions are
+<a href=#104 id=104 data-nosnippet>104</a>    // comparable), we will ignore any region that doesn't compare to all others when picking
+<a href=#105 id=105 data-nosnippet>105</a>    // the minimum choice.
+<a href=#106 id=106 data-nosnippet>106</a>    //
+<a href=#107 id=107 data-nosnippet>107</a>    // For example, consider `choice_regions = ['static, 'a, 'b, 'c, 'd, 'e]`, where
+<a href=#108 id=108 data-nosnippet>108</a>    // `'static: 'a, 'static: 'b, 'a: 'c, 'b: 'c, 'c: 'd, 'c: 'e`.
+<a href=#109 id=109 data-nosnippet>109</a>    // `['d, 'e]` are ignored because they do not compare - the same goes for `['a, 'b]`.
+<a href=#110 id=110 data-nosnippet>110</a>    </span><span class="kw">let </span>totally_ordered_subset = choice_regions.iter().copied().filter(|<span class="kw-2">&amp;</span>r1| {
+<a href=#111 id=111 data-nosnippet>111</a>        choice_regions.iter().all(|<span class="kw-2">&amp;</span>r2| {
+<a href=#112 id=112 data-nosnippet>112</a>            rcx.universal_region_relations.outlives(r1, r2)
+<a href=#113 id=113 data-nosnippet>113</a>                || rcx.universal_region_relations.outlives(r2, r1)
+<a href=#114 id=114 data-nosnippet>114</a>        })
+<a href=#115 id=115 data-nosnippet>115</a>    });
+<a href=#116 id=116 data-nosnippet>116</a>    <span class="comment">// Now we're left with `['static, 'c]`. Pick `'c` as the minimum!
+<a href=#117 id=117 data-nosnippet>117</a>    </span><span class="kw">let </span><span class="prelude-val">Some</span>(min_choice) = totally_ordered_subset.reduce(|r1, r2| {
+<a href=#118 id=118 data-nosnippet>118</a>        <span class="kw">let </span>r1_outlives_r2 = rcx.universal_region_relations.outlives(r1, r2);
+<a href=#119 id=119 data-nosnippet>119</a>        <span class="kw">let </span>r2_outlives_r1 = rcx.universal_region_relations.outlives(r2, r1);
+<a href=#120 id=120 data-nosnippet>120</a>        <span class="kw">match </span>(r1_outlives_r2, r2_outlives_r1) {
+<a href=#121 id=121 data-nosnippet>121</a>            (<span class="bool-val">true</span>, <span class="bool-val">true</span>) =&gt; r1.min(r2),
+<a href=#122 id=122 data-nosnippet>122</a>            (<span class="bool-val">true</span>, <span class="bool-val">false</span>) =&gt; r2,
+<a href=#123 id=123 data-nosnippet>123</a>            (<span class="bool-val">false</span>, <span class="bool-val">true</span>) =&gt; r1,
+<a href=#124 id=124 data-nosnippet>124</a>            (<span class="bool-val">false</span>, <span class="bool-val">false</span>) =&gt; <span class="macro">bug!</span>(<span class="string">"incomparable regions in total order"</span>),
+<a href=#125 id=125 data-nosnippet>125</a>        }
+<a href=#126 id=126 data-nosnippet>126</a>    }) <span class="kw">else </span>{
+<a href=#127 id=127 data-nosnippet>127</a>        <span class="macro">debug!</span>(<span class="string">"no unique minimum choice"</span>);
+<a href=#128 id=128 data-nosnippet>128</a>        <span class="kw">return</span>;
+<a href=#129 id=129 data-nosnippet>129</a>    };
+<a href=#130 id=130 data-nosnippet>130</a>
+<a href=#131 id=131 data-nosnippet>131</a>    <span class="macro">debug!</span>(<span class="question-mark">?</span>min_choice);
+<a href=#132 id=132 data-nosnippet>132</a>    <span class="comment">// Lift the member region to be at least as large as this `min_choice` by directly
+<a href=#133 id=133 data-nosnippet>133</a>    // mutating the `scc_values` as we compute it. This acts as if we've added a
+<a href=#134 id=134 data-nosnippet>134</a>    // `'member: 'min_choice` while not recomputing sccs. This means different sccs
+<a href=#135 id=135 data-nosnippet>135</a>    // may now actually be equal.
+<a href=#136 id=136 data-nosnippet>136</a>    </span><span class="kw">let </span>min_choice_scc = rcx.constraint_sccs.scc(min_choice);
+<a href=#137 id=137 data-nosnippet>137</a>    rcx.scc_values.add_region(member, min_choice_scc);
+<a href=#138 id=138 data-nosnippet>138</a>}
+<a href=#139 id=139 data-nosnippet>139</a>
+<a href=#140 id=140 data-nosnippet>140</a><span class="kw">struct </span><a href="../../../../rustc_borrowck/region_infer/opaque_types/member_constraints/struct.CollectMemberConstraintsVisitor.html">CollectMemberConstraintsVisitor</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'b</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#141 id=141 data-nosnippet>141</a>    rcx: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="region_ctxt.rs.html#21-29">RegionCtxt</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#142 id=142 data-nosnippet>142</a>    defining_use: <span class="kw-2">&amp;</span><span class="lifetime">'b </span><a href="mod.rs.html#176-183">DefiningUse</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#143 id=143 data-nosnippet>143</a>    member_constraints: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashMap.html">FxHashMap</a>&lt;<a href="../../constraints/mod.rs.html#110-114">ConstraintSccIndex</a>, <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'b </span><a href="mod.rs.html#176-183">DefiningUse</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt;,
+<a href=#144 id=144 data-nosnippet>144</a>}
+<a href=#145 id=145 data-nosnippet>145</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="#140-144">CollectMemberConstraintsVisitor</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#146 id=146 data-nosnippet>146</a>    <span class="kw">fn </span>cx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#147 id=147 data-nosnippet>147</a>        <a class="self" href="#146">self</a>.rcx.infcx.tcx
+<a href=#148 id=148 data-nosnippet>148</a>    }
+<a href=#149 id=149 data-nosnippet>149</a>    <span class="kw">fn </span>visit_closure_args(<span class="kw-2">&amp;mut </span><span class="self">self</span>, def_id: <a href="../../../../rustc_span/def_id/struct.DefId.html">DefId</a>, args: <a href="../../../../rustc_middle/ty/generic_args/type.GenericArgsRef.html">GenericArgsRef</a>&lt;<span class="lifetime">'tcx</span>&gt;) {
+<a href=#150 id=150 data-nosnippet>150</a>        <span class="kw">let </span>generics = <a class="self" href="#149">self</a>.<a href="#146-148">cx</a>().<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.generics_of">generics_of</a>(<a href="#149">def_id</a>);
+<a href=#151 id=151 data-nosnippet>151</a>        <span class="kw">for </span>arg <span class="kw">in </span>args.iter().skip(generics.parent_count) {
+<a href=#152 id=152 data-nosnippet>152</a>            arg.visit_with(<span class="self">self</span>);
+<a href=#153 id=153 data-nosnippet>153</a>        }
+<a href=#154 id=154 data-nosnippet>154</a>    }
+<a href=#155 id=155 data-nosnippet>155</a>}
+<a href=#156 id=156 data-nosnippet>156</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="../../../../rustc_type_ir/visit/trait.TypeVisitor.html">TypeVisitor</a>&lt;<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; <span class="kw">for </span><a href="#140-144">CollectMemberConstraintsVisitor</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#157 id=157 data-nosnippet>157</a>    <span class="kw">fn </span>visit_region(<span class="kw-2">&amp;mut </span><span class="self">self</span>, r: <a href="../../../../rustc_middle/ty/region/struct.Region.html">Region</a>&lt;<span class="lifetime">'tcx</span>&gt;) {
+<a href=#158 id=158 data-nosnippet>158</a>        <span class="kw">match </span><a href="#157">r</a>.<a href="../../../../rustc_middle/ty/region/struct.Region.html#method.kind">kind</a>() {
+<a href=#159 id=159 data-nosnippet>159</a>            <a href="../../../../rustc_type_ir/region_kind/enum.RegionKind.html#variant.ReBound">ty::ReBound</a>(..) =&gt; <span class="kw">return</span>,
+<a href=#160 id=160 data-nosnippet>160</a>            <a href="../../../../rustc_type_ir/region_kind/enum.RegionKind.html#variant.ReVar">ty::ReVar</a>(vid) =&gt; {
+<a href=#161 id=161 data-nosnippet>161</a>                <span class="kw">let </span>scc = <a class="self" href="#157">self</a>.rcx.constraint_sccs.<a href="../../../../rustc_data_structures/graph/scc/struct.Sccs.html#method.scc">scc</a>(<a href="#160">vid</a>);
+<a href=#162 id=162 data-nosnippet>162</a>                <a class="self" href="#157">self</a>.member_constraints.<a href="https://doc.rust-lang.org/beta/std/collections/hash/map/struct.HashMap.html#method.entry">entry</a>(<a href="#161">scc</a>).<a href="https://doc.rust-lang.org/beta/std/collections/hash/map/enum.Entry.html#method.or_default">or_default</a>().<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.push">push</a>(<a class="self" href="#157">self</a>.defining_use);
+<a href=#163 id=163 data-nosnippet>163</a>            }
+<a href=#164 id=164 data-nosnippet>164</a>            <span class="kw">_ </span>=&gt; <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.unreachable.html">unreachable!</a>(),
+<a href=#165 id=165 data-nosnippet>165</a>        }
+<a href=#166 id=166 data-nosnippet>166</a>    }
+<a href=#167 id=167 data-nosnippet>167</a>
+<a href=#168 id=168 data-nosnippet>168</a>    <span class="kw">fn </span>visit_ty(<span class="kw-2">&amp;mut </span><span class="self">self</span>, ty: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;) {
+<a href=#169 id=169 data-nosnippet>169</a>        <span class="kw">if </span>!<a href="#168">ty</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.flags">flags</a>().intersects(ty::TypeFlags::HAS_FREE_REGIONS) {
+<a href=#170 id=170 data-nosnippet>170</a>            <span class="kw">return</span>;
+<a href=#171 id=171 data-nosnippet>171</a>        }
+<a href=#172 id=172 data-nosnippet>172</a>
+<a href=#173 id=173 data-nosnippet>173</a>        <span class="kw">match </span><span class="kw-2">*</span><a href="#168">ty</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() {
+<a href=#174 id=174 data-nosnippet>174</a>            <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Closure">ty::Closure</a>(def_id, args)
+<a href=#175 id=175 data-nosnippet>175</a>            | <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.CoroutineClosure">ty::CoroutineClosure</a>(def_id, args)
+<a href=#176 id=176 data-nosnippet>176</a>            | <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Coroutine">ty::Coroutine</a>(def_id, args) =&gt; <a class="self" href="#168">self</a>.<a href="#149-154">visit_closure_args</a>(<a href="#174">def_id</a>, <a href="#174">args</a>),
+<a href=#177 id=177 data-nosnippet>177</a>
+<a href=#178 id=178 data-nosnippet>178</a>            <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Alias">ty::Alias</a>(kind, ty::AliasTy { def_id, args, .. })
+<a href=#179 id=179 data-nosnippet>179</a>                <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(variances) = <a class="self" href="#168">self</a>.<a href="#146-148">cx</a>().<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.opt_alias_variances">opt_alias_variances</a>(<a href="#178">kind</a>, <a href="#178">def_id</a>) =&gt;
+<a href=#180 id=180 data-nosnippet>180</a>            {
+<a href=#181 id=181 data-nosnippet>181</a>                <span class="comment">// Skip lifetime parameters that are not captured, since they do
+<a href=#182 id=182 data-nosnippet>182</a>                // not need member constraints registered for them; we'll erase
+<a href=#183 id=183 data-nosnippet>183</a>                // them (and hopefully in the future replace them with placeholders).
+<a href=#184 id=184 data-nosnippet>184</a>                </span><span class="kw">for </span>(<span class="kw-2">&amp;</span>v, arg) <span class="kw">in </span>std::iter::zip(variances, args.iter()) {
+<a href=#185 id=185 data-nosnippet>185</a>                    <span class="kw">if </span>v != ty::Bivariant {
+<a href=#186 id=186 data-nosnippet>186</a>                        arg.visit_with(<span class="self">self</span>)
+<a href=#187 id=187 data-nosnippet>187</a>                    }
+<a href=#188 id=188 data-nosnippet>188</a>                }
+<a href=#189 id=189 data-nosnippet>189</a>            }
+<a href=#190 id=190 data-nosnippet>190</a>
+<a href=#191 id=191 data-nosnippet>191</a>            <span class="kw">_ </span>=&gt; <a href="#168">ty</a>.<a href="../../../../rustc_type_ir/visit/trait.TypeSuperVisitable.html#tymethod.super_visit_with">super_visit_with</a>(<a class="self" href="#168">self</a>),
+<a href=#192 id=192 data-nosnippet>192</a>        }
+<a href=#193 id=193 data-nosnippet>193</a>    }
+<a href=#194 id=194 data-nosnippet>194</a>}</code></pre></div></section></main></body></html>

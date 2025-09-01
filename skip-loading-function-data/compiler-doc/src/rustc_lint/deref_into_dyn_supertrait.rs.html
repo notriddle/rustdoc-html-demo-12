@@ -1,0 +1,107 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_lint/src/deref_into_dyn_supertrait.rs`."><title>deref_into_dyn_supertrait.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_lint" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-beta.1 (788da80fc 2025-08-04)" data-channel="beta" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../static.files/storage-68b7e25d.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_lint/</div>deref_into_dyn_supertrait.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>rustc_hir::{<span class="self"><a href="../../rustc_hir/index.html">self</a> </span><span class="kw">as </span>hir, <a href="../../rustc_hir/lang_items/enum.LangItem.html">LangItem</a>};
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span><a href="../../rustc_middle/ty/index.html">rustc_middle::ty</a>;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>rustc_session::{<a href="../../rustc_lint_defs/macro.declare_lint.html">declare_lint</a>, <a href="../../rustc_lint_defs/macro.declare_lint_pass.html">declare_lint_pass</a>};
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>rustc_span::{<a href="../../rustc_span/symbol/struct.Ident.html">Ident</a>, <a href="../../rustc_span/symbol/sym/index.html">sym</a>};
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="../../rustc_type_ir/elaborate/fn.supertraits.html">rustc_trait_selection::traits::supertraits</a>;
+<a href=#6 id=6 data-nosnippet>6</a>
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span><span class="kw">crate</span>::lints::{<a href="lints.rs.html#556-564">SupertraitAsDerefTarget</a>, <a href="lints.rs.html#568-571">SupertraitAsDerefTargetLabel</a>};
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use crate</span>::{<a href="context.rs.html#470-496">LateContext</a>, <a href="passes.rs.html#72">LateLintPass</a>, <a href="context.rs.html#504-603">LintContext</a>};
+<a href=#9 id=9 data-nosnippet>9</a>
+<a href=#10 id=10 data-nosnippet>10</a><a class="macro" href="../../rustc_lint_defs/macro.declare_lint.html">declare_lint!</a> {
+<a href=#11 id=11 data-nosnippet>11</a>    <span class="doccomment">/// The `deref_into_dyn_supertrait` lint is emitted whenever there is a `Deref` implementation
+<a href=#12 id=12 data-nosnippet>12</a>    /// for `dyn SubTrait` with a `dyn SuperTrait` type as the `Output` type.
+<a href=#13 id=13 data-nosnippet>13</a>    ///
+<a href=#14 id=14 data-nosnippet>14</a>    /// These implementations are "shadowed" by trait upcasting (stabilized since
+<a href=#15 id=15 data-nosnippet>15</a>    /// 1.86.0). The `deref` functions is no longer called implicitly, which might
+<a href=#16 id=16 data-nosnippet>16</a>    /// change behavior compared to previous rustc versions.
+<a href=#17 id=17 data-nosnippet>17</a>    ///
+<a href=#18 id=18 data-nosnippet>18</a>    /// ### Example
+<a href=#19 id=19 data-nosnippet>19</a>    ///
+<a href=#20 id=20 data-nosnippet>20</a>    /// ```rust,compile_fail
+<a href=#21 id=21 data-nosnippet>21</a>    /// #![deny(deref_into_dyn_supertrait)]
+<a href=#22 id=22 data-nosnippet>22</a>    /// #![allow(dead_code)]
+<a href=#23 id=23 data-nosnippet>23</a>    ///
+<a href=#24 id=24 data-nosnippet>24</a>    /// use core::ops::Deref;
+<a href=#25 id=25 data-nosnippet>25</a>    ///
+<a href=#26 id=26 data-nosnippet>26</a>    /// trait A {}
+<a href=#27 id=27 data-nosnippet>27</a>    /// trait B: A {}
+<a href=#28 id=28 data-nosnippet>28</a>    /// impl&lt;'a&gt; Deref for dyn 'a + B {
+<a href=#29 id=29 data-nosnippet>29</a>    ///     type Target = dyn A;
+<a href=#30 id=30 data-nosnippet>30</a>    ///     fn deref(&amp;self) -&gt; &amp;Self::Target {
+<a href=#31 id=31 data-nosnippet>31</a>    ///         todo!()
+<a href=#32 id=32 data-nosnippet>32</a>    ///     }
+<a href=#33 id=33 data-nosnippet>33</a>    /// }
+<a href=#34 id=34 data-nosnippet>34</a>    ///
+<a href=#35 id=35 data-nosnippet>35</a>    /// fn take_a(_: &amp;dyn A) { }
+<a href=#36 id=36 data-nosnippet>36</a>    ///
+<a href=#37 id=37 data-nosnippet>37</a>    /// fn take_b(b: &amp;dyn B) {
+<a href=#38 id=38 data-nosnippet>38</a>    ///     take_a(b);
+<a href=#39 id=39 data-nosnippet>39</a>    /// }
+<a href=#40 id=40 data-nosnippet>40</a>    /// ```
+<a href=#41 id=41 data-nosnippet>41</a>    ///
+<a href=#42 id=42 data-nosnippet>42</a>    /// {{produces}}
+<a href=#43 id=43 data-nosnippet>43</a>    ///
+<a href=#44 id=44 data-nosnippet>44</a>    /// ### Explanation
+<a href=#45 id=45 data-nosnippet>45</a>    ///
+<a href=#46 id=46 data-nosnippet>46</a>    /// The trait upcasting coercion added a new coercion rule, taking priority over certain other
+<a href=#47 id=47 data-nosnippet>47</a>    /// coercion rules, which causes some behavior change compared to older `rustc` versions.
+<a href=#48 id=48 data-nosnippet>48</a>    ///
+<a href=#49 id=49 data-nosnippet>49</a>    /// `deref` can be still called explicitly, it just isn't called as part of a deref coercion
+<a href=#50 id=50 data-nosnippet>50</a>    /// (since trait upcasting coercion takes priority).
+<a href=#51 id=51 data-nosnippet>51</a>    </span><span class="kw">pub </span><a href="../../rustc_lint/deref_into_dyn_supertrait/static.DEREF_INTO_DYN_SUPERTRAIT.html">DEREF_INTO_DYN_SUPERTRAIT</a>,
+<a href=#52 id=52 data-nosnippet>52</a>    Allow,
+<a href=#53 id=53 data-nosnippet>53</a>    <span class="string">"`Deref` implementation with a supertrait trait object for output is shadowed by trait upcasting"</span>,
+<a href=#54 id=54 data-nosnippet>54</a>}
+<a href=#55 id=55 data-nosnippet>55</a>
+<a href=#56 id=56 data-nosnippet>56</a><a class="macro" href="../../rustc_lint_defs/macro.declare_lint_pass.html">declare_lint_pass!</a>(<a href="../../rustc_lint/deref_into_dyn_supertrait/struct.DerefIntoDynSupertrait.html">DerefIntoDynSupertrait</a> =&gt; [DEREF_INTO_DYN_SUPERTRAIT]);
+<a href=#57 id=57 data-nosnippet>57</a>
+<a href=#58 id=58 data-nosnippet>58</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="passes.rs.html#72">LateLintPass</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#56">DerefIntoDynSupertrait</a> {
+<a href=#59 id=59 data-nosnippet>59</a>    <span class="kw">fn </span>check_item(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cx: <span class="kw-2">&amp;</span><a href="context.rs.html#470-496">LateContext</a>&lt;<span class="lifetime">'tcx</span>&gt;, item: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../rustc_hir/hir/struct.Item.html">hir::Item</a>&lt;<span class="lifetime">'tcx</span>&gt;) {
+<a href=#60 id=60 data-nosnippet>60</a>        <span class="kw">let </span>tcx = <a href="#59">cx</a>.tcx;
+<a href=#61 id=61 data-nosnippet>61</a>        <span class="comment">// `Deref` is being implemented for `t`
+<a href=#62 id=62 data-nosnippet>62</a>        </span><span class="kw">if let </span><a href="../../rustc_hir/hir/enum.ItemKind.html#variant.Impl">hir::ItemKind::Impl</a>(impl_) = <a href="#59">item</a>.kind
+<a href=#63 id=63 data-nosnippet>63</a>            <span class="comment">// the trait is a `Deref` implementation
+<a href=#64 id=64 data-nosnippet>64</a>            </span>&amp;&amp; <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(of_trait) = <span class="kw-2">&amp;</span><a href="#62">impl_</a>.of_trait
+<a href=#65 id=65 data-nosnippet>65</a>            &amp;&amp; <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(did) = <a href="#64">of_trait</a>.trait_ref.<a href="../../rustc_hir/hir/struct.TraitRef.html#method.trait_def_id">trait_def_id</a>()
+<a href=#66 id=66 data-nosnippet>66</a>            &amp;&amp; <a href="#60">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.is_lang_item">is_lang_item</a>(<a href="#65">did</a>, <a href="../../rustc_hir/lang_items/enum.LangItem.html#variant.Deref">LangItem::Deref</a>)
+<a href=#67 id=67 data-nosnippet>67</a>            <span class="comment">// the self type is `dyn t_principal`
+<a href=#68 id=68 data-nosnippet>68</a>            </span>&amp;&amp; <span class="kw">let </span>self_ty = <a href="#60">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.type_of">type_of</a>(<a href="#59">item</a>.owner_id).<a href="../../rustc_type_ir/binder/struct.EarlyBinder.html#method.instantiate_identity">instantiate_identity</a>()
+<a href=#69 id=69 data-nosnippet>69</a>            &amp;&amp; <span class="kw">let </span><a href="../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Dynamic">ty::Dynamic</a>(data, <span class="kw">_</span>, ty::Dyn) = <a href="#68">self_ty</a>.<a href="../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>()
+<a href=#70 id=70 data-nosnippet>70</a>            &amp;&amp; <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(self_principal) = <a href="#69">data</a>.<a href="../../rustc_middle/ty/list/struct.RawList.html#method.principal">principal</a>()
+<a href=#71 id=71 data-nosnippet>71</a>            <span class="comment">// `&lt;T as Deref&gt;::Target` is `dyn target_principal`
+<a href=#72 id=72 data-nosnippet>72</a>            </span>&amp;&amp; <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(target) = <a href="#59">cx</a>.<a href="context.rs.html#869-882">get_associated_type</a>(<a href="#68">self_ty</a>, <a href="#65">did</a>, <a href="../../rustc_span/symbol/sym_generated/constant.Target.html">sym::Target</a>)
+<a href=#73 id=73 data-nosnippet>73</a>            &amp;&amp; <span class="kw">let </span><a href="../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Dynamic">ty::Dynamic</a>(data, <span class="kw">_</span>, ty::Dyn) = <a href="#72">target</a>.<a href="../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>()
+<a href=#74 id=74 data-nosnippet>74</a>            &amp;&amp; <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(target_principal) = <a href="#73">data</a>.<a href="../../rustc_middle/ty/list/struct.RawList.html#method.principal">principal</a>()
+<a href=#75 id=75 data-nosnippet>75</a>            <span class="comment">// `target_principal` is a supertrait of `t_principal`
+<a href=#76 id=76 data-nosnippet>76</a>            </span>&amp;&amp; <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(supertrait_principal) = <a href="../../rustc_type_ir/elaborate/fn.supertraits.html">supertraits</a>(<a href="#60">tcx</a>, <a href="#70">self_principal</a>.<a href="../../rustc_type_ir/binder/struct.Binder.html#method.with_self_ty">with_self_ty</a>(<a href="#60">tcx</a>, <a href="#68">self_ty</a>))
+<a href=#77 id=77 data-nosnippet>77</a>                .<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.find">find</a>(|supertrait| <a href="#77">supertrait</a>.<a href="../../rustc_type_ir/binder/struct.Binder.html#method.def_id">def_id</a>() == <a href="#74">target_principal</a>.<a href="../../rustc_type_ir/binder/struct.Binder.html#method.def_id">def_id</a>())
+<a href=#78 id=78 data-nosnippet>78</a>        {
+<a href=#79 id=79 data-nosnippet>79</a>            <span class="comment">// erase regions in self type for better diagnostic presentation
+<a href=#80 id=80 data-nosnippet>80</a>            </span><span class="kw">let </span>(self_ty, target_principal, supertrait_principal) =
+<a href=#81 id=81 data-nosnippet>81</a>                <a href="#60">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.erase_regions">erase_regions</a>((<a href="#68">self_ty</a>, <a href="#74">target_principal</a>, <a href="#76">supertrait_principal</a>));
+<a href=#82 id=82 data-nosnippet>82</a>            <span class="kw">let </span>label2 = <a href="#60">tcx</a>
+<a href=#83 id=83 data-nosnippet>83</a>                .<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.associated_items">associated_items</a>(<a href="#59">item</a>.owner_id)
+<a href=#84 id=84 data-nosnippet>84</a>                .<a href="../../rustc_middle/ty/assoc/struct.AssocItems.html#method.find_by_ident_and_kind">find_by_ident_and_kind</a>(
+<a href=#85 id=85 data-nosnippet>85</a>                    <a href="#60">tcx</a>,
+<a href=#86 id=86 data-nosnippet>86</a>                    <a href="../../rustc_span/symbol/struct.Ident.html#method.with_dummy_span">Ident::with_dummy_span</a>(<a href="../../rustc_span/symbol/sym_generated/constant.Target.html">sym::Target</a>),
+<a href=#87 id=87 data-nosnippet>87</a>                    <a href="../../rustc_middle/ty/assoc/enum.AssocTag.html#variant.Type">ty::AssocTag::Type</a>,
+<a href=#88 id=88 data-nosnippet>88</a>                    <a href="#59">item</a>.owner_id.<a href="../../rustc_hir_id/struct.OwnerId.html#method.to_def_id">to_def_id</a>(),
+<a href=#89 id=89 data-nosnippet>89</a>                )
+<a href=#90 id=90 data-nosnippet>90</a>                .<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.map">map</a>(|label| <a href="lints.rs.html#568-571">SupertraitAsDerefTargetLabel</a> { label: <a href="#60">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.def_span">def_span</a>(<a href="#90">label</a>.def_id) });
+<a href=#91 id=91 data-nosnippet>91</a>            <span class="kw">let </span>span = <a href="#60">tcx</a>.<a href="../../rustc_middle/ty/context/struct.TyCtxt.html#method.def_span">def_span</a>(<a href="#59">item</a>.owner_id.def_id);
+<a href=#92 id=92 data-nosnippet>92</a>            <a href="#59">cx</a>.<a href="context.rs.html#523-532">emit_span_lint</a>(
+<a href=#93 id=93 data-nosnippet>93</a>                <a href="#10-54">DEREF_INTO_DYN_SUPERTRAIT</a>,
+<a href=#94 id=94 data-nosnippet>94</a>                <a href="#91">span</a>,
+<a href=#95 id=95 data-nosnippet>95</a>                <a href="lints.rs.html#556-564">SupertraitAsDerefTarget</a> {
+<a href=#96 id=96 data-nosnippet>96</a>                    <a href="#80">self_ty</a>,
+<a href=#97 id=97 data-nosnippet>97</a>                    supertrait_principal: <a href="#80">supertrait_principal</a>.<a href="../../rustc_type_ir/binder/struct.Binder.html#method.map_bound">map_bound</a>(|trait_ref| {
+<a href=#98 id=98 data-nosnippet>98</a>                        <a href="../../rustc_type_ir/predicate/struct.ExistentialTraitRef.html#method.erase_self_ty">ty::ExistentialTraitRef::erase_self_ty</a>(<a href="#60">tcx</a>, <a href="#97">trait_ref</a>)
+<a href=#99 id=99 data-nosnippet>99</a>                    }),
+<a href=#100 id=100 data-nosnippet>100</a>                    <a href="#80">target_principal</a>,
+<a href=#101 id=101 data-nosnippet>101</a>                    label: <a href="#91">span</a>,
+<a href=#102 id=102 data-nosnippet>102</a>                    <a href="#82">label2</a>,
+<a href=#103 id=103 data-nosnippet>103</a>                },
+<a href=#104 id=104 data-nosnippet>104</a>            );
+<a href=#105 id=105 data-nosnippet>105</a>        }
+<a href=#106 id=106 data-nosnippet>106</a>    }
+<a href=#107 id=107 data-nosnippet>107</a>}</code></pre></div></section></main></body></html>

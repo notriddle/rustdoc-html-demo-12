@@ -1,0 +1,690 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_build/src/thir/pattern/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_mir_build" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-beta.1 (788da80fc 2025-08-04)" data-channel="beta" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../../../static.files/storage-68b7e25d.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_build/thir/pattern/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Validation of patterns/matches.
+<a href=#2 id=2 data-nosnippet>2</a>
+<a href=#3 id=3 data-nosnippet>3</a></span><span class="kw">mod </span><a href="check_match.rs.html#1-1537">check_match</a>;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">mod </span><a href="const_to_pat.rs.html#1-517">const_to_pat</a>;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">mod </span><a href="migration.rs.html#1-180">migration</a>;
+<a href=#6 id=6 data-nosnippet>6</a>
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/core/cmp/enum.Ordering.html">std::cmp::Ordering</a>;
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/alloc/sync/struct.Arc.html">std::sync::Arc</a>;
+<a href=#9 id=9 data-nosnippet>9</a>
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>rustc_abi::{<a href="../../../../rustc_abi/layout/ty/struct.FieldIdx.html">FieldIdx</a>, <a href="../../../../rustc_abi/enum.Integer.html">Integer</a>};
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><a href="../../../../rustc_errors/codes/index.html">rustc_errors::codes</a>::<span class="kw-2">*</span>;
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>rustc_hir::def::{<a href="../../../../rustc_hir/def/enum.CtorOf.html">CtorOf</a>, <a href="../../../../rustc_hir/def/enum.DefKind.html">DefKind</a>, <a href="../../../../rustc_hir/def/enum.Res.html">Res</a>};
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span><a href="../../../../rustc_hir/pat_util/trait.EnumerateAndAdjustIterator.html">rustc_hir::pat_util::EnumerateAndAdjustIterator</a>;
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span>rustc_hir::{<span class="self"><a href="../../../../rustc_hir/index.html">self</a> </span><span class="kw">as </span>hir, <a href="../../../../rustc_hir/lang_items/enum.LangItem.html">LangItem</a>, <a href="../../../../rustc_hir/hir/enum.RangeEnd.html">RangeEnd</a>};
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span><a href="../../../../rustc_index/idx/trait.Idx.html">rustc_index::Idx</a>;
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span><a href="../../../../rustc_infer/infer/trait.TyCtxtInferExt.html">rustc_infer::infer::TyCtxtInferExt</a>;
+<a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span><a href="../../../../rustc_middle/mir/interpret/struct.LitToConstInput.html">rustc_middle::mir::interpret::LitToConstInput</a>;
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span>rustc_middle::thir::{
+<a href=#19 id=19 data-nosnippet>19</a>    <a href="../../../../rustc_middle/thir/struct.Ascription.html">Ascription</a>, <a href="../../../../rustc_middle/thir/struct.FieldPat.html">FieldPat</a>, <a href="../../../../rustc_middle/thir/struct.LocalVarId.html">LocalVarId</a>, <a href="../../../../rustc_middle/thir/struct.Pat.html">Pat</a>, <a href="../../../../rustc_middle/thir/enum.PatKind.html">PatKind</a>, <a href="../../../../rustc_middle/thir/struct.PatRange.html">PatRange</a>, <a href="../../../../rustc_middle/thir/enum.PatRangeBoundary.html">PatRangeBoundary</a>,
+<a href=#20 id=20 data-nosnippet>20</a>};
+<a href=#21 id=21 data-nosnippet>21</a><span class="kw">use </span>rustc_middle::ty::adjustment::{<a href="../../../../rustc_middle/ty/adjustment/enum.PatAdjust.html">PatAdjust</a>, <a href="../../../../rustc_middle/ty/adjustment/struct.PatAdjustment.html">PatAdjustment</a>};
+<a href=#22 id=22 data-nosnippet>22</a><span class="kw">use </span><a href="../../../../rustc_middle/ty/layout/trait.IntegerExt.html">rustc_middle::ty::layout::IntegerExt</a>;
+<a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span>rustc_middle::ty::{<a class="self" href="../../../../rustc_middle/ty/index.html">self</a>, <a href="../../../../rustc_middle/ty/typeck_results/struct.CanonicalUserTypeAnnotation.html">CanonicalUserTypeAnnotation</a>, <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>, <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>, <a href="../../../../rustc_middle/ty/sty/type.TypingMode.html">TypingMode</a>};
+<a href=#24 id=24 data-nosnippet>24</a><span class="kw">use </span>rustc_middle::{<a href="../../../../rustc_middle/macro.bug.html">bug</a>, <a href="../../../../rustc_middle/macro.span_bug.html">span_bug</a>};
+<a href=#25 id=25 data-nosnippet>25</a><span class="kw">use </span><a href="../../../../rustc_span/def_id/struct.DefId.html">rustc_span::def_id::DefId</a>;
+<a href=#26 id=26 data-nosnippet>26</a><span class="kw">use </span>rustc_span::{<a href="../../../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>, <a href="../../../../rustc_span/span_encoding/struct.Span.html">Span</a>};
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug</a>, <a href="https://docs.rs/tracing-attributes/0.1.30/tracing_attributes/attr.instrument.html">instrument</a>};
+<a href=#28 id=28 data-nosnippet>28</a>
+<a href=#29 id=29 data-nosnippet>29</a><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use </span><a href="check_match.rs.html#34-69"><span class="self">self</span>::check_match::check_match</a>;
+<a href=#30 id=30 data-nosnippet>30</a><span class="kw">use </span><a href="migration.rs.html#15-30"><span class="self">self</span>::migration::PatMigration</a>;
+<a href=#31 id=31 data-nosnippet>31</a><span class="kw">use </span><a href="../../lib.rs.html#18"><span class="kw">crate</span>::errors</a>::<span class="kw-2">*</span>;
+<a href=#32 id=32 data-nosnippet>32</a>
+<a href=#33 id=33 data-nosnippet>33</a><span class="kw">struct </span><a href="../../../../rustc_mir_build/thir/pattern/struct.PatCtxt.html">PatCtxt</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#34 id=34 data-nosnippet>34</a>    tcx: <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#35 id=35 data-nosnippet>35</a>    typing_env: <a href="../../../../rustc_middle/ty/struct.TypingEnv.html">ty::TypingEnv</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#36 id=36 data-nosnippet>36</a>    typeck_results: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../../../rustc_middle/ty/typeck_results/struct.TypeckResults.html">ty::TypeckResults</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#37 id=37 data-nosnippet>37</a>
+<a href=#38 id=38 data-nosnippet>38</a>    <span class="doccomment">/// Used by the Rust 2024 migration lint.
+<a href=#39 id=39 data-nosnippet>39</a>    </span>rust_2024_migration: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="migration.rs.html#15-30">PatMigration</a>&lt;<span class="lifetime">'a</span>&gt;&gt;,
+<a href=#40 id=40 data-nosnippet>40</a>}
+<a href=#41 id=41 data-nosnippet>41</a>
+<a href=#42 id=42 data-nosnippet>42</a><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../../rustc_mir_build/thir/pattern/fn.pat_from_hir.html">pat_from_hir</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt;(
+<a href=#43 id=43 data-nosnippet>43</a>    tcx: <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#44 id=44 data-nosnippet>44</a>    typing_env: <a href="../../../../rustc_middle/ty/struct.TypingEnv.html">ty::TypingEnv</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#45 id=45 data-nosnippet>45</a>    typeck_results: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../../../rustc_middle/ty/typeck_results/struct.TypeckResults.html">ty::TypeckResults</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#46 id=46 data-nosnippet>46</a>    pat: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../../rustc_hir/hir/struct.Pat.html">hir::Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#47 id=47 data-nosnippet>47</a>) -&gt; <a href="https://doc.rust-lang.org/beta/alloc/boxed/struct.Box.html">Box</a>&lt;<a href="../../../../rustc_middle/thir/struct.Pat.html">Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#48 id=48 data-nosnippet>48</a>    <span class="kw">let </span><span class="kw-2">mut </span>pcx = <a href="#33-40">PatCtxt</a> {
+<a href=#49 id=49 data-nosnippet>49</a>        <a href="#43">tcx</a>,
+<a href=#50 id=50 data-nosnippet>50</a>        <a href="#44">typing_env</a>,
+<a href=#51 id=51 data-nosnippet>51</a>        <a href="#45">typeck_results</a>,
+<a href=#52 id=52 data-nosnippet>52</a>        rust_2024_migration: <a href="#45">typeck_results</a>
+<a href=#53 id=53 data-nosnippet>53</a>            .<a href="../../../../rustc_middle/ty/typeck_results/struct.TypeckResults.html#method.rust_2024_migration_desugared_pats">rust_2024_migration_desugared_pats</a>()
+<a href=#54 id=54 data-nosnippet>54</a>            .<a href="../../../../rustc_middle/ty/typeck_results/struct.LocalTableInContext.html#method.get">get</a>(<a href="#46">pat</a>.hir_id)
+<a href=#55 id=55 data-nosnippet>55</a>            .<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.map">map</a>(PatMigration::new),
+<a href=#56 id=56 data-nosnippet>56</a>    };
+<a href=#57 id=57 data-nosnippet>57</a>    <span class="kw">let </span>result = <a href="#48">pcx</a>.<a href="#66-128">lower_pattern</a>(<a href="#46">pat</a>);
+<a href=#58 id=58 data-nosnippet>58</a>    <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"pat_from_hir({:?}) = {:?}"</span>, pat, result);
+<a href=#59 id=59 data-nosnippet>59</a>    <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(m) = <a href="#48">pcx</a>.rust_2024_migration {
+<a href=#60 id=60 data-nosnippet>60</a>        <a href="#59">m</a>.<a href="migration.rs.html#46-86">emit</a>(<a href="#43">tcx</a>, <a href="#46">pat</a>.hir_id);
+<a href=#61 id=61 data-nosnippet>61</a>    }
+<a href=#62 id=62 data-nosnippet>62</a>    <a href="#57">result</a>
+<a href=#63 id=63 data-nosnippet>63</a>}
+<a href=#64 id=64 data-nosnippet>64</a>
+<a href=#65 id=65 data-nosnippet>65</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; <a href="#33-40">PatCtxt</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#66 id=66 data-nosnippet>66</a>    <span class="kw">fn </span>lower_pattern(<span class="kw-2">&amp;mut </span><span class="self">self</span>, pat: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../../rustc_hir/hir/struct.Pat.html">hir::Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/beta/alloc/boxed/struct.Box.html">Box</a>&lt;<a href="../../../../rustc_middle/thir/struct.Pat.html">Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#67 id=67 data-nosnippet>67</a>        <span class="kw">let </span>adjustments: <span class="kw-2">&amp;</span>[<a href="../../../../rustc_middle/ty/adjustment/struct.PatAdjustment.html">PatAdjustment</a>&lt;<span class="lifetime">'tcx</span>&gt;] =
+<a href=#68 id=68 data-nosnippet>68</a>            <a class="self" href="#66">self</a>.typeck_results.<a href="../../../../rustc_middle/ty/typeck_results/struct.TypeckResults.html#method.pat_adjustments">pat_adjustments</a>().<a href="../../../../rustc_middle/ty/typeck_results/struct.LocalTableInContext.html#method.get">get</a>(<a href="#66">pat</a>.hir_id).<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.map_or">map_or</a>(<span class="kw-2">&amp;</span>[], |v| <span class="kw-2">&amp;**</span><a href="#68">v</a>);
+<a href=#69 id=69 data-nosnippet>69</a>
+<a href=#70 id=70 data-nosnippet>70</a>        <span class="comment">// Track the default binding mode for the Rust 2024 migration suggestion.
+<a href=#71 id=71 data-nosnippet>71</a>        // Implicitly dereferencing references changes the default binding mode, but implicit deref
+<a href=#72 id=72 data-nosnippet>72</a>        // patterns do not. Only track binding mode changes if a ref type is in the adjustments.
+<a href=#73 id=73 data-nosnippet>73</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>opt_old_mode_span = <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>;
+<a href=#74 id=74 data-nosnippet>74</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(s) = <span class="kw-2">&amp;mut </span><a class="self" href="#66">self</a>.rust_2024_migration
+<a href=#75 id=75 data-nosnippet>75</a>            &amp;&amp; <a href="#67">adjustments</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.any">any</a>(|adjust| <a href="#75">adjust</a>.kind == <a href="../../../../rustc_middle/ty/adjustment/enum.PatAdjust.html#variant.BuiltinDeref">PatAdjust::BuiltinDeref</a>)
+<a href=#76 id=76 data-nosnippet>76</a>        {
+<a href=#77 id=77 data-nosnippet>77</a>            <a href="#73">opt_old_mode_span</a> = <a href="#74">s</a>.<a href="migration.rs.html#92-122">visit_implicit_derefs</a>(<a href="#66">pat</a>.span, <a href="#67">adjustments</a>);
+<a href=#78 id=78 data-nosnippet>78</a>        }
+<a href=#79 id=79 data-nosnippet>79</a>
+<a href=#80 id=80 data-nosnippet>80</a>        <span class="comment">// When implicit dereferences have been inserted in this pattern, the unadjusted lowered
+<a href=#81 id=81 data-nosnippet>81</a>        // pattern has the type that results *after* dereferencing. For example, in this code:
+<a href=#82 id=82 data-nosnippet>82</a>        //
+<a href=#83 id=83 data-nosnippet>83</a>        // ```
+<a href=#84 id=84 data-nosnippet>84</a>        // match &amp;&amp;Some(0i32) {
+<a href=#85 id=85 data-nosnippet>85</a>        //     Some(n) =&gt; { ... },
+<a href=#86 id=86 data-nosnippet>86</a>        //     _ =&gt; { ... },
+<a href=#87 id=87 data-nosnippet>87</a>        // }
+<a href=#88 id=88 data-nosnippet>88</a>        // ```
+<a href=#89 id=89 data-nosnippet>89</a>        //
+<a href=#90 id=90 data-nosnippet>90</a>        // the type assigned to `Some(n)` in `unadjusted_pat` would be `Option&lt;i32&gt;` (this is
+<a href=#91 id=91 data-nosnippet>91</a>        // determined in rustc_hir_analysis::check::match). The adjustments would be
+<a href=#92 id=92 data-nosnippet>92</a>        //
+<a href=#93 id=93 data-nosnippet>93</a>        // `vec![&amp;&amp;Option&lt;i32&gt;, &amp;Option&lt;i32&gt;]`.
+<a href=#94 id=94 data-nosnippet>94</a>        //
+<a href=#95 id=95 data-nosnippet>95</a>        // Applying the adjustments, we want to instead output `&amp;&amp;Some(n)` (as a THIR pattern). So
+<a href=#96 id=96 data-nosnippet>96</a>        // we wrap the unadjusted pattern in `PatKind::Deref` repeatedly, consuming the
+<a href=#97 id=97 data-nosnippet>97</a>        // adjustments in *reverse order* (last-in-first-out, so that the last `Deref` inserted
+<a href=#98 id=98 data-nosnippet>98</a>        // gets the least-dereferenced type).
+<a href=#99 id=99 data-nosnippet>99</a>        </span><span class="kw">let </span>unadjusted_pat = <span class="kw">match </span><a href="#66">pat</a>.kind {
+<a href=#100 id=100 data-nosnippet>100</a>            <a href="../../../../rustc_hir/hir/enum.PatKind.html#variant.Ref">hir::PatKind::Ref</a>(inner, <span class="kw">_</span>)
+<a href=#101 id=101 data-nosnippet>101</a>                <span class="kw">if </span><a class="self" href="#66">self</a>.typeck_results.<a href="../../../../rustc_middle/ty/typeck_results/struct.TypeckResults.html#method.skipped_ref_pats">skipped_ref_pats</a>().<a href="../../../../rustc_middle/ty/typeck_results/struct.LocalSetInContext.html#method.contains">contains</a>(<a href="#66">pat</a>.hir_id) =&gt;
+<a href=#102 id=102 data-nosnippet>102</a>            {
+<a href=#103 id=103 data-nosnippet>103</a>                <a class="self" href="#66">self</a>.<a href="#66-128">lower_pattern</a>(<a href="#100">inner</a>)
+<a href=#104 id=104 data-nosnippet>104</a>            }
+<a href=#105 id=105 data-nosnippet>105</a>            <span class="kw">_ </span>=&gt; <a class="self" href="#66">self</a>.<a href="#289-407">lower_pattern_unadjusted</a>(<a href="#66">pat</a>),
+<a href=#106 id=106 data-nosnippet>106</a>        };
+<a href=#107 id=107 data-nosnippet>107</a>
+<a href=#108 id=108 data-nosnippet>108</a>        <span class="kw">let </span>adjusted_pat = <a href="#67">adjustments</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.rev">rev</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.fold">fold</a>(<a href="#99">unadjusted_pat</a>, |thir_pat, adjust| {
+<a href=#109 id=109 data-nosnippet>109</a>            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"{:?}: wrapping pattern with adjustment {:?}"</span>, thir_pat, adjust);
+<a href=#110 id=110 data-nosnippet>110</a>            <span class="kw">let </span>span = <a href="#108">thir_pat</a>.span;
+<a href=#111 id=111 data-nosnippet>111</a>            <span class="kw">let </span>kind = <span class="kw">match </span><a href="#108">adjust</a>.kind {
+<a href=#112 id=112 data-nosnippet>112</a>                <a href="../../../../rustc_middle/ty/adjustment/enum.PatAdjust.html#variant.BuiltinDeref">PatAdjust::BuiltinDeref</a> =&gt; <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.Deref">PatKind::Deref</a> { subpattern: <a href="#108">thir_pat</a> },
+<a href=#113 id=113 data-nosnippet>113</a>                <a href="../../../../rustc_middle/ty/adjustment/enum.PatAdjust.html#variant.OverloadedDeref">PatAdjust::OverloadedDeref</a> =&gt; {
+<a href=#114 id=114 data-nosnippet>114</a>                    <span class="kw">let </span>borrow = <a class="self" href="#66">self</a>.typeck_results.<a href="../../../../rustc_middle/ty/typeck_results/struct.TypeckResults.html#method.deref_pat_borrow_mode">deref_pat_borrow_mode</a>(<a href="#108">adjust</a>.source, <a href="#66">pat</a>);
+<a href=#115 id=115 data-nosnippet>115</a>                    <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.DerefPattern">PatKind::DerefPattern</a> { subpattern: <a href="#108">thir_pat</a>, <a href="#114">borrow</a> }
+<a href=#116 id=116 data-nosnippet>116</a>                }
+<a href=#117 id=117 data-nosnippet>117</a>            };
+<a href=#118 id=118 data-nosnippet>118</a>            <a href="https://doc.rust-lang.org/beta/alloc/boxed/struct.Box.html#method.new">Box::new</a>(<a href="../../../../rustc_middle/thir/struct.Pat.html">Pat</a> { <a href="#110">span</a>, ty: <a href="#108">adjust</a>.source, <a href="#111">kind</a> })
+<a href=#119 id=119 data-nosnippet>119</a>        });
+<a href=#120 id=120 data-nosnippet>120</a>
+<a href=#121 id=121 data-nosnippet>121</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(s) = <span class="kw-2">&amp;mut </span><a class="self" href="#66">self</a>.rust_2024_migration
+<a href=#122 id=122 data-nosnippet>122</a>            &amp;&amp; <a href="#67">adjustments</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.any">any</a>(|adjust| <a href="#122">adjust</a>.kind == <a href="../../../../rustc_middle/ty/adjustment/enum.PatAdjust.html#variant.BuiltinDeref">PatAdjust::BuiltinDeref</a>)
+<a href=#123 id=123 data-nosnippet>123</a>        {
+<a href=#124 id=124 data-nosnippet>124</a>            <a href="#121">s</a>.<a href="migration.rs.html#140-142">leave_ref</a>(<a href="#73">opt_old_mode_span</a>);
+<a href=#125 id=125 data-nosnippet>125</a>        }
+<a href=#126 id=126 data-nosnippet>126</a>
+<a href=#127 id=127 data-nosnippet>127</a>        <a href="#108">adjusted_pat</a>
+<a href=#128 id=128 data-nosnippet>128</a>    }
+<a href=#129 id=129 data-nosnippet>129</a>
+<a href=#130 id=130 data-nosnippet>130</a>    <span class="kw">fn </span>lower_pattern_range_endpoint(
+<a href=#131 id=131 data-nosnippet>131</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#132 id=132 data-nosnippet>132</a>        expr: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../../rustc_hir/hir/struct.PatExpr.html">hir::PatExpr</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#133 id=133 data-nosnippet>133</a>        <span class="comment">// Out-parameters collecting extra data to be reapplied by the caller
+<a href=#134 id=134 data-nosnippet>134</a>        </span>ascriptions: <span class="kw-2">&amp;mut </span><a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../../../rustc_middle/thir/struct.Ascription.html">Ascription</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#135 id=135 data-nosnippet>135</a>        expanded_consts: <span class="kw-2">&amp;mut </span><a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../../../rustc_span/def_id/struct.DefId.html">DefId</a>&gt;,
+<a href=#136 id=136 data-nosnippet>136</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html">Result</a>&lt;<a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="../../../../rustc_middle/thir/enum.PatRangeBoundary.html">PatRangeBoundary</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;, <a href="../../../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt; {
+<a href=#137 id=137 data-nosnippet>137</a>        <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(expr) = <a href="#132">expr</a> <span class="kw">else </span>{ <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>) };
+<a href=#138 id=138 data-nosnippet>138</a>
+<a href=#139 id=139 data-nosnippet>139</a>        <span class="comment">// Lower the endpoint into a temporary `PatKind` that will then be
+<a href=#140 id=140 data-nosnippet>140</a>        // deconstructed to obtain the constant value and other data.
+<a href=#141 id=141 data-nosnippet>141</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>kind: <a href="../../../../rustc_middle/thir/enum.PatKind.html">PatKind</a>&lt;<span class="lifetime">'tcx</span>&gt; = <a class="self" href="#131">self</a>.<a href="#648-689">lower_pat_expr</a>(<a href="#137">expr</a>, <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>);
+<a href=#142 id=142 data-nosnippet>142</a>
+<a href=#143 id=143 data-nosnippet>143</a>        <span class="comment">// Unpeel any ascription or inline-const wrapper nodes.
+<a href=#144 id=144 data-nosnippet>144</a>        </span><span class="kw">loop </span>{
+<a href=#145 id=145 data-nosnippet>145</a>            <span class="kw">match </span><a href="#141">kind</a> {
+<a href=#146 id=146 data-nosnippet>146</a>                <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.AscribeUserType">PatKind::AscribeUserType</a> { ascription, subpattern } =&gt; {
+<a href=#147 id=147 data-nosnippet>147</a>                    <a href="#134">ascriptions</a>.<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#146">ascription</a>);
+<a href=#148 id=148 data-nosnippet>148</a>                    <a href="#141">kind</a> = <a href="#146">subpattern</a>.kind;
+<a href=#149 id=149 data-nosnippet>149</a>                }
+<a href=#150 id=150 data-nosnippet>150</a>                <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.ExpandedConstant">PatKind::ExpandedConstant</a> { def_id, subpattern } =&gt; {
+<a href=#151 id=151 data-nosnippet>151</a>                    <a href="#135">expanded_consts</a>.<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#150">def_id</a>);
+<a href=#152 id=152 data-nosnippet>152</a>                    <a href="#141">kind</a> = <a href="#150">subpattern</a>.kind;
+<a href=#153 id=153 data-nosnippet>153</a>                }
+<a href=#154 id=154 data-nosnippet>154</a>                <span class="kw">_ </span>=&gt; <span class="kw">break</span>,
+<a href=#155 id=155 data-nosnippet>155</a>            }
+<a href=#156 id=156 data-nosnippet>156</a>        }
+<a href=#157 id=157 data-nosnippet>157</a>
+<a href=#158 id=158 data-nosnippet>158</a>        <span class="comment">// The unpeeled kind should now be a constant, giving us the endpoint value.
+<a href=#159 id=159 data-nosnippet>159</a>        </span><span class="kw">let </span><a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.Constant">PatKind::Constant</a> { value } = <a href="#141">kind</a> <span class="kw">else </span>{
+<a href=#160 id=160 data-nosnippet>160</a>            <span class="kw">let </span>msg =
+<a href=#161 id=161 data-nosnippet>161</a>                <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.format.html">format!</a>(<span class="string">"found bad range pattern endpoint `{expr:?}` outside of error recovery"</span>);
+<a href=#162 id=162 data-nosnippet>162</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Err">Err</a>(<a class="self" href="#131">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../../../rustc_errors/struct.DiagCtxtHandle.html#method.span_delayed_bug">span_delayed_bug</a>(<a href="#137">expr</a>.span, <a href="#160">msg</a>));
+<a href=#163 id=163 data-nosnippet>163</a>        };
+<a href=#164 id=164 data-nosnippet>164</a>        <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="../../../../rustc_middle/thir/enum.PatRangeBoundary.html#variant.Finite">PatRangeBoundary::Finite</a>(<a href="#159">value</a>.valtree)))
+<a href=#165 id=165 data-nosnippet>165</a>    }
+<a href=#166 id=166 data-nosnippet>166</a>
+<a href=#167 id=167 data-nosnippet>167</a>    <span class="doccomment">/// Overflowing literals are linted against in a late pass. This is mostly fine, except when we
+<a href=#168 id=168 data-nosnippet>168</a>    /// encounter a range pattern like `-130i8..2`: if we believe `eval_bits`, this looks like a
+<a href=#169 id=169 data-nosnippet>169</a>    /// range where the endpoints are in the wrong order. To avoid a confusing error message, we
+<a href=#170 id=170 data-nosnippet>170</a>    /// check for overflow then.
+<a href=#171 id=171 data-nosnippet>171</a>    /// This is only called when the range is already known to be malformed.
+<a href=#172 id=172 data-nosnippet>172</a>    </span><span class="kw">fn </span>error_on_literal_overflow(
+<a href=#173 id=173 data-nosnippet>173</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#174 id=174 data-nosnippet>174</a>        expr: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../../rustc_hir/hir/struct.PatExpr.html">hir::PatExpr</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#175 id=175 data-nosnippet>175</a>        ty: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#176 id=176 data-nosnippet>176</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html">Result</a>&lt;(), <a href="../../../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt; {
+<a href=#177 id=177 data-nosnippet>177</a>        <span class="kw">use </span><a href="../../../../rustc_ast/ast/enum.LitKind.html">rustc_ast::ast::LitKind</a>;
+<a href=#178 id=178 data-nosnippet>178</a>
+<a href=#179 id=179 data-nosnippet>179</a>        <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(expr) = <a href="#174">expr</a> <span class="kw">else </span>{
+<a href=#180 id=180 data-nosnippet>180</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(());
+<a href=#181 id=181 data-nosnippet>181</a>        };
+<a href=#182 id=182 data-nosnippet>182</a>        <span class="kw">let </span>span = <a href="#179">expr</a>.span;
+<a href=#183 id=183 data-nosnippet>183</a>
+<a href=#184 id=184 data-nosnippet>184</a>        <span class="comment">// We need to inspect the original expression, because if we only inspect the output of
+<a href=#185 id=185 data-nosnippet>185</a>        // `eval_bits`, an overflowed value has already been wrapped around.
+<a href=#186 id=186 data-nosnippet>186</a>        // We mostly copy the logic from the `rustc_lint::OVERFLOWING_LITERALS` lint.
+<a href=#187 id=187 data-nosnippet>187</a>        </span><span class="kw">let </span><a href="../../../../rustc_hir/hir/enum.PatExprKind.html#variant.Lit">hir::PatExprKind::Lit</a> { lit, negated } = <a href="#179">expr</a>.kind <span class="kw">else </span>{
+<a href=#188 id=188 data-nosnippet>188</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(());
+<a href=#189 id=189 data-nosnippet>189</a>        };
+<a href=#190 id=190 data-nosnippet>190</a>        <span class="kw">let </span><a href="../../../../rustc_ast/ast/enum.LitKind.html#variant.Int">LitKind::Int</a>(lit_val, <span class="kw">_</span>) = <a href="#187">lit</a>.node <span class="kw">else </span>{
+<a href=#191 id=191 data-nosnippet>191</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(());
+<a href=#192 id=192 data-nosnippet>192</a>        };
+<a href=#193 id=193 data-nosnippet>193</a>        <span class="kw">let </span>(min, max): (<a href="https://doc.rust-lang.org/beta/std/primitive.i128.html">i128</a>, <a href="https://doc.rust-lang.org/beta/std/primitive.u128.html">u128</a>) = <span class="kw">match </span><a href="#175">ty</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() {
+<a href=#194 id=194 data-nosnippet>194</a>            <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Int">ty::Int</a>(ity) =&gt; {
+<a href=#195 id=195 data-nosnippet>195</a>                <span class="kw">let </span>size = <a href="../../../../rustc_middle/ty/layout/trait.IntegerExt.html#tymethod.from_int_ty">Integer::from_int_ty</a>(<span class="kw-2">&amp;</span><a class="self" href="#173">self</a>.tcx, <span class="kw-2">*</span><a href="#194">ity</a>).<a href="../../../../rustc_abi/enum.Integer.html#method.size">size</a>();
+<a href=#196 id=196 data-nosnippet>196</a>                (<a href="#195">size</a>.<a href="../../../../rustc_abi/struct.Size.html#method.signed_int_min">signed_int_min</a>(), <a href="#195">size</a>.<a href="../../../../rustc_abi/struct.Size.html#method.signed_int_max">signed_int_max</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/beta/std/primitive.u128.html">u128</a>)
+<a href=#197 id=197 data-nosnippet>197</a>            }
+<a href=#198 id=198 data-nosnippet>198</a>            <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Uint">ty::Uint</a>(uty) =&gt; {
+<a href=#199 id=199 data-nosnippet>199</a>                <span class="kw">let </span>size = <a href="../../../../rustc_middle/ty/layout/trait.IntegerExt.html#tymethod.from_uint_ty">Integer::from_uint_ty</a>(<span class="kw-2">&amp;</span><a class="self" href="#173">self</a>.tcx, <span class="kw-2">*</span><a href="#198">uty</a>).<a href="../../../../rustc_abi/enum.Integer.html#method.size">size</a>();
+<a href=#200 id=200 data-nosnippet>200</a>                (<span class="number">0</span>, <a href="#199">size</a>.<a href="../../../../rustc_abi/struct.Size.html#method.unsigned_int_max">unsigned_int_max</a>())
+<a href=#201 id=201 data-nosnippet>201</a>            }
+<a href=#202 id=202 data-nosnippet>202</a>            <span class="kw">_ </span>=&gt; {
+<a href=#203 id=203 data-nosnippet>203</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(());
+<a href=#204 id=204 data-nosnippet>204</a>            }
+<a href=#205 id=205 data-nosnippet>205</a>        };
+<a href=#206 id=206 data-nosnippet>206</a>        <span class="comment">// Detect literal value out of range `[min, max]` inclusive, avoiding use of `-min` to
+<a href=#207 id=207 data-nosnippet>207</a>        // prevent overflow/panic.
+<a href=#208 id=208 data-nosnippet>208</a>        </span><span class="kw">if </span>(<a href="#187">negated</a> &amp;&amp; <a href="#190">lit_val</a> &gt; <a href="#193">max</a> + <span class="number">1</span>) || (!<a href="#187">negated</a> &amp;&amp; <a href="#190">lit_val</a> &gt; <a href="#193">max</a>) {
+<a href=#209 id=209 data-nosnippet>209</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Err">Err</a>(<a class="self" href="#173">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="../../errors.rs.html#752-759">LiteralOutOfRange</a> { <a href="#182">span</a>, <a href="#175">ty</a>, <a href="#193">min</a>, <a href="#193">max</a> }));
+<a href=#210 id=210 data-nosnippet>210</a>        }
+<a href=#211 id=211 data-nosnippet>211</a>        <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(())
+<a href=#212 id=212 data-nosnippet>212</a>    }
+<a href=#213 id=213 data-nosnippet>213</a>
+<a href=#214 id=214 data-nosnippet>214</a>    <span class="kw">fn </span>lower_pattern_range(
+<a href=#215 id=215 data-nosnippet>215</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#216 id=216 data-nosnippet>216</a>        lo_expr: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../../rustc_hir/hir/struct.PatExpr.html">hir::PatExpr</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#217 id=217 data-nosnippet>217</a>        hi_expr: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../../rustc_hir/hir/struct.PatExpr.html">hir::PatExpr</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#218 id=218 data-nosnippet>218</a>        end: <a href="../../../../rustc_hir/hir/enum.RangeEnd.html">RangeEnd</a>,
+<a href=#219 id=219 data-nosnippet>219</a>        ty: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#220 id=220 data-nosnippet>220</a>        span: <a href="../../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#221 id=221 data-nosnippet>221</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html">Result</a>&lt;<a href="../../../../rustc_middle/thir/enum.PatKind.html">PatKind</a>&lt;<span class="lifetime">'tcx</span>&gt;, <a href="../../../../rustc_span/struct.ErrorGuaranteed.html">ErrorGuaranteed</a>&gt; {
+<a href=#222 id=222 data-nosnippet>222</a>        <span class="kw">if </span><a href="#216">lo_expr</a>.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.is_none">is_none</a>() &amp;&amp; <a href="#217">hi_expr</a>.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.is_none">is_none</a>() {
+<a href=#223 id=223 data-nosnippet>223</a>            <span class="kw">let </span>msg = <span class="string">"found twice-open range pattern (`..`) outside of error recovery"</span>;
+<a href=#224 id=224 data-nosnippet>224</a>            <a class="self" href="#215">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../../../rustc_errors/struct.DiagCtxtHandle.html#method.span_bug">span_bug</a>(<a href="#220">span</a>, <a href="#223">msg</a>);
+<a href=#225 id=225 data-nosnippet>225</a>        }
+<a href=#226 id=226 data-nosnippet>226</a>
+<a href=#227 id=227 data-nosnippet>227</a>        <span class="comment">// Collect extra data while lowering the endpoints, to be reapplied later.
+<a href=#228 id=228 data-nosnippet>228</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>ascriptions = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[];
+<a href=#229 id=229 data-nosnippet>229</a>        <span class="kw">let </span><span class="kw-2">mut </span>expanded_consts = <a class="macro" href="https://doc.rust-lang.org/beta/alloc/macro.vec.html">vec!</a>[];
+<a href=#230 id=230 data-nosnippet>230</a>
+<a href=#231 id=231 data-nosnippet>231</a>        <span class="kw">let </span><span class="kw-2">mut </span>lower_endpoint =
+<a href=#232 id=232 data-nosnippet>232</a>            |expr| <a class="self" href="#215">self</a>.<a href="#130-165">lower_pattern_range_endpoint</a>(<a href="#232">expr</a>, <span class="kw-2">&amp;mut </span><a href="#228">ascriptions</a>, <span class="kw-2">&amp;mut </span><a href="#229">expanded_consts</a>);
+<a href=#233 id=233 data-nosnippet>233</a>
+<a href=#234 id=234 data-nosnippet>234</a>        <span class="kw">let </span>lo = <a href="#231">lower_endpoint</a>(<a href="#216">lo_expr</a>)<span class="question-mark">?</span>.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap_or">unwrap_or</a>(<a href="../../../../rustc_middle/thir/enum.PatRangeBoundary.html#variant.NegInfinity">PatRangeBoundary::NegInfinity</a>);
+<a href=#235 id=235 data-nosnippet>235</a>        <span class="kw">let </span>hi = <a href="#231">lower_endpoint</a>(<a href="#217">hi_expr</a>)<span class="question-mark">?</span>.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap_or">unwrap_or</a>(<a href="../../../../rustc_middle/thir/enum.PatRangeBoundary.html#variant.PosInfinity">PatRangeBoundary::PosInfinity</a>);
+<a href=#236 id=236 data-nosnippet>236</a>
+<a href=#237 id=237 data-nosnippet>237</a>        <span class="kw">let </span>cmp = <a href="#234">lo</a>.<a href="../../../../rustc_middle/thir/enum.PatRangeBoundary.html#method.compare_with">compare_with</a>(<a href="#235">hi</a>, <a href="#219">ty</a>, <a class="self" href="#215">self</a>.tcx);
+<a href=#238 id=238 data-nosnippet>238</a>        <span class="kw">let </span><span class="kw-2">mut </span>kind = <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.Range">PatKind::Range</a>(<a href="https://doc.rust-lang.org/beta/alloc/sync/struct.Arc.html#method.new">Arc::new</a>(<a href="../../../../rustc_middle/thir/struct.PatRange.html">PatRange</a> { <a href="#234">lo</a>, <a href="#235">hi</a>, <a href="#218">end</a>, <a href="#219">ty</a> }));
+<a href=#239 id=239 data-nosnippet>239</a>        <span class="kw">match </span>(<a href="#218">end</a>, <a href="#237">cmp</a>) {
+<a href=#240 id=240 data-nosnippet>240</a>            <span class="comment">// `x..y` where `x &lt; y`.
+<a href=#241 id=241 data-nosnippet>241</a>            </span>(RangeEnd::Excluded, <span class="prelude-val">Some</span>(Ordering::Less)) =&gt; {}
+<a href=#242 id=242 data-nosnippet>242</a>            <span class="comment">// `x..=y` where `x &lt; y`.
+<a href=#243 id=243 data-nosnippet>243</a>            </span>(RangeEnd::Included, <span class="prelude-val">Some</span>(Ordering::Less)) =&gt; {}
+<a href=#244 id=244 data-nosnippet>244</a>            <span class="comment">// `x..=y` where `x == y` and `x` and `y` are finite.
+<a href=#245 id=245 data-nosnippet>245</a>            </span>(RangeEnd::Included, <span class="prelude-val">Some</span>(Ordering::Equal)) <span class="kw">if </span><a href="#234">lo</a>.<a href="../../../../rustc_middle/thir/enum.PatRangeBoundary.html#method.is_finite">is_finite</a>() &amp;&amp; <a href="#235">hi</a>.<a href="../../../../rustc_middle/thir/enum.PatRangeBoundary.html#method.is_finite">is_finite</a>() =&gt; {
+<a href=#246 id=246 data-nosnippet>246</a>                <span class="kw">let </span>value = <a href="../../../../rustc_middle/ty/consts/valtree/struct.Value.html">ty::Value</a> { <a href="#219">ty</a>, valtree: <a href="#234">lo</a>.<a href="../../../../rustc_middle/thir/enum.PatRangeBoundary.html#method.as_finite">as_finite</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>() };
+<a href=#247 id=247 data-nosnippet>247</a>                <a href="#238">kind</a> = <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.Constant">PatKind::Constant</a> { <a href="#246">value</a> };
+<a href=#248 id=248 data-nosnippet>248</a>            }
+<a href=#249 id=249 data-nosnippet>249</a>            <span class="comment">// `..=x` where `x == ty::MIN`.
+<a href=#250 id=250 data-nosnippet>250</a>            </span>(RangeEnd::Included, <span class="prelude-val">Some</span>(Ordering::Equal)) <span class="kw">if </span>!<a href="#234">lo</a>.<a href="../../../../rustc_middle/thir/enum.PatRangeBoundary.html#method.is_finite">is_finite</a>() =&gt; {}
+<a href=#251 id=251 data-nosnippet>251</a>            <span class="comment">// `x..` where `x == ty::MAX` (yes, `x..` gives `RangeEnd::Included` since it is meant
+<a href=#252 id=252 data-nosnippet>252</a>            // to include `ty::MAX`).
+<a href=#253 id=253 data-nosnippet>253</a>            </span>(RangeEnd::Included, <span class="prelude-val">Some</span>(Ordering::Equal)) <span class="kw">if </span>!<a href="#235">hi</a>.<a href="../../../../rustc_middle/thir/enum.PatRangeBoundary.html#method.is_finite">is_finite</a>() =&gt; {}
+<a href=#254 id=254 data-nosnippet>254</a>            <span class="comment">// `x..y` where `x &gt;= y`, or `x..=y` where `x &gt; y`. The range is empty =&gt; error.
+<a href=#255 id=255 data-nosnippet>255</a>            </span><span class="kw">_ </span>=&gt; {
+<a href=#256 id=256 data-nosnippet>256</a>                <span class="comment">// Emit a more appropriate message if there was overflow.
+<a href=#257 id=257 data-nosnippet>257</a>                </span><a class="self" href="#215">self</a>.<a href="#172-212">error_on_literal_overflow</a>(<a href="#216">lo_expr</a>, <a href="#219">ty</a>)<span class="question-mark">?</span>;
+<a href=#258 id=258 data-nosnippet>258</a>                <a class="self" href="#215">self</a>.<a href="#172-212">error_on_literal_overflow</a>(<a href="#217">hi_expr</a>, <a href="#219">ty</a>)<span class="question-mark">?</span>;
+<a href=#259 id=259 data-nosnippet>259</a>                <span class="kw">let </span>e = <span class="kw">match </span><a href="#218">end</a> {
+<a href=#260 id=260 data-nosnippet>260</a>                    <a href="../../../../rustc_hir/hir/enum.RangeEnd.html#variant.Included">RangeEnd::Included</a> =&gt; {
+<a href=#261 id=261 data-nosnippet>261</a>                        <a class="self" href="#215">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="../../errors.rs.html#742-748">LowerRangeBoundMustBeLessThanOrEqualToUpper</a> {
+<a href=#262 id=262 data-nosnippet>262</a>                            <a href="#220">span</a>,
+<a href=#263 id=263 data-nosnippet>263</a>                            teach: <a class="self" href="#215">self</a>.tcx.sess.<a href="../../../../rustc_session/session/struct.Session.html#method.teach">teach</a>(<a href="../../../../rustc_errors/codes/constant.E0030.html">E0030</a>),
+<a href=#264 id=264 data-nosnippet>264</a>                        })
+<a href=#265 id=265 data-nosnippet>265</a>                    }
+<a href=#266 id=266 data-nosnippet>266</a>                    <a href="../../../../rustc_hir/hir/enum.RangeEnd.html#variant.Excluded">RangeEnd::Excluded</a> =&gt; {
+<a href=#267 id=267 data-nosnippet>267</a>                        <a class="self" href="#215">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="../../errors.rs.html#763-766">LowerRangeBoundMustBeLessThanUpper</a> { <a href="#220">span</a> })
+<a href=#268 id=268 data-nosnippet>268</a>                    }
+<a href=#269 id=269 data-nosnippet>269</a>                };
+<a href=#270 id=270 data-nosnippet>270</a>                <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Err">Err</a>(<a href="#259">e</a>);
+<a href=#271 id=271 data-nosnippet>271</a>            }
+<a href=#272 id=272 data-nosnippet>272</a>        }
+<a href=#273 id=273 data-nosnippet>273</a>
+<a href=#274 id=274 data-nosnippet>274</a>        <span class="comment">// If we are handling a range with associated constants (e.g.
+<a href=#275 id=275 data-nosnippet>275</a>        // `Foo::&lt;'a&gt;::A..=Foo::B`), we need to put the ascriptions for the associated
+<a href=#276 id=276 data-nosnippet>276</a>        // constants somewhere. Have them on the range pattern.
+<a href=#277 id=277 data-nosnippet>277</a>        </span><span class="kw">for </span>ascription <span class="kw">in </span>ascriptions {
+<a href=#278 id=278 data-nosnippet>278</a>            <span class="kw">let </span>subpattern = Box::new(Pat { span, ty, kind });
+<a href=#279 id=279 data-nosnippet>279</a>            kind = PatKind::AscribeUserType { ascription, subpattern };
+<a href=#280 id=280 data-nosnippet>280</a>        }
+<a href=#281 id=281 data-nosnippet>281</a>        <span class="kw">for </span>def_id <span class="kw">in </span>expanded_consts {
+<a href=#282 id=282 data-nosnippet>282</a>            <span class="kw">let </span>subpattern = Box::new(Pat { span, ty, kind });
+<a href=#283 id=283 data-nosnippet>283</a>            kind = PatKind::ExpandedConstant { def_id, subpattern };
+<a href=#284 id=284 data-nosnippet>284</a>        }
+<a href=#285 id=285 data-nosnippet>285</a>        <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="#238">kind</a>)
+<a href=#286 id=286 data-nosnippet>286</a>    }
+<a href=#287 id=287 data-nosnippet>287</a>
+<a href=#288 id=288 data-nosnippet>288</a>    <span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"debug"</span>)]
+<a href=#289 id=289 data-nosnippet>289</a>    </span><span class="kw">fn </span>lower_pattern_unadjusted(<span class="kw-2">&amp;mut </span><span class="self">self</span>, pat: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../../rustc_hir/hir/struct.Pat.html">hir::Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/beta/alloc/boxed/struct.Box.html">Box</a>&lt;<a href="../../../../rustc_middle/thir/struct.Pat.html">Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#290 id=290 data-nosnippet>290</a>        <span class="kw">let </span><span class="kw-2">mut </span>ty = <span class="self">self</span>.typeck_results.node_type(pat.hir_id);
+<a href=#291 id=291 data-nosnippet>291</a>        <span class="kw">let </span><span class="kw-2">mut </span>span = pat.span;
+<a href=#292 id=292 data-nosnippet>292</a>
+<a href=#293 id=293 data-nosnippet>293</a>        <span class="kw">let </span>kind = <span class="kw">match </span>pat.kind {
+<a href=#294 id=294 data-nosnippet>294</a>            hir::PatKind::Missing =&gt; PatKind::Missing,
+<a href=#295 id=295 data-nosnippet>295</a>
+<a href=#296 id=296 data-nosnippet>296</a>            hir::PatKind::Wild =&gt; PatKind::Wild,
+<a href=#297 id=297 data-nosnippet>297</a>
+<a href=#298 id=298 data-nosnippet>298</a>            hir::PatKind::Never =&gt; PatKind::Never,
+<a href=#299 id=299 data-nosnippet>299</a>
+<a href=#300 id=300 data-nosnippet>300</a>            hir::PatKind::Expr(value) =&gt; <span class="self">self</span>.lower_pat_expr(value, <span class="prelude-val">Some</span>(ty)),
+<a href=#301 id=301 data-nosnippet>301</a>
+<a href=#302 id=302 data-nosnippet>302</a>            hir::PatKind::Range(<span class="kw-2">ref </span>lo_expr, <span class="kw-2">ref </span>hi_expr, end) =&gt; {
+<a href=#303 id=303 data-nosnippet>303</a>                <span class="kw">let </span>(lo_expr, hi_expr) = (lo_expr.as_deref(), hi_expr.as_deref());
+<a href=#304 id=304 data-nosnippet>304</a>                <span class="self">self</span>.lower_pattern_range(lo_expr, hi_expr, end, ty, span)
+<a href=#305 id=305 data-nosnippet>305</a>                    .unwrap_or_else(PatKind::Error)
+<a href=#306 id=306 data-nosnippet>306</a>            }
+<a href=#307 id=307 data-nosnippet>307</a>
+<a href=#308 id=308 data-nosnippet>308</a>            hir::PatKind::Deref(subpattern) =&gt; {
+<a href=#309 id=309 data-nosnippet>309</a>                <span class="kw">let </span>borrow = <span class="self">self</span>.typeck_results.deref_pat_borrow_mode(ty, subpattern);
+<a href=#310 id=310 data-nosnippet>310</a>                PatKind::DerefPattern { subpattern: <span class="self">self</span>.lower_pattern(subpattern), borrow }
+<a href=#311 id=311 data-nosnippet>311</a>            }
+<a href=#312 id=312 data-nosnippet>312</a>            hir::PatKind::Ref(subpattern, <span class="kw">_</span>) =&gt; {
+<a href=#313 id=313 data-nosnippet>313</a>                <span class="comment">// Track the default binding mode for the Rust 2024 migration suggestion.
+<a href=#314 id=314 data-nosnippet>314</a>                </span><span class="kw">let </span>opt_old_mode_span =
+<a href=#315 id=315 data-nosnippet>315</a>                    <span class="self">self</span>.rust_2024_migration.as_mut().and_then(|s| s.visit_explicit_deref());
+<a href=#316 id=316 data-nosnippet>316</a>                <span class="kw">let </span>subpattern = <span class="self">self</span>.lower_pattern(subpattern);
+<a href=#317 id=317 data-nosnippet>317</a>                <span class="kw">if let </span><span class="prelude-val">Some</span>(s) = <span class="kw-2">&amp;mut </span><span class="self">self</span>.rust_2024_migration {
+<a href=#318 id=318 data-nosnippet>318</a>                    s.leave_ref(opt_old_mode_span);
+<a href=#319 id=319 data-nosnippet>319</a>                }
+<a href=#320 id=320 data-nosnippet>320</a>                PatKind::Deref { subpattern }
+<a href=#321 id=321 data-nosnippet>321</a>            }
+<a href=#322 id=322 data-nosnippet>322</a>            hir::PatKind::Box(subpattern) =&gt; PatKind::DerefPattern {
+<a href=#323 id=323 data-nosnippet>323</a>                subpattern: <span class="self">self</span>.lower_pattern(subpattern),
+<a href=#324 id=324 data-nosnippet>324</a>                borrow: hir::ByRef::No,
+<a href=#325 id=325 data-nosnippet>325</a>            },
+<a href=#326 id=326 data-nosnippet>326</a>
+<a href=#327 id=327 data-nosnippet>327</a>            hir::PatKind::Slice(prefix, slice, suffix) =&gt; {
+<a href=#328 id=328 data-nosnippet>328</a>                <span class="self">self</span>.slice_or_array_pattern(pat.span, ty, prefix, slice, suffix)
+<a href=#329 id=329 data-nosnippet>329</a>            }
+<a href=#330 id=330 data-nosnippet>330</a>
+<a href=#331 id=331 data-nosnippet>331</a>            hir::PatKind::Tuple(pats, ddpos) =&gt; {
+<a href=#332 id=332 data-nosnippet>332</a>                <span class="kw">let </span>ty::Tuple(tys) = ty.kind() <span class="kw">else </span>{
+<a href=#333 id=333 data-nosnippet>333</a>                    <span class="macro">span_bug!</span>(pat.span, <span class="string">"unexpected type for tuple pattern: {:?}"</span>, ty);
+<a href=#334 id=334 data-nosnippet>334</a>                };
+<a href=#335 id=335 data-nosnippet>335</a>                <span class="kw">let </span>subpatterns = <span class="self">self</span>.lower_tuple_subpats(pats, tys.len(), ddpos);
+<a href=#336 id=336 data-nosnippet>336</a>                PatKind::Leaf { subpatterns }
+<a href=#337 id=337 data-nosnippet>337</a>            }
+<a href=#338 id=338 data-nosnippet>338</a>
+<a href=#339 id=339 data-nosnippet>339</a>            hir::PatKind::Binding(explicit_ba, id, ident, sub) =&gt; {
+<a href=#340 id=340 data-nosnippet>340</a>                <span class="kw">if let </span><span class="prelude-val">Some</span>(ident_span) = ident.span.find_ancestor_inside(span) {
+<a href=#341 id=341 data-nosnippet>341</a>                    span = span.with_hi(ident_span.hi());
+<a href=#342 id=342 data-nosnippet>342</a>                }
+<a href=#343 id=343 data-nosnippet>343</a>
+<a href=#344 id=344 data-nosnippet>344</a>                <span class="kw">let </span>mode = <span class="kw-2">*</span><span class="self">self
+<a href=#345 id=345 data-nosnippet>345</a>                    </span>.typeck_results
+<a href=#346 id=346 data-nosnippet>346</a>                    .pat_binding_modes()
+<a href=#347 id=347 data-nosnippet>347</a>                    .get(pat.hir_id)
+<a href=#348 id=348 data-nosnippet>348</a>                    .expect(<span class="string">"missing binding mode"</span>);
+<a href=#349 id=349 data-nosnippet>349</a>
+<a href=#350 id=350 data-nosnippet>350</a>                <span class="kw">if let </span><span class="prelude-val">Some</span>(s) = <span class="kw-2">&amp;mut </span><span class="self">self</span>.rust_2024_migration {
+<a href=#351 id=351 data-nosnippet>351</a>                    s.visit_binding(pat.span, mode, explicit_ba, ident);
+<a href=#352 id=352 data-nosnippet>352</a>                }
+<a href=#353 id=353 data-nosnippet>353</a>
+<a href=#354 id=354 data-nosnippet>354</a>                <span class="comment">// A ref x pattern is the same node used for x, and as such it has
+<a href=#355 id=355 data-nosnippet>355</a>                // x's type, which is &amp;T, where we want T (the type being matched).
+<a href=#356 id=356 data-nosnippet>356</a>                </span><span class="kw">let </span>var_ty = ty;
+<a href=#357 id=357 data-nosnippet>357</a>                <span class="kw">if let </span>hir::ByRef::Yes(<span class="kw">_</span>) = mode.<span class="number">0 </span>{
+<a href=#358 id=358 data-nosnippet>358</a>                    <span class="kw">if let </span>ty::Ref(<span class="kw">_</span>, rty, <span class="kw">_</span>) = ty.kind() {
+<a href=#359 id=359 data-nosnippet>359</a>                        ty = <span class="kw-2">*</span>rty;
+<a href=#360 id=360 data-nosnippet>360</a>                    } <span class="kw">else </span>{
+<a href=#361 id=361 data-nosnippet>361</a>                        <span class="macro">bug!</span>(<span class="string">"`ref {}` has wrong type {}"</span>, ident, ty);
+<a href=#362 id=362 data-nosnippet>362</a>                    }
+<a href=#363 id=363 data-nosnippet>363</a>                };
+<a href=#364 id=364 data-nosnippet>364</a>
+<a href=#365 id=365 data-nosnippet>365</a>                PatKind::Binding {
+<a href=#366 id=366 data-nosnippet>366</a>                    mode,
+<a href=#367 id=367 data-nosnippet>367</a>                    name: ident.name,
+<a href=#368 id=368 data-nosnippet>368</a>                    var: LocalVarId(id),
+<a href=#369 id=369 data-nosnippet>369</a>                    ty: var_ty,
+<a href=#370 id=370 data-nosnippet>370</a>                    subpattern: <span class="self">self</span>.lower_opt_pattern(sub),
+<a href=#371 id=371 data-nosnippet>371</a>                    is_primary: id == pat.hir_id,
+<a href=#372 id=372 data-nosnippet>372</a>                }
+<a href=#373 id=373 data-nosnippet>373</a>            }
+<a href=#374 id=374 data-nosnippet>374</a>
+<a href=#375 id=375 data-nosnippet>375</a>            hir::PatKind::TupleStruct(<span class="kw-2">ref </span>qpath, pats, ddpos) =&gt; {
+<a href=#376 id=376 data-nosnippet>376</a>                <span class="kw">let </span>res = <span class="self">self</span>.typeck_results.qpath_res(qpath, pat.hir_id);
+<a href=#377 id=377 data-nosnippet>377</a>                <span class="kw">let </span>ty::Adt(adt_def, <span class="kw">_</span>) = ty.kind() <span class="kw">else </span>{
+<a href=#378 id=378 data-nosnippet>378</a>                    <span class="macro">span_bug!</span>(pat.span, <span class="string">"tuple struct pattern not applied to an ADT {:?}"</span>, ty);
+<a href=#379 id=379 data-nosnippet>379</a>                };
+<a href=#380 id=380 data-nosnippet>380</a>                <span class="kw">let </span>variant_def = adt_def.variant_of_res(res);
+<a href=#381 id=381 data-nosnippet>381</a>                <span class="kw">let </span>subpatterns = <span class="self">self</span>.lower_tuple_subpats(pats, variant_def.fields.len(), ddpos);
+<a href=#382 id=382 data-nosnippet>382</a>                <span class="self">self</span>.lower_variant_or_leaf(res, pat.hir_id, pat.span, ty, subpatterns)
+<a href=#383 id=383 data-nosnippet>383</a>            }
+<a href=#384 id=384 data-nosnippet>384</a>
+<a href=#385 id=385 data-nosnippet>385</a>            hir::PatKind::Struct(<span class="kw-2">ref </span>qpath, fields, <span class="kw">_</span>) =&gt; {
+<a href=#386 id=386 data-nosnippet>386</a>                <span class="kw">let </span>res = <span class="self">self</span>.typeck_results.qpath_res(qpath, pat.hir_id);
+<a href=#387 id=387 data-nosnippet>387</a>                <span class="kw">let </span>subpatterns = fields
+<a href=#388 id=388 data-nosnippet>388</a>                    .iter()
+<a href=#389 id=389 data-nosnippet>389</a>                    .map(|field| FieldPat {
+<a href=#390 id=390 data-nosnippet>390</a>                        field: <span class="self">self</span>.typeck_results.field_index(field.hir_id),
+<a href=#391 id=391 data-nosnippet>391</a>                        pattern: <span class="kw-2">*</span><span class="self">self</span>.lower_pattern(field.pat),
+<a href=#392 id=392 data-nosnippet>392</a>                    })
+<a href=#393 id=393 data-nosnippet>393</a>                    .collect();
+<a href=#394 id=394 data-nosnippet>394</a>
+<a href=#395 id=395 data-nosnippet>395</a>                <span class="self">self</span>.lower_variant_or_leaf(res, pat.hir_id, pat.span, ty, subpatterns)
+<a href=#396 id=396 data-nosnippet>396</a>            }
+<a href=#397 id=397 data-nosnippet>397</a>
+<a href=#398 id=398 data-nosnippet>398</a>            hir::PatKind::Or(pats) =&gt; PatKind::Or { pats: <span class="self">self</span>.lower_patterns(pats) },
+<a href=#399 id=399 data-nosnippet>399</a>
+<a href=#400 id=400 data-nosnippet>400</a>            <span class="comment">// FIXME(guard_patterns): implement guard pattern lowering
+<a href=#401 id=401 data-nosnippet>401</a>            </span>hir::PatKind::Guard(pat, <span class="kw">_</span>) =&gt; <span class="self">self</span>.lower_pattern(pat).kind,
+<a href=#402 id=402 data-nosnippet>402</a>
+<a href=#403 id=403 data-nosnippet>403</a>            hir::PatKind::Err(guar) =&gt; PatKind::Error(guar),
+<a href=#404 id=404 data-nosnippet>404</a>        };
+<a href=#405 id=405 data-nosnippet>405</a>
+<a href=#406 id=406 data-nosnippet>406</a>        Box::new(Pat { span, ty, kind })
+<a href=#407 id=407 data-nosnippet>407</a>    }
+<a href=#408 id=408 data-nosnippet>408</a>
+<a href=#409 id=409 data-nosnippet>409</a>    <span class="kw">fn </span>lower_tuple_subpats(
+<a href=#410 id=410 data-nosnippet>410</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#411 id=411 data-nosnippet>411</a>        pats: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>[<a href="../../../../rustc_hir/hir/struct.Pat.html">hir::Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;],
+<a href=#412 id=412 data-nosnippet>412</a>        expected_len: <a href="https://doc.rust-lang.org/beta/std/primitive.usize.html">usize</a>,
+<a href=#413 id=413 data-nosnippet>413</a>        gap_pos: <a href="../../../../rustc_hir/hir/struct.DotDotPos.html">hir::DotDotPos</a>,
+<a href=#414 id=414 data-nosnippet>414</a>    ) -&gt; <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../../../rustc_middle/thir/struct.FieldPat.html">FieldPat</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#415 id=415 data-nosnippet>415</a>        <a href="#411">pats</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.iter">iter</a>()
+<a href=#416 id=416 data-nosnippet>416</a>            .<a href="../../../../rustc_hir/pat_util/trait.EnumerateAndAdjustIterator.html#tymethod.enumerate_and_adjust">enumerate_and_adjust</a>(<a href="#412">expected_len</a>, <a href="#413">gap_pos</a>)
+<a href=#417 id=417 data-nosnippet>417</a>            .<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|(i, subpattern)| <a href="../../../../rustc_middle/thir/struct.FieldPat.html">FieldPat</a> {
+<a href=#418 id=418 data-nosnippet>418</a>                field: <a href="../../../../rustc_index/idx/trait.Idx.html#tymethod.new">FieldIdx::new</a>(<a href="#417">i</a>),
+<a href=#419 id=419 data-nosnippet>419</a>                pattern: <span class="kw-2">*</span><a class="self" href="#410">self</a>.<a href="#66-128">lower_pattern</a>(<a href="#417">subpattern</a>),
+<a href=#420 id=420 data-nosnippet>420</a>            })
+<a href=#421 id=421 data-nosnippet>421</a>            .<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>()
+<a href=#422 id=422 data-nosnippet>422</a>    }
+<a href=#423 id=423 data-nosnippet>423</a>
+<a href=#424 id=424 data-nosnippet>424</a>    <span class="kw">fn </span>lower_patterns(<span class="kw-2">&amp;mut </span><span class="self">self</span>, pats: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>[<a href="../../../../rustc_hir/hir/struct.Pat.html">hir::Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;]) -&gt; <a href="https://doc.rust-lang.org/beta/alloc/boxed/struct.Box.html">Box</a>&lt;[<a href="../../../../rustc_middle/thir/struct.Pat.html">Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;]&gt; {
+<a href=#425 id=425 data-nosnippet>425</a>        <a href="#424">pats</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|p| <span class="kw-2">*</span><a class="self" href="#424">self</a>.<a href="#66-128">lower_pattern</a>(<a href="#425">p</a>)).<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>()
+<a href=#426 id=426 data-nosnippet>426</a>    }
+<a href=#427 id=427 data-nosnippet>427</a>
+<a href=#428 id=428 data-nosnippet>428</a>    <span class="kw">fn </span>lower_opt_pattern(<span class="kw-2">&amp;mut </span><span class="self">self</span>, pat: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../../rustc_hir/hir/struct.Pat.html">hir::Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/beta/alloc/boxed/struct.Box.html">Box</a>&lt;<a href="../../../../rustc_middle/thir/struct.Pat.html">Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;&gt; {
+<a href=#429 id=429 data-nosnippet>429</a>        <a href="#428">pat</a>.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.map">map</a>(|p| <a class="self" href="#428">self</a>.<a href="#66-128">lower_pattern</a>(<a href="#429">p</a>))
+<a href=#430 id=430 data-nosnippet>430</a>    }
+<a href=#431 id=431 data-nosnippet>431</a>
+<a href=#432 id=432 data-nosnippet>432</a>    <span class="kw">fn </span>slice_or_array_pattern(
+<a href=#433 id=433 data-nosnippet>433</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#434 id=434 data-nosnippet>434</a>        span: <a href="../../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#435 id=435 data-nosnippet>435</a>        ty: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#436 id=436 data-nosnippet>436</a>        prefix: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>[<a href="../../../../rustc_hir/hir/struct.Pat.html">hir::Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;],
+<a href=#437 id=437 data-nosnippet>437</a>        slice: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../../rustc_hir/hir/struct.Pat.html">hir::Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#438 id=438 data-nosnippet>438</a>        suffix: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span>[<a href="../../../../rustc_hir/hir/struct.Pat.html">hir::Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;],
+<a href=#439 id=439 data-nosnippet>439</a>    ) -&gt; <a href="../../../../rustc_middle/thir/enum.PatKind.html">PatKind</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#440 id=440 data-nosnippet>440</a>        <span class="kw">let </span>prefix = <a class="self" href="#433">self</a>.<a href="#424-426">lower_patterns</a>(<a href="#436">prefix</a>);
+<a href=#441 id=441 data-nosnippet>441</a>        <span class="kw">let </span>slice = <a class="self" href="#433">self</a>.<a href="#428-430">lower_opt_pattern</a>(<a href="#437">slice</a>);
+<a href=#442 id=442 data-nosnippet>442</a>        <span class="kw">let </span>suffix = <a class="self" href="#433">self</a>.<a href="#424-426">lower_patterns</a>(<a href="#438">suffix</a>);
+<a href=#443 id=443 data-nosnippet>443</a>        <span class="kw">match </span><a href="#435">ty</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() {
+<a href=#444 id=444 data-nosnippet>444</a>            <span class="comment">// Matching a slice, `[T]`.
+<a href=#445 id=445 data-nosnippet>445</a>            </span><a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Slice">ty::Slice</a>(..) =&gt; <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.Slice">PatKind::Slice</a> { <a href="#440">prefix</a>, <a href="#441">slice</a>, <a href="#442">suffix</a> },
+<a href=#446 id=446 data-nosnippet>446</a>            <span class="comment">// Fixed-length array, `[T; len]`.
+<a href=#447 id=447 data-nosnippet>447</a>            </span><a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Array">ty::Array</a>(<span class="kw">_</span>, len) =&gt; {
+<a href=#448 id=448 data-nosnippet>448</a>                <span class="kw">let </span>len = <a href="#447">len</a>
+<a href=#449 id=449 data-nosnippet>449</a>                    .<a href="../../../../rustc_middle/ty/consts/struct.Const.html#method.try_to_target_usize">try_to_target_usize</a>(<a class="self" href="#433">self</a>.tcx)
+<a href=#450 id=450 data-nosnippet>450</a>                    .<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.expect">expect</a>(<span class="string">"expected len of array pat to be definite"</span>);
+<a href=#451 id=451 data-nosnippet>451</a>                <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(len &gt;= prefix.len() <span class="kw">as </span>u64 + suffix.len() <span class="kw">as </span>u64);
+<a href=#452 id=452 data-nosnippet>452</a>                <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.Array">PatKind::Array</a> { <a href="#440">prefix</a>, <a href="#441">slice</a>, <a href="#442">suffix</a> }
+<a href=#453 id=453 data-nosnippet>453</a>            }
+<a href=#454 id=454 data-nosnippet>454</a>            <span class="kw">_ </span>=&gt; <a class="macro" href="../../../../rustc_middle/macro.span_bug.html">span_bug!</a>(<a href="#434">span</a>, <span class="string">"bad slice pattern type {:?}"</span>, ty),
+<a href=#455 id=455 data-nosnippet>455</a>        }
+<a href=#456 id=456 data-nosnippet>456</a>    }
+<a href=#457 id=457 data-nosnippet>457</a>
+<a href=#458 id=458 data-nosnippet>458</a>    <span class="kw">fn </span>lower_variant_or_leaf(
+<a href=#459 id=459 data-nosnippet>459</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#460 id=460 data-nosnippet>460</a>        res: <a href="../../../../rustc_hir/def/enum.Res.html">Res</a>,
+<a href=#461 id=461 data-nosnippet>461</a>        hir_id: <a href="../../../../rustc_hir_id/struct.HirId.html">hir::HirId</a>,
+<a href=#462 id=462 data-nosnippet>462</a>        span: <a href="../../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#463 id=463 data-nosnippet>463</a>        ty: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#464 id=464 data-nosnippet>464</a>        subpatterns: <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../../../rustc_middle/thir/struct.FieldPat.html">FieldPat</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#465 id=465 data-nosnippet>465</a>    ) -&gt; <a href="../../../../rustc_middle/thir/enum.PatKind.html">PatKind</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#466 id=466 data-nosnippet>466</a>        <span class="kw">let </span>res = <span class="kw">match </span><a href="#460">res</a> {
+<a href=#467 id=467 data-nosnippet>467</a>            <a href="../../../../rustc_hir/def/enum.Res.html#variant.Def">Res::Def</a>(DefKind::Ctor(CtorOf::Variant, ..), variant_ctor_id) =&gt; {
+<a href=#468 id=468 data-nosnippet>468</a>                <span class="kw">let </span>variant_id = <a class="self" href="#459">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.parent">parent</a>(<a href="#467">variant_ctor_id</a>);
+<a href=#469 id=469 data-nosnippet>469</a>                <a href="../../../../rustc_hir/def/enum.Res.html#variant.Def">Res::Def</a>(<a href="../../../../rustc_hir/def/enum.DefKind.html#variant.Variant">DefKind::Variant</a>, <a href="#468">variant_id</a>)
+<a href=#470 id=470 data-nosnippet>470</a>            }
+<a href=#471 id=471 data-nosnippet>471</a>            res =&gt; <a href="#471">res</a>,
+<a href=#472 id=472 data-nosnippet>472</a>        };
+<a href=#473 id=473 data-nosnippet>473</a>
+<a href=#474 id=474 data-nosnippet>474</a>        <span class="kw">let </span><span class="kw-2">mut </span>kind = <span class="kw">match </span><a href="#466">res</a> {
+<a href=#475 id=475 data-nosnippet>475</a>            <a href="../../../../rustc_hir/def/enum.Res.html#variant.Def">Res::Def</a>(DefKind::Variant, variant_id) =&gt; {
+<a href=#476 id=476 data-nosnippet>476</a>                <span class="kw">let </span>enum_id = <a class="self" href="#459">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.parent">parent</a>(<a href="#475">variant_id</a>);
+<a href=#477 id=477 data-nosnippet>477</a>                <span class="kw">let </span>adt_def = <a class="self" href="#459">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.adt_def">adt_def</a>(<a href="#476">enum_id</a>);
+<a href=#478 id=478 data-nosnippet>478</a>                <span class="kw">if </span><a href="#477">adt_def</a>.<a href="../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.is_enum">is_enum</a>() {
+<a href=#479 id=479 data-nosnippet>479</a>                    <span class="kw">let </span>args = <span class="kw">match </span><a href="#463">ty</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() {
+<a href=#480 id=480 data-nosnippet>480</a>                        <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Adt">ty::Adt</a>(<span class="kw">_</span>, args) | <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.FnDef">ty::FnDef</a>(<span class="kw">_</span>, args) =&gt; <a href="#480">args</a>,
+<a href=#481 id=481 data-nosnippet>481</a>                        <a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Error">ty::Error</a>(e) =&gt; {
+<a href=#482 id=482 data-nosnippet>482</a>                            <span class="comment">// Avoid ICE (#50585)
+<a href=#483 id=483 data-nosnippet>483</a>                            </span><span class="kw">return </span><a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.Error">PatKind::Error</a>(<span class="kw-2">*</span><a href="#481">e</a>);
+<a href=#484 id=484 data-nosnippet>484</a>                        }
+<a href=#485 id=485 data-nosnippet>485</a>                        <span class="kw">_ </span>=&gt; <a class="macro" href="../../../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"inappropriate type for def: {:?}"</span>, ty),
+<a href=#486 id=486 data-nosnippet>486</a>                    };
+<a href=#487 id=487 data-nosnippet>487</a>                    <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.Variant">PatKind::Variant</a> {
+<a href=#488 id=488 data-nosnippet>488</a>                        <a href="#477">adt_def</a>,
+<a href=#489 id=489 data-nosnippet>489</a>                        <a href="#479">args</a>,
+<a href=#490 id=490 data-nosnippet>490</a>                        variant_index: <a href="#477">adt_def</a>.<a href="../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.variant_index_with_id">variant_index_with_id</a>(<a href="#475">variant_id</a>),
+<a href=#491 id=491 data-nosnippet>491</a>                        <a href="#464">subpatterns</a>,
+<a href=#492 id=492 data-nosnippet>492</a>                    }
+<a href=#493 id=493 data-nosnippet>493</a>                } <span class="kw">else </span>{
+<a href=#494 id=494 data-nosnippet>494</a>                    <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.Leaf">PatKind::Leaf</a> { <a href="#464">subpatterns</a> }
+<a href=#495 id=495 data-nosnippet>495</a>                }
+<a href=#496 id=496 data-nosnippet>496</a>            }
+<a href=#497 id=497 data-nosnippet>497</a>
+<a href=#498 id=498 data-nosnippet>498</a>            <a href="../../../../rustc_hir/def/enum.Res.html#variant.Def">Res::Def</a>(
+<a href=#499 id=499 data-nosnippet>499</a>                DefKind::Struct
+<a href=#500 id=500 data-nosnippet>500</a>                | DefKind::Ctor(CtorOf::Struct, ..)
+<a href=#501 id=501 data-nosnippet>501</a>                | DefKind::Union
+<a href=#502 id=502 data-nosnippet>502</a>                | DefKind::TyAlias
+<a href=#503 id=503 data-nosnippet>503</a>                | DefKind::AssocTy,
+<a href=#504 id=504 data-nosnippet>504</a>                <span class="kw">_</span>,
+<a href=#505 id=505 data-nosnippet>505</a>            )
+<a href=#506 id=506 data-nosnippet>506</a>            | <a href="../../../../rustc_hir/def/enum.Res.html#variant.SelfTyParam">Res::SelfTyParam</a> { .. }
+<a href=#507 id=507 data-nosnippet>507</a>            | <a href="../../../../rustc_hir/def/enum.Res.html#variant.SelfTyAlias">Res::SelfTyAlias</a> { .. }
+<a href=#508 id=508 data-nosnippet>508</a>            | <a href="../../../../rustc_hir/def/enum.Res.html#variant.SelfCtor">Res::SelfCtor</a>(..) =&gt; <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.Leaf">PatKind::Leaf</a> { <a href="#464">subpatterns</a> },
+<a href=#509 id=509 data-nosnippet>509</a>            <span class="kw">_ </span>=&gt; {
+<a href=#510 id=510 data-nosnippet>510</a>                <span class="kw">let </span>e = <span class="kw">match </span><a href="#466">res</a> {
+<a href=#511 id=511 data-nosnippet>511</a>                    <a href="../../../../rustc_hir/def/enum.Res.html#variant.Def">Res::Def</a>(DefKind::ConstParam, def_id) =&gt; {
+<a href=#512 id=512 data-nosnippet>512</a>                        <span class="kw">let </span>const_span = <a class="self" href="#459">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.def_span">def_span</a>(<a href="#511">def_id</a>);
+<a href=#513 id=513 data-nosnippet>513</a>                        <a class="self" href="#459">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="../../errors.rs.html#665-671">ConstParamInPattern</a> { <a href="#462">span</a>, <a href="#512">const_span</a> })
+<a href=#514 id=514 data-nosnippet>514</a>                    }
+<a href=#515 id=515 data-nosnippet>515</a>                    <a href="../../../../rustc_hir/def/enum.Res.html#variant.Def">Res::Def</a>(DefKind::Static { .. }, def_id) =&gt; {
+<a href=#516 id=516 data-nosnippet>516</a>                        <span class="kw">let </span>static_span = <a class="self" href="#459">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.def_span">def_span</a>(<a href="#515">def_id</a>);
+<a href=#517 id=517 data-nosnippet>517</a>                        <a class="self" href="#459">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="../../errors.rs.html#655-661">StaticInPattern</a> { <a href="#462">span</a>, <a href="#516">static_span</a> })
+<a href=#518 id=518 data-nosnippet>518</a>                    }
+<a href=#519 id=519 data-nosnippet>519</a>                    <span class="kw">_ </span>=&gt; <a class="self" href="#459">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.dcx">dcx</a>().<a href="../../../../rustc_errors/struct.DiagCtxtHandle.html#method.emit_err">emit_err</a>(<a href="../../errors.rs.html#675-679">NonConstPath</a> { <a href="#462">span</a> }),
+<a href=#520 id=520 data-nosnippet>520</a>                };
+<a href=#521 id=521 data-nosnippet>521</a>                <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.Error">PatKind::Error</a>(<a href="#510">e</a>)
+<a href=#522 id=522 data-nosnippet>522</a>            }
+<a href=#523 id=523 data-nosnippet>523</a>        };
+<a href=#524 id=524 data-nosnippet>524</a>
+<a href=#525 id=525 data-nosnippet>525</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(user_ty) = <a class="self" href="#459">self</a>.<a href="#541-546">user_args_applied_to_ty_of_hir_id</a>(<a href="#461">hir_id</a>) {
+<a href=#526 id=526 data-nosnippet>526</a>            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"lower_variant_or_leaf: kind={:?} user_ty={:?} span={:?}"</span>, kind, user_ty, span);
+<a href=#527 id=527 data-nosnippet>527</a>            <span class="kw">let </span>annotation = <a href="../../../../rustc_middle/ty/typeck_results/struct.CanonicalUserTypeAnnotation.html">CanonicalUserTypeAnnotation</a> {
+<a href=#528 id=528 data-nosnippet>528</a>                user_ty: <a href="https://doc.rust-lang.org/beta/alloc/boxed/struct.Box.html#method.new">Box::new</a>(<a href="#525">user_ty</a>),
+<a href=#529 id=529 data-nosnippet>529</a>                <a href="#462">span</a>,
+<a href=#530 id=530 data-nosnippet>530</a>                inferred_ty: <a class="self" href="#459">self</a>.typeck_results.<a href="../../../../rustc_middle/ty/typeck_results/struct.TypeckResults.html#method.node_type">node_type</a>(<a href="#461">hir_id</a>),
+<a href=#531 id=531 data-nosnippet>531</a>            };
+<a href=#532 id=532 data-nosnippet>532</a>            <a href="#474">kind</a> = <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.AscribeUserType">PatKind::AscribeUserType</a> {
+<a href=#533 id=533 data-nosnippet>533</a>                subpattern: <a href="https://doc.rust-lang.org/beta/alloc/boxed/struct.Box.html#method.new">Box::new</a>(<a href="../../../../rustc_middle/thir/struct.Pat.html">Pat</a> { <a href="#462">span</a>, <a href="#463">ty</a>, <a href="#474">kind</a> }),
+<a href=#534 id=534 data-nosnippet>534</a>                ascription: <a href="../../../../rustc_middle/thir/struct.Ascription.html">Ascription</a> { <a href="#527">annotation</a>, variance: <a href="../../../../rustc_type_ir/enum.Variance.html#variant.Covariant">ty::Covariant</a> },
+<a href=#535 id=535 data-nosnippet>535</a>            };
+<a href=#536 id=536 data-nosnippet>536</a>        }
+<a href=#537 id=537 data-nosnippet>537</a>
+<a href=#538 id=538 data-nosnippet>538</a>        <a href="#474">kind</a>
+<a href=#539 id=539 data-nosnippet>539</a>    }
+<a href=#540 id=540 data-nosnippet>540</a>
+<a href=#541 id=541 data-nosnippet>541</a>    <span class="kw">fn </span>user_args_applied_to_ty_of_hir_id(
+<a href=#542 id=542 data-nosnippet>542</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#543 id=543 data-nosnippet>543</a>        hir_id: <a href="../../../../rustc_hir_id/struct.HirId.html">hir::HirId</a>,
+<a href=#544 id=544 data-nosnippet>544</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="../../../../rustc_middle/ty/typeck_results/type.CanonicalUserType.html">ty::CanonicalUserType</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#545 id=545 data-nosnippet>545</a>        <a href="../util.rs.html#12-47"><span class="kw">crate</span>::thir::util::user_args_applied_to_ty_of_hir_id</a>(<a class="self" href="#542">self</a>.tcx, <a class="self" href="#542">self</a>.typeck_results, <a href="#543">hir_id</a>)
+<a href=#546 id=546 data-nosnippet>546</a>    }
+<a href=#547 id=547 data-nosnippet>547</a>
+<a href=#548 id=548 data-nosnippet>548</a>    <span class="doccomment">/// Takes a HIR Path. If the path is a constant, evaluates it and feeds
+<a href=#549 id=549 data-nosnippet>549</a>    /// it to `const_to_pat`. Any other path (like enum variants without fields)
+<a href=#550 id=550 data-nosnippet>550</a>    /// is converted to the corresponding pattern via `lower_variant_or_leaf`.
+<a href=#551 id=551 data-nosnippet>551</a>    </span><span class="attr">#[instrument(skip(<span class="self">self</span>), level = <span class="string">"debug"</span>)]
+<a href=#552 id=552 data-nosnippet>552</a>    </span><span class="kw">fn </span>lower_path(<span class="kw-2">&amp;mut </span><span class="self">self</span>, qpath: <span class="kw-2">&amp;</span><a href="../../../../rustc_hir/hir/enum.QPath.html">hir::QPath</a>&lt;<span class="lifetime">'_</span>&gt;, id: <a href="../../../../rustc_hir_id/struct.HirId.html">hir::HirId</a>, span: <a href="../../../../rustc_span/span_encoding/struct.Span.html">Span</a>) -&gt; <a href="https://doc.rust-lang.org/beta/alloc/boxed/struct.Box.html">Box</a>&lt;<a href="../../../../rustc_middle/thir/struct.Pat.html">Pat</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; {
+<a href=#553 id=553 data-nosnippet>553</a>        <span class="kw">let </span>ty = <span class="self">self</span>.typeck_results.node_type(id);
+<a href=#554 id=554 data-nosnippet>554</a>        <span class="kw">let </span>res = <span class="self">self</span>.typeck_results.qpath_res(qpath, id);
+<a href=#555 id=555 data-nosnippet>555</a>
+<a href=#556 id=556 data-nosnippet>556</a>        <span class="kw">let </span>(def_id, user_ty) = <span class="kw">match </span>res {
+<a href=#557 id=557 data-nosnippet>557</a>            Res::Def(DefKind::Const, def_id) | Res::Def(DefKind::AssocConst, def_id) =&gt; {
+<a href=#558 id=558 data-nosnippet>558</a>                (def_id, <span class="self">self</span>.typeck_results.user_provided_types().get(id))
+<a href=#559 id=559 data-nosnippet>559</a>            }
+<a href=#560 id=560 data-nosnippet>560</a>
+<a href=#561 id=561 data-nosnippet>561</a>            <span class="kw">_ </span>=&gt; {
+<a href=#562 id=562 data-nosnippet>562</a>                <span class="comment">// The path isn't the name of a constant, so it must actually
+<a href=#563 id=563 data-nosnippet>563</a>                // be a unit struct or unit variant (e.g. `Option::None`).
+<a href=#564 id=564 data-nosnippet>564</a>                </span><span class="kw">let </span>kind = <span class="self">self</span>.lower_variant_or_leaf(res, id, span, ty, <span class="macro">vec!</span>[]);
+<a href=#565 id=565 data-nosnippet>565</a>                <span class="kw">return </span>Box::new(Pat { span, ty, kind });
+<a href=#566 id=566 data-nosnippet>566</a>            }
+<a href=#567 id=567 data-nosnippet>567</a>        };
+<a href=#568 id=568 data-nosnippet>568</a>
+<a href=#569 id=569 data-nosnippet>569</a>        <span class="comment">// Lower the named constant to a THIR pattern.
+<a href=#570 id=570 data-nosnippet>570</a>        </span><span class="kw">let </span>args = <span class="self">self</span>.typeck_results.node_args(id);
+<a href=#571 id=571 data-nosnippet>571</a>        <span class="comment">// FIXME(mgca): we will need to special case IACs here to have type system compatible
+<a href=#572 id=572 data-nosnippet>572</a>        // generic args, instead of how we represent them in body expressions.
+<a href=#573 id=573 data-nosnippet>573</a>        </span><span class="kw">let </span>c = ty::Const::new_unevaluated(<span class="self">self</span>.tcx, ty::UnevaluatedConst { def: def_id, args });
+<a href=#574 id=574 data-nosnippet>574</a>        <span class="kw">let </span><span class="kw-2">mut </span>pattern = <span class="self">self</span>.const_to_pat(c, ty, id, span);
+<a href=#575 id=575 data-nosnippet>575</a>
+<a href=#576 id=576 data-nosnippet>576</a>        <span class="comment">// If this is an associated constant with an explicit user-written
+<a href=#577 id=577 data-nosnippet>577</a>        // type, add an ascription node (e.g. `&lt;Foo&lt;'a&gt; as MyTrait&gt;::CONST`).
+<a href=#578 id=578 data-nosnippet>578</a>        </span><span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>user_ty) = user_ty {
+<a href=#579 id=579 data-nosnippet>579</a>            <span class="kw">let </span>annotation = CanonicalUserTypeAnnotation {
+<a href=#580 id=580 data-nosnippet>580</a>                user_ty: Box::new(user_ty),
+<a href=#581 id=581 data-nosnippet>581</a>                span,
+<a href=#582 id=582 data-nosnippet>582</a>                inferred_ty: <span class="self">self</span>.typeck_results.node_type(id),
+<a href=#583 id=583 data-nosnippet>583</a>            };
+<a href=#584 id=584 data-nosnippet>584</a>            <span class="kw">let </span>kind = PatKind::AscribeUserType {
+<a href=#585 id=585 data-nosnippet>585</a>                subpattern: pattern,
+<a href=#586 id=586 data-nosnippet>586</a>                ascription: Ascription {
+<a href=#587 id=587 data-nosnippet>587</a>                    annotation,
+<a href=#588 id=588 data-nosnippet>588</a>                    <span class="comment">// Note that we use `Contravariant` here. See the
+<a href=#589 id=589 data-nosnippet>589</a>                    // `variance` field documentation for details.
+<a href=#590 id=590 data-nosnippet>590</a>                    </span>variance: ty::Contravariant,
+<a href=#591 id=591 data-nosnippet>591</a>                },
+<a href=#592 id=592 data-nosnippet>592</a>            };
+<a href=#593 id=593 data-nosnippet>593</a>            pattern = Box::new(Pat { span, kind, ty });
+<a href=#594 id=594 data-nosnippet>594</a>        }
+<a href=#595 id=595 data-nosnippet>595</a>
+<a href=#596 id=596 data-nosnippet>596</a>        pattern
+<a href=#597 id=597 data-nosnippet>597</a>    }
+<a href=#598 id=598 data-nosnippet>598</a>
+<a href=#599 id=599 data-nosnippet>599</a>    <span class="doccomment">/// Lowers an inline const block (e.g. `const { 1 + 1 }`) to a pattern.
+<a href=#600 id=600 data-nosnippet>600</a>    </span><span class="kw">fn </span>lower_inline_const(
+<a href=#601 id=601 data-nosnippet>601</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#602 id=602 data-nosnippet>602</a>        block: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../../rustc_hir/hir/struct.ConstBlock.html">hir::ConstBlock</a>,
+<a href=#603 id=603 data-nosnippet>603</a>        id: <a href="../../../../rustc_hir_id/struct.HirId.html">hir::HirId</a>,
+<a href=#604 id=604 data-nosnippet>604</a>        span: <a href="../../../../rustc_span/span_encoding/struct.Span.html">Span</a>,
+<a href=#605 id=605 data-nosnippet>605</a>    ) -&gt; <a href="../../../../rustc_middle/thir/enum.PatKind.html">PatKind</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#606 id=606 data-nosnippet>606</a>        <span class="kw">let </span>tcx = <a class="self" href="#601">self</a>.tcx;
+<a href=#607 id=607 data-nosnippet>607</a>        <span class="kw">let </span>def_id = <a href="#602">block</a>.def_id;
+<a href=#608 id=608 data-nosnippet>608</a>        <span class="kw">let </span>ty = <a href="#606">tcx</a>.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.typeck">typeck</a>(<a href="#607">def_id</a>).<a href="../../../../rustc_middle/ty/typeck_results/struct.TypeckResults.html#method.node_type">node_type</a>(<a href="#602">block</a>.hir_id);
+<a href=#609 id=609 data-nosnippet>609</a>
+<a href=#610 id=610 data-nosnippet>610</a>        <span class="kw">let </span>typeck_root_def_id = <a href="#606">tcx</a>.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.typeck_root_def_id">typeck_root_def_id</a>(<a href="#607">def_id</a>.<a href="../../../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>());
+<a href=#611 id=611 data-nosnippet>611</a>        <span class="kw">let </span>parent_args = <a href="../../../../rustc_middle/ty/list/struct.RawList.html#method.identity_for_item">ty::GenericArgs::identity_for_item</a>(<a href="#606">tcx</a>, <a href="#610">typeck_root_def_id</a>);
+<a href=#612 id=612 data-nosnippet>612</a>        <span class="kw">let </span>args = <a href="../../../../rustc_middle/ty/sty/struct.InlineConstArgs.html#method.new">ty::InlineConstArgs::new</a>(<a href="#606">tcx</a>, <a href="../../../../rustc_middle/ty/sty/struct.InlineConstArgsParts.html">ty::InlineConstArgsParts</a> { <a href="#611">parent_args</a>, <a href="#608">ty</a> }).args;
+<a href=#613 id=613 data-nosnippet>613</a>
+<a href=#614 id=614 data-nosnippet>614</a>        <span class="kw">let </span>ct = <a href="../../../../rustc_middle/ty/consts/type.UnevaluatedConst.html">ty::UnevaluatedConst</a> { def: <a href="#607">def_id</a>.<a href="../../../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>(), <a href="#612">args</a> };
+<a href=#615 id=615 data-nosnippet>615</a>        <span class="kw">let </span>c = <a href="../../../../rustc_middle/ty/consts/struct.Const.html#method.new_unevaluated">ty::Const::new_unevaluated</a>(<a class="self" href="#601">self</a>.tcx, <a href="#614">ct</a>);
+<a href=#616 id=616 data-nosnippet>616</a>        <span class="kw">let </span>pattern = <a class="self" href="#601">self</a>.<a href="const_to_pat.rs.html#40-54">const_to_pat</a>(<a href="#615">c</a>, <a href="#608">ty</a>, <a href="#603">id</a>, <a href="#604">span</a>);
+<a href=#617 id=617 data-nosnippet>617</a>
+<a href=#618 id=618 data-nosnippet>618</a>        <span class="comment">// Apply a type ascription for the inline constant.
+<a href=#619 id=619 data-nosnippet>619</a>        </span><span class="kw">let </span>annotation = {
+<a href=#620 id=620 data-nosnippet>620</a>            <span class="kw">let </span>infcx = <a href="#606">tcx</a>.<a href="../../../../rustc_infer/infer/trait.TyCtxtInferExt.html#tymethod.infer_ctxt">infer_ctxt</a>().<a href="../../../../rustc_infer/infer/struct.InferCtxtBuilder.html#method.build">build</a>(<a href="../../../../rustc_type_ir/infer_ctxt/enum.TypingMode.html#method.non_body_analysis">TypingMode::non_body_analysis</a>());
+<a href=#621 id=621 data-nosnippet>621</a>            <span class="kw">let </span>args = <a href="../../../../rustc_middle/ty/sty/struct.InlineConstArgs.html#method.new">ty::InlineConstArgs::new</a>(
+<a href=#622 id=622 data-nosnippet>622</a>                <a href="#606">tcx</a>,
+<a href=#623 id=623 data-nosnippet>623</a>                <a href="../../../../rustc_middle/ty/sty/struct.InlineConstArgsParts.html">ty::InlineConstArgsParts</a> { <a href="#611">parent_args</a>, ty: <a href="#620">infcx</a>.<a href="../../../../rustc_infer/infer/struct.InferCtxt.html#method.next_ty_var">next_ty_var</a>(<a href="#604">span</a>) },
+<a href=#624 id=624 data-nosnippet>624</a>            )
+<a href=#625 id=625 data-nosnippet>625</a>            .args;
+<a href=#626 id=626 data-nosnippet>626</a>            <a href="#620">infcx</a>.<a href="../../../../rustc_infer/infer/struct.InferCtxt.html#method.canonicalize_user_type_annotation">canonicalize_user_type_annotation</a>(<a href="../../../../rustc_middle/ty/typeck_results/struct.UserType.html#method.new">ty::UserType::new</a>(<a href="../../../../rustc_middle/ty/typeck_results/enum.UserTypeKind.html#variant.TypeOf">ty::UserTypeKind::TypeOf</a>(
+<a href=#627 id=627 data-nosnippet>627</a>                <a href="#607">def_id</a>.<a href="../../../../rustc_span/def_id/struct.LocalDefId.html#method.to_def_id">to_def_id</a>(),
+<a href=#628 id=628 data-nosnippet>628</a>                <a href="../../../../rustc_middle/ty/generic_args/struct.UserArgs.html">ty::UserArgs</a> { <a href="#621">args</a>, user_self_ty: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a> </a>},
+<a href=#629 id=629 data-nosnippet>629</a>            )))
+<a href=#630 id=630 data-nosnippet>630</a>        };
+<a href=#631 id=631 data-nosnippet>631</a>        <span class="kw">let </span>annotation =
+<a href=#632 id=632 data-nosnippet>632</a>            <a href="../../../../rustc_middle/ty/typeck_results/struct.CanonicalUserTypeAnnotation.html">CanonicalUserTypeAnnotation</a> { user_ty: <a href="https://doc.rust-lang.org/beta/alloc/boxed/struct.Box.html#method.new">Box::new</a>(<a href="#619">annotation</a>), <a href="#604">span</a>, inferred_ty: <a href="#608">ty</a> };
+<a href=#633 id=633 data-nosnippet>633</a>        <a href="../../../../rustc_middle/thir/enum.PatKind.html#variant.AscribeUserType">PatKind::AscribeUserType</a> {
+<a href=#634 id=634 data-nosnippet>634</a>            subpattern: <a href="#616">pattern</a>,
+<a href=#635 id=635 data-nosnippet>635</a>            ascription: <a href="../../../../rustc_middle/thir/struct.Ascription.html">Ascription</a> {
+<a href=#636 id=636 data-nosnippet>636</a>                <a href="#631">annotation</a>,
+<a href=#637 id=637 data-nosnippet>637</a>                <span class="comment">// Note that we use `Contravariant` here. See the `variance` field documentation
+<a href=#638 id=638 data-nosnippet>638</a>                // for details.
+<a href=#639 id=639 data-nosnippet>639</a>                </span>variance: <a href="../../../../rustc_type_ir/enum.Variance.html#variant.Contravariant">ty::Contravariant</a>,
+<a href=#640 id=640 data-nosnippet>640</a>            },
+<a href=#641 id=641 data-nosnippet>641</a>        }
+<a href=#642 id=642 data-nosnippet>642</a>    }
+<a href=#643 id=643 data-nosnippet>643</a>
+<a href=#644 id=644 data-nosnippet>644</a>    <span class="doccomment">/// Lowers the kinds of "expression" that can appear in a HIR pattern:
+<a href=#645 id=645 data-nosnippet>645</a>    /// - Paths (e.g. `FOO`, `foo::BAR`, `Option::None`)
+<a href=#646 id=646 data-nosnippet>646</a>    /// - Inline const blocks (e.g. `const { 1 + 1 }`)
+<a href=#647 id=647 data-nosnippet>647</a>    /// - Literals, possibly negated (e.g. `-128u8`, `"hello"`)
+<a href=#648 id=648 data-nosnippet>648</a>    </span><span class="kw">fn </span>lower_pat_expr(
+<a href=#649 id=649 data-nosnippet>649</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#650 id=650 data-nosnippet>650</a>        expr: <span class="kw-2">&amp;</span><span class="lifetime">'tcx </span><a href="../../../../rustc_hir/hir/struct.PatExpr.html">hir::PatExpr</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#651 id=651 data-nosnippet>651</a>        pat_ty: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#652 id=652 data-nosnippet>652</a>    ) -&gt; <a href="../../../../rustc_middle/thir/enum.PatKind.html">PatKind</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#653 id=653 data-nosnippet>653</a>        <span class="kw">match </span><span class="kw-2">&amp;</span><a href="#650">expr</a>.kind {
+<a href=#654 id=654 data-nosnippet>654</a>            <a href="../../../../rustc_hir/hir/enum.PatExprKind.html#variant.Path">hir::PatExprKind::Path</a>(qpath) =&gt; <a class="self" href="#649">self</a>.<a href="#552-597">lower_path</a>(<a href="#654">qpath</a>, <a href="#650">expr</a>.hir_id, <a href="#650">expr</a>.span).kind,
+<a href=#655 id=655 data-nosnippet>655</a>            <a href="../../../../rustc_hir/hir/enum.PatExprKind.html#variant.ConstBlock">hir::PatExprKind::ConstBlock</a>(anon_const) =&gt; {
+<a href=#656 id=656 data-nosnippet>656</a>                <a class="self" href="#649">self</a>.<a href="#600-642">lower_inline_const</a>(<a href="#655">anon_const</a>, <a href="#650">expr</a>.hir_id, <a href="#650">expr</a>.span)
+<a href=#657 id=657 data-nosnippet>657</a>            }
+<a href=#658 id=658 data-nosnippet>658</a>            <a href="../../../../rustc_hir/hir/enum.PatExprKind.html#variant.Lit">hir::PatExprKind::Lit</a> { lit, negated } =&gt; {
+<a href=#659 id=659 data-nosnippet>659</a>                <span class="comment">// We handle byte string literal patterns by using the pattern's type instead of the
+<a href=#660 id=660 data-nosnippet>660</a>                // literal's type in `const_to_pat`: if the literal `b"..."` matches on a slice reference,
+<a href=#661 id=661 data-nosnippet>661</a>                // the pattern's type will be `&amp;[u8]` whereas the literal's type is `&amp;[u8; 3]`; using the
+<a href=#662 id=662 data-nosnippet>662</a>                // pattern's type means we'll properly translate it to a slice reference pattern. This works
+<a href=#663 id=663 data-nosnippet>663</a>                // because slices and arrays have the same valtree representation.
+<a href=#664 id=664 data-nosnippet>664</a>                // HACK: As an exception, use the literal's type if `pat_ty` is `String`; this can happen if
+<a href=#665 id=665 data-nosnippet>665</a>                // `string_deref_patterns` is enabled. There's a special case for that when lowering to MIR.
+<a href=#666 id=666 data-nosnippet>666</a>                // FIXME(deref_patterns): This hack won't be necessary once `string_deref_patterns` is
+<a href=#667 id=667 data-nosnippet>667</a>                // superseded by a more general implementation of deref patterns.
+<a href=#668 id=668 data-nosnippet>668</a>                </span><span class="kw">let </span>ct_ty = <span class="kw">match </span><a href="#651">pat_ty</a> {
+<a href=#669 id=669 data-nosnippet>669</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(pat_ty)
+<a href=#670 id=670 data-nosnippet>670</a>                        <span class="kw">if let </span><a href="../../../../rustc_type_ir/ty_kind/enum.TyKind.html#variant.Adt">ty::Adt</a>(def, <span class="kw">_</span>) = <span class="kw-2">*</span><a href="#669">pat_ty</a>.<a href="../../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>()
+<a href=#671 id=671 data-nosnippet>671</a>                            &amp;&amp; <a class="self" href="#649">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.is_lang_item">is_lang_item</a>(<a href="#670">def</a>.<a href="../../../../rustc_middle/ty/adt/struct.AdtDef.html#method.did">did</a>(), <a href="../../../../rustc_hir/lang_items/enum.LangItem.html#variant.String">LangItem::String</a>) =&gt;
+<a href=#672 id=672 data-nosnippet>672</a>                    {
+<a href=#673 id=673 data-nosnippet>673</a>                        <span class="kw">if </span>!<a class="self" href="#649">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.features">features</a>().<a href="../../../../rustc_feature/unstable/struct.Features.html#method.string_deref_patterns">string_deref_patterns</a>() {
+<a href=#674 id=674 data-nosnippet>674</a>                            <a class="macro" href="../../../../rustc_middle/macro.span_bug.html">span_bug!</a>(
+<a href=#675 id=675 data-nosnippet>675</a>                                <a href="#650">expr</a>.span,
+<a href=#676 id=676 data-nosnippet>676</a>                                <span class="string">"matching on `String` went through without enabling string_deref_patterns"
+<a href=#677 id=677 data-nosnippet>677</a>                            </span>);
+<a href=#678 id=678 data-nosnippet>678</a>                        }
+<a href=#679 id=679 data-nosnippet>679</a>                        <a class="self" href="#649">self</a>.typeck_results.<a href="../../../../rustc_middle/ty/typeck_results/struct.TypeckResults.html#method.node_type">node_type</a>(<a href="#650">expr</a>.hir_id)
+<a href=#680 id=680 data-nosnippet>680</a>                    }
+<a href=#681 id=681 data-nosnippet>681</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(pat_ty) =&gt; <a href="#681">pat_ty</a>,
+<a href=#682 id=682 data-nosnippet>682</a>                    <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a> </a>=&gt; <a class="self" href="#649">self</a>.typeck_results.<a href="../../../../rustc_middle/ty/typeck_results/struct.TypeckResults.html#method.node_type">node_type</a>(<a href="#650">expr</a>.hir_id),
+<a href=#683 id=683 data-nosnippet>683</a>                };
+<a href=#684 id=684 data-nosnippet>684</a>                <span class="kw">let </span>lit_input = <a href="../../../../rustc_middle/mir/interpret/struct.LitToConstInput.html">LitToConstInput</a> { lit: <a href="#658">lit</a>.node, ty: <a href="#668">ct_ty</a>, neg: <span class="kw-2">*</span><a href="#658">negated</a> };
+<a href=#685 id=685 data-nosnippet>685</a>                <span class="kw">let </span>constant = <a class="self" href="#649">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.at">at</a>(<a href="#650">expr</a>.span).<a href="../../../../rustc_middle/query/plumbing/struct.TyCtxtAt.html#method.lit_to_const">lit_to_const</a>(<a href="#684">lit_input</a>);
+<a href=#686 id=686 data-nosnippet>686</a>                <a class="self" href="#649">self</a>.<a href="const_to_pat.rs.html#40-54">const_to_pat</a>(<a href="#685">constant</a>, <a href="#668">ct_ty</a>, <a href="#650">expr</a>.hir_id, <a href="#658">lit</a>.span).kind
+<a href=#687 id=687 data-nosnippet>687</a>            }
+<a href=#688 id=688 data-nosnippet>688</a>        }
+<a href=#689 id=689 data-nosnippet>689</a>    }
+<a href=#690 id=690 data-nosnippet>690</a>}</code></pre></div></section></main></body></html>

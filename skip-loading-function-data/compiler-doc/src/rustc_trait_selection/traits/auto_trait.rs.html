@@ -1,0 +1,822 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_trait_selection/src/traits/auto_trait.rs`."><title>auto_trait.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="rustc_trait_selection" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-beta.1 (788da80fc 2025-08-04)" data-channel="beta" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../../static.files/storage-68b7e25d.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_trait_selection/traits/</div>auto_trait.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Support code for rustdoc and external tools.
+<a href=#2 id=2 data-nosnippet>2</a>//! You really don't want to be using this unless you need to.
+<a href=#3 id=3 data-nosnippet>3</a>
+<a href=#4 id=4 data-nosnippet>4</a></span><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/alloc/collections/vec_deque/struct.VecDeque.html">std::collections::VecDeque</a>;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/core/iter/index.html">std::iter</a>;
+<a href=#6 id=6 data-nosnippet>6</a>
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>rustc_data_structures::fx::{<a href="../../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>, <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>, <a href="../../../rustc_data_structures/fx/type.IndexEntry.html">IndexEntry</a>};
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="../../../rustc_data_structures/unord/struct.UnordSet.html">rustc_data_structures::unord::UnordSet</a>;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="../../../rustc_span/def_id/constant.CRATE_DEF_ID.html">rustc_hir::def_id::CRATE_DEF_ID</a>;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><a href="../../../rustc_trait_selection/infer/enum.DefineOpaqueTypes.html">rustc_infer::infer::DefineOpaqueTypes</a>;
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>rustc_middle::ty::{<a href="../../../rustc_middle/ty/region/struct.Region.html">Region</a>, <a href="../../../rustc_trait_selection/infer/canonical/ir/struct.RegionVid.html">RegionVid</a>};
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span><a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">tracing::debug</a>;
+<a href=#13 id=13 data-nosnippet>13</a>
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use super</span>::<span class="kw-2">*</span>;
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span><a href="../errors.rs.html#26-30"><span class="kw">crate</span>::errors::UnableToConstructConstantValue</a>;
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span><span class="kw">crate</span>::infer::region_constraints::{<a href="../../../rustc_trait_selection/infer/region_constraints/enum.ConstraintKind.html">ConstraintKind</a>, <a href="../../../rustc_trait_selection/infer/region_constraints/struct.RegionConstraintData.html">RegionConstraintData</a>};
+<a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span><a href="../regions.rs.html#12"><span class="kw">crate</span>::regions::OutlivesEnvironmentBuildExt</a>;
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span><a href="project.rs.html#150-165"><span class="kw">crate</span>::traits::project::ProjectAndUnifyResult</a>;
+<a href=#19 id=19 data-nosnippet>19</a>
+<a href=#20 id=20 data-nosnippet>20</a><span class="comment">// FIXME(twk): this is obviously not nice to duplicate like that
+<a href=#21 id=21 data-nosnippet>21</a></span><span class="attr">#[derive(Eq, PartialEq, Hash, Copy, Clone, Debug)]
+<a href=#22 id=22 data-nosnippet>22</a></span><span class="kw">pub enum </span><a href="../../../rustc_trait_selection/traits/auto_trait/enum.RegionTarget.html">RegionTarget</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#23 id=23 data-nosnippet>23</a>    Region(<a href="../../../rustc_middle/ty/region/struct.Region.html">Region</a>&lt;<span class="lifetime">'tcx</span>&gt;),
+<a href=#24 id=24 data-nosnippet>24</a>    RegionVid(<a href="../../../rustc_trait_selection/infer/canonical/ir/struct.RegionVid.html">RegionVid</a>),
+<a href=#25 id=25 data-nosnippet>25</a>}
+<a href=#26 id=26 data-nosnippet>26</a>
+<a href=#27 id=27 data-nosnippet>27</a><span class="attr">#[derive(Default, Debug, Clone)]
+<a href=#28 id=28 data-nosnippet>28</a></span><span class="kw">pub struct </span><a href="../../../rustc_trait_selection/traits/auto_trait/struct.RegionDeps.html">RegionDeps</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#29 id=29 data-nosnippet>29</a>    <span class="kw">pub </span>larger: <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<a href="#22-25">RegionTarget</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#30 id=30 data-nosnippet>30</a>    <span class="kw">pub </span>smaller: <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<a href="#22-25">RegionTarget</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#31 id=31 data-nosnippet>31</a>}
+<a href=#32 id=32 data-nosnippet>32</a>
+<a href=#33 id=33 data-nosnippet>33</a><span class="kw">pub enum </span><a href="../../../rustc_trait_selection/traits/auto_trait/enum.AutoTraitResult.html">AutoTraitResult</a>&lt;A&gt; {
+<a href=#34 id=34 data-nosnippet>34</a>    ExplicitImpl,
+<a href=#35 id=35 data-nosnippet>35</a>    PositiveImpl(A),
+<a href=#36 id=36 data-nosnippet>36</a>    NegativeImpl,
+<a href=#37 id=37 data-nosnippet>37</a>}
+<a href=#38 id=38 data-nosnippet>38</a>
+<a href=#39 id=39 data-nosnippet>39</a><span class="kw">pub struct </span><a href="../../../rustc_trait_selection/traits/auto_trait/struct.AutoTraitInfo.html">AutoTraitInfo</a>&lt;<span class="lifetime">'cx</span>&gt; {
+<a href=#40 id=40 data-nosnippet>40</a>    <span class="kw">pub </span>full_user_env: <a href="../../../rustc_middle/ty/struct.ParamEnv.html">ty::ParamEnv</a>&lt;<span class="lifetime">'cx</span>&gt;,
+<a href=#41 id=41 data-nosnippet>41</a>    <span class="kw">pub </span>region_data: <a href="../../../rustc_trait_selection/infer/region_constraints/struct.RegionConstraintData.html">RegionConstraintData</a>&lt;<span class="lifetime">'cx</span>&gt;,
+<a href=#42 id=42 data-nosnippet>42</a>    <span class="kw">pub </span>vid_to_region: <a href="../../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<a href="../../../rustc_trait_selection/infer/canonical/ir/struct.RegionVid.html">ty::RegionVid</a>, <a href="../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'cx</span>&gt;&gt;,
+<a href=#43 id=43 data-nosnippet>43</a>}
+<a href=#44 id=44 data-nosnippet>44</a>
+<a href=#45 id=45 data-nosnippet>45</a><span class="kw">pub struct </span><a href="../../../rustc_trait_selection/traits/auto_trait/struct.AutoTraitFinder.html">AutoTraitFinder</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#46 id=46 data-nosnippet>46</a>    tcx: <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#47 id=47 data-nosnippet>47</a>}
+<a href=#48 id=48 data-nosnippet>48</a>
+<a href=#49 id=49 data-nosnippet>49</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="#45-47">AutoTraitFinder</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#50 id=50 data-nosnippet>50</a>    <span class="kw">pub fn </span>new(tcx: <a href="../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <span class="self">Self </span>{
+<a href=#51 id=51 data-nosnippet>51</a>        <a href="#45-47">AutoTraitFinder</a> { <a href="#50">tcx</a> }
+<a href=#52 id=52 data-nosnippet>52</a>    }
+<a href=#53 id=53 data-nosnippet>53</a>
+<a href=#54 id=54 data-nosnippet>54</a>    <span class="doccomment">/// Makes a best effort to determine whether and under which conditions an auto trait is
+<a href=#55 id=55 data-nosnippet>55</a>    /// implemented for a type. For example, if you have
+<a href=#56 id=56 data-nosnippet>56</a>    ///
+<a href=#57 id=57 data-nosnippet>57</a>    /// ```
+<a href=#58 id=58 data-nosnippet>58</a>    /// struct Foo&lt;T&gt; { data: Box&lt;T&gt; }
+<a href=#59 id=59 data-nosnippet>59</a>    /// ```
+<a href=#60 id=60 data-nosnippet>60</a>    ///
+<a href=#61 id=61 data-nosnippet>61</a>    /// then this might return that `Foo&lt;T&gt;: Send` if `T: Send` (encoded in the AutoTraitResult
+<a href=#62 id=62 data-nosnippet>62</a>    /// type). The analysis attempts to account for custom impls as well as other complex cases.
+<a href=#63 id=63 data-nosnippet>63</a>    /// This result is intended for use by rustdoc and other such consumers.
+<a href=#64 id=64 data-nosnippet>64</a>    ///
+<a href=#65 id=65 data-nosnippet>65</a>    /// (Note that due to the coinductive nature of Send, the full and correct result is actually
+<a href=#66 id=66 data-nosnippet>66</a>    /// quite simple to generate. That is, when a type has no custom impl, it is Send iff its field
+<a href=#67 id=67 data-nosnippet>67</a>    /// types are all Send. So, in our example, we might have that `Foo&lt;T&gt;: Send` if `Box&lt;T&gt;: Send`.
+<a href=#68 id=68 data-nosnippet>68</a>    /// But this is often not the best way to present to the user.)
+<a href=#69 id=69 data-nosnippet>69</a>    ///
+<a href=#70 id=70 data-nosnippet>70</a>    /// Warning: The API should be considered highly unstable, and it may be refactored or removed
+<a href=#71 id=71 data-nosnippet>71</a>    /// in the future.
+<a href=#72 id=72 data-nosnippet>72</a>    </span><span class="kw">pub fn </span>find_auto_trait_generics&lt;A&gt;(
+<a href=#73 id=73 data-nosnippet>73</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#74 id=74 data-nosnippet>74</a>        ty: <a href="../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#75 id=75 data-nosnippet>75</a>        typing_env: <a href="../../../rustc_middle/ty/struct.TypingEnv.html">ty::TypingEnv</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#76 id=76 data-nosnippet>76</a>        trait_did: <a href="../../../rustc_span/def_id/struct.DefId.html">DefId</a>,
+<a href=#77 id=77 data-nosnippet>77</a>        <span class="kw-2">mut </span>auto_trait_callback: <span class="kw">impl </span><a href="https://doc.rust-lang.org/beta/core/ops/function/trait.FnMut.html">FnMut</a>(<a href="#39-43">AutoTraitInfo</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; A,
+<a href=#78 id=78 data-nosnippet>78</a>    ) -&gt; <a href="#33-37">AutoTraitResult</a>&lt;A&gt; {
+<a href=#79 id=79 data-nosnippet>79</a>        <span class="kw">let </span>tcx = <a class="self" href="#73">self</a>.tcx;
+<a href=#80 id=80 data-nosnippet>80</a>
+<a href=#81 id=81 data-nosnippet>81</a>        <span class="kw">let </span>trait_ref = <a href="../../../rustc_type_ir/predicate/struct.TraitRef.html#method.new">ty::TraitRef::new</a>(<a href="#79">tcx</a>, <a href="#76">trait_did</a>, [<a href="#74">ty</a>]);
+<a href=#82 id=82 data-nosnippet>82</a>
+<a href=#83 id=83 data-nosnippet>83</a>        <span class="kw">let </span>(infcx, orig_env) = <a href="#79">tcx</a>.<a href="../../../rustc_trait_selection/infer/trait.TyCtxtInferExt.html">infer_ctxt</a>().<a href="../../../rustc_infer/infer/struct.InferCtxtBuilder.html#method.build_with_typing_env">build_with_typing_env</a>(<a href="#75">typing_env</a>);
+<a href=#84 id=84 data-nosnippet>84</a>        <span class="kw">let </span><span class="kw-2">mut </span>selcx = <a href="select/mod.rs.html#193-200">SelectionContext::new</a>(<span class="kw-2">&amp;</span><a href="#83">infcx</a>);
+<a href=#85 id=85 data-nosnippet>85</a>        <span class="kw">for </span>polarity <span class="kw">in </span>[ty::PredicatePolarity::Positive, ty::PredicatePolarity::Negative] {
+<a href=#86 id=86 data-nosnippet>86</a>            <span class="kw">let </span>result = selcx.select(<span class="kw-2">&amp;</span>Obligation::new(
+<a href=#87 id=87 data-nosnippet>87</a>                tcx,
+<a href=#88 id=88 data-nosnippet>88</a>                ObligationCause::dummy(),
+<a href=#89 id=89 data-nosnippet>89</a>                orig_env,
+<a href=#90 id=90 data-nosnippet>90</a>                ty::TraitPredicate { trait_ref, polarity },
+<a href=#91 id=91 data-nosnippet>91</a>            ));
+<a href=#92 id=92 data-nosnippet>92</a>            <span class="kw">if let </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(ImplSource::UserDefined(<span class="kw">_</span>))) = result {
+<a href=#93 id=93 data-nosnippet>93</a>                <span class="macro">debug!</span>(<span class="string">"find_auto_trait_generics({trait_ref:?}): manual impl found, bailing out"</span>);
+<a href=#94 id=94 data-nosnippet>94</a>                <span class="comment">// If an explicit impl exists, it always takes priority over an auto impl
+<a href=#95 id=95 data-nosnippet>95</a>                </span><span class="kw">return </span>AutoTraitResult::ExplicitImpl;
+<a href=#96 id=96 data-nosnippet>96</a>            }
+<a href=#97 id=97 data-nosnippet>97</a>        }
+<a href=#98 id=98 data-nosnippet>98</a>
+<a href=#99 id=99 data-nosnippet>99</a>        <span class="kw">let </span>(infcx, orig_env) = <a href="#79">tcx</a>.<a href="../../../rustc_trait_selection/infer/trait.TyCtxtInferExt.html">infer_ctxt</a>().<a href="../../../rustc_infer/infer/struct.InferCtxtBuilder.html#method.build_with_typing_env">build_with_typing_env</a>(<a href="#75">typing_env</a>);
+<a href=#100 id=100 data-nosnippet>100</a>        <span class="kw">let </span><span class="kw-2">mut </span>fresh_preds = <a href="https://doc.rust-lang.org/beta/core/default/trait.Default.html#tymethod.default">FxIndexSet::default</a>();
+<a href=#101 id=101 data-nosnippet>101</a>
+<a href=#102 id=102 data-nosnippet>102</a>        <span class="comment">// Due to the way projections are handled by SelectionContext, we need to run
+<a href=#103 id=103 data-nosnippet>103</a>        // evaluate_predicates twice: once on the original param env, and once on the result of
+<a href=#104 id=104 data-nosnippet>104</a>        // the first evaluate_predicates call.
+<a href=#105 id=105 data-nosnippet>105</a>        //
+<a href=#106 id=106 data-nosnippet>106</a>        // The problem is this: most of rustc, including SelectionContext and traits::project,
+<a href=#107 id=107 data-nosnippet>107</a>        // are designed to work with a concrete usage of a type (e.g., Vec&lt;u8&gt;
+<a href=#108 id=108 data-nosnippet>108</a>        // fn&lt;T&gt;() { Vec&lt;T&gt; }. This information will generally never change - given
+<a href=#109 id=109 data-nosnippet>109</a>        // the 'T' in fn&lt;T&gt;() { ... }, we'll never know anything else about 'T'.
+<a href=#110 id=110 data-nosnippet>110</a>        // If we're unable to prove that 'T' implements a particular trait, we're done -
+<a href=#111 id=111 data-nosnippet>111</a>        // there's nothing left to do but error out.
+<a href=#112 id=112 data-nosnippet>112</a>        //
+<a href=#113 id=113 data-nosnippet>113</a>        // However, synthesizing an auto trait impl works differently. Here, we start out with
+<a href=#114 id=114 data-nosnippet>114</a>        // a set of initial conditions - the ParamEnv of the struct/enum/union we're dealing
+<a href=#115 id=115 data-nosnippet>115</a>        // with - and progressively discover the conditions we need to fulfill for it to
+<a href=#116 id=116 data-nosnippet>116</a>        // implement a certain auto trait. This ends up breaking two assumptions made by trait
+<a href=#117 id=117 data-nosnippet>117</a>        // selection and projection:
+<a href=#118 id=118 data-nosnippet>118</a>        //
+<a href=#119 id=119 data-nosnippet>119</a>        // * We can always cache the result of a particular trait selection for the lifetime of
+<a href=#120 id=120 data-nosnippet>120</a>        // an InfCtxt
+<a href=#121 id=121 data-nosnippet>121</a>        // * Given a projection bound such as '&lt;T as SomeTrait&gt;::SomeItem = K', if 'T:
+<a href=#122 id=122 data-nosnippet>122</a>        // SomeTrait' doesn't hold, then we don't need to care about the 'SomeItem = K'
+<a href=#123 id=123 data-nosnippet>123</a>        //
+<a href=#124 id=124 data-nosnippet>124</a>        // We fix the first assumption by manually clearing out all of the InferCtxt's caches
+<a href=#125 id=125 data-nosnippet>125</a>        // in between calls to SelectionContext.select. This allows us to keep all of the
+<a href=#126 id=126 data-nosnippet>126</a>        // intermediate types we create bound to the 'tcx lifetime, rather than needing to lift
+<a href=#127 id=127 data-nosnippet>127</a>        // them between calls.
+<a href=#128 id=128 data-nosnippet>128</a>        //
+<a href=#129 id=129 data-nosnippet>129</a>        // We fix the second assumption by reprocessing the result of our first call to
+<a href=#130 id=130 data-nosnippet>130</a>        // evaluate_predicates. Using the example of '&lt;T as SomeTrait&gt;::SomeItem = K', our first
+<a href=#131 id=131 data-nosnippet>131</a>        // pass will pick up 'T: SomeTrait', but not 'SomeItem = K'. On our second pass,
+<a href=#132 id=132 data-nosnippet>132</a>        // traits::project will see that 'T: SomeTrait' is in our ParamEnv, allowing
+<a href=#133 id=133 data-nosnippet>133</a>        // SelectionContext to return it back to us.
+<a href=#134 id=134 data-nosnippet>134</a>
+<a href=#135 id=135 data-nosnippet>135</a>        </span><span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>((new_env, user_env)) =
+<a href=#136 id=136 data-nosnippet>136</a>            <a class="self" href="#73">self</a>.<a href="#214-335">evaluate_predicates</a>(<span class="kw-2">&amp;</span><a href="#99">infcx</a>, <a href="#76">trait_did</a>, <a href="#74">ty</a>, <a href="#99">orig_env</a>, <a href="#99">orig_env</a>, <span class="kw-2">&amp;mut </span><a href="#100">fresh_preds</a>)
+<a href=#137 id=137 data-nosnippet>137</a>        <span class="kw">else </span>{
+<a href=#138 id=138 data-nosnippet>138</a>            <span class="kw">return </span><a href="#36">AutoTraitResult::NegativeImpl</a>;
+<a href=#139 id=139 data-nosnippet>139</a>        };
+<a href=#140 id=140 data-nosnippet>140</a>
+<a href=#141 id=141 data-nosnippet>141</a>        <span class="kw">let </span>(full_env, full_user_env) = <span class="self"><a href="#73">self</a>
+<a href=#142 id=142 data-nosnippet>142</a>            </span>.<a href="#214-335">evaluate_predicates</a>(<span class="kw-2">&amp;</span><a href="#99">infcx</a>, <a href="#76">trait_did</a>, <a href="#74">ty</a>, <a href="#135">new_env</a>, <a href="#135">user_env</a>, <span class="kw-2">&amp;mut </span><a href="#100">fresh_preds</a>)
+<a href=#143 id=143 data-nosnippet>143</a>            .<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap_or_else">unwrap_or_else</a>(|| {
+<a href=#144 id=144 data-nosnippet>144</a>                <a class="macro" href="https://doc.rust-lang.org/beta/std/macro.panic.html">panic!</a>(<span class="string">"Failed to fully process: {ty:?} {trait_did:?} {orig_env:?}"</span>)
+<a href=#145 id=145 data-nosnippet>145</a>            });
+<a href=#146 id=146 data-nosnippet>146</a>
+<a href=#147 id=147 data-nosnippet>147</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(
+<a href=#148 id=148 data-nosnippet>148</a>            <span class="string">"find_auto_trait_generics({:?}): fulfilling \
+<a href=#149 id=149 data-nosnippet>149</a>             with {:?}"</span>,
+<a href=#150 id=150 data-nosnippet>150</a>            trait_ref, full_env
+<a href=#151 id=151 data-nosnippet>151</a>        );
+<a href=#152 id=152 data-nosnippet>152</a>
+<a href=#153 id=153 data-nosnippet>153</a>        <span class="comment">// At this point, we already have all of the bounds we need. FulfillmentContext is used
+<a href=#154 id=154 data-nosnippet>154</a>        // to store all of the necessary region/lifetime bounds in the InferContext, as well as
+<a href=#155 id=155 data-nosnippet>155</a>        // an additional sanity check.
+<a href=#156 id=156 data-nosnippet>156</a>        </span><span class="kw">let </span>ocx = <a href="engine.rs.html#62-64">ObligationCtxt::new</a>(<span class="kw-2">&amp;</span><a href="#99">infcx</a>);
+<a href=#157 id=157 data-nosnippet>157</a>        <a href="#156">ocx</a>.<a href="engine.rs.html#95-110">register_bound</a>(<a href="../../../rustc_middle/traits/struct.ObligationCause.html#method.dummy">ObligationCause::dummy</a>(), <a href="#141">full_env</a>, <a href="#74">ty</a>, <a href="#76">trait_did</a>);
+<a href=#158 id=158 data-nosnippet>158</a>        <span class="kw">let </span>errors = <a href="#156">ocx</a>.<a href="engine.rs.html#211-213">select_all_or_error</a>();
+<a href=#159 id=159 data-nosnippet>159</a>        <span class="kw">if </span>!<a href="#158">errors</a>.<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.is_empty">is_empty</a>() {
+<a href=#160 id=160 data-nosnippet>160</a>            <a class="macro" href="https://doc.rust-lang.org/beta/std/macro.panic.html">panic!</a>(<span class="string">"Unable to fulfill trait {trait_did:?} for '{ty:?}': {errors:?}"</span>);
+<a href=#161 id=161 data-nosnippet>161</a>        }
+<a href=#162 id=162 data-nosnippet>162</a>
+<a href=#163 id=163 data-nosnippet>163</a>        <span class="kw">let </span>outlives_env = <a href="../regions.rs.html#14-21">OutlivesEnvironment::new</a>(<span class="kw-2">&amp;</span><a href="#99">infcx</a>, <a href="../../../rustc_span/def_id/constant.CRATE_DEF_ID.html">CRATE_DEF_ID</a>, <a href="#141">full_env</a>, []);
+<a href=#164 id=164 data-nosnippet>164</a>        <span class="kw">let _ </span>= <a href="#99">infcx</a>.<a href="../../../rustc_infer/infer/struct.InferCtxt.html#method.process_registered_region_obligations">process_registered_region_obligations</a>(<span class="kw-2">&amp;</span><a href="#163">outlives_env</a>, |ty, <span class="kw">_</span>| <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="#164">ty</a>));
+<a href=#165 id=165 data-nosnippet>165</a>
+<a href=#166 id=166 data-nosnippet>166</a>        <span class="kw">let </span>region_data = <a href="#99">infcx</a>.inner.<a href="https://doc.rust-lang.org/beta/core/cell/struct.RefCell.html#method.borrow_mut">borrow_mut</a>().<a href="../../../rustc_infer/infer/struct.InferCtxtInner.html#method.unwrap_region_constraints">unwrap_region_constraints</a>().<a href="../../../rustc_infer/infer/region_constraints/struct.RegionConstraintCollector.html#method.data">data</a>().<a href="https://doc.rust-lang.org/beta/core/clone/trait.Clone.html#tymethod.clone">clone</a>();
+<a href=#167 id=167 data-nosnippet>167</a>
+<a href=#168 id=168 data-nosnippet>168</a>        <span class="kw">let </span>vid_to_region = <a class="self" href="#73">self</a>.<a href="#448-539">map_vid_to_region</a>(<span class="kw-2">&amp;</span><a href="#166">region_data</a>);
+<a href=#169 id=169 data-nosnippet>169</a>
+<a href=#170 id=170 data-nosnippet>170</a>        <span class="kw">let </span>info = <a href="#39-43">AutoTraitInfo</a> { <a href="#141">full_user_env</a>, <a href="#166">region_data</a>, <a href="#168">vid_to_region</a> };
+<a href=#171 id=171 data-nosnippet>171</a>
+<a href=#172 id=172 data-nosnippet>172</a>        <a href="#35">AutoTraitResult::PositiveImpl</a>(<a href="#77">auto_trait_callback</a>(<a href="#170">info</a>))
+<a href=#173 id=173 data-nosnippet>173</a>    }
+<a href=#174 id=174 data-nosnippet>174</a>
+<a href=#175 id=175 data-nosnippet>175</a>    <span class="doccomment">/// The core logic responsible for computing the bounds for our synthesized impl.
+<a href=#176 id=176 data-nosnippet>176</a>    ///
+<a href=#177 id=177 data-nosnippet>177</a>    /// To calculate the bounds, we call `SelectionContext.select` in a loop. Like
+<a href=#178 id=178 data-nosnippet>178</a>    /// `FulfillmentContext`, we recursively select the nested obligations of predicates we
+<a href=#179 id=179 data-nosnippet>179</a>    /// encounter. However, whenever we encounter an `UnimplementedError` involving a type
+<a href=#180 id=180 data-nosnippet>180</a>    /// parameter, we add it to our `ParamEnv`. Since our goal is to determine when a particular
+<a href=#181 id=181 data-nosnippet>181</a>    /// type implements an auto trait, Unimplemented errors tell us what conditions need to be met.
+<a href=#182 id=182 data-nosnippet>182</a>    ///
+<a href=#183 id=183 data-nosnippet>183</a>    /// This method ends up working somewhat similarly to `FulfillmentContext`, but with a few key
+<a href=#184 id=184 data-nosnippet>184</a>    /// differences. `FulfillmentContext` works under the assumption that it's dealing with concrete
+<a href=#185 id=185 data-nosnippet>185</a>    /// user code. According, it considers all possible ways that a `Predicate` could be met, which
+<a href=#186 id=186 data-nosnippet>186</a>    /// isn't always what we want for a synthesized impl. For example, given the predicate `T:
+<a href=#187 id=187 data-nosnippet>187</a>    /// Iterator`, `FulfillmentContext` can end up reporting an Unimplemented error for `T:
+<a href=#188 id=188 data-nosnippet>188</a>    /// IntoIterator` -- since there's an implementation of `Iterator` where `T: IntoIterator`,
+<a href=#189 id=189 data-nosnippet>189</a>    /// `FulfillmentContext` will drive `SelectionContext` to consider that impl before giving up.
+<a href=#190 id=190 data-nosnippet>190</a>    /// If we were to rely on `FulfillmentContext`s decision, we might end up synthesizing an impl
+<a href=#191 id=191 data-nosnippet>191</a>    /// like this:
+<a href=#192 id=192 data-nosnippet>192</a>    /// ```ignore (illustrative)
+<a href=#193 id=193 data-nosnippet>193</a>    /// impl&lt;T&gt; Send for Foo&lt;T&gt; where T: IntoIterator
+<a href=#194 id=194 data-nosnippet>194</a>    /// ```
+<a href=#195 id=195 data-nosnippet>195</a>    /// While it might be technically true that Foo implements Send where `T: IntoIterator`,
+<a href=#196 id=196 data-nosnippet>196</a>    /// the bound is overly restrictive - it's really only necessary that `T: Iterator`.
+<a href=#197 id=197 data-nosnippet>197</a>    ///
+<a href=#198 id=198 data-nosnippet>198</a>    /// For this reason, `evaluate_predicates` handles predicates with type variables specially.
+<a href=#199 id=199 data-nosnippet>199</a>    /// When we encounter an `Unimplemented` error for a bound such as `T: Iterator`, we immediately
+<a href=#200 id=200 data-nosnippet>200</a>    /// add it to our `ParamEnv`, and add it to our stack for recursive evaluation. When we later
+<a href=#201 id=201 data-nosnippet>201</a>    /// select it, we'll pick up any nested bounds, without ever inferring that `T: IntoIterator`
+<a href=#202 id=202 data-nosnippet>202</a>    /// needs to hold.
+<a href=#203 id=203 data-nosnippet>203</a>    ///
+<a href=#204 id=204 data-nosnippet>204</a>    /// One additional consideration is supertrait bounds. Normally, a `ParamEnv` is only ever
+<a href=#205 id=205 data-nosnippet>205</a>    /// constructed once for a given type. As part of the construction process, the `ParamEnv` will
+<a href=#206 id=206 data-nosnippet>206</a>    /// have any supertrait bounds normalized -- e.g., if we have a type `struct Foo&lt;T: Copy&gt;`, the
+<a href=#207 id=207 data-nosnippet>207</a>    /// `ParamEnv` will contain `T: Copy` and `T: Clone`, since `Copy: Clone`. When we construct our
+<a href=#208 id=208 data-nosnippet>208</a>    /// own `ParamEnv`, we need to do this ourselves, through `traits::elaborate`, or
+<a href=#209 id=209 data-nosnippet>209</a>    /// else `SelectionContext` will choke on the missing predicates. However, this should never
+<a href=#210 id=210 data-nosnippet>210</a>    /// show up in the final synthesized generics: we don't want our generated docs page to contain
+<a href=#211 id=211 data-nosnippet>211</a>    /// something like `T: Copy + Clone`, as that's redundant. Therefore, we keep track of a
+<a href=#212 id=212 data-nosnippet>212</a>    /// separate `user_env`, which only holds the predicates that will actually be displayed to the
+<a href=#213 id=213 data-nosnippet>213</a>    /// user.
+<a href=#214 id=214 data-nosnippet>214</a>    </span><span class="kw">fn </span>evaluate_predicates(
+<a href=#215 id=215 data-nosnippet>215</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#216 id=216 data-nosnippet>216</a>        infcx: <span class="kw-2">&amp;</span><a href="../../../rustc_trait_selection/infer/struct.InferCtxt.html">InferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#217 id=217 data-nosnippet>217</a>        trait_did: <a href="../../../rustc_span/def_id/struct.DefId.html">DefId</a>,
+<a href=#218 id=218 data-nosnippet>218</a>        ty: <a href="../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#219 id=219 data-nosnippet>219</a>        param_env: <a href="../../../rustc_middle/ty/struct.ParamEnv.html">ty::ParamEnv</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#220 id=220 data-nosnippet>220</a>        user_env: <a href="../../../rustc_middle/ty/struct.ParamEnv.html">ty::ParamEnv</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#221 id=221 data-nosnippet>221</a>        fresh_preds: <span class="kw-2">&amp;mut </span><a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<a href="../../../rustc_middle/ty/predicate/struct.Predicate.html">ty::Predicate</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#222 id=222 data-nosnippet>222</a>    ) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;(<a href="../../../rustc_middle/ty/struct.ParamEnv.html">ty::ParamEnv</a>&lt;<span class="lifetime">'tcx</span>&gt;, <a href="../../../rustc_middle/ty/struct.ParamEnv.html">ty::ParamEnv</a>&lt;<span class="lifetime">'tcx</span>&gt;)&gt; {
+<a href=#223 id=223 data-nosnippet>223</a>        <span class="kw">let </span>tcx = <a href="#216">infcx</a>.tcx;
+<a href=#224 id=224 data-nosnippet>224</a>
+<a href=#225 id=225 data-nosnippet>225</a>        <span class="comment">// Don't try to process any nested obligations involving predicates
+<a href=#226 id=226 data-nosnippet>226</a>        // that are already in the `ParamEnv` (modulo regions): we already
+<a href=#227 id=227 data-nosnippet>227</a>        // know that they must hold.
+<a href=#228 id=228 data-nosnippet>228</a>        </span><span class="kw">for </span>predicate <span class="kw">in </span>param_env.caller_bounds() {
+<a href=#229 id=229 data-nosnippet>229</a>            fresh_preds.insert(<span class="self">self</span>.clean_pred(infcx, predicate.as_predicate()));
+<a href=#230 id=230 data-nosnippet>230</a>        }
+<a href=#231 id=231 data-nosnippet>231</a>
+<a href=#232 id=232 data-nosnippet>232</a>        <span class="kw">let </span><span class="kw-2">mut </span>select = <a href="select/mod.rs.html#193-200">SelectionContext::new</a>(<a href="#216">infcx</a>);
+<a href=#233 id=233 data-nosnippet>233</a>
+<a href=#234 id=234 data-nosnippet>234</a>        <span class="kw">let </span><span class="kw-2">mut </span>already_visited = <a href="../../../rustc_data_structures/unord/struct.UnordSet.html#method.new">UnordSet::new</a>();
+<a href=#235 id=235 data-nosnippet>235</a>        <span class="kw">let </span><span class="kw-2">mut </span>predicates = <a href="https://doc.rust-lang.org/beta/alloc/collections/vec_deque/struct.VecDeque.html#method.new">VecDeque::new</a>();
+<a href=#236 id=236 data-nosnippet>236</a>        <a href="#235">predicates</a>.<a href="https://doc.rust-lang.org/beta/alloc/collections/vec_deque/struct.VecDeque.html#method.push_back">push_back</a>(<a href="../../../rustc_type_ir/binder/struct.Binder.html#method.dummy">ty::Binder::dummy</a>(<a href="../../../rustc_middle/ty/predicate/type.TraitPredicate.html">ty::TraitPredicate</a> {
+<a href=#237 id=237 data-nosnippet>237</a>            trait_ref: <a href="../../../rustc_type_ir/predicate/struct.TraitRef.html#method.new">ty::TraitRef::new</a>(<a href="#216">infcx</a>.tcx, <a href="#217">trait_did</a>, [<a href="#218">ty</a>]),
+<a href=#238 id=238 data-nosnippet>238</a>
+<a href=#239 id=239 data-nosnippet>239</a>            <span class="comment">// Auto traits are positive
+<a href=#240 id=240 data-nosnippet>240</a>            </span>polarity: <a href="../../../rustc_trait_selection/infer/canonical/ir/enum.PredicatePolarity.html">ty::PredicatePolarity::Positive</a>,
+<a href=#241 id=241 data-nosnippet>241</a>        }));
+<a href=#242 id=242 data-nosnippet>242</a>
+<a href=#243 id=243 data-nosnippet>243</a>        <span class="kw">let </span>computed_preds = <a href="#219">param_env</a>.<a href="../../../rustc_middle/ty/struct.ParamEnv.html#method.caller_bounds">caller_bounds</a>().<a href="../../../rustc_middle/ty/list/struct.RawList.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|c| <a href="#243">c</a>.<a href="../../../rustc_middle/ty/predicate/struct.Clause.html#method.as_predicate">as_predicate</a>());
+<a href=#244 id=244 data-nosnippet>244</a>        <span class="kw">let </span><span class="kw-2">mut </span>user_computed_preds: <a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<span class="kw">_</span>&gt; =
+<a href=#245 id=245 data-nosnippet>245</a>            <a href="#220">user_env</a>.<a href="../../../rustc_middle/ty/struct.ParamEnv.html#method.caller_bounds">caller_bounds</a>().<a href="../../../rustc_middle/ty/list/struct.RawList.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|c| <a href="#245">c</a>.<a href="../../../rustc_middle/ty/predicate/struct.Clause.html#method.as_predicate">as_predicate</a>()).<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#246 id=246 data-nosnippet>246</a>
+<a href=#247 id=247 data-nosnippet>247</a>        <span class="kw">let </span><span class="kw-2">mut </span>new_env = <a href="#219">param_env</a>;
+<a href=#248 id=248 data-nosnippet>248</a>        <span class="kw">let </span>dummy_cause = <a href="../../../rustc_middle/traits/struct.ObligationCause.html#method.dummy">ObligationCause::dummy</a>();
+<a href=#249 id=249 data-nosnippet>249</a>
+<a href=#250 id=250 data-nosnippet>250</a>        <span class="kw">while let </span><span class="prelude-val">Some</span>(pred) = predicates.pop_front() {
+<a href=#251 id=251 data-nosnippet>251</a>            <span class="kw">if </span>!already_visited.insert(pred) {
+<a href=#252 id=252 data-nosnippet>252</a>                <span class="kw">continue</span>;
+<a href=#253 id=253 data-nosnippet>253</a>            }
+<a href=#254 id=254 data-nosnippet>254</a>
+<a href=#255 id=255 data-nosnippet>255</a>            <span class="comment">// Call `infcx.resolve_vars_if_possible` to see if we can
+<a href=#256 id=256 data-nosnippet>256</a>            // get rid of any inference variables.
+<a href=#257 id=257 data-nosnippet>257</a>            </span><span class="kw">let </span>obligation = infcx.resolve_vars_if_possible(Obligation::new(
+<a href=#258 id=258 data-nosnippet>258</a>                tcx,
+<a href=#259 id=259 data-nosnippet>259</a>                dummy_cause.clone(),
+<a href=#260 id=260 data-nosnippet>260</a>                new_env,
+<a href=#261 id=261 data-nosnippet>261</a>                pred,
+<a href=#262 id=262 data-nosnippet>262</a>            ));
+<a href=#263 id=263 data-nosnippet>263</a>            <span class="kw">let </span>result = select.poly_select(<span class="kw-2">&amp;</span>obligation);
+<a href=#264 id=264 data-nosnippet>264</a>
+<a href=#265 id=265 data-nosnippet>265</a>            <span class="kw">match </span>result {
+<a href=#266 id=266 data-nosnippet>266</a>                <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="kw-2">ref </span>impl_source)) =&gt; {
+<a href=#267 id=267 data-nosnippet>267</a>                    <span class="comment">// If we see an explicit negative impl (e.g., `impl !Send for MyStruct`),
+<a href=#268 id=268 data-nosnippet>268</a>                    // we immediately bail out, since it's impossible for us to continue.
+<a href=#269 id=269 data-nosnippet>269</a>
+<a href=#270 id=270 data-nosnippet>270</a>                    </span><span class="kw">if let </span>ImplSource::UserDefined(ImplSourceUserDefinedData {
+<a href=#271 id=271 data-nosnippet>271</a>                        impl_def_id, ..
+<a href=#272 id=272 data-nosnippet>272</a>                    }) = impl_source
+<a href=#273 id=273 data-nosnippet>273</a>                    {
+<a href=#274 id=274 data-nosnippet>274</a>                        <span class="comment">// Blame 'tidy' for the weird bracket placement.
+<a href=#275 id=275 data-nosnippet>275</a>                        </span><span class="kw">if </span>infcx.tcx.impl_polarity(<span class="kw-2">*</span>impl_def_id) != ty::ImplPolarity::Positive {
+<a href=#276 id=276 data-nosnippet>276</a>                            <span class="macro">debug!</span>(
+<a href=#277 id=277 data-nosnippet>277</a>                                <span class="string">"evaluate_nested_obligations: found explicit negative impl\
+<a href=#278 id=278 data-nosnippet>278</a>                                        {:?}, bailing out"</span>,
+<a href=#279 id=279 data-nosnippet>279</a>                                impl_def_id
+<a href=#280 id=280 data-nosnippet>280</a>                            );
+<a href=#281 id=281 data-nosnippet>281</a>                            <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#282 id=282 data-nosnippet>282</a>                        }
+<a href=#283 id=283 data-nosnippet>283</a>                    }
+<a href=#284 id=284 data-nosnippet>284</a>
+<a href=#285 id=285 data-nosnippet>285</a>                    <span class="kw">let </span>obligations = impl_source.borrow_nested_obligations().iter().cloned();
+<a href=#286 id=286 data-nosnippet>286</a>
+<a href=#287 id=287 data-nosnippet>287</a>                    <span class="kw">if </span>!<span class="self">self</span>.evaluate_nested_obligations(
+<a href=#288 id=288 data-nosnippet>288</a>                        ty,
+<a href=#289 id=289 data-nosnippet>289</a>                        obligations,
+<a href=#290 id=290 data-nosnippet>290</a>                        <span class="kw-2">&amp;mut </span>user_computed_preds,
+<a href=#291 id=291 data-nosnippet>291</a>                        fresh_preds,
+<a href=#292 id=292 data-nosnippet>292</a>                        <span class="kw-2">&amp;mut </span>predicates,
+<a href=#293 id=293 data-nosnippet>293</a>                        <span class="kw-2">&amp;mut </span>select,
+<a href=#294 id=294 data-nosnippet>294</a>                    ) {
+<a href=#295 id=295 data-nosnippet>295</a>                        <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#296 id=296 data-nosnippet>296</a>                    }
+<a href=#297 id=297 data-nosnippet>297</a>                }
+<a href=#298 id=298 data-nosnippet>298</a>                <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>) =&gt; {}
+<a href=#299 id=299 data-nosnippet>299</a>                <span class="prelude-val">Err</span>(SelectionError::Unimplemented) =&gt; {
+<a href=#300 id=300 data-nosnippet>300</a>                    <span class="kw">if </span><span class="self">self</span>.is_param_no_infer(pred.skip_binder().trait_ref.args) {
+<a href=#301 id=301 data-nosnippet>301</a>                        already_visited.remove(<span class="kw-2">&amp;</span>pred);
+<a href=#302 id=302 data-nosnippet>302</a>                        <span class="self">self</span>.add_user_pred(<span class="kw-2">&amp;mut </span>user_computed_preds, pred.upcast(<span class="self">self</span>.tcx));
+<a href=#303 id=303 data-nosnippet>303</a>                        predicates.push_back(pred);
+<a href=#304 id=304 data-nosnippet>304</a>                    } <span class="kw">else </span>{
+<a href=#305 id=305 data-nosnippet>305</a>                        <span class="macro">debug!</span>(
+<a href=#306 id=306 data-nosnippet>306</a>                            <span class="string">"evaluate_nested_obligations: `Unimplemented` found, bailing: \
+<a href=#307 id=307 data-nosnippet>307</a>                             {:?} {:?} {:?}"</span>,
+<a href=#308 id=308 data-nosnippet>308</a>                            ty,
+<a href=#309 id=309 data-nosnippet>309</a>                            pred,
+<a href=#310 id=310 data-nosnippet>310</a>                            pred.skip_binder().trait_ref.args
+<a href=#311 id=311 data-nosnippet>311</a>                        );
+<a href=#312 id=312 data-nosnippet>312</a>                        <span class="kw">return </span><span class="prelude-val">None</span>;
+<a href=#313 id=313 data-nosnippet>313</a>                    }
+<a href=#314 id=314 data-nosnippet>314</a>                }
+<a href=#315 id=315 data-nosnippet>315</a>                <span class="kw">_ </span>=&gt; <span class="macro">panic!</span>(<span class="string">"Unexpected error for '{ty:?}': {result:?}"</span>),
+<a href=#316 id=316 data-nosnippet>316</a>            };
+<a href=#317 id=317 data-nosnippet>317</a>
+<a href=#318 id=318 data-nosnippet>318</a>            <span class="kw">let </span>normalized_preds =
+<a href=#319 id=319 data-nosnippet>319</a>                elaborate(tcx, computed_preds.clone().chain(user_computed_preds.iter().cloned()));
+<a href=#320 id=320 data-nosnippet>320</a>            new_env = ty::ParamEnv::new(
+<a href=#321 id=321 data-nosnippet>321</a>                tcx.mk_clauses_from_iter(normalized_preds.filter_map(|p| p.as_clause())),
+<a href=#322 id=322 data-nosnippet>322</a>            );
+<a href=#323 id=323 data-nosnippet>323</a>        }
+<a href=#324 id=324 data-nosnippet>324</a>
+<a href=#325 id=325 data-nosnippet>325</a>        <span class="kw">let </span>final_user_env = <a href="../../../rustc_middle/ty/struct.ParamEnv.html#method.new">ty::ParamEnv::new</a>(
+<a href=#326 id=326 data-nosnippet>326</a>            <a href="#223">tcx</a>.<a href="../../../rustc_middle/ty/context/struct.TyCtxt.html#method.mk_clauses_from_iter">mk_clauses_from_iter</a>(<a href="#244">user_computed_preds</a>.<a href="https://doc.rust-lang.org/beta/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter_map">filter_map</a>(|p| <a href="#326">p</a>.<a href="../../../rustc_middle/ty/predicate/struct.Predicate.html#method.as_clause">as_clause</a>())),
+<a href=#327 id=327 data-nosnippet>327</a>        );
+<a href=#328 id=328 data-nosnippet>328</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(
+<a href=#329 id=329 data-nosnippet>329</a>            <span class="string">"evaluate_nested_obligations(ty={:?}, trait_did={:?}): succeeded with '{:?}' \
+<a href=#330 id=330 data-nosnippet>330</a>             '{:?}'"</span>,
+<a href=#331 id=331 data-nosnippet>331</a>            ty, trait_did, new_env, final_user_env
+<a href=#332 id=332 data-nosnippet>332</a>        );
+<a href=#333 id=333 data-nosnippet>333</a>
+<a href=#334 id=334 data-nosnippet>334</a>        <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>((<a href="#247">new_env</a>, <a href="#325">final_user_env</a>))
+<a href=#335 id=335 data-nosnippet>335</a>    }
+<a href=#336 id=336 data-nosnippet>336</a>
+<a href=#337 id=337 data-nosnippet>337</a>    <span class="doccomment">/// This method is designed to work around the following issue:
+<a href=#338 id=338 data-nosnippet>338</a>    /// When we compute auto trait bounds, we repeatedly call `SelectionContext.select`,
+<a href=#339 id=339 data-nosnippet>339</a>    /// progressively building a `ParamEnv` based on the results we get.
+<a href=#340 id=340 data-nosnippet>340</a>    /// However, our usage of `SelectionContext` differs from its normal use within the compiler,
+<a href=#341 id=341 data-nosnippet>341</a>    /// in that we capture and re-reprocess predicates from `Unimplemented` errors.
+<a href=#342 id=342 data-nosnippet>342</a>    ///
+<a href=#343 id=343 data-nosnippet>343</a>    /// This can lead to a corner case when dealing with region parameters.
+<a href=#344 id=344 data-nosnippet>344</a>    /// During our selection loop in `evaluate_predicates`, we might end up with
+<a href=#345 id=345 data-nosnippet>345</a>    /// two trait predicates that differ only in their region parameters:
+<a href=#346 id=346 data-nosnippet>346</a>    /// one containing a HRTB lifetime parameter, and one containing a 'normal'
+<a href=#347 id=347 data-nosnippet>347</a>    /// lifetime parameter. For example:
+<a href=#348 id=348 data-nosnippet>348</a>    /// ```ignore (illustrative)
+<a href=#349 id=349 data-nosnippet>349</a>    /// T as MyTrait&lt;'a&gt;
+<a href=#350 id=350 data-nosnippet>350</a>    /// T as MyTrait&lt;'static&gt;
+<a href=#351 id=351 data-nosnippet>351</a>    /// ```
+<a href=#352 id=352 data-nosnippet>352</a>    /// If we put both of these predicates in our computed `ParamEnv`, we'll
+<a href=#353 id=353 data-nosnippet>353</a>    /// confuse `SelectionContext`, since it will (correctly) view both as being applicable.
+<a href=#354 id=354 data-nosnippet>354</a>    ///
+<a href=#355 id=355 data-nosnippet>355</a>    /// To solve this, we pick the 'more strict' lifetime bound -- i.e., the HRTB
+<a href=#356 id=356 data-nosnippet>356</a>    /// Our end goal is to generate a user-visible description of the conditions
+<a href=#357 id=357 data-nosnippet>357</a>    /// under which a type implements an auto trait. A trait predicate involving
+<a href=#358 id=358 data-nosnippet>358</a>    /// a HRTB means that the type needs to work with any choice of lifetime,
+<a href=#359 id=359 data-nosnippet>359</a>    /// not just one specific lifetime (e.g., `'static`).
+<a href=#360 id=360 data-nosnippet>360</a>    </span><span class="kw">fn </span>add_user_pred(
+<a href=#361 id=361 data-nosnippet>361</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#362 id=362 data-nosnippet>362</a>        user_computed_preds: <span class="kw-2">&amp;mut </span><a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<a href="../../../rustc_middle/ty/predicate/struct.Predicate.html">ty::Predicate</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#363 id=363 data-nosnippet>363</a>        new_pred: <a href="../../../rustc_middle/ty/predicate/struct.Predicate.html">ty::Predicate</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#364 id=364 data-nosnippet>364</a>    ) {
+<a href=#365 id=365 data-nosnippet>365</a>        <span class="kw">let </span><span class="kw-2">mut </span>should_add_new = <span class="bool-val">true</span>;
+<a href=#366 id=366 data-nosnippet>366</a>        <a href="#362">user_computed_preds</a>.<a href="https://docs.rs/indexmap/2.10.0/indexmap/set/struct.IndexSet.html#method.retain">retain</a>(|<span class="kw-2">&amp;</span>old_pred| {
+<a href=#367 id=367 data-nosnippet>367</a>            <span class="kw">if let </span>(
+<a href=#368 id=368 data-nosnippet>368</a>                ty::PredicateKind::Clause(ty::ClauseKind::Trait(new_trait)),
+<a href=#369 id=369 data-nosnippet>369</a>                ty::PredicateKind::Clause(ty::ClauseKind::Trait(old_trait)),
+<a href=#370 id=370 data-nosnippet>370</a>            ) = (<a href="#363">new_pred</a>.<a href="../../../rustc_middle/ty/predicate/struct.Predicate.html#method.kind">kind</a>().<a href="../../../rustc_type_ir/binder/struct.Binder.html#method.skip_binder">skip_binder</a>(), <a href="#366">old_pred</a>.<a href="../../../rustc_middle/ty/predicate/struct.Predicate.html#method.kind">kind</a>().<a href="../../../rustc_type_ir/binder/struct.Binder.html#method.skip_binder">skip_binder</a>())
+<a href=#371 id=371 data-nosnippet>371</a>            {
+<a href=#372 id=372 data-nosnippet>372</a>                <span class="kw">if </span><a href="#368">new_trait</a>.<a href="../../../rustc_type_ir/predicate/struct.TraitPredicate.html#method.def_id">def_id</a>() == <a href="#369">old_trait</a>.<a href="../../../rustc_type_ir/predicate/struct.TraitPredicate.html#method.def_id">def_id</a>() {
+<a href=#373 id=373 data-nosnippet>373</a>                    <span class="kw">let </span>new_args = <a href="#368">new_trait</a>.trait_ref.args;
+<a href=#374 id=374 data-nosnippet>374</a>                    <span class="kw">let </span>old_args = <a href="#369">old_trait</a>.trait_ref.args;
+<a href=#375 id=375 data-nosnippet>375</a>
+<a href=#376 id=376 data-nosnippet>376</a>                    <span class="kw">if </span>!<a href="#373">new_args</a>.<a href="../../../rustc_middle/ty/list/struct.RawList.html#method.types">types</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.eq">eq</a>(<a href="#374">old_args</a>.<a href="../../../rustc_middle/ty/list/struct.RawList.html#method.types">types</a>()) {
+<a href=#377 id=377 data-nosnippet>377</a>                        <span class="comment">// We can't compare lifetimes if the types are different,
+<a href=#378 id=378 data-nosnippet>378</a>                        // so skip checking `old_pred`.
+<a href=#379 id=379 data-nosnippet>379</a>                        </span><span class="kw">return </span><span class="bool-val">true</span>;
+<a href=#380 id=380 data-nosnippet>380</a>                    }
+<a href=#381 id=381 data-nosnippet>381</a>
+<a href=#382 id=382 data-nosnippet>382</a>                    <span class="kw">for </span>(new_region, old_region) <span class="kw">in
+<a href=#383 id=383 data-nosnippet>383</a>                        </span>iter::zip(new_args.regions(), old_args.regions())
+<a href=#384 id=384 data-nosnippet>384</a>                    {
+<a href=#385 id=385 data-nosnippet>385</a>                        <span class="kw">match </span>(new_region.kind(), old_region.kind()) {
+<a href=#386 id=386 data-nosnippet>386</a>                            <span class="comment">// If both predicates have an `ReBound` (a HRTB) in the
+<a href=#387 id=387 data-nosnippet>387</a>                            // same spot, we do nothing.
+<a href=#388 id=388 data-nosnippet>388</a>                            </span>(ty::ReBound(<span class="kw">_</span>, <span class="kw">_</span>), ty::ReBound(<span class="kw">_</span>, <span class="kw">_</span>)) =&gt; {}
+<a href=#389 id=389 data-nosnippet>389</a>
+<a href=#390 id=390 data-nosnippet>390</a>                            (ty::ReBound(<span class="kw">_</span>, <span class="kw">_</span>), <span class="kw">_</span>) | (<span class="kw">_</span>, ty::ReVar(<span class="kw">_</span>)) =&gt; {
+<a href=#391 id=391 data-nosnippet>391</a>                                <span class="comment">// One of these is true:
+<a href=#392 id=392 data-nosnippet>392</a>                                // The new predicate has a HRTB in a spot where the old
+<a href=#393 id=393 data-nosnippet>393</a>                                // predicate does not (if they both had a HRTB, the previous
+<a href=#394 id=394 data-nosnippet>394</a>                                // match arm would have executed). A HRBT is a 'stricter'
+<a href=#395 id=395 data-nosnippet>395</a>                                // bound than anything else, so we want to keep the newer
+<a href=#396 id=396 data-nosnippet>396</a>                                // predicate (with the HRBT) in place of the old predicate.
+<a href=#397 id=397 data-nosnippet>397</a>                                //
+<a href=#398 id=398 data-nosnippet>398</a>                                // OR
+<a href=#399 id=399 data-nosnippet>399</a>                                //
+<a href=#400 id=400 data-nosnippet>400</a>                                // The old predicate has a region variable where the new
+<a href=#401 id=401 data-nosnippet>401</a>                                // predicate has some other kind of region. An region
+<a href=#402 id=402 data-nosnippet>402</a>                                // variable isn't something we can actually display to a user,
+<a href=#403 id=403 data-nosnippet>403</a>                                // so we choose their new predicate (which doesn't have a region
+<a href=#404 id=404 data-nosnippet>404</a>                                // variable).
+<a href=#405 id=405 data-nosnippet>405</a>                                //
+<a href=#406 id=406 data-nosnippet>406</a>                                // In both cases, we want to remove the old predicate,
+<a href=#407 id=407 data-nosnippet>407</a>                                // from `user_computed_preds`, and replace it with the new
+<a href=#408 id=408 data-nosnippet>408</a>                                // one. Having both the old and the new
+<a href=#409 id=409 data-nosnippet>409</a>                                // predicate in a `ParamEnv` would confuse `SelectionContext`.
+<a href=#410 id=410 data-nosnippet>410</a>                                //
+<a href=#411 id=411 data-nosnippet>411</a>                                // We're currently in the predicate passed to 'retain',
+<a href=#412 id=412 data-nosnippet>412</a>                                // so we return `false` to remove the old predicate from
+<a href=#413 id=413 data-nosnippet>413</a>                                // `user_computed_preds`.
+<a href=#414 id=414 data-nosnippet>414</a>                                </span><span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#415 id=415 data-nosnippet>415</a>                            }
+<a href=#416 id=416 data-nosnippet>416</a>                            (<span class="kw">_</span>, ty::ReBound(<span class="kw">_</span>, <span class="kw">_</span>)) | (ty::ReVar(<span class="kw">_</span>), <span class="kw">_</span>) =&gt; {
+<a href=#417 id=417 data-nosnippet>417</a>                                <span class="comment">// This is the opposite situation as the previous arm.
+<a href=#418 id=418 data-nosnippet>418</a>                                // One of these is true:
+<a href=#419 id=419 data-nosnippet>419</a>                                //
+<a href=#420 id=420 data-nosnippet>420</a>                                // The old predicate has a HRTB lifetime in a place where the
+<a href=#421 id=421 data-nosnippet>421</a>                                // new predicate does not.
+<a href=#422 id=422 data-nosnippet>422</a>                                //
+<a href=#423 id=423 data-nosnippet>423</a>                                // OR
+<a href=#424 id=424 data-nosnippet>424</a>                                //
+<a href=#425 id=425 data-nosnippet>425</a>                                // The new predicate has a region variable where the old
+<a href=#426 id=426 data-nosnippet>426</a>                                // predicate has some other type of region.
+<a href=#427 id=427 data-nosnippet>427</a>                                //
+<a href=#428 id=428 data-nosnippet>428</a>                                // We want to leave the old
+<a href=#429 id=429 data-nosnippet>429</a>                                // predicate in `user_computed_preds`, and skip adding
+<a href=#430 id=430 data-nosnippet>430</a>                                // new_pred to `user_computed_params`.
+<a href=#431 id=431 data-nosnippet>431</a>                                </span>should_add_new = <span class="bool-val">false
+<a href=#432 id=432 data-nosnippet>432</a>                            </span>}
+<a href=#433 id=433 data-nosnippet>433</a>                            <span class="kw">_ </span>=&gt; {}
+<a href=#434 id=434 data-nosnippet>434</a>                        }
+<a href=#435 id=435 data-nosnippet>435</a>                    }
+<a href=#436 id=436 data-nosnippet>436</a>                }
+<a href=#437 id=437 data-nosnippet>437</a>            }
+<a href=#438 id=438 data-nosnippet>438</a>            <span class="bool-val">true
+<a href=#439 id=439 data-nosnippet>439</a>        </span>});
+<a href=#440 id=440 data-nosnippet>440</a>
+<a href=#441 id=441 data-nosnippet>441</a>        <span class="kw">if </span><a href="#365">should_add_new</a> {
+<a href=#442 id=442 data-nosnippet>442</a>            <a href="#362">user_computed_preds</a>.<a href="https://docs.rs/indexmap/2.10.0/indexmap/set/struct.IndexSet.html#method.insert">insert</a>(<a href="#363">new_pred</a>);
+<a href=#443 id=443 data-nosnippet>443</a>        }
+<a href=#444 id=444 data-nosnippet>444</a>    }
+<a href=#445 id=445 data-nosnippet>445</a>
+<a href=#446 id=446 data-nosnippet>446</a>    <span class="doccomment">/// This is very similar to `handle_lifetimes`. However, instead of matching `ty::Region`s
+<a href=#447 id=447 data-nosnippet>447</a>    /// to each other, we match `ty::RegionVid`s to `ty::Region`s.
+<a href=#448 id=448 data-nosnippet>448</a>    </span><span class="kw">fn </span>map_vid_to_region&lt;<span class="lifetime">'cx</span>&gt;(
+<a href=#449 id=449 data-nosnippet>449</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#450 id=450 data-nosnippet>450</a>        regions: <span class="kw-2">&amp;</span><a href="../../../rustc_trait_selection/infer/region_constraints/struct.RegionConstraintData.html">RegionConstraintData</a>&lt;<span class="lifetime">'cx</span>&gt;,
+<a href=#451 id=451 data-nosnippet>451</a>    ) -&gt; <a href="../../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<a href="../../../rustc_trait_selection/infer/canonical/ir/struct.RegionVid.html">ty::RegionVid</a>, <a href="../../../rustc_middle/ty/region/struct.Region.html">ty::Region</a>&lt;<span class="lifetime">'cx</span>&gt;&gt; {
+<a href=#452 id=452 data-nosnippet>452</a>        <span class="kw">let </span><span class="kw-2">mut </span>vid_map = <a href="../../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>::&lt;<a href="#22-25">RegionTarget</a>&lt;<span class="lifetime">'cx</span>&gt;, <a href="#28-31">RegionDeps</a>&lt;<span class="lifetime">'cx</span>&gt;&gt;::default();
+<a href=#453 id=453 data-nosnippet>453</a>        <span class="kw">let </span><span class="kw-2">mut </span>finished_map = <a href="https://doc.rust-lang.org/beta/core/default/trait.Default.html#tymethod.default">FxIndexMap::default</a>();
+<a href=#454 id=454 data-nosnippet>454</a>
+<a href=#455 id=455 data-nosnippet>455</a>        <span class="kw">for </span>(c, <span class="kw">_</span>) <span class="kw">in </span><span class="kw-2">&amp;</span>regions.constraints {
+<a href=#456 id=456 data-nosnippet>456</a>            <span class="kw">match </span>c.kind {
+<a href=#457 id=457 data-nosnippet>457</a>                ConstraintKind::VarSubVar =&gt; {
+<a href=#458 id=458 data-nosnippet>458</a>                    <span class="kw">let </span>sub_vid = c.sub.as_var();
+<a href=#459 id=459 data-nosnippet>459</a>                    <span class="kw">let </span>sup_vid = c.sup.as_var();
+<a href=#460 id=460 data-nosnippet>460</a>                    {
+<a href=#461 id=461 data-nosnippet>461</a>                        <span class="kw">let </span>deps1 = vid_map.entry(RegionTarget::RegionVid(sub_vid)).or_default();
+<a href=#462 id=462 data-nosnippet>462</a>                        deps1.larger.insert(RegionTarget::RegionVid(sup_vid));
+<a href=#463 id=463 data-nosnippet>463</a>                    }
+<a href=#464 id=464 data-nosnippet>464</a>
+<a href=#465 id=465 data-nosnippet>465</a>                    <span class="kw">let </span>deps2 = vid_map.entry(RegionTarget::RegionVid(sup_vid)).or_default();
+<a href=#466 id=466 data-nosnippet>466</a>                    deps2.smaller.insert(RegionTarget::RegionVid(sub_vid));
+<a href=#467 id=467 data-nosnippet>467</a>                }
+<a href=#468 id=468 data-nosnippet>468</a>                ConstraintKind::RegSubVar =&gt; {
+<a href=#469 id=469 data-nosnippet>469</a>                    <span class="kw">let </span>sup_vid = c.sup.as_var();
+<a href=#470 id=470 data-nosnippet>470</a>                    {
+<a href=#471 id=471 data-nosnippet>471</a>                        <span class="kw">let </span>deps1 = vid_map.entry(RegionTarget::Region(c.sub)).or_default();
+<a href=#472 id=472 data-nosnippet>472</a>                        deps1.larger.insert(RegionTarget::RegionVid(sup_vid));
+<a href=#473 id=473 data-nosnippet>473</a>                    }
+<a href=#474 id=474 data-nosnippet>474</a>
+<a href=#475 id=475 data-nosnippet>475</a>                    <span class="kw">let </span>deps2 = vid_map.entry(RegionTarget::RegionVid(sup_vid)).or_default();
+<a href=#476 id=476 data-nosnippet>476</a>                    deps2.smaller.insert(RegionTarget::Region(c.sub));
+<a href=#477 id=477 data-nosnippet>477</a>                }
+<a href=#478 id=478 data-nosnippet>478</a>                ConstraintKind::VarSubReg =&gt; {
+<a href=#479 id=479 data-nosnippet>479</a>                    <span class="kw">let </span>sub_vid = c.sub.as_var();
+<a href=#480 id=480 data-nosnippet>480</a>                    finished_map.insert(sub_vid, c.sup);
+<a href=#481 id=481 data-nosnippet>481</a>                }
+<a href=#482 id=482 data-nosnippet>482</a>                ConstraintKind::RegSubReg =&gt; {
+<a href=#483 id=483 data-nosnippet>483</a>                    {
+<a href=#484 id=484 data-nosnippet>484</a>                        <span class="kw">let </span>deps1 = vid_map.entry(RegionTarget::Region(c.sub)).or_default();
+<a href=#485 id=485 data-nosnippet>485</a>                        deps1.larger.insert(RegionTarget::Region(c.sup));
+<a href=#486 id=486 data-nosnippet>486</a>                    }
+<a href=#487 id=487 data-nosnippet>487</a>
+<a href=#488 id=488 data-nosnippet>488</a>                    <span class="kw">let </span>deps2 = vid_map.entry(RegionTarget::Region(c.sup)).or_default();
+<a href=#489 id=489 data-nosnippet>489</a>                    deps2.smaller.insert(RegionTarget::Region(c.sub));
+<a href=#490 id=490 data-nosnippet>490</a>                }
+<a href=#491 id=491 data-nosnippet>491</a>            }
+<a href=#492 id=492 data-nosnippet>492</a>        }
+<a href=#493 id=493 data-nosnippet>493</a>
+<a href=#494 id=494 data-nosnippet>494</a>        <span class="kw">while </span>!vid_map.is_empty() {
+<a href=#495 id=495 data-nosnippet>495</a>            <span class="kw">let </span>target = <span class="kw-2">*</span>vid_map.keys().next().unwrap();
+<a href=#496 id=496 data-nosnippet>496</a>            <span class="kw">let </span>deps = vid_map.swap_remove(<span class="kw-2">&amp;</span>target).unwrap();
+<a href=#497 id=497 data-nosnippet>497</a>
+<a href=#498 id=498 data-nosnippet>498</a>            <span class="kw">for </span>smaller <span class="kw">in </span>deps.smaller.iter() {
+<a href=#499 id=499 data-nosnippet>499</a>                <span class="kw">for </span>larger <span class="kw">in </span>deps.larger.iter() {
+<a href=#500 id=500 data-nosnippet>500</a>                    <span class="kw">match </span>(smaller, larger) {
+<a href=#501 id=501 data-nosnippet>501</a>                        (<span class="kw-2">&amp;</span>RegionTarget::Region(<span class="kw">_</span>), <span class="kw-2">&amp;</span>RegionTarget::Region(<span class="kw">_</span>)) =&gt; {
+<a href=#502 id=502 data-nosnippet>502</a>                            <span class="kw">if let </span>IndexEntry::Occupied(v) = vid_map.entry(<span class="kw-2">*</span>smaller) {
+<a href=#503 id=503 data-nosnippet>503</a>                                <span class="kw">let </span>smaller_deps = v.into_mut();
+<a href=#504 id=504 data-nosnippet>504</a>                                smaller_deps.larger.insert(<span class="kw-2">*</span>larger);
+<a href=#505 id=505 data-nosnippet>505</a>                                smaller_deps.larger.swap_remove(<span class="kw-2">&amp;</span>target);
+<a href=#506 id=506 data-nosnippet>506</a>                            }
+<a href=#507 id=507 data-nosnippet>507</a>
+<a href=#508 id=508 data-nosnippet>508</a>                            <span class="kw">if let </span>IndexEntry::Occupied(v) = vid_map.entry(<span class="kw-2">*</span>larger) {
+<a href=#509 id=509 data-nosnippet>509</a>                                <span class="kw">let </span>larger_deps = v.into_mut();
+<a href=#510 id=510 data-nosnippet>510</a>                                larger_deps.smaller.insert(<span class="kw-2">*</span>smaller);
+<a href=#511 id=511 data-nosnippet>511</a>                                larger_deps.smaller.swap_remove(<span class="kw-2">&amp;</span>target);
+<a href=#512 id=512 data-nosnippet>512</a>                            }
+<a href=#513 id=513 data-nosnippet>513</a>                        }
+<a href=#514 id=514 data-nosnippet>514</a>                        (<span class="kw-2">&amp;</span>RegionTarget::RegionVid(v1), <span class="kw-2">&amp;</span>RegionTarget::Region(r1)) =&gt; {
+<a href=#515 id=515 data-nosnippet>515</a>                            finished_map.insert(v1, r1);
+<a href=#516 id=516 data-nosnippet>516</a>                        }
+<a href=#517 id=517 data-nosnippet>517</a>                        (<span class="kw-2">&amp;</span>RegionTarget::Region(<span class="kw">_</span>), <span class="kw-2">&amp;</span>RegionTarget::RegionVid(<span class="kw">_</span>)) =&gt; {
+<a href=#518 id=518 data-nosnippet>518</a>                            <span class="comment">// Do nothing; we don't care about regions that are smaller than vids.
+<a href=#519 id=519 data-nosnippet>519</a>                        </span>}
+<a href=#520 id=520 data-nosnippet>520</a>                        (<span class="kw-2">&amp;</span>RegionTarget::RegionVid(<span class="kw">_</span>), <span class="kw-2">&amp;</span>RegionTarget::RegionVid(<span class="kw">_</span>)) =&gt; {
+<a href=#521 id=521 data-nosnippet>521</a>                            <span class="kw">if let </span>IndexEntry::Occupied(v) = vid_map.entry(<span class="kw-2">*</span>smaller) {
+<a href=#522 id=522 data-nosnippet>522</a>                                <span class="kw">let </span>smaller_deps = v.into_mut();
+<a href=#523 id=523 data-nosnippet>523</a>                                smaller_deps.larger.insert(<span class="kw-2">*</span>larger);
+<a href=#524 id=524 data-nosnippet>524</a>                                smaller_deps.larger.swap_remove(<span class="kw-2">&amp;</span>target);
+<a href=#525 id=525 data-nosnippet>525</a>                            }
+<a href=#526 id=526 data-nosnippet>526</a>
+<a href=#527 id=527 data-nosnippet>527</a>                            <span class="kw">if let </span>IndexEntry::Occupied(v) = vid_map.entry(<span class="kw-2">*</span>larger) {
+<a href=#528 id=528 data-nosnippet>528</a>                                <span class="kw">let </span>larger_deps = v.into_mut();
+<a href=#529 id=529 data-nosnippet>529</a>                                larger_deps.smaller.insert(<span class="kw-2">*</span>smaller);
+<a href=#530 id=530 data-nosnippet>530</a>                                larger_deps.smaller.swap_remove(<span class="kw-2">&amp;</span>target);
+<a href=#531 id=531 data-nosnippet>531</a>                            }
+<a href=#532 id=532 data-nosnippet>532</a>                        }
+<a href=#533 id=533 data-nosnippet>533</a>                    }
+<a href=#534 id=534 data-nosnippet>534</a>                }
+<a href=#535 id=535 data-nosnippet>535</a>            }
+<a href=#536 id=536 data-nosnippet>536</a>        }
+<a href=#537 id=537 data-nosnippet>537</a>
+<a href=#538 id=538 data-nosnippet>538</a>        <a href="#453">finished_map</a>
+<a href=#539 id=539 data-nosnippet>539</a>    }
+<a href=#540 id=540 data-nosnippet>540</a>
+<a href=#541 id=541 data-nosnippet>541</a>    <span class="kw">fn </span>is_param_no_infer(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <a href="../../../rustc_middle/ty/generic_args/type.GenericArgsRef.html">GenericArgsRef</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a> {
+<a href=#542 id=542 data-nosnippet>542</a>        <a class="self" href="#541">self</a>.<a href="#545-551">is_of_param</a>(<a href="#541">args</a>.<a href="../../../rustc_middle/ty/list/struct.RawList.html#method.type_at">type_at</a>(<span class="number">0</span>)) &amp;&amp; !<a href="#541">args</a>.<a href="../../../rustc_middle/ty/list/struct.RawList.html#method.types">types</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.any">any</a>(|t| <a href="#542">t</a>.<a href="../../../rustc_trait_selection/infer/canonical/ir/trait.TypeVisitableExt.html">has_infer_types</a>())
+<a href=#543 id=543 data-nosnippet>543</a>    }
+<a href=#544 id=544 data-nosnippet>544</a>
+<a href=#545 id=545 data-nosnippet>545</a>    <span class="kw">pub fn </span>is_of_param(<span class="kw-2">&amp;</span><span class="self">self</span>, ty: <a href="../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a> {
+<a href=#546 id=546 data-nosnippet>546</a>        <span class="kw">match </span><a href="#545">ty</a>.<a href="../../../rustc_middle/ty/struct.Ty.html#method.kind">kind</a>() {
+<a href=#547 id=547 data-nosnippet>547</a>            <a href="../../../rustc_trait_selection/infer/canonical/ir/enum.TyKind.html">ty::Param</a>(<span class="kw">_</span>) =&gt; <span class="bool-val">true</span>,
+<a href=#548 id=548 data-nosnippet>548</a>            <a href="../../../rustc_trait_selection/infer/canonical/ir/enum.TyKind.html">ty::Alias</a>(ty::Projection, p) =&gt; <a class="self" href="#545">self</a>.<a href="#545-551">is_of_param</a>(<a href="#548">p</a>.<a href="../../../rustc_type_ir/ty_kind/struct.AliasTy.html#method.self_ty">self_ty</a>()),
+<a href=#549 id=549 data-nosnippet>549</a>            <span class="kw">_ </span>=&gt; <span class="bool-val">false</span>,
+<a href=#550 id=550 data-nosnippet>550</a>        }
+<a href=#551 id=551 data-nosnippet>551</a>    }
+<a href=#552 id=552 data-nosnippet>552</a>
+<a href=#553 id=553 data-nosnippet>553</a>    <span class="kw">fn </span>is_self_referential_projection(<span class="kw-2">&amp;</span><span class="self">self</span>, p: <a href="../../../rustc_middle/ty/predicate/type.PolyProjectionPredicate.html">ty::PolyProjectionPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a> {
+<a href=#554 id=554 data-nosnippet>554</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(ty) = <a href="#553">p</a>.<a href="../../../rustc_type_ir/binder/struct.Binder.html#method.term">term</a>().<a href="../../../rustc_type_ir/binder/struct.Binder.html#method.skip_binder">skip_binder</a>().<a href="../../../rustc_middle/ty/struct.Term.html#method.as_type">as_type</a>() {
+<a href=#555 id=555 data-nosnippet>555</a>            <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.matches.html">matches!</a>(ty.kind(), ty::Alias(ty::Projection, proj) <span class="kw">if </span>proj == <span class="kw-2">&amp;</span>p.skip_binder().projection_term.expect_ty(<span class="self">self</span>.tcx))
+<a href=#556 id=556 data-nosnippet>556</a>        } <span class="kw">else </span>{
+<a href=#557 id=557 data-nosnippet>557</a>            <span class="bool-val">false
+<a href=#558 id=558 data-nosnippet>558</a>        </span>}
+<a href=#559 id=559 data-nosnippet>559</a>    }
+<a href=#560 id=560 data-nosnippet>560</a>
+<a href=#561 id=561 data-nosnippet>561</a>    <span class="kw">fn </span>evaluate_nested_obligations(
+<a href=#562 id=562 data-nosnippet>562</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#563 id=563 data-nosnippet>563</a>        ty: <a href="../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'_</span>&gt;,
+<a href=#564 id=564 data-nosnippet>564</a>        nested: <span class="kw">impl </span><a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = <a href="../../../rustc_trait_selection/traits/type.PredicateObligation.html">PredicateObligation</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#565 id=565 data-nosnippet>565</a>        computed_preds: <span class="kw-2">&amp;mut </span><a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<a href="../../../rustc_middle/ty/predicate/struct.Predicate.html">ty::Predicate</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#566 id=566 data-nosnippet>566</a>        fresh_preds: <span class="kw-2">&amp;mut </span><a href="../../../rustc_data_structures/fx/type.FxIndexSet.html">FxIndexSet</a>&lt;<a href="../../../rustc_middle/ty/predicate/struct.Predicate.html">ty::Predicate</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#567 id=567 data-nosnippet>567</a>        predicates: <span class="kw-2">&amp;mut </span><a href="https://doc.rust-lang.org/beta/alloc/collections/vec_deque/struct.VecDeque.html">VecDeque</a>&lt;<a href="../../../rustc_middle/ty/predicate/type.PolyTraitPredicate.html">ty::PolyTraitPredicate</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#568 id=568 data-nosnippet>568</a>        selcx: <span class="kw-2">&amp;mut </span><a href="select/mod.rs.html#102-124">SelectionContext</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#569 id=569 data-nosnippet>569</a>    ) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a> {
+<a href=#570 id=570 data-nosnippet>570</a>        <span class="kw">let </span>dummy_cause = <a href="../../../rustc_middle/traits/struct.ObligationCause.html#method.dummy">ObligationCause::dummy</a>();
+<a href=#571 id=571 data-nosnippet>571</a>
+<a href=#572 id=572 data-nosnippet>572</a>        <span class="kw">for </span>obligation <span class="kw">in </span>nested {
+<a href=#573 id=573 data-nosnippet>573</a>            <span class="kw">let </span>is_new_pred =
+<a href=#574 id=574 data-nosnippet>574</a>                fresh_preds.insert(<span class="self">self</span>.clean_pred(selcx.infcx, obligation.predicate));
+<a href=#575 id=575 data-nosnippet>575</a>
+<a href=#576 id=576 data-nosnippet>576</a>            <span class="comment">// Resolve any inference variables that we can, to help selection succeed
+<a href=#577 id=577 data-nosnippet>577</a>            </span><span class="kw">let </span>predicate = selcx.infcx.resolve_vars_if_possible(obligation.predicate);
+<a href=#578 id=578 data-nosnippet>578</a>
+<a href=#579 id=579 data-nosnippet>579</a>            <span class="comment">// We only add a predicate as a user-displayable bound if
+<a href=#580 id=580 data-nosnippet>580</a>            // it involves a generic parameter, and doesn't contain
+<a href=#581 id=581 data-nosnippet>581</a>            // any inference variables.
+<a href=#582 id=582 data-nosnippet>582</a>            //
+<a href=#583 id=583 data-nosnippet>583</a>            // Displaying a bound involving a concrete type (instead of a generic
+<a href=#584 id=584 data-nosnippet>584</a>            // parameter) would be pointless, since it's always true
+<a href=#585 id=585 data-nosnippet>585</a>            // (e.g. u8: Copy)
+<a href=#586 id=586 data-nosnippet>586</a>            // Displaying an inference variable is impossible, since they're
+<a href=#587 id=587 data-nosnippet>587</a>            // an internal compiler detail without a defined visual representation
+<a href=#588 id=588 data-nosnippet>588</a>            //
+<a href=#589 id=589 data-nosnippet>589</a>            // We check this by calling is_of_param on the relevant types
+<a href=#590 id=590 data-nosnippet>590</a>            // from the various possible predicates
+<a href=#591 id=591 data-nosnippet>591</a>
+<a href=#592 id=592 data-nosnippet>592</a>            </span><span class="kw">let </span>bound_predicate = predicate.kind();
+<a href=#593 id=593 data-nosnippet>593</a>            <span class="kw">match </span>bound_predicate.skip_binder() {
+<a href=#594 id=594 data-nosnippet>594</a>                ty::PredicateKind::Clause(ty::ClauseKind::Trait(p)) =&gt; {
+<a href=#595 id=595 data-nosnippet>595</a>                    <span class="comment">// Add this to `predicates` so that we end up calling `select`
+<a href=#596 id=596 data-nosnippet>596</a>                    // with it. If this predicate ends up being unimplemented,
+<a href=#597 id=597 data-nosnippet>597</a>                    // then `evaluate_predicates` will handle adding it the `ParamEnv`
+<a href=#598 id=598 data-nosnippet>598</a>                    // if possible.
+<a href=#599 id=599 data-nosnippet>599</a>                    </span>predicates.push_back(bound_predicate.rebind(p));
+<a href=#600 id=600 data-nosnippet>600</a>                }
+<a href=#601 id=601 data-nosnippet>601</a>                ty::PredicateKind::Clause(ty::ClauseKind::Projection(p)) =&gt; {
+<a href=#602 id=602 data-nosnippet>602</a>                    <span class="kw">let </span>p = bound_predicate.rebind(p);
+<a href=#603 id=603 data-nosnippet>603</a>                    <span class="macro">debug!</span>(
+<a href=#604 id=604 data-nosnippet>604</a>                        <span class="string">"evaluate_nested_obligations: examining projection predicate {:?}"</span>,
+<a href=#605 id=605 data-nosnippet>605</a>                        predicate
+<a href=#606 id=606 data-nosnippet>606</a>                    );
+<a href=#607 id=607 data-nosnippet>607</a>
+<a href=#608 id=608 data-nosnippet>608</a>                    <span class="comment">// As described above, we only want to display
+<a href=#609 id=609 data-nosnippet>609</a>                    // bounds which include a generic parameter but don't include
+<a href=#610 id=610 data-nosnippet>610</a>                    // an inference variable.
+<a href=#611 id=611 data-nosnippet>611</a>                    // Additionally, we check if we've seen this predicate before,
+<a href=#612 id=612 data-nosnippet>612</a>                    // to avoid rendering duplicate bounds to the user.
+<a href=#613 id=613 data-nosnippet>613</a>                    </span><span class="kw">if </span><span class="self">self</span>.is_param_no_infer(p.skip_binder().projection_term.args)
+<a href=#614 id=614 data-nosnippet>614</a>                        &amp;&amp; !p.term().skip_binder().has_infer_types()
+<a href=#615 id=615 data-nosnippet>615</a>                        &amp;&amp; is_new_pred
+<a href=#616 id=616 data-nosnippet>616</a>                    {
+<a href=#617 id=617 data-nosnippet>617</a>                        <span class="macro">debug!</span>(
+<a href=#618 id=618 data-nosnippet>618</a>                            <span class="string">"evaluate_nested_obligations: adding projection predicate \
+<a href=#619 id=619 data-nosnippet>619</a>                            to computed_preds: {:?}"</span>,
+<a href=#620 id=620 data-nosnippet>620</a>                            predicate
+<a href=#621 id=621 data-nosnippet>621</a>                        );
+<a href=#622 id=622 data-nosnippet>622</a>
+<a href=#623 id=623 data-nosnippet>623</a>                        <span class="comment">// Under unusual circumstances, we can end up with a self-referential
+<a href=#624 id=624 data-nosnippet>624</a>                        // projection predicate. For example:
+<a href=#625 id=625 data-nosnippet>625</a>                        // &lt;T as MyType&gt;::Value == &lt;T as MyType&gt;::Value
+<a href=#626 id=626 data-nosnippet>626</a>                        // Not only is displaying this to the user pointless,
+<a href=#627 id=627 data-nosnippet>627</a>                        // having it in the ParamEnv will cause an issue if we try to call
+<a href=#628 id=628 data-nosnippet>628</a>                        // poly_project_and_unify_type on the predicate, since this kind of
+<a href=#629 id=629 data-nosnippet>629</a>                        // predicate will normally never end up in a ParamEnv.
+<a href=#630 id=630 data-nosnippet>630</a>                        //
+<a href=#631 id=631 data-nosnippet>631</a>                        // For these reasons, we ignore these weird predicates,
+<a href=#632 id=632 data-nosnippet>632</a>                        // ensuring that we're able to properly synthesize an auto trait impl
+<a href=#633 id=633 data-nosnippet>633</a>                        </span><span class="kw">if </span><span class="self">self</span>.is_self_referential_projection(p) {
+<a href=#634 id=634 data-nosnippet>634</a>                            <span class="macro">debug!</span>(
+<a href=#635 id=635 data-nosnippet>635</a>                                <span class="string">"evaluate_nested_obligations: encountered a projection
+<a href=#636 id=636 data-nosnippet>636</a>                                 predicate equating a type with itself! Skipping"
+<a href=#637 id=637 data-nosnippet>637</a>                            </span>);
+<a href=#638 id=638 data-nosnippet>638</a>                        } <span class="kw">else </span>{
+<a href=#639 id=639 data-nosnippet>639</a>                            <span class="self">self</span>.add_user_pred(computed_preds, predicate);
+<a href=#640 id=640 data-nosnippet>640</a>                        }
+<a href=#641 id=641 data-nosnippet>641</a>                    }
+<a href=#642 id=642 data-nosnippet>642</a>
+<a href=#643 id=643 data-nosnippet>643</a>                    <span class="comment">// There are three possible cases when we project a predicate:
+<a href=#644 id=644 data-nosnippet>644</a>                    //
+<a href=#645 id=645 data-nosnippet>645</a>                    // 1. We encounter an error. This means that it's impossible for
+<a href=#646 id=646 data-nosnippet>646</a>                    // our current type to implement the auto trait - there's bound
+<a href=#647 id=647 data-nosnippet>647</a>                    // that we could add to our ParamEnv that would 'fix' this kind
+<a href=#648 id=648 data-nosnippet>648</a>                    // of error, as it's not caused by an unimplemented type.
+<a href=#649 id=649 data-nosnippet>649</a>                    //
+<a href=#650 id=650 data-nosnippet>650</a>                    // 2. We successfully project the predicate (Ok(Some(_))), generating
+<a href=#651 id=651 data-nosnippet>651</a>                    //  some subobligations. We then process these subobligations
+<a href=#652 id=652 data-nosnippet>652</a>                    //  like any other generated sub-obligations.
+<a href=#653 id=653 data-nosnippet>653</a>                    //
+<a href=#654 id=654 data-nosnippet>654</a>                    // 3. We receive an 'ambiguous' result (Ok(None))
+<a href=#655 id=655 data-nosnippet>655</a>                    // If we were actually trying to compile a crate,
+<a href=#656 id=656 data-nosnippet>656</a>                    // we would need to re-process this obligation later.
+<a href=#657 id=657 data-nosnippet>657</a>                    // However, all we care about is finding out what bounds
+<a href=#658 id=658 data-nosnippet>658</a>                    // are needed for our type to implement a particular auto trait.
+<a href=#659 id=659 data-nosnippet>659</a>                    // We've already added this obligation to our computed ParamEnv
+<a href=#660 id=660 data-nosnippet>660</a>                    // above (if it was necessary). Therefore, we don't need
+<a href=#661 id=661 data-nosnippet>661</a>                    // to do any further processing of the obligation.
+<a href=#662 id=662 data-nosnippet>662</a>                    //
+<a href=#663 id=663 data-nosnippet>663</a>                    // Note that we *must* try to project *all* projection predicates
+<a href=#664 id=664 data-nosnippet>664</a>                    // we encounter, even ones without inference variable.
+<a href=#665 id=665 data-nosnippet>665</a>                    // This ensures that we detect any projection errors,
+<a href=#666 id=666 data-nosnippet>666</a>                    // which indicate that our type can *never* implement the given
+<a href=#667 id=667 data-nosnippet>667</a>                    // auto trait. In that case, we will generate an explicit negative
+<a href=#668 id=668 data-nosnippet>668</a>                    // impl (e.g. 'impl !Send for MyType'). However, we don't
+<a href=#669 id=669 data-nosnippet>669</a>                    // try to process any of the generated subobligations -
+<a href=#670 id=670 data-nosnippet>670</a>                    // they contain no new information, since we already know
+<a href=#671 id=671 data-nosnippet>671</a>                    // that our type implements the projected-through trait,
+<a href=#672 id=672 data-nosnippet>672</a>                    // and can lead to weird region issues.
+<a href=#673 id=673 data-nosnippet>673</a>                    //
+<a href=#674 id=674 data-nosnippet>674</a>                    // Normally, we'll generate a negative impl as a result of encountering
+<a href=#675 id=675 data-nosnippet>675</a>                    // a type with an explicit negative impl of an auto trait
+<a href=#676 id=676 data-nosnippet>676</a>                    // (for example, raw pointers have !Send and !Sync impls)
+<a href=#677 id=677 data-nosnippet>677</a>                    // However, through some **interesting** manipulations of the type
+<a href=#678 id=678 data-nosnippet>678</a>                    // system, it's actually possible to write a type that never
+<a href=#679 id=679 data-nosnippet>679</a>                    // implements an auto trait due to a projection error, not a normal
+<a href=#680 id=680 data-nosnippet>680</a>                    // negative impl error. To properly handle this case, we need
+<a href=#681 id=681 data-nosnippet>681</a>                    // to ensure that we catch any potential projection errors,
+<a href=#682 id=682 data-nosnippet>682</a>                    // and turn them into an explicit negative impl for our type.
+<a href=#683 id=683 data-nosnippet>683</a>                    </span><span class="macro">debug!</span>(<span class="string">"Projecting and unifying projection predicate {:?}"</span>, predicate);
+<a href=#684 id=684 data-nosnippet>684</a>
+<a href=#685 id=685 data-nosnippet>685</a>                    <span class="kw">match </span>project::poly_project_and_unify_term(selcx, <span class="kw-2">&amp;</span>obligation.with(<span class="self">self</span>.tcx, p))
+<a href=#686 id=686 data-nosnippet>686</a>                    {
+<a href=#687 id=687 data-nosnippet>687</a>                        ProjectAndUnifyResult::MismatchedProjectionTypes(e) =&gt; {
+<a href=#688 id=688 data-nosnippet>688</a>                            <span class="macro">debug!</span>(
+<a href=#689 id=689 data-nosnippet>689</a>                                <span class="string">"evaluate_nested_obligations: Unable to unify predicate \
+<a href=#690 id=690 data-nosnippet>690</a>                                 '{:?}' '{:?}', bailing out"</span>,
+<a href=#691 id=691 data-nosnippet>691</a>                                ty, e
+<a href=#692 id=692 data-nosnippet>692</a>                            );
+<a href=#693 id=693 data-nosnippet>693</a>                            <span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#694 id=694 data-nosnippet>694</a>                        }
+<a href=#695 id=695 data-nosnippet>695</a>                        ProjectAndUnifyResult::Recursive =&gt; {
+<a href=#696 id=696 data-nosnippet>696</a>                            <span class="macro">debug!</span>(<span class="string">"evaluate_nested_obligations: recursive projection predicate"</span>);
+<a href=#697 id=697 data-nosnippet>697</a>                            <span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#698 id=698 data-nosnippet>698</a>                        }
+<a href=#699 id=699 data-nosnippet>699</a>                        ProjectAndUnifyResult::Holds(v) =&gt; {
+<a href=#700 id=700 data-nosnippet>700</a>                            <span class="comment">// We only care about sub-obligations
+<a href=#701 id=701 data-nosnippet>701</a>                            // when we started out trying to unify
+<a href=#702 id=702 data-nosnippet>702</a>                            // some inference variables. See the comment above
+<a href=#703 id=703 data-nosnippet>703</a>                            // for more information
+<a href=#704 id=704 data-nosnippet>704</a>                            </span><span class="kw">if </span>p.term().skip_binder().has_infer_types() {
+<a href=#705 id=705 data-nosnippet>705</a>                                <span class="kw">if </span>!<span class="self">self</span>.evaluate_nested_obligations(
+<a href=#706 id=706 data-nosnippet>706</a>                                    ty,
+<a href=#707 id=707 data-nosnippet>707</a>                                    v.into_iter(),
+<a href=#708 id=708 data-nosnippet>708</a>                                    computed_preds,
+<a href=#709 id=709 data-nosnippet>709</a>                                    fresh_preds,
+<a href=#710 id=710 data-nosnippet>710</a>                                    predicates,
+<a href=#711 id=711 data-nosnippet>711</a>                                    selcx,
+<a href=#712 id=712 data-nosnippet>712</a>                                ) {
+<a href=#713 id=713 data-nosnippet>713</a>                                    <span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#714 id=714 data-nosnippet>714</a>                                }
+<a href=#715 id=715 data-nosnippet>715</a>                            }
+<a href=#716 id=716 data-nosnippet>716</a>                        }
+<a href=#717 id=717 data-nosnippet>717</a>                        ProjectAndUnifyResult::FailedNormalization =&gt; {
+<a href=#718 id=718 data-nosnippet>718</a>                            <span class="comment">// It's ok not to make progress when have no inference variables -
+<a href=#719 id=719 data-nosnippet>719</a>                            // in that case, we were only performing unification to check if an
+<a href=#720 id=720 data-nosnippet>720</a>                            // error occurred (which would indicate that it's impossible for our
+<a href=#721 id=721 data-nosnippet>721</a>                            // type to implement the auto trait).
+<a href=#722 id=722 data-nosnippet>722</a>                            // However, we should always make progress (either by generating
+<a href=#723 id=723 data-nosnippet>723</a>                            // subobligations or getting an error) when we started off with
+<a href=#724 id=724 data-nosnippet>724</a>                            // inference variables
+<a href=#725 id=725 data-nosnippet>725</a>                            </span><span class="kw">if </span>p.term().skip_binder().has_infer_types() {
+<a href=#726 id=726 data-nosnippet>726</a>                                <span class="macro">panic!</span>(<span class="string">"Unexpected result when selecting {ty:?} {obligation:?}"</span>)
+<a href=#727 id=727 data-nosnippet>727</a>                            }
+<a href=#728 id=728 data-nosnippet>728</a>                        }
+<a href=#729 id=729 data-nosnippet>729</a>                    }
+<a href=#730 id=730 data-nosnippet>730</a>                }
+<a href=#731 id=731 data-nosnippet>731</a>                ty::PredicateKind::Clause(ty::ClauseKind::RegionOutlives(binder)) =&gt; {
+<a href=#732 id=732 data-nosnippet>732</a>                    <span class="kw">let </span>binder = bound_predicate.rebind(binder);
+<a href=#733 id=733 data-nosnippet>733</a>                    selcx.infcx.enter_forall(binder, |pred| {
+<a href=#734 id=734 data-nosnippet>734</a>                        selcx.infcx.register_region_outlives_constraint(pred, <span class="kw-2">&amp;</span>dummy_cause);
+<a href=#735 id=735 data-nosnippet>735</a>                    });
+<a href=#736 id=736 data-nosnippet>736</a>                }
+<a href=#737 id=737 data-nosnippet>737</a>                ty::PredicateKind::Clause(ty::ClauseKind::TypeOutlives(binder)) =&gt; {
+<a href=#738 id=738 data-nosnippet>738</a>                    <span class="kw">let </span>binder = bound_predicate.rebind(binder);
+<a href=#739 id=739 data-nosnippet>739</a>                    <span class="kw">match </span>(
+<a href=#740 id=740 data-nosnippet>740</a>                        binder.no_bound_vars(),
+<a href=#741 id=741 data-nosnippet>741</a>                        binder.map_bound_ref(|pred| pred.<span class="number">0</span>).no_bound_vars(),
+<a href=#742 id=742 data-nosnippet>742</a>                    ) {
+<a href=#743 id=743 data-nosnippet>743</a>                        (<span class="prelude-val">None</span>, <span class="prelude-val">Some</span>(t_a)) =&gt; {
+<a href=#744 id=744 data-nosnippet>744</a>                            selcx.infcx.register_type_outlives_constraint(
+<a href=#745 id=745 data-nosnippet>745</a>                                t_a,
+<a href=#746 id=746 data-nosnippet>746</a>                                selcx.infcx.tcx.lifetimes.re_static,
+<a href=#747 id=747 data-nosnippet>747</a>                                <span class="kw-2">&amp;</span>dummy_cause,
+<a href=#748 id=748 data-nosnippet>748</a>                            );
+<a href=#749 id=749 data-nosnippet>749</a>                        }
+<a href=#750 id=750 data-nosnippet>750</a>                        (<span class="prelude-val">Some</span>(ty::OutlivesPredicate(t_a, r_b)), <span class="kw">_</span>) =&gt; {
+<a href=#751 id=751 data-nosnippet>751</a>                            selcx.infcx.register_type_outlives_constraint(
+<a href=#752 id=752 data-nosnippet>752</a>                                t_a,
+<a href=#753 id=753 data-nosnippet>753</a>                                r_b,
+<a href=#754 id=754 data-nosnippet>754</a>                                <span class="kw-2">&amp;</span>dummy_cause,
+<a href=#755 id=755 data-nosnippet>755</a>                            );
+<a href=#756 id=756 data-nosnippet>756</a>                        }
+<a href=#757 id=757 data-nosnippet>757</a>                        <span class="kw">_ </span>=&gt; {}
+<a href=#758 id=758 data-nosnippet>758</a>                    };
+<a href=#759 id=759 data-nosnippet>759</a>                }
+<a href=#760 id=760 data-nosnippet>760</a>                ty::PredicateKind::ConstEquate(c1, c2) =&gt; {
+<a href=#761 id=761 data-nosnippet>761</a>                    <span class="kw">let </span>evaluate = |c: ty::Const&lt;<span class="lifetime">'tcx</span>&gt;| {
+<a href=#762 id=762 data-nosnippet>762</a>                        <span class="kw">if let </span>ty::ConstKind::Unevaluated(unevaluated) = c.kind() {
+<a href=#763 id=763 data-nosnippet>763</a>                            <span class="kw">let </span>ct = <span class="kw">super</span>::try_evaluate_const(
+<a href=#764 id=764 data-nosnippet>764</a>                                selcx.infcx,
+<a href=#765 id=765 data-nosnippet>765</a>                                c,
+<a href=#766 id=766 data-nosnippet>766</a>                                obligation.param_env,
+<a href=#767 id=767 data-nosnippet>767</a>                            );
+<a href=#768 id=768 data-nosnippet>768</a>
+<a href=#769 id=769 data-nosnippet>769</a>                            <span class="kw">if let </span><span class="prelude-val">Err</span>(EvaluateConstErr::InvalidConstParamTy(<span class="kw">_</span>)) = ct {
+<a href=#770 id=770 data-nosnippet>770</a>                                <span class="self">self</span>.tcx.dcx().emit_err(UnableToConstructConstantValue {
+<a href=#771 id=771 data-nosnippet>771</a>                                    span: <span class="self">self</span>.tcx.def_span(unevaluated.def),
+<a href=#772 id=772 data-nosnippet>772</a>                                    unevaluated,
+<a href=#773 id=773 data-nosnippet>773</a>                                });
+<a href=#774 id=774 data-nosnippet>774</a>                            }
+<a href=#775 id=775 data-nosnippet>775</a>
+<a href=#776 id=776 data-nosnippet>776</a>                            ct
+<a href=#777 id=777 data-nosnippet>777</a>                        } <span class="kw">else </span>{
+<a href=#778 id=778 data-nosnippet>778</a>                            <span class="prelude-val">Ok</span>(c)
+<a href=#779 id=779 data-nosnippet>779</a>                        }
+<a href=#780 id=780 data-nosnippet>780</a>                    };
+<a href=#781 id=781 data-nosnippet>781</a>
+<a href=#782 id=782 data-nosnippet>782</a>                    <span class="kw">match </span>(evaluate(c1), evaluate(c2)) {
+<a href=#783 id=783 data-nosnippet>783</a>                        (<span class="prelude-val">Ok</span>(c1), <span class="prelude-val">Ok</span>(c2)) =&gt; {
+<a href=#784 id=784 data-nosnippet>784</a>                            <span class="kw">match </span>selcx.infcx.at(<span class="kw-2">&amp;</span>obligation.cause, obligation.param_env).eq(DefineOpaqueTypes::Yes,c1, c2)
+<a href=#785 id=785 data-nosnippet>785</a>                            {
+<a href=#786 id=786 data-nosnippet>786</a>                                <span class="prelude-val">Ok</span>(<span class="kw">_</span>) =&gt; (),
+<a href=#787 id=787 data-nosnippet>787</a>                                <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; <span class="kw">return </span><span class="bool-val">false</span>,
+<a href=#788 id=788 data-nosnippet>788</a>                            }
+<a href=#789 id=789 data-nosnippet>789</a>                        }
+<a href=#790 id=790 data-nosnippet>790</a>                        <span class="kw">_ </span>=&gt; <span class="kw">return </span><span class="bool-val">false</span>,
+<a href=#791 id=791 data-nosnippet>791</a>                    }
+<a href=#792 id=792 data-nosnippet>792</a>                }
+<a href=#793 id=793 data-nosnippet>793</a>
+<a href=#794 id=794 data-nosnippet>794</a>                <span class="comment">// There's not really much we can do with these predicates -
+<a href=#795 id=795 data-nosnippet>795</a>                // we start out with a `ParamEnv` with no inference variables,
+<a href=#796 id=796 data-nosnippet>796</a>                // and these don't correspond to adding any new bounds to
+<a href=#797 id=797 data-nosnippet>797</a>                // the `ParamEnv`.
+<a href=#798 id=798 data-nosnippet>798</a>                </span>ty::PredicateKind::Clause(ty::ClauseKind::WellFormed(..))
+<a href=#799 id=799 data-nosnippet>799</a>                | ty::PredicateKind::Clause(ty::ClauseKind::ConstArgHasType(..))
+<a href=#800 id=800 data-nosnippet>800</a>                | ty::PredicateKind::NormalizesTo(..)
+<a href=#801 id=801 data-nosnippet>801</a>                | ty::PredicateKind::AliasRelate(..)
+<a href=#802 id=802 data-nosnippet>802</a>                | ty::PredicateKind::DynCompatible(..)
+<a href=#803 id=803 data-nosnippet>803</a>                | ty::PredicateKind::Subtype(..)
+<a href=#804 id=804 data-nosnippet>804</a>                <span class="comment">// FIXME(generic_const_exprs): you can absolutely add this as a where clauses
+<a href=#805 id=805 data-nosnippet>805</a>                </span>| ty::PredicateKind::Clause(ty::ClauseKind::ConstEvaluatable(..))
+<a href=#806 id=806 data-nosnippet>806</a>                | ty::PredicateKind::Coerce(..)
+<a href=#807 id=807 data-nosnippet>807</a>                | ty::PredicateKind::Clause(ty::ClauseKind::UnstableFeature(<span class="kw">_</span>))
+<a href=#808 id=808 data-nosnippet>808</a>                | ty::PredicateKind::Clause(ty::ClauseKind::HostEffect(..)) =&gt; {}
+<a href=#809 id=809 data-nosnippet>809</a>                ty::PredicateKind::Ambiguous =&gt; <span class="kw">return </span><span class="bool-val">false</span>,
+<a href=#810 id=810 data-nosnippet>810</a>            };
+<a href=#811 id=811 data-nosnippet>811</a>        }
+<a href=#812 id=812 data-nosnippet>812</a>        <span class="bool-val">true
+<a href=#813 id=813 data-nosnippet>813</a>    </span>}
+<a href=#814 id=814 data-nosnippet>814</a>
+<a href=#815 id=815 data-nosnippet>815</a>    <span class="kw">pub fn </span>clean_pred(
+<a href=#816 id=816 data-nosnippet>816</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#817 id=817 data-nosnippet>817</a>        infcx: <span class="kw-2">&amp;</span><a href="../../../rustc_trait_selection/infer/struct.InferCtxt.html">InferCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#818 id=818 data-nosnippet>818</a>        p: <a href="../../../rustc_middle/ty/predicate/struct.Predicate.html">ty::Predicate</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#819 id=819 data-nosnippet>819</a>    ) -&gt; <a href="../../../rustc_middle/ty/predicate/struct.Predicate.html">ty::Predicate</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#820 id=820 data-nosnippet>820</a>        <a href="#817">infcx</a>.<a href="../../../rustc_infer/infer/struct.InferCtxt.html#method.freshen">freshen</a>(<a href="#818">p</a>)
+<a href=#821 id=821 data-nosnippet>821</a>    }
+<a href=#822 id=822 data-nosnippet>822</a>}</code></pre></div></section></main></body></html>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["is_inline_valid_on_body","is_inline_valid_on_fn"],"struct":["CheckForceInline"]};

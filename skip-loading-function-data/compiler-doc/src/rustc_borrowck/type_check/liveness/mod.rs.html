@@ -1,0 +1,214 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_borrowck/src/type_check/liveness/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="rustc_borrowck" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-beta.1 (788da80fc 2025-08-04)" data-channel="beta" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../../../static.files/storage-68b7e25d.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_borrowck/type_check/liveness/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="kw">use </span>itertools::{<a href="https://docs.rs/either/1/either/enum.Either.html">Either</a>, <a href="https://docs.rs/itertools/0.12.1/itertools/trait.Itertools.html">Itertools</a>};
+<a href=#2 id=2 data-nosnippet>2</a><span class="kw">use </span><a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">rustc_data_structures::fx::FxHashSet</a>;
+<a href=#3 id=3 data-nosnippet>3</a><span class="kw">use </span>rustc_middle::mir::visit::{<a href="../../../../rustc_middle/mir/visit/enum.TyContext.html">TyContext</a>, <a href="../../../../rustc_middle/mir/visit/trait.Visitor.html">Visitor</a>};
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span>rustc_middle::mir::{<a href="../../../../rustc_middle/mir/struct.Body.html">Body</a>, <a href="../../../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="../../../../rustc_middle/mir/struct.Location.html">Location</a>, <a href="../../../../rustc_middle/mir/struct.SourceInfo.html">SourceInfo</a>};
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="../../../../rustc_middle/macro.span_bug.html">rustc_middle::span_bug</a>;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><a href="../../../../rustc_type_ir/relate/trait.Relate.html">rustc_middle::ty::relate::Relate</a>;
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>rustc_middle::ty::{<a href="../../../../rustc_middle/ty/generic_args/type.GenericArgsRef.html">GenericArgsRef</a>, <a href="../../../../rustc_middle/ty/region/struct.Region.html">Region</a>, <a href="../../../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>, <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>, <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>, <a href="../../../../rustc_type_ir/visit/trait.TypeVisitable.html">TypeVisitable</a>};
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="../../../../rustc_mir_dataflow/move_paths/struct.MoveData.html">rustc_mir_dataflow::move_paths::MoveData</a>;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="../../../../rustc_mir_dataflow/points/struct.DenseLocationMap.html">rustc_mir_dataflow::points::DenseLocationMap</a>;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span><a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">tracing::debug</a>;
+<a href=#11 id=11 data-nosnippet>11</a>
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span><a href="../mod.rs.html#214-235"><span class="kw">super</span>::TypeChecker</a>;
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span><a href="../../constraints/mod.rs.html#19-21"><span class="kw">crate</span>::constraints::OutlivesConstraintSet</a>;
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span><a href="../../polonius/mod.rs.html#75-85"><span class="kw">crate</span>::polonius::PoloniusLivenessContext</a>;
+<a href=#15 id=15 data-nosnippet>15</a><span class="kw">use </span><a href="../../region_infer/values.rs.html#40-56"><span class="kw">crate</span>::region_infer::values::LivenessValues</a>;
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">use </span><a href="../../universal_regions.rs.html#43-90"><span class="kw">crate</span>::universal_regions::UniversalRegions</a>;
+<a href=#17 id=17 data-nosnippet>17</a>
+<a href=#18 id=18 data-nosnippet>18</a><span class="kw">mod </span><a href="local_use_map.rs.html#1-158">local_use_map</a>;
+<a href=#19 id=19 data-nosnippet>19</a><span class="kw">mod </span><a href="trace.rs.html#1-674">trace</a>;
+<a href=#20 id=20 data-nosnippet>20</a>
+<a href=#21 id=21 data-nosnippet>21</a><span class="doccomment">/// Combines liveness analysis with initialization analysis to
+<a href=#22 id=22 data-nosnippet>22</a>/// determine which variables are live at which points, both due to
+<a href=#23 id=23 data-nosnippet>23</a>/// ordinary uses and drops. Returns a set of (ty, location) pairs
+<a href=#24 id=24 data-nosnippet>24</a>/// that indicate which types must be live at which point in the CFG.
+<a href=#25 id=25 data-nosnippet>25</a>/// This vector is consumed by `constraint_generation`.
+<a href=#26 id=26 data-nosnippet>26</a>///
+<a href=#27 id=27 data-nosnippet>27</a>/// N.B., this computation requires normalization; therefore, it must be
+<a href=#28 id=28 data-nosnippet>28</a>/// performed before
+<a href=#29 id=29 data-nosnippet>29</a></span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span><a href="../../../../rustc_borrowck/type_check/liveness/fn.generate.html">generate</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#30 id=30 data-nosnippet>30</a>    typeck: <span class="kw-2">&amp;mut </span><a href="../mod.rs.html#214-235">TypeChecker</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt;,
+<a href=#31 id=31 data-nosnippet>31</a>    location_map: <span class="kw-2">&amp;</span><a href="../../../../rustc_mir_dataflow/points/struct.DenseLocationMap.html">DenseLocationMap</a>,
+<a href=#32 id=32 data-nosnippet>32</a>    move_data: <span class="kw-2">&amp;</span><a href="../../../../rustc_mir_dataflow/move_paths/struct.MoveData.html">MoveData</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#33 id=33 data-nosnippet>33</a>) {
+<a href=#34 id=34 data-nosnippet>34</a>    <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"liveness::generate"</span>);
+<a href=#35 id=35 data-nosnippet>35</a>
+<a href=#36 id=36 data-nosnippet>36</a>    <span class="kw">let </span><span class="kw-2">mut </span>free_regions = <a href="#101-135">regions_that_outlive_free_regions</a>(
+<a href=#37 id=37 data-nosnippet>37</a>        <a href="#30">typeck</a>.infcx.<a href="../../../../rustc_infer/infer/struct.InferCtxt.html#method.num_region_vars">num_region_vars</a>(),
+<a href=#38 id=38 data-nosnippet>38</a>        <span class="kw-2">&amp;</span><a href="#30">typeck</a>.universal_regions,
+<a href=#39 id=39 data-nosnippet>39</a>        <span class="kw-2">&amp;</span><a href="#30">typeck</a>.constraints.outlives_constraints,
+<a href=#40 id=40 data-nosnippet>40</a>    );
+<a href=#41 id=41 data-nosnippet>41</a>
+<a href=#42 id=42 data-nosnippet>42</a>    <span class="comment">// NLLs can avoid computing some liveness data here because its constraints are
+<a href=#43 id=43 data-nosnippet>43</a>    // location-insensitive, but that doesn't work in polonius: locals whose type contains a region
+<a href=#44 id=44 data-nosnippet>44</a>    // that outlives a free region are not necessarily live everywhere in a flow-sensitive setting,
+<a href=#45 id=45 data-nosnippet>45</a>    // unlike NLLs.
+<a href=#46 id=46 data-nosnippet>46</a>    // We do record these regions in the polonius context, since they're used to differentiate
+<a href=#47 id=47 data-nosnippet>47</a>    // relevant and boring locals, which is a key distinction used later in diagnostics.
+<a href=#48 id=48 data-nosnippet>48</a>    </span><span class="kw">if </span><a href="#30">typeck</a>.<a href="../mod.rs.html#368-370">tcx</a>().sess.opts.unstable_opts.polonius.<a href="../../../../rustc_session/config/enum.Polonius.html#method.is_next_enabled">is_next_enabled</a>() {
+<a href=#49 id=49 data-nosnippet>49</a>        <span class="kw">let </span>(<span class="kw">_</span>, boring_locals) =
+<a href=#50 id=50 data-nosnippet>50</a>            <a href="#76-95">compute_relevant_live_locals</a>(<a href="#30">typeck</a>.<a href="../mod.rs.html#368-370">tcx</a>(), <span class="kw-2">&amp;</span><a href="#36">free_regions</a>, <a href="#30">typeck</a>.body);
+<a href=#51 id=51 data-nosnippet>51</a>        <a href="#30">typeck</a>.polonius_liveness.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_mut">as_mut</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>().boring_nll_locals =
+<a href=#52 id=52 data-nosnippet>52</a>            <a href="#49">boring_locals</a>.<a href="https://doc.rust-lang.org/beta/core/iter/traits/collect/trait.IntoIterator.html#tymethod.into_iter">into_iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#53 id=53 data-nosnippet>53</a>        <a href="#36">free_regions</a> = <a href="#30">typeck</a>.universal_regions.<a href="../../universal_regions.rs.html#334-336">universal_regions_iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#54 id=54 data-nosnippet>54</a>    }
+<a href=#55 id=55 data-nosnippet>55</a>    <span class="kw">let </span>(relevant_live_locals, boring_locals) =
+<a href=#56 id=56 data-nosnippet>56</a>        <a href="#76-95">compute_relevant_live_locals</a>(<a href="#30">typeck</a>.<a href="../mod.rs.html#368-370">tcx</a>(), <span class="kw-2">&amp;</span><a href="#36">free_regions</a>, <a href="#30">typeck</a>.body);
+<a href=#57 id=57 data-nosnippet>57</a>
+<a href=#58 id=58 data-nosnippet>58</a>    <a href="trace.rs.html#40-64">trace::trace</a>(<a href="#30">typeck</a>, <a href="#31">location_map</a>, <a href="#32">move_data</a>, <a href="#55">relevant_live_locals</a>, <a href="#55">boring_locals</a>);
+<a href=#59 id=59 data-nosnippet>59</a>
+<a href=#60 id=60 data-nosnippet>60</a>    <span class="comment">// Mark regions that should be live where they appear within rvalues or within a call: like
+<a href=#61 id=61 data-nosnippet>61</a>    // args, regions, and types.
+<a href=#62 id=62 data-nosnippet>62</a>    </span><a href="#139-151">record_regular_live_regions</a>(
+<a href=#63 id=63 data-nosnippet>63</a>        <a href="#30">typeck</a>.<a href="../mod.rs.html#368-370">tcx</a>(),
+<a href=#64 id=64 data-nosnippet>64</a>        <span class="kw-2">&amp;mut </span><a href="#30">typeck</a>.constraints.liveness_constraints,
+<a href=#65 id=65 data-nosnippet>65</a>        <span class="kw-2">&amp;</span><a href="#30">typeck</a>.universal_regions,
+<a href=#66 id=66 data-nosnippet>66</a>        <span class="kw-2">&amp;mut </span><a href="#30">typeck</a>.polonius_liveness,
+<a href=#67 id=67 data-nosnippet>67</a>        <a href="#30">typeck</a>.body,
+<a href=#68 id=68 data-nosnippet>68</a>    );
+<a href=#69 id=69 data-nosnippet>69</a>}
+<a href=#70 id=70 data-nosnippet>70</a>
+<a href=#71 id=71 data-nosnippet>71</a><span class="comment">// The purpose of `compute_relevant_live_locals` is to define the subset of `Local`
+<a href=#72 id=72 data-nosnippet>72</a>// variables for which we need to do a liveness computation. We only need
+<a href=#73 id=73 data-nosnippet>73</a>// to compute whether a variable `X` is live if that variable contains
+<a href=#74 id=74 data-nosnippet>74</a>// some region `R` in its type where `R` is not known to outlive a free
+<a href=#75 id=75 data-nosnippet>75</a>// region (i.e., where `R` may be valid for just a subset of the fn body).
+<a href=#76 id=76 data-nosnippet>76</a></span><span class="kw">fn </span><a href="../../../../rustc_borrowck/type_check/liveness/fn.compute_relevant_live_locals.html">compute_relevant_live_locals</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#77 id=77 data-nosnippet>77</a>    tcx: <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#78 id=78 data-nosnippet>78</a>    free_regions: <span class="kw-2">&amp;</span><a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>&lt;<a href="../../../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>&gt;,
+<a href=#79 id=79 data-nosnippet>79</a>    body: <span class="kw-2">&amp;</span><a href="../../../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#80 id=80 data-nosnippet>80</a>) -&gt; (<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../../../rustc_middle/mir/struct.Local.html">Local</a>&gt;, <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../../../rustc_middle/mir/struct.Local.html">Local</a>&gt;) {
+<a href=#81 id=81 data-nosnippet>81</a>    <span class="kw">let </span>(boring_locals, relevant_live_locals): (<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw">_</span>&gt;, <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw">_</span>&gt;) =
+<a href=#82 id=82 data-nosnippet>82</a>        <a href="#79">body</a>.local_decls.<a href="../../../../rustc_index/slice/struct.IndexSlice.html#method.iter_enumerated">iter_enumerated</a>().<a href="https://docs.rs/itertools/0.12.1/itertools/trait.Itertools.html#tymethod.partition_map">partition_map</a>(|(local, local_decl)| {
+<a href=#83 id=83 data-nosnippet>83</a>            <span class="kw">if </span><a href="#77">tcx</a>.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.all_free_regions_meet">all_free_regions_meet</a>(<span class="kw-2">&amp;</span><a href="#82">local_decl</a>.ty, |r| <a href="#78">free_regions</a>.<a href="https://doc.rust-lang.org/beta/std/collections/hash/set/struct.HashSet.html#method.contains">contains</a>(<span class="kw-2">&amp;</span><a href="#83">r</a>.<a href="../../../../rustc_middle/ty/region/struct.Region.html#method.as_var">as_var</a>())) {
+<a href=#84 id=84 data-nosnippet>84</a>                <a href="https://docs.rs/either/1/either/enum.Either.html#variant.Left">Either::Left</a>(<a href="#82">local</a>)
+<a href=#85 id=85 data-nosnippet>85</a>            } <span class="kw">else </span>{
+<a href=#86 id=86 data-nosnippet>86</a>                <a href="https://docs.rs/either/1/either/enum.Either.html#variant.Right">Either::Right</a>(<a href="#82">local</a>)
+<a href=#87 id=87 data-nosnippet>87</a>            }
+<a href=#88 id=88 data-nosnippet>88</a>        });
+<a href=#89 id=89 data-nosnippet>89</a>
+<a href=#90 id=90 data-nosnippet>90</a>    <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"{} total variables"</span>, body.local_decls.len());
+<a href=#91 id=91 data-nosnippet>91</a>    <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"{} variables need liveness"</span>, relevant_live_locals.len());
+<a href=#92 id=92 data-nosnippet>92</a>    <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"{} regions outlive free regions"</span>, free_regions.len());
+<a href=#93 id=93 data-nosnippet>93</a>
+<a href=#94 id=94 data-nosnippet>94</a>    (<a href="#81">relevant_live_locals</a>, <a href="#81">boring_locals</a>)
+<a href=#95 id=95 data-nosnippet>95</a>}
+<a href=#96 id=96 data-nosnippet>96</a>
+<a href=#97 id=97 data-nosnippet>97</a><span class="doccomment">/// Computes all regions that are (currently) known to outlive free
+<a href=#98 id=98 data-nosnippet>98</a>/// regions. For these regions, we do not need to compute
+<a href=#99 id=99 data-nosnippet>99</a>/// liveness, since the outlives constraints will ensure that they
+<a href=#100 id=100 data-nosnippet>100</a>/// are live over the whole fn body anyhow.
+<a href=#101 id=101 data-nosnippet>101</a></span><span class="kw">fn </span><a href="../../../../rustc_borrowck/type_check/liveness/fn.regions_that_outlive_free_regions.html">regions_that_outlive_free_regions</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#102 id=102 data-nosnippet>102</a>    num_region_vars: <a href="https://doc.rust-lang.org/beta/std/primitive.usize.html">usize</a>,
+<a href=#103 id=103 data-nosnippet>103</a>    universal_regions: <span class="kw-2">&amp;</span><a href="../../universal_regions.rs.html#43-90">UniversalRegions</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#104 id=104 data-nosnippet>104</a>    constraint_set: <span class="kw-2">&amp;</span><a href="../../constraints/mod.rs.html#19-21">OutlivesConstraintSet</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#105 id=105 data-nosnippet>105</a>) -&gt; <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>&lt;<a href="../../../../rustc_type_ir/region_kind/struct.RegionVid.html">RegionVid</a>&gt; {
+<a href=#106 id=106 data-nosnippet>106</a>    <span class="comment">// Build a graph of the outlives constraints thus far. This is
+<a href=#107 id=107 data-nosnippet>107</a>    // a reverse graph, so for each constraint `R1: R2` we have an
+<a href=#108 id=108 data-nosnippet>108</a>    // edge `R2 -&gt; R1`. Therefore, if we find all regions
+<a href=#109 id=109 data-nosnippet>109</a>    // reachable from each free region, we will have all the
+<a href=#110 id=110 data-nosnippet>110</a>    // regions that are forced to outlive some free region.
+<a href=#111 id=111 data-nosnippet>111</a>    </span><span class="kw">let </span>rev_constraint_graph = <a href="#104">constraint_set</a>.<a href="../../constraints/mod.rs.html#45-47">reverse_graph</a>(<a href="#102">num_region_vars</a>);
+<a href=#112 id=112 data-nosnippet>112</a>    <span class="kw">let </span>fr_static = <a href="#103">universal_regions</a>.fr_static;
+<a href=#113 id=113 data-nosnippet>113</a>    <span class="kw">let </span>rev_region_graph = <a href="#111">rev_constraint_graph</a>.<a href="../../constraints/graph.rs.html#97-103">region_graph</a>(<a href="#104">constraint_set</a>, <a href="#112">fr_static</a>);
+<a href=#114 id=114 data-nosnippet>114</a>
+<a href=#115 id=115 data-nosnippet>115</a>    <span class="comment">// Stack for the depth-first search. Start out with all the free regions.
+<a href=#116 id=116 data-nosnippet>116</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>stack: <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw">_</span>&gt; = <a href="#103">universal_regions</a>.<a href="../../universal_regions.rs.html#334-336">universal_regions_iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#117 id=117 data-nosnippet>117</a>
+<a href=#118 id=118 data-nosnippet>118</a>    <span class="comment">// Set of all free regions, plus anything that outlives them. Initially
+<a href=#119 id=119 data-nosnippet>119</a>    // just contains the free regions.
+<a href=#120 id=120 data-nosnippet>120</a>    </span><span class="kw">let </span><span class="kw-2">mut </span>outlives_free_region: <a href="https://docs.rs/rustc-hash/2.1.1/rustc_hash/type.FxHashSet.html">FxHashSet</a>&lt;<span class="kw">_</span>&gt; = <a href="#116">stack</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.cloned">cloned</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>();
+<a href=#121 id=121 data-nosnippet>121</a>
+<a href=#122 id=122 data-nosnippet>122</a>    <span class="comment">// Do the DFS -- for each thing in the stack, find all things
+<a href=#123 id=123 data-nosnippet>123</a>    // that outlive it and add them to the set. If they are not,
+<a href=#124 id=124 data-nosnippet>124</a>    // push them onto the stack for later.
+<a href=#125 id=125 data-nosnippet>125</a>    </span><span class="kw">while let </span><span class="prelude-val">Some</span>(sub_region) = stack.pop() {
+<a href=#126 id=126 data-nosnippet>126</a>        stack.extend(
+<a href=#127 id=127 data-nosnippet>127</a>            rev_region_graph
+<a href=#128 id=128 data-nosnippet>128</a>                .outgoing_regions(sub_region)
+<a href=#129 id=129 data-nosnippet>129</a>                .filter(|<span class="kw-2">&amp;</span>r| outlives_free_region.insert(r)),
+<a href=#130 id=130 data-nosnippet>130</a>        );
+<a href=#131 id=131 data-nosnippet>131</a>    }
+<a href=#132 id=132 data-nosnippet>132</a>
+<a href=#133 id=133 data-nosnippet>133</a>    <span class="comment">// Return the final set of things we visited.
+<a href=#134 id=134 data-nosnippet>134</a>    </span><a href="#120">outlives_free_region</a>
+<a href=#135 id=135 data-nosnippet>135</a>}
+<a href=#136 id=136 data-nosnippet>136</a>
+<a href=#137 id=137 data-nosnippet>137</a><span class="doccomment">/// Some variables are "regular live" at `location` -- i.e., they may be used later. This means that
+<a href=#138 id=138 data-nosnippet>138</a>/// all regions appearing in their type must be live at `location`.
+<a href=#139 id=139 data-nosnippet>139</a></span><span class="kw">fn </span><a href="../../../../rustc_borrowck/type_check/liveness/fn.record_regular_live_regions.html">record_regular_live_regions</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#140 id=140 data-nosnippet>140</a>    tcx: <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#141 id=141 data-nosnippet>141</a>    liveness_constraints: <span class="kw-2">&amp;mut </span><a href="../../region_infer/values.rs.html#40-56">LivenessValues</a>,
+<a href=#142 id=142 data-nosnippet>142</a>    universal_regions: <span class="kw-2">&amp;</span><a href="../../universal_regions.rs.html#43-90">UniversalRegions</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#143 id=143 data-nosnippet>143</a>    polonius_liveness: <span class="kw-2">&amp;mut </span><a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="../../polonius/mod.rs.html#75-85">PoloniusLivenessContext</a>&gt;,
+<a href=#144 id=144 data-nosnippet>144</a>    body: <span class="kw-2">&amp;</span><a href="../../../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#145 id=145 data-nosnippet>145</a>) {
+<a href=#146 id=146 data-nosnippet>146</a>    <span class="kw">let </span><span class="kw-2">mut </span>visitor =
+<a href=#147 id=147 data-nosnippet>147</a>        <a href="#154-159">LiveVariablesVisitor</a> { <a href="#140">tcx</a>, <a href="#141">liveness_constraints</a>, <a href="#142">universal_regions</a>, <a href="#143">polonius_liveness</a> };
+<a href=#148 id=148 data-nosnippet>148</a>    <span class="kw">for </span>(bb, data) <span class="kw">in </span>body.basic_blocks.iter_enumerated() {
+<a href=#149 id=149 data-nosnippet>149</a>        visitor.visit_basic_block_data(bb, data);
+<a href=#150 id=150 data-nosnippet>150</a>    }
+<a href=#151 id=151 data-nosnippet>151</a>}
+<a href=#152 id=152 data-nosnippet>152</a>
+<a href=#153 id=153 data-nosnippet>153</a><span class="doccomment">/// Visitor looking for regions that should be live within rvalues or calls.
+<a href=#154 id=154 data-nosnippet>154</a></span><span class="kw">struct </span><a href="../../../../rustc_borrowck/type_check/liveness/struct.LiveVariablesVisitor.html">LiveVariablesVisitor</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#155 id=155 data-nosnippet>155</a>    tcx: <a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#156 id=156 data-nosnippet>156</a>    liveness_constraints: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><a href="../../region_infer/values.rs.html#40-56">LivenessValues</a>,
+<a href=#157 id=157 data-nosnippet>157</a>    universal_regions: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../universal_regions.rs.html#43-90">UniversalRegions</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#158 id=158 data-nosnippet>158</a>    polonius_liveness: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="../../polonius/mod.rs.html#75-85">PoloniusLivenessContext</a>&gt;,
+<a href=#159 id=159 data-nosnippet>159</a>}
+<a href=#160 id=160 data-nosnippet>160</a>
+<a href=#161 id=161 data-nosnippet>161</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; <a href="../../../../rustc_middle/mir/visit/trait.Visitor.html">Visitor</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#154-159">LiveVariablesVisitor</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#162 id=162 data-nosnippet>162</a>    <span class="doccomment">/// We sometimes have `args` within an rvalue, or within a
+<a href=#163 id=163 data-nosnippet>163</a>    /// call. Make them live at the location where they appear.
+<a href=#164 id=164 data-nosnippet>164</a>    </span><span class="kw">fn </span>visit_args(<span class="kw-2">&amp;mut </span><span class="self">self</span>, args: <span class="kw-2">&amp;</span><a href="../../../../rustc_middle/ty/generic_args/type.GenericArgsRef.html">GenericArgsRef</a>&lt;<span class="lifetime">'tcx</span>&gt;, location: <a href="../../../../rustc_middle/mir/struct.Location.html">Location</a>) {
+<a href=#165 id=165 data-nosnippet>165</a>        <a class="self" href="#164">self</a>.<a href="#199-213">record_regions_live_at</a>(<span class="kw-2">*</span><a href="#164">args</a>, <a href="#164">location</a>);
+<a href=#166 id=166 data-nosnippet>166</a>        <a class="self" href="#164">self</a>.<a href="../../../../rustc_middle/mir/visit/trait.Visitor.html#tymethod.super_args">super_args</a>(<a href="#164">args</a>);
+<a href=#167 id=167 data-nosnippet>167</a>    }
+<a href=#168 id=168 data-nosnippet>168</a>
+<a href=#169 id=169 data-nosnippet>169</a>    <span class="doccomment">/// We sometimes have `region`s within an rvalue, or within a
+<a href=#170 id=170 data-nosnippet>170</a>    /// call. Make them live at the location where they appear.
+<a href=#171 id=171 data-nosnippet>171</a>    </span><span class="kw">fn </span>visit_region(<span class="kw-2">&amp;mut </span><span class="self">self</span>, region: <a href="../../../../rustc_middle/ty/region/struct.Region.html">Region</a>&lt;<span class="lifetime">'tcx</span>&gt;, location: <a href="../../../../rustc_middle/mir/struct.Location.html">Location</a>) {
+<a href=#172 id=172 data-nosnippet>172</a>        <a class="self" href="#171">self</a>.<a href="#199-213">record_regions_live_at</a>(<a href="#171">region</a>, <a href="#171">location</a>);
+<a href=#173 id=173 data-nosnippet>173</a>        <a class="self" href="#171">self</a>.<a href="../../../../rustc_middle/mir/visit/trait.Visitor.html#tymethod.super_region">super_region</a>(<a href="#171">region</a>);
+<a href=#174 id=174 data-nosnippet>174</a>    }
+<a href=#175 id=175 data-nosnippet>175</a>
+<a href=#176 id=176 data-nosnippet>176</a>    <span class="doccomment">/// We sometimes have `ty`s within an rvalue, or within a
+<a href=#177 id=177 data-nosnippet>177</a>    /// call. Make them live at the location where they appear.
+<a href=#178 id=178 data-nosnippet>178</a>    </span><span class="kw">fn </span>visit_ty(<span class="kw-2">&amp;mut </span><span class="self">self</span>, ty: <a href="../../../../rustc_middle/ty/struct.Ty.html">Ty</a>&lt;<span class="lifetime">'tcx</span>&gt;, ty_context: <a href="../../../../rustc_middle/mir/visit/enum.TyContext.html">TyContext</a>) {
+<a href=#179 id=179 data-nosnippet>179</a>        <span class="kw">match </span><a href="#178">ty_context</a> {
+<a href=#180 id=180 data-nosnippet>180</a>            <a href="../../../../rustc_middle/mir/visit/enum.TyContext.html#variant.ReturnTy">TyContext::ReturnTy</a>(SourceInfo { span, .. })
+<a href=#181 id=181 data-nosnippet>181</a>            | <a href="../../../../rustc_middle/mir/visit/enum.TyContext.html#variant.YieldTy">TyContext::YieldTy</a>(SourceInfo { span, .. })
+<a href=#182 id=182 data-nosnippet>182</a>            | <a href="../../../../rustc_middle/mir/visit/enum.TyContext.html#variant.ResumeTy">TyContext::ResumeTy</a>(SourceInfo { span, .. })
+<a href=#183 id=183 data-nosnippet>183</a>            | <a href="../../../../rustc_middle/mir/visit/enum.TyContext.html#variant.UserTy">TyContext::UserTy</a>(span)
+<a href=#184 id=184 data-nosnippet>184</a>            | <a href="../../../../rustc_middle/mir/visit/enum.TyContext.html#variant.LocalDecl">TyContext::LocalDecl</a> { source_info: SourceInfo { span, .. }, .. } =&gt; {
+<a href=#185 id=185 data-nosnippet>185</a>                <a class="macro" href="../../../../rustc_middle/macro.span_bug.html">span_bug!</a>(<a href="#180">span</a>, <span class="string">"should not be visiting outside of the CFG: {:?}"</span>, ty_context);
+<a href=#186 id=186 data-nosnippet>186</a>            }
+<a href=#187 id=187 data-nosnippet>187</a>            <a href="../../../../rustc_middle/mir/visit/enum.TyContext.html#variant.Location">TyContext::Location</a>(location) =&gt; {
+<a href=#188 id=188 data-nosnippet>188</a>                <a class="self" href="#178">self</a>.<a href="#199-213">record_regions_live_at</a>(<a href="#178">ty</a>, <a href="#187">location</a>);
+<a href=#189 id=189 data-nosnippet>189</a>            }
+<a href=#190 id=190 data-nosnippet>190</a>        }
+<a href=#191 id=191 data-nosnippet>191</a>
+<a href=#192 id=192 data-nosnippet>192</a>        <a class="self" href="#178">self</a>.<a href="../../../../rustc_middle/mir/visit/trait.Visitor.html#tymethod.super_ty">super_ty</a>(<a href="#178">ty</a>);
+<a href=#193 id=193 data-nosnippet>193</a>    }
+<a href=#194 id=194 data-nosnippet>194</a>}
+<a href=#195 id=195 data-nosnippet>195</a>
+<a href=#196 id=196 data-nosnippet>196</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; <a href="#154-159">LiveVariablesVisitor</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#197 id=197 data-nosnippet>197</a>    <span class="doccomment">/// Some variable is "regular live" at `location` -- i.e., it may be used later. This means that
+<a href=#198 id=198 data-nosnippet>198</a>    /// all regions appearing in the type of `value` must be live at `location`.
+<a href=#199 id=199 data-nosnippet>199</a>    </span><span class="kw">fn </span>record_regions_live_at&lt;T&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, value: T, location: <a href="../../../../rustc_middle/mir/struct.Location.html">Location</a>)
+<a href=#200 id=200 data-nosnippet>200</a>    <span class="kw">where
+<a href=#201 id=201 data-nosnippet>201</a>        </span>T: <a href="../../../../rustc_type_ir/visit/trait.TypeVisitable.html">TypeVisitable</a>&lt;<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt; + <a href="../../../../rustc_type_ir/relate/trait.Relate.html">Relate</a>&lt;<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;&gt;,
+<a href=#202 id=202 data-nosnippet>202</a>    {
+<a href=#203 id=203 data-nosnippet>203</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"record_regions_live_at(value={:?}, location={:?})"</span>, value, location);
+<a href=#204 id=204 data-nosnippet>204</a>        <a class="self" href="#199">self</a>.tcx.<a href="../../../../rustc_middle/ty/context/struct.TyCtxt.html#method.for_each_free_region">for_each_free_region</a>(<span class="kw-2">&amp;</span><a href="#199">value</a>, |live_region| {
+<a href=#205 id=205 data-nosnippet>205</a>            <span class="kw">let </span>live_region_vid = <a href="#204">live_region</a>.<a href="../../../../rustc_middle/ty/region/struct.Region.html#method.as_var">as_var</a>();
+<a href=#206 id=206 data-nosnippet>206</a>            <a class="self" href="#199">self</a>.liveness_constraints.<a href="../../region_infer/values.rs.html#104-112">add_location</a>(<a href="#205">live_region_vid</a>, <a href="#199">location</a>);
+<a href=#207 id=207 data-nosnippet>207</a>        });
+<a href=#208 id=208 data-nosnippet>208</a>
+<a href=#209 id=209 data-nosnippet>209</a>        <span class="comment">// When using `-Zpolonius=next`, we record the variance of each live region.
+<a href=#210 id=210 data-nosnippet>210</a>        </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(polonius_liveness) = <a class="self" href="#199">self</a>.polonius_liveness {
+<a href=#211 id=211 data-nosnippet>211</a>            <a href="#210">polonius_liveness</a>.<a href="../../polonius/liveness_constraints.rs.html#18-31">record_live_region_variance</a>(<a class="self" href="#199">self</a>.tcx, <a class="self" href="#199">self</a>.universal_regions, <a href="#199">value</a>);
+<a href=#212 id=212 data-nosnippet>212</a>        }
+<a href=#213 id=213 data-nosnippet>213</a>    }
+<a href=#214 id=214 data-nosnippet>214</a>}</code></pre></div></section></main></body></html>

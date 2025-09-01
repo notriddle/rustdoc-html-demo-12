@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AnnotationSource","ConstraintCategory","ReturnConstraint"],"struct":["ConcreteOpaqueTypes","ConstQualifs","CoroutineLayout","CoroutineSavedLocal","CoroutineSavedTy","DestructuredConstant"]};

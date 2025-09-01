@@ -1,0 +1,207 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `src/tools/cargo/src/cargo/sources/registry/local.rs`."><title>local.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="cargo" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-beta.1 (788da80fc 2025-08-04)" data-channel="beta" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../../../static.files/storage-68b7e25d.js"></script><script defer src="../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../src-files.js"></script><script defer src="../../../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">cargo/sources/registry/</div>local.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Access to a regstiry on the local filesystem. See [`LocalRegistry`] for more.
+<a href=#2 id=2 data-nosnippet>2</a>
+<a href=#3 id=3 data-nosnippet>3</a></span><span class="kw">use </span><a href="../../core/package_id.rs.html#22-24"><span class="kw">crate</span>::core::PackageId</a>;
+<a href=#4 id=4 data-nosnippet>4</a><span class="kw">use </span><span class="kw">crate</span>::sources::registry::{<a href="mod.rs.html#324-337">LoadResponse</a>, <a href="mod.rs.html#432-445">MaybeLock</a>, <a href="mod.rs.html#289-321">RegistryConfig</a>, <a href="mod.rs.html#344-428">RegistryData</a>};
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="../../util/errors.rs.html#8"><span class="kw">crate</span>::util::errors::CargoResult</a>;
+<a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><span class="kw">crate</span>::util::{<a href="../../util/flock.rs.html#146-148">Filesystem</a>, <a href="../../util/context/mod.rs.html#165-254">GlobalContext</a>};
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>cargo_util::{<a href="../../../../cargo_util/sha256/struct.Sha256.html">Sha256</a>, <a href="../../../../cargo_util/paths/index.html">paths</a>};
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/std/fs/struct.File.html">std::fs::File</a>;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/std/io/enum.SeekFrom.html">std::io::SeekFrom</a>;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>std::io::{<a class="self" href="https://doc.rust-lang.org/beta/std/io/index.html">self</a>, <a href="https://doc.rust-lang.org/beta/std/io/prelude/index.html">prelude</a>::<span class="kw-2">*</span>};
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/std/path/struct.Path.html">std::path::Path</a>;
+<a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/core/task/poll/enum.Poll.html">std::task::Poll</a>;
+<a href=#13 id=13 data-nosnippet>13</a>
+<a href=#14 id=14 data-nosnippet>14</a><span class="doccomment">/// A local registry is a registry that lives on the filesystem as a set of
+<a href=#15 id=15 data-nosnippet>15</a>/// `.crate` files with an `index` directory in the [same format] as a remote
+<a href=#16 id=16 data-nosnippet>16</a>/// registry.
+<a href=#17 id=17 data-nosnippet>17</a>///
+<a href=#18 id=18 data-nosnippet>18</a>/// This type is primarily accessed through the [`RegistryData`] trait.
+<a href=#19 id=19 data-nosnippet>19</a>///
+<a href=#20 id=20 data-nosnippet>20</a>/// When a local registry is requested for a package, it simply looks into what
+<a href=#21 id=21 data-nosnippet>21</a>/// its index has under the `index` directory. When [`LocalRegistry::download`]
+<a href=#22 id=22 data-nosnippet>22</a>/// is called, a local registry verifies the checksum of the requested `.crate`
+<a href=#23 id=23 data-nosnippet>23</a>/// tarball and then unpacks it to `$CARGO_HOME/.registry/src`.
+<a href=#24 id=24 data-nosnippet>24</a>///
+<a href=#25 id=25 data-nosnippet>25</a>/// &gt; Note that there is a third-party subcommand [`cargo-local-registry`],
+<a href=#26 id=26 data-nosnippet>26</a>/// &gt; which happened to be developed by a former Cargo team member when local
+<a href=#27 id=27 data-nosnippet>27</a>/// &gt; registry was introduced. The tool is to ease the burden of maintaining
+<a href=#28 id=28 data-nosnippet>28</a>/// &gt; local registries. However, in general the Cargo team avoids recommending
+<a href=#29 id=29 data-nosnippet>29</a>/// &gt; any specific third-party crate. Just FYI.
+<a href=#30 id=30 data-nosnippet>30</a>///
+<a href=#31 id=31 data-nosnippet>31</a>/// [same format]: super#the-format-of-the-index
+<a href=#32 id=32 data-nosnippet>32</a>/// [`cargo-local-registry`]: https://crates.io/crates/cargo-local-registry
+<a href=#33 id=33 data-nosnippet>33</a>///
+<a href=#34 id=34 data-nosnippet>34</a>/// # Filesystem hierarchy
+<a href=#35 id=35 data-nosnippet>35</a>///
+<a href=#36 id=36 data-nosnippet>36</a>/// Here is an example layout of a local registry on a local filesystem:
+<a href=#37 id=37 data-nosnippet>37</a>///
+<a href=#38 id=38 data-nosnippet>38</a>/// ```text
+<a href=#39 id=39 data-nosnippet>39</a>/// [registry root]/
+<a href=#40 id=40 data-nosnippet>40</a>/// ├── index/                      # registry index
+<a href=#41 id=41 data-nosnippet>41</a>/// │  ├── an/
+<a href=#42 id=42 data-nosnippet>42</a>/// │  │  └── yh/
+<a href=#43 id=43 data-nosnippet>43</a>/// │  │     └── anyhow
+<a href=#44 id=44 data-nosnippet>44</a>/// │  ├── ru/
+<a href=#45 id=45 data-nosnippet>45</a>/// │  │  └── st/
+<a href=#46 id=46 data-nosnippet>46</a>/// │  │     ├── rustls
+<a href=#47 id=47 data-nosnippet>47</a>/// │  │     └── rustls-ffi
+<a href=#48 id=48 data-nosnippet>48</a>/// │  └── se/
+<a href=#49 id=49 data-nosnippet>49</a>/// │     └── mv/
+<a href=#50 id=50 data-nosnippet>50</a>/// │        └── semver
+<a href=#51 id=51 data-nosnippet>51</a>/// ├── anyhow-1.0.71.crate         # pre-downloaded crate tarballs
+<a href=#52 id=52 data-nosnippet>52</a>/// ├── rustls-0.20.8.crate
+<a href=#53 id=53 data-nosnippet>53</a>/// ├── rustls-ffi-0.8.2.crate
+<a href=#54 id=54 data-nosnippet>54</a>/// └── semver-1.0.17.crate
+<a href=#55 id=55 data-nosnippet>55</a>/// ```
+<a href=#56 id=56 data-nosnippet>56</a>///
+<a href=#57 id=57 data-nosnippet>57</a>/// For general concepts of registries, see the [module-level documentation](crate::sources::registry).
+<a href=#58 id=58 data-nosnippet>58</a></span><span class="kw">pub struct </span><a href="../../../../cargo/sources/registry/local/struct.LocalRegistry.html">LocalRegistry</a>&lt;<span class="lifetime">'gctx</span>&gt; {
+<a href=#59 id=59 data-nosnippet>59</a>    <span class="doccomment">/// Path to the registry index.
+<a href=#60 id=60 data-nosnippet>60</a>    </span>index_path: <a href="../../util/flock.rs.html#146-148">Filesystem</a>,
+<a href=#61 id=61 data-nosnippet>61</a>    <span class="doccomment">/// Root path of this local registry.
+<a href=#62 id=62 data-nosnippet>62</a>    </span>root: <a href="../../util/flock.rs.html#146-148">Filesystem</a>,
+<a href=#63 id=63 data-nosnippet>63</a>    <span class="doccomment">/// Path where this local registry extract `.crate` tarballs to.
+<a href=#64 id=64 data-nosnippet>64</a>    </span>src_path: <a href="../../util/flock.rs.html#146-148">Filesystem</a>,
+<a href=#65 id=65 data-nosnippet>65</a>    gctx: <span class="kw-2">&amp;</span><span class="lifetime">'gctx </span><a href="../../util/context/mod.rs.html#165-254">GlobalContext</a>,
+<a href=#66 id=66 data-nosnippet>66</a>    <span class="doccomment">/// Whether this source has updated all package information it may contain.
+<a href=#67 id=67 data-nosnippet>67</a>    </span>updated: <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a>,
+<a href=#68 id=68 data-nosnippet>68</a>    <span class="doccomment">/// Disables status messages.
+<a href=#69 id=69 data-nosnippet>69</a>    </span>quiet: <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a>,
+<a href=#70 id=70 data-nosnippet>70</a>}
+<a href=#71 id=71 data-nosnippet>71</a>
+<a href=#72 id=72 data-nosnippet>72</a><span class="kw">impl</span>&lt;<span class="lifetime">'gctx</span>&gt; <a href="#58-70">LocalRegistry</a>&lt;<span class="lifetime">'gctx</span>&gt; {
+<a href=#73 id=73 data-nosnippet>73</a>    <span class="doccomment">/// Creates a local registry at `root`.
+<a href=#74 id=74 data-nosnippet>74</a>    ///
+<a href=#75 id=75 data-nosnippet>75</a>    /// * `name` --- Name of a path segment where `.crate` tarballs are stored.
+<a href=#76 id=76 data-nosnippet>76</a>    ///   Expect to be unique.
+<a href=#77 id=77 data-nosnippet>77</a>    </span><span class="kw">pub fn </span>new(root: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/beta/std/path/struct.Path.html">Path</a>, gctx: <span class="kw-2">&amp;</span><span class="lifetime">'gctx </span><a href="../../util/context/mod.rs.html#165-254">GlobalContext</a>, name: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/beta/std/primitive.str.html">str</a>) -&gt; <a href="#58-70">LocalRegistry</a>&lt;<span class="lifetime">'gctx</span>&gt; {
+<a href=#78 id=78 data-nosnippet>78</a>        <a href="#58-70">LocalRegistry</a> {
+<a href=#79 id=79 data-nosnippet>79</a>            src_path: <a href="#77">gctx</a>.<a href="../../util/context/mod.rs.html#399-401">registry_source_path</a>().<a href="../../util/flock.rs.html#158-160">join</a>(<a href="#77">name</a>),
+<a href=#80 id=80 data-nosnippet>80</a>            index_path: <a href="../../util/flock.rs.html#152-154">Filesystem::new</a>(<a href="#77">root</a>.<a href="https://doc.rust-lang.org/beta/std/path/struct.Path.html#method.join">join</a>(<span class="string">"index"</span>)),
+<a href=#81 id=81 data-nosnippet>81</a>            root: <a href="../../util/flock.rs.html#152-154">Filesystem::new</a>(<a href="#77">root</a>.<a href="https://doc.rust-lang.org/beta/std/path/struct.Path.html#method.to_path_buf">to_path_buf</a>()),
+<a href=#82 id=82 data-nosnippet>82</a>            <a href="#77">gctx</a>,
+<a href=#83 id=83 data-nosnippet>83</a>            updated: <span class="bool-val">false</span>,
+<a href=#84 id=84 data-nosnippet>84</a>            quiet: <span class="bool-val">false</span>,
+<a href=#85 id=85 data-nosnippet>85</a>        }
+<a href=#86 id=86 data-nosnippet>86</a>    }
+<a href=#87 id=87 data-nosnippet>87</a>}
+<a href=#88 id=88 data-nosnippet>88</a>
+<a href=#89 id=89 data-nosnippet>89</a><span class="kw">impl</span>&lt;<span class="lifetime">'gctx</span>&gt; <a href="mod.rs.html#344-428">RegistryData</a> <span class="kw">for </span><a href="#58-70">LocalRegistry</a>&lt;<span class="lifetime">'gctx</span>&gt; {
+<a href=#90 id=90 data-nosnippet>90</a>    <span class="kw">fn </span>prepare(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="../../util/errors.rs.html#8">CargoResult</a>&lt;()&gt; {
+<a href=#91 id=91 data-nosnippet>91</a>        <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(())
+<a href=#92 id=92 data-nosnippet>92</a>    }
+<a href=#93 id=93 data-nosnippet>93</a>
+<a href=#94 id=94 data-nosnippet>94</a>    <span class="kw">fn </span>index_path(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><a href="../../util/flock.rs.html#146-148">Filesystem</a> {
+<a href=#95 id=95 data-nosnippet>95</a>        <span class="kw-2">&amp;</span><a class="self" href="#94">self</a>.index_path
+<a href=#96 id=96 data-nosnippet>96</a>    }
+<a href=#97 id=97 data-nosnippet>97</a>
+<a href=#98 id=98 data-nosnippet>98</a>    <span class="kw">fn </span>assert_index_locked&lt;<span class="lifetime">'a</span>&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../util/flock.rs.html#146-148">Filesystem</a>) -&gt; <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="https://doc.rust-lang.org/beta/std/path/struct.Path.html">Path</a> {
+<a href=#99 id=99 data-nosnippet>99</a>        <span class="comment">// Note that the `*_unlocked` variant is used here since we're not
+<a href=#100 id=100 data-nosnippet>100</a>        // modifying the index and it's required to be externally synchronized.
+<a href=#101 id=101 data-nosnippet>101</a>        </span><a href="#98">path</a>.<a href="../../util/flock.rs.html#179-181">as_path_unlocked</a>()
+<a href=#102 id=102 data-nosnippet>102</a>    }
+<a href=#103 id=103 data-nosnippet>103</a>
+<a href=#104 id=104 data-nosnippet>104</a>    <span class="kw">fn </span>load(
+<a href=#105 id=105 data-nosnippet>105</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#106 id=106 data-nosnippet>106</a>        root: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/beta/std/path/struct.Path.html">Path</a>,
+<a href=#107 id=107 data-nosnippet>107</a>        path: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/beta/std/path/struct.Path.html">Path</a>,
+<a href=#108 id=108 data-nosnippet>108</a>        _index_version: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/beta/std/primitive.str.html">str</a>&gt;,
+<a href=#109 id=109 data-nosnippet>109</a>    ) -&gt; <a href="https://doc.rust-lang.org/beta/core/task/poll/enum.Poll.html">Poll</a>&lt;<a href="../../util/errors.rs.html#8">CargoResult</a>&lt;<a href="mod.rs.html#324-337">LoadResponse</a>&gt;&gt; {
+<a href=#110 id=110 data-nosnippet>110</a>        <span class="kw">if </span><a class="self" href="#105">self</a>.updated {
+<a href=#111 id=111 data-nosnippet>111</a>            <span class="kw">let </span>raw_data = <span class="kw">match </span><a href="../../../../cargo_util/paths/fn.read_bytes.html">paths::read_bytes</a>(<span class="kw-2">&amp;</span><a href="#106">root</a>.<a href="https://doc.rust-lang.org/beta/std/path/struct.Path.html#method.join">join</a>(<a href="#107">path</a>)) {
+<a href=#112 id=112 data-nosnippet>112</a>                <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Err">Err</a>(e)
+<a href=#113 id=113 data-nosnippet>113</a>                    <span class="kw">if </span><a href="#112">e</a>.<a href="https://docs.rs/anyhow/1.0.98/anyhow/struct.Error.html#method.downcast_ref">downcast_ref</a>::&lt;<a href="https://doc.rust-lang.org/beta/std/io/error/struct.Error.html">io::Error</a>&gt;()
+<a href=#114 id=114 data-nosnippet>114</a>                        .<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.map_or">map_or</a>(<span class="bool-val">false</span>, |ioe| <a href="#114">ioe</a>.<a href="https://doc.rust-lang.org/beta/std/io/error/struct.Error.html#method.kind">kind</a>() == <a href="https://doc.rust-lang.org/beta/std/io/error/enum.ErrorKind.html#variant.NotFound">io::ErrorKind::NotFound</a>) =&gt;
+<a href=#115 id=115 data-nosnippet>115</a>                {
+<a href=#116 id=116 data-nosnippet>116</a>                    <span class="kw">return </span><a href="https://doc.rust-lang.org/beta/core/task/poll/enum.Poll.html#variant.Ready">Poll::Ready</a>(<a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="mod.rs.html#336">LoadResponse::NotFound</a>));
+<a href=#117 id=117 data-nosnippet>117</a>                }
+<a href=#118 id=118 data-nosnippet>118</a>                r =&gt; <a href="#118">r</a>,
+<a href=#119 id=119 data-nosnippet>119</a>            }<span class="question-mark">?</span>;
+<a href=#120 id=120 data-nosnippet>120</a>            <a href="https://doc.rust-lang.org/beta/core/task/poll/enum.Poll.html#variant.Ready">Poll::Ready</a>(<a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="mod.rs.html#329-333">LoadResponse::Data</a> {
+<a href=#121 id=121 data-nosnippet>121</a>                <a href="#111">raw_data</a>,
+<a href=#122 id=122 data-nosnippet>122</a>                index_version: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>,
+<a href=#123 id=123 data-nosnippet>123</a>            }))
+<a href=#124 id=124 data-nosnippet>124</a>        } <span class="kw">else </span>{
+<a href=#125 id=125 data-nosnippet>125</a>            <a href="https://doc.rust-lang.org/beta/core/task/poll/enum.Poll.html#variant.Pending">Poll::Pending</a>
+<a href=#126 id=126 data-nosnippet>126</a>        }
+<a href=#127 id=127 data-nosnippet>127</a>    }
+<a href=#128 id=128 data-nosnippet>128</a>
+<a href=#129 id=129 data-nosnippet>129</a>    <span class="kw">fn </span>config(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/beta/core/task/poll/enum.Poll.html">Poll</a>&lt;<a href="../../util/errors.rs.html#8">CargoResult</a>&lt;<a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="mod.rs.html#289-321">RegistryConfig</a>&gt;&gt;&gt; {
+<a href=#130 id=130 data-nosnippet>130</a>        <span class="comment">// Local registries don't have configuration for remote APIs or anything
+<a href=#131 id=131 data-nosnippet>131</a>        // like that
+<a href=#132 id=132 data-nosnippet>132</a>        </span><a href="https://doc.rust-lang.org/beta/core/task/poll/enum.Poll.html#variant.Ready">Poll::Ready</a>(<a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(<a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>))
+<a href=#133 id=133 data-nosnippet>133</a>    }
+<a href=#134 id=134 data-nosnippet>134</a>
+<a href=#135 id=135 data-nosnippet>135</a>    <span class="kw">fn </span>block_until_ready(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <a href="../../util/errors.rs.html#8">CargoResult</a>&lt;()&gt; {
+<a href=#136 id=136 data-nosnippet>136</a>        <span class="kw">if </span><a class="self" href="#135">self</a>.updated {
+<a href=#137 id=137 data-nosnippet>137</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(());
+<a href=#138 id=138 data-nosnippet>138</a>        }
+<a href=#139 id=139 data-nosnippet>139</a>        <span class="comment">// Nothing to update, we just use what's on disk. Verify it actually
+<a href=#140 id=140 data-nosnippet>140</a>        // exists though. We don't use any locks as we're just checking whether
+<a href=#141 id=141 data-nosnippet>141</a>        // these directories exist.
+<a href=#142 id=142 data-nosnippet>142</a>        </span><span class="kw">let </span>root = <a class="self" href="#135">self</a>.root.<a href="https://doc.rust-lang.org/beta/core/clone/trait.Clone.html#tymethod.clone">clone</a>().<a href="../../util/flock.rs.html#171-173">into_path_unlocked</a>();
+<a href=#143 id=143 data-nosnippet>143</a>        <span class="kw">if </span>!<a href="#142">root</a>.<a href="https://doc.rust-lang.org/beta/std/path/struct.Path.html#method.is_dir">is_dir</a>() {
+<a href=#144 id=144 data-nosnippet>144</a>            <a class="macro" href="https://docs.rs/anyhow/1.0.98/anyhow/macro.bail.html">anyhow::bail!</a>(<span class="string">"local registry path is not a directory: {}"</span>, root.display());
+<a href=#145 id=145 data-nosnippet>145</a>        }
+<a href=#146 id=146 data-nosnippet>146</a>        <span class="kw">let </span>index_path = <a class="self" href="#135">self</a>.index_path.<a href="https://doc.rust-lang.org/beta/core/clone/trait.Clone.html#tymethod.clone">clone</a>().<a href="../../util/flock.rs.html#171-173">into_path_unlocked</a>();
+<a href=#147 id=147 data-nosnippet>147</a>        <span class="kw">if </span>!<a href="#146">index_path</a>.<a href="https://doc.rust-lang.org/beta/std/path/struct.Path.html#method.is_dir">is_dir</a>() {
+<a href=#148 id=148 data-nosnippet>148</a>            <a class="macro" href="https://docs.rs/anyhow/1.0.98/anyhow/macro.bail.html">anyhow::bail!</a>(
+<a href=#149 id=149 data-nosnippet>149</a>                <span class="string">"local registry index path is not a directory: {}"</span>,
+<a href=#150 id=150 data-nosnippet>150</a>                index_path.display()
+<a href=#151 id=151 data-nosnippet>151</a>            );
+<a href=#152 id=152 data-nosnippet>152</a>        }
+<a href=#153 id=153 data-nosnippet>153</a>        <a class="self" href="#135">self</a>.updated = <span class="bool-val">true</span>;
+<a href=#154 id=154 data-nosnippet>154</a>        <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(())
+<a href=#155 id=155 data-nosnippet>155</a>    }
+<a href=#156 id=156 data-nosnippet>156</a>
+<a href=#157 id=157 data-nosnippet>157</a>    <span class="kw">fn </span>invalidate_cache(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#158 id=158 data-nosnippet>158</a>        <span class="comment">// Local registry has no cache - just reads from disk.
+<a href=#159 id=159 data-nosnippet>159</a>    </span>}
+<a href=#160 id=160 data-nosnippet>160</a>
+<a href=#161 id=161 data-nosnippet>161</a>    <span class="kw">fn </span>set_quiet(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _quiet: <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a>) {
+<a href=#162 id=162 data-nosnippet>162</a>        <a class="self" href="#161">self</a>.quiet = <span class="bool-val">true</span>;
+<a href=#163 id=163 data-nosnippet>163</a>    }
+<a href=#164 id=164 data-nosnippet>164</a>
+<a href=#165 id=165 data-nosnippet>165</a>    <span class="kw">fn </span>is_updated(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a> {
+<a href=#166 id=166 data-nosnippet>166</a>        <a class="self" href="#165">self</a>.updated
+<a href=#167 id=167 data-nosnippet>167</a>    }
+<a href=#168 id=168 data-nosnippet>168</a>
+<a href=#169 id=169 data-nosnippet>169</a>    <span class="kw">fn </span>download(<span class="kw-2">&amp;mut </span><span class="self">self</span>, pkg: <a href="../../core/package_id.rs.html#22-24">PackageId</a>, checksum: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/beta/std/primitive.str.html">str</a>) -&gt; <a href="../../util/errors.rs.html#8">CargoResult</a>&lt;<a href="mod.rs.html#432-445">MaybeLock</a>&gt; {
+<a href=#170 id=170 data-nosnippet>170</a>        <span class="comment">// Note that the usage of `into_path_unlocked` here is because the local
+<a href=#171 id=171 data-nosnippet>171</a>        // crate files here never change in that we're not the one writing them,
+<a href=#172 id=172 data-nosnippet>172</a>        // so it's not our responsibility to synchronize access to them.
+<a href=#173 id=173 data-nosnippet>173</a>        </span><span class="kw">let </span>path = <a class="self" href="#169">self</a>.root.<a href="../../util/flock.rs.html#158-160">join</a>(<span class="kw-2">&amp;</span><a href="#169">pkg</a>.<a href="../../core/package_id.rs.html#187-189">tarball_name</a>()).<a href="../../util/flock.rs.html#171-173">into_path_unlocked</a>();
+<a href=#174 id=174 data-nosnippet>174</a>        <span class="kw">let </span><span class="kw-2">mut </span>crate_file = <a href="../../../../cargo_util/paths/fn.open.html">paths::open</a>(<span class="kw-2">&amp;</span><a href="#173">path</a>)<span class="question-mark">?</span>;
+<a href=#175 id=175 data-nosnippet>175</a>
+<a href=#176 id=176 data-nosnippet>176</a>        <span class="comment">// If we've already got an unpacked version of this crate, then skip the
+<a href=#177 id=177 data-nosnippet>177</a>        // checksum below as it is in theory already verified.
+<a href=#178 id=178 data-nosnippet>178</a>        </span><span class="kw">let </span>dst = <a href="#173">path</a>.<a href="https://doc.rust-lang.org/beta/std/path/struct.Path.html#method.file_stem">file_stem</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>();
+<a href=#179 id=179 data-nosnippet>179</a>        <span class="kw">if </span><a class="self" href="#169">self</a>.src_path.<a href="../../util/flock.rs.html#158-160">join</a>(<a href="#178">dst</a>).<a href="../../util/flock.rs.html#171-173">into_path_unlocked</a>().<a href="https://doc.rust-lang.org/beta/std/path/struct.Path.html#method.exists">exists</a>() {
+<a href=#180 id=180 data-nosnippet>180</a>            <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="mod.rs.html#435">MaybeLock::Ready</a>(<a href="#174">crate_file</a>));
+<a href=#181 id=181 data-nosnippet>181</a>        }
+<a href=#182 id=182 data-nosnippet>182</a>
+<a href=#183 id=183 data-nosnippet>183</a>        <span class="kw">if </span>!<a class="self" href="#169">self</a>.quiet {
+<a href=#184 id=184 data-nosnippet>184</a>            <a class="self" href="#169">self</a>.gctx.<a href="../../util/context/mod.rs.html#411-413">shell</a>().<a href="../../core/shell.rs.html#163-169">status</a>(<span class="string">"Unpacking"</span>, <a href="#169">pkg</a>)<span class="question-mark">?</span>;
+<a href=#185 id=185 data-nosnippet>185</a>        }
+<a href=#186 id=186 data-nosnippet>186</a>
+<a href=#187 id=187 data-nosnippet>187</a>        <span class="comment">// We don't actually need to download anything per-se, we just need to
+<a href=#188 id=188 data-nosnippet>188</a>        // verify the checksum matches the .crate file itself.
+<a href=#189 id=189 data-nosnippet>189</a>        </span><span class="kw">let </span>actual = <a href="../../../../cargo_util/sha256/struct.Sha256.html#method.new">Sha256::new</a>().<a href="../../../../cargo_util/sha256/struct.Sha256.html#method.update_file">update_file</a>(<span class="kw-2">&amp;</span><a href="#174">crate_file</a>)<span class="question-mark">?</span>.<a href="../../../../cargo_util/sha256/struct.Sha256.html#method.finish_hex">finish_hex</a>();
+<a href=#190 id=190 data-nosnippet>190</a>        <span class="kw">if </span><a href="#189">actual</a> != <a href="#169">checksum</a> {
+<a href=#191 id=191 data-nosnippet>191</a>            <a class="macro" href="https://docs.rs/anyhow/1.0.98/anyhow/macro.bail.html">anyhow::bail!</a>(<span class="string">"failed to verify the checksum of `{}`"</span>, pkg)
+<a href=#192 id=192 data-nosnippet>192</a>        }
+<a href=#193 id=193 data-nosnippet>193</a>
+<a href=#194 id=194 data-nosnippet>194</a>        <a href="#174">crate_file</a>.<a href="https://doc.rust-lang.org/beta/std/io/trait.Seek.html#tymethod.seek">seek</a>(<a href="https://doc.rust-lang.org/beta/std/io/enum.SeekFrom.html#variant.Start">SeekFrom::Start</a>(<span class="number">0</span>))<span class="question-mark">?</span>;
+<a href=#195 id=195 data-nosnippet>195</a>
+<a href=#196 id=196 data-nosnippet>196</a>        <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(<a href="mod.rs.html#435">MaybeLock::Ready</a>(<a href="#174">crate_file</a>))
+<a href=#197 id=197 data-nosnippet>197</a>    }
+<a href=#198 id=198 data-nosnippet>198</a>
+<a href=#199 id=199 data-nosnippet>199</a>    <span class="kw">fn </span>finish_download(
+<a href=#200 id=200 data-nosnippet>200</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#201 id=201 data-nosnippet>201</a>        _pkg: <a href="../../core/package_id.rs.html#22-24">PackageId</a>,
+<a href=#202 id=202 data-nosnippet>202</a>        _checksum: <span class="kw-2">&amp;</span><a href="https://doc.rust-lang.org/beta/std/primitive.str.html">str</a>,
+<a href=#203 id=203 data-nosnippet>203</a>        _data: <span class="kw-2">&amp;</span>[<a href="https://doc.rust-lang.org/beta/std/primitive.u8.html">u8</a>],
+<a href=#204 id=204 data-nosnippet>204</a>    ) -&gt; <a href="../../util/errors.rs.html#8">CargoResult</a>&lt;<a href="https://doc.rust-lang.org/beta/std/fs/struct.File.html">File</a>&gt; {
+<a href=#205 id=205 data-nosnippet>205</a>        <a class="macro" href="https://doc.rust-lang.org/beta/std/macro.panic.html">panic!</a>(<span class="string">"this source doesn't download"</span>)
+<a href=#206 id=206 data-nosnippet>206</a>    }
+<a href=#207 id=207 data-nosnippet>207</a>}</code></pre></div></section></main></body></html>

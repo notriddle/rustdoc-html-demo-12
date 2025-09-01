@@ -1,0 +1,392 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_middle/src/mir/interpret/allocation/provenance_map.rs`."><title>provenance_map.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../../../../" data-static-root-path="../../../../../static.files/" data-current-crate="rustc_middle" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-beta.1 (788da80fc 2025-08-04)" data-channel="beta" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../../../../static.files/storage-68b7e25d.js"></script><script defer src="../../../../../static.files/src-script-813739b1.js"></script><script defer src="../../../../../src-files.js"></script><script defer src="../../../../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_middle/mir/interpret/allocation/</div>provenance_map.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Store the provenance for each byte in the range, with a more efficient
+<a href=#2 id=2 data-nosnippet>2</a>//! representation for the common case where PTR_SIZE consecutive bytes have the same provenance.
+<a href=#3 id=3 data-nosnippet>3</a>
+<a href=#4 id=4 data-nosnippet>4</a></span><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/core/cmp/index.html">std::cmp</a>;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><a href="https://doc.rust-lang.org/beta/core/ops/range/struct.Range.html">std::ops::Range</a>;
+<a href=#6 id=6 data-nosnippet>6</a>
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>rustc_abi::{<a href="../../../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a>, <a href="../../../../../rustc_abi/struct.Size.html">Size</a>};
+<a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span><a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html">rustc_data_structures::sorted_map::SortedMap</a>;
+<a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span><a href="../../../../../rustc_macros/derive.HashStable.html">rustc_macros::HashStable</a>;
+<a href=#10 id=10 data-nosnippet>10</a><span class="kw">use </span>rustc_serialize::{<a href="../../../../../rustc_serialize/serialize/trait.Decodable.html">Decodable</a>, <a href="../../../../../rustc_serialize/serialize/trait.Decoder.html">Decoder</a>, <a href="../../../../../rustc_serialize/serialize/trait.Encodable.html">Encodable</a>, <a href="../../../../../rustc_serialize/serialize/trait.Encoder.html">Encoder</a>};
+<a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span><a href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">tracing::trace</a>;
+<a href=#12 id=12 data-nosnippet>12</a>
+<a href=#13 id=13 data-nosnippet>13</a><span class="kw">use super</span>::{<a href="../allocation.rs.html#344-347">AllocRange</a>, <a href="../pointer.rs.html#94">CtfeProvenance</a>, <a href="../pointer.rs.html#59-83">Provenance</a>, <a href="../allocation.rs.html#357-359">alloc_range</a>};
+<a href=#14 id=14 data-nosnippet>14</a>
+<a href=#15 id=15 data-nosnippet>15</a><span class="doccomment">/// Stores the provenance information of pointers stored in memory.
+<a href=#16 id=16 data-nosnippet>16</a></span><span class="attr">#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+<a href=#17 id=17 data-nosnippet>17</a>#[derive(HashStable)]
+<a href=#18 id=18 data-nosnippet>18</a></span><span class="kw">pub struct </span><a href="../../../../../rustc_middle/mir/interpret/allocation/provenance_map/struct.ProvenanceMap.html">ProvenanceMap</a>&lt;Prov = <a href="../pointer.rs.html#94">CtfeProvenance</a>&gt; {
+<a href=#19 id=19 data-nosnippet>19</a>    <span class="doccomment">/// `Provenance` in this map applies from the given offset for an entire pointer-size worth of
+<a href=#20 id=20 data-nosnippet>20</a>    /// bytes. Two entries in this map are always at least a pointer size apart.
+<a href=#21 id=21 data-nosnippet>21</a>    </span>ptrs: <a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html">SortedMap</a>&lt;<a href="../../../../../rustc_abi/struct.Size.html">Size</a>, Prov&gt;,
+<a href=#22 id=22 data-nosnippet>22</a>    <span class="doccomment">/// This stores byte-sized provenance fragments.
+<a href=#23 id=23 data-nosnippet>23</a>    /// The `u8` indicates the position of this byte inside its original pointer.
+<a href=#24 id=24 data-nosnippet>24</a>    /// If the bytes are re-assembled in their original order, the pointer can be used again.
+<a href=#25 id=25 data-nosnippet>25</a>    /// Wildcard provenance is allowed to have index 0 everywhere.
+<a href=#26 id=26 data-nosnippet>26</a>    </span>bytes: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/beta/alloc/boxed/struct.Box.html">Box</a>&lt;<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html">SortedMap</a>&lt;<a href="../../../../../rustc_abi/struct.Size.html">Size</a>, (Prov, <a href="https://doc.rust-lang.org/beta/std/primitive.u8.html">u8</a>)&gt;&gt;&gt;,
+<a href=#27 id=27 data-nosnippet>27</a>}
+<a href=#28 id=28 data-nosnippet>28</a>
+<a href=#29 id=29 data-nosnippet>29</a><span class="comment">// These impls are generic over `Prov` since `CtfeProvenance` is only decodable/encodable
+<a href=#30 id=30 data-nosnippet>30</a>// for some particular `D`/`S`.
+<a href=#31 id=31 data-nosnippet>31</a></span><span class="kw">impl</span>&lt;D: <a href="../../../../../rustc_serialize/serialize/trait.Decoder.html">Decoder</a>, Prov: <a href="../pointer.rs.html#59-83">Provenance</a> + <a href="../../../../../rustc_serialize/serialize/trait.Decodable.html">Decodable</a>&lt;D&gt;&gt; <a href="../../../../../rustc_serialize/serialize/trait.Decodable.html">Decodable</a>&lt;D&gt; <span class="kw">for </span><a href="#18-27">ProvenanceMap</a>&lt;Prov&gt; {
+<a href=#32 id=32 data-nosnippet>32</a>    <span class="kw">fn </span>decode(d: <span class="kw-2">&amp;mut </span>D) -&gt; <span class="self">Self </span>{
+<a href=#33 id=33 data-nosnippet>33</a>        <span class="comment">// `bytes` is not in the serialized format
+<a href=#34 id=34 data-nosnippet>34</a>        </span><span class="self">Self </span>{ ptrs: <a href="../../../../../rustc_serialize/serialize/trait.Decodable.html#tymethod.decode">Decodable::decode</a>(<a href="#32">d</a>), bytes: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a> </a>}
+<a href=#35 id=35 data-nosnippet>35</a>    }
+<a href=#36 id=36 data-nosnippet>36</a>}
+<a href=#37 id=37 data-nosnippet>37</a><span class="kw">impl</span>&lt;S: <a href="../../../../../rustc_serialize/serialize/trait.Encoder.html">Encoder</a>, Prov: <a href="../pointer.rs.html#59-83">Provenance</a> + <a href="../../../../../rustc_serialize/serialize/trait.Encodable.html">Encodable</a>&lt;S&gt;&gt; <a href="../../../../../rustc_serialize/serialize/trait.Encodable.html">Encodable</a>&lt;S&gt; <span class="kw">for </span><a href="#18-27">ProvenanceMap</a>&lt;Prov&gt; {
+<a href=#38 id=38 data-nosnippet>38</a>    <span class="kw">fn </span>encode(<span class="kw-2">&amp;</span><span class="self">self</span>, s: <span class="kw-2">&amp;mut </span>S) {
+<a href=#39 id=39 data-nosnippet>39</a>        <span class="kw">let </span><span class="self">Self </span>{ ptrs, bytes } = <a class="self" href="#38">self</a>;
+<a href=#40 id=40 data-nosnippet>40</a>        <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(bytes.is_none()); <span class="comment">// interning refuses allocations with pointer fragments
+<a href=#41 id=41 data-nosnippet>41</a>        </span><a href="#39">ptrs</a>.<a href="../../../../../rustc_serialize/serialize/trait.Encodable.html#tymethod.encode">encode</a>(<a href="#38">s</a>)
+<a href=#42 id=42 data-nosnippet>42</a>    }
+<a href=#43 id=43 data-nosnippet>43</a>}
+<a href=#44 id=44 data-nosnippet>44</a>
+<a href=#45 id=45 data-nosnippet>45</a><span class="kw">impl</span>&lt;Prov&gt; <a href="#18-27">ProvenanceMap</a>&lt;Prov&gt; {
+<a href=#46 id=46 data-nosnippet>46</a>    <span class="kw">pub fn </span>new() -&gt; <span class="self">Self </span>{
+<a href=#47 id=47 data-nosnippet>47</a>        <a href="#18-27">ProvenanceMap</a> { ptrs: <a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.new">SortedMap::new</a>(), bytes: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a> </a>}
+<a href=#48 id=48 data-nosnippet>48</a>    }
+<a href=#49 id=49 data-nosnippet>49</a>
+<a href=#50 id=50 data-nosnippet>50</a>    <span class="doccomment">/// The caller must guarantee that the given provenance list is already sorted
+<a href=#51 id=51 data-nosnippet>51</a>    /// by address and contain no duplicates.
+<a href=#52 id=52 data-nosnippet>52</a>    </span><span class="kw">pub fn </span>from_presorted_ptrs(r: <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;(<a href="../../../../../rustc_abi/struct.Size.html">Size</a>, Prov)&gt;) -&gt; <span class="self">Self </span>{
+<a href=#53 id=53 data-nosnippet>53</a>        <a href="#18-27">ProvenanceMap</a> { ptrs: <a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.from_presorted_elements">SortedMap::from_presorted_elements</a>(<a href="#52">r</a>), bytes: <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None"><a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a> </a>}
+<a href=#54 id=54 data-nosnippet>54</a>    }
+<a href=#55 id=55 data-nosnippet>55</a>}
+<a href=#56 id=56 data-nosnippet>56</a>
+<a href=#57 id=57 data-nosnippet>57</a><span class="kw">impl </span><a href="#18-27">ProvenanceMap</a> {
+<a href=#58 id=58 data-nosnippet>58</a>    <span class="doccomment">/// Give access to the ptr-sized provenances (which can also be thought of as relocations, and
+<a href=#59 id=59 data-nosnippet>59</a>    /// indeed that is how codegen treats them).
+<a href=#60 id=60 data-nosnippet>60</a>    ///
+<a href=#61 id=61 data-nosnippet>61</a>    /// Only use on interned allocations, as other allocations may have per-byte provenance!
+<a href=#62 id=62 data-nosnippet>62</a>    </span><span class="attr">#[inline]
+<a href=#63 id=63 data-nosnippet>63</a>    </span><span class="kw">pub fn </span>ptrs(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span><a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html">SortedMap</a>&lt;<a href="../../../../../rustc_abi/struct.Size.html">Size</a>, <a href="../pointer.rs.html#94">CtfeProvenance</a>&gt; {
+<a href=#64 id=64 data-nosnippet>64</a>        <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.assert.html">assert!</a>(<span class="self">self</span>.bytes.is_none(), <span class="string">"`ptrs()` called on non-interned allocation"</span>);
+<a href=#65 id=65 data-nosnippet>65</a>        <span class="kw-2">&amp;</span><a class="self" href="#63">self</a>.ptrs
+<a href=#66 id=66 data-nosnippet>66</a>    }
+<a href=#67 id=67 data-nosnippet>67</a>}
+<a href=#68 id=68 data-nosnippet>68</a>
+<a href=#69 id=69 data-nosnippet>69</a><span class="kw">impl</span>&lt;Prov: <a href="../pointer.rs.html#59-83">Provenance</a>&gt; <a href="#18-27">ProvenanceMap</a>&lt;Prov&gt; {
+<a href=#70 id=70 data-nosnippet>70</a>    <span class="kw">fn </span>adjusted_range_ptrs(range: <a href="../allocation.rs.html#344-347">AllocRange</a>, cx: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="../../../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a>) -&gt; <a href="https://doc.rust-lang.org/beta/core/ops/range/struct.Range.html">Range</a>&lt;<a href="../../../../../rustc_abi/struct.Size.html">Size</a>&gt; {
+<a href=#71 id=71 data-nosnippet>71</a>        <span class="comment">// We have to go back `pointer_size - 1` bytes, as that one would still overlap with
+<a href=#72 id=72 data-nosnippet>72</a>        // the beginning of this range.
+<a href=#73 id=73 data-nosnippet>73</a>        </span><span class="kw">let </span>adjusted_start = <a href="../../../../../rustc_abi/struct.Size.html#method.from_bytes">Size::from_bytes</a>(
+<a href=#74 id=74 data-nosnippet>74</a>            <a href="#70">range</a>.start.<a href="../../../../../rustc_abi/struct.Size.html#method.bytes">bytes</a>().<a href="https://doc.rust-lang.org/beta/core/foreigntype.num.html#method.saturating_sub">saturating_sub</a>(<a href="#70">cx</a>.<a href="../../../../../rustc_abi/trait.HasDataLayout.html#tymethod.data_layout">data_layout</a>().<a href="../../../../../rustc_abi/struct.TargetDataLayout.html#method.pointer_size">pointer_size</a>().<a href="../../../../../rustc_abi/struct.Size.html#method.bytes">bytes</a>() - <span class="number">1</span>),
+<a href=#75 id=75 data-nosnippet>75</a>        );
+<a href=#76 id=76 data-nosnippet>76</a>        <a href="#73">adjusted_start</a>..<a href="#70">range</a>.<a href="../allocation.rs.html#377-379">end</a>()
+<a href=#77 id=77 data-nosnippet>77</a>    }
+<a href=#78 id=78 data-nosnippet>78</a>
+<a href=#79 id=79 data-nosnippet>79</a>    <span class="doccomment">/// Returns all ptr-sized provenance in the given range.
+<a href=#80 id=80 data-nosnippet>80</a>    /// If the range has length 0, returns provenance that crosses the edge between `start-1` and
+<a href=#81 id=81 data-nosnippet>81</a>    /// `start`.
+<a href=#82 id=82 data-nosnippet>82</a>    </span><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn </span>range_ptrs_get(
+<a href=#83 id=83 data-nosnippet>83</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#84 id=84 data-nosnippet>84</a>        range: <a href="../allocation.rs.html#344-347">AllocRange</a>,
+<a href=#85 id=85 data-nosnippet>85</a>        cx: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="../../../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a>,
+<a href=#86 id=86 data-nosnippet>86</a>    ) -&gt; <span class="kw-2">&amp;</span>[(<a href="../../../../../rustc_abi/struct.Size.html">Size</a>, Prov)] {
+<a href=#87 id=87 data-nosnippet>87</a>        <a class="self" href="#83">self</a>.ptrs.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.range">range</a>(<a href="#70-77"><span class="self">Self</span>::adjusted_range_ptrs</a>(<a href="#84">range</a>, <a href="#85">cx</a>))
+<a href=#88 id=88 data-nosnippet>88</a>    }
+<a href=#89 id=89 data-nosnippet>89</a>
+<a href=#90 id=90 data-nosnippet>90</a>    <span class="doccomment">/// `pm.range_ptrs_is_empty(r, cx)` == `pm.range_ptrs_get(r, cx).is_empty()`, but is faster.
+<a href=#91 id=91 data-nosnippet>91</a>    </span><span class="kw">fn </span>range_ptrs_is_empty(<span class="kw-2">&amp;</span><span class="self">self</span>, range: <a href="../allocation.rs.html#344-347">AllocRange</a>, cx: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="../../../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a>) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a> {
+<a href=#92 id=92 data-nosnippet>92</a>        <a class="self" href="#91">self</a>.ptrs.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.range_is_empty">range_is_empty</a>(<a href="#70-77"><span class="self">Self</span>::adjusted_range_ptrs</a>(<a href="#91">range</a>, <a href="#91">cx</a>))
+<a href=#93 id=93 data-nosnippet>93</a>    }
+<a href=#94 id=94 data-nosnippet>94</a>
+<a href=#95 id=95 data-nosnippet>95</a>    <span class="doccomment">/// Returns all byte-wise provenance in the given range.
+<a href=#96 id=96 data-nosnippet>96</a>    </span><span class="kw">fn </span>range_bytes_get(<span class="kw-2">&amp;</span><span class="self">self</span>, range: <a href="../allocation.rs.html#344-347">AllocRange</a>) -&gt; <span class="kw-2">&amp;</span>[(<a href="../../../../../rustc_abi/struct.Size.html">Size</a>, (Prov, <a href="https://doc.rust-lang.org/beta/std/primitive.u8.html">u8</a>))] {
+<a href=#97 id=97 data-nosnippet>97</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(bytes) = <a class="self" href="#96">self</a>.bytes.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_ref">as_ref</a>() {
+<a href=#98 id=98 data-nosnippet>98</a>            <a href="#97">bytes</a>.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.range">range</a>(<a href="#96">range</a>.start..<a href="#96">range</a>.<a href="../allocation.rs.html#377-379">end</a>())
+<a href=#99 id=99 data-nosnippet>99</a>        } <span class="kw">else </span>{
+<a href=#100 id=100 data-nosnippet>100</a>            <span class="kw-2">&amp;</span>[]
+<a href=#101 id=101 data-nosnippet>101</a>        }
+<a href=#102 id=102 data-nosnippet>102</a>    }
+<a href=#103 id=103 data-nosnippet>103</a>
+<a href=#104 id=104 data-nosnippet>104</a>    <span class="doccomment">/// Same as `range_bytes_get(range).is_empty()`, but faster.
+<a href=#105 id=105 data-nosnippet>105</a>    </span><span class="kw">fn </span>range_bytes_is_empty(<span class="kw-2">&amp;</span><span class="self">self</span>, range: <a href="../allocation.rs.html#344-347">AllocRange</a>) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a> {
+<a href=#106 id=106 data-nosnippet>106</a>        <a class="self" href="#105">self</a>.bytes.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_ref">as_ref</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.is_none_or">is_none_or</a>(|bytes| <a href="#106">bytes</a>.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.range_is_empty">range_is_empty</a>(<a href="#105">range</a>.start..<a href="#105">range</a>.<a href="../allocation.rs.html#377-379">end</a>()))
+<a href=#107 id=107 data-nosnippet>107</a>    }
+<a href=#108 id=108 data-nosnippet>108</a>
+<a href=#109 id=109 data-nosnippet>109</a>    <span class="doccomment">/// Get the provenance of a single byte.
+<a href=#110 id=110 data-nosnippet>110</a>    </span><span class="kw">pub fn </span>get_byte(<span class="kw-2">&amp;</span><span class="self">self</span>, offset: <a href="../../../../../rustc_abi/struct.Size.html">Size</a>, cx: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="../../../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;(Prov, <a href="https://doc.rust-lang.org/beta/std/primitive.u8.html">u8</a>)&gt; {
+<a href=#111 id=111 data-nosnippet>111</a>        <span class="kw">let </span>prov = <a class="self" href="#110">self</a>.<a href="#82-88">range_ptrs_get</a>(<a href="../allocation.rs.html#357-359">alloc_range</a>(<a href="#110">offset</a>, <a href="../../../../../rustc_abi/struct.Size.html#method.from_bytes">Size::from_bytes</a>(<span class="number">1</span>)), <a href="#110">cx</a>);
+<a href=#112 id=112 data-nosnippet>112</a>        <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.debug_assert.html">debug_assert!</a>(prov.len() &lt;= <span class="number">1</span>);
+<a href=#113 id=113 data-nosnippet>113</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(entry) = <a href="#111">prov</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.first">first</a>() {
+<a href=#114 id=114 data-nosnippet>114</a>            <span class="comment">// If it overlaps with this byte, it is on this byte.
+<a href=#115 id=115 data-nosnippet>115</a>            </span><a class="macro" href="https://doc.rust-lang.org/beta/core/macro.debug_assert.html">debug_assert!</a>(<span class="self">self</span>.bytes.as_ref().is_none_or(|b| !b.contains_key(<span class="kw-2">&amp;</span>offset)));
+<a href=#116 id=116 data-nosnippet>116</a>            <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>((<a href="#113">entry</a>.<span class="number">1</span>, (<a href="#110">offset</a> - <a href="#113">entry</a>.<span class="number">0</span>).<a href="../../../../../rustc_abi/struct.Size.html#method.bytes">bytes</a>() <span class="kw">as </span><a href="https://doc.rust-lang.org/beta/std/primitive.u8.html">u8</a>))
+<a href=#117 id=117 data-nosnippet>117</a>        } <span class="kw">else </span>{
+<a href=#118 id=118 data-nosnippet>118</a>            <span class="comment">// Look up per-byte provenance.
+<a href=#119 id=119 data-nosnippet>119</a>            </span><a class="self" href="#110">self</a>.bytes.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_ref">as_ref</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.and_then">and_then</a>(|b| <a href="#119">b</a>.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#110">offset</a>).<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.copied">copied</a>())
+<a href=#120 id=120 data-nosnippet>120</a>        }
+<a href=#121 id=121 data-nosnippet>121</a>    }
+<a href=#122 id=122 data-nosnippet>122</a>
+<a href=#123 id=123 data-nosnippet>123</a>    <span class="doccomment">/// Gets the provenances of all bytes (including from pointers) in a range.
+<a href=#124 id=124 data-nosnippet>124</a>    </span><span class="kw">pub fn </span>get_range(
+<a href=#125 id=125 data-nosnippet>125</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#126 id=126 data-nosnippet>126</a>        cx: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="../../../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a>,
+<a href=#127 id=127 data-nosnippet>127</a>        range: <a href="../allocation.rs.html#344-347">AllocRange</a>,
+<a href=#128 id=128 data-nosnippet>128</a>    ) -&gt; <span class="kw">impl </span><a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = Prov&gt; {
+<a href=#129 id=129 data-nosnippet>129</a>        <span class="kw">let </span>ptr_provs = <a class="self" href="#125">self</a>.<a href="#82-88">range_ptrs_get</a>(<a href="#127">range</a>, <a href="#126">cx</a>).<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|(<span class="kw">_</span>, p)| <span class="kw-2">*</span><a href="#129">p</a>);
+<a href=#130 id=130 data-nosnippet>130</a>        <span class="kw">let </span>byte_provs = <a class="self" href="#125">self</a>.<a href="#96-102">range_bytes_get</a>(<a href="#127">range</a>).<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|(<span class="kw">_</span>, (p, <span class="kw">_</span>))| <span class="kw-2">*</span><a href="#130">p</a>);
+<a href=#131 id=131 data-nosnippet>131</a>        <a href="#129">ptr_provs</a>.<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.chain">chain</a>(<a href="#130">byte_provs</a>)
+<a href=#132 id=132 data-nosnippet>132</a>    }
+<a href=#133 id=133 data-nosnippet>133</a>
+<a href=#134 id=134 data-nosnippet>134</a>    <span class="doccomment">/// Attempt to merge per-byte provenance back into ptr chunks, if the right fragments
+<a href=#135 id=135 data-nosnippet>135</a>    /// sit next to each other. Return `false` is that is not possible due to partial pointers.
+<a href=#136 id=136 data-nosnippet>136</a>    </span><span class="kw">pub fn </span>merge_bytes(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cx: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="../../../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a>) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a> {
+<a href=#137 id=137 data-nosnippet>137</a>        <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(bytes) = <a class="self" href="#136">self</a>.bytes.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_deref_mut">as_deref_mut</a>() <span class="kw">else </span>{
+<a href=#138 id=138 data-nosnippet>138</a>            <span class="kw">return </span><span class="bool-val">true</span>;
+<a href=#139 id=139 data-nosnippet>139</a>        };
+<a href=#140 id=140 data-nosnippet>140</a>        <span class="kw">let </span>ptr_size = <a href="#136">cx</a>.<a href="../../../../../rustc_abi/trait.HasDataLayout.html#tymethod.data_layout">data_layout</a>().<a href="../../../../../rustc_abi/struct.TargetDataLayout.html#method.pointer_size">pointer_size</a>();
+<a href=#141 id=141 data-nosnippet>141</a>        <span class="kw">while let </span><span class="prelude-val">Some</span>((offset, (prov, <span class="kw">_</span>))) = bytes.iter().next().copied() {
+<a href=#142 id=142 data-nosnippet>142</a>            <span class="comment">// Check if this fragment starts a pointer.
+<a href=#143 id=143 data-nosnippet>143</a>            </span><span class="kw">let </span>range = offset..offset + ptr_size;
+<a href=#144 id=144 data-nosnippet>144</a>            <span class="kw">let </span>frags = bytes.range(range.clone());
+<a href=#145 id=145 data-nosnippet>145</a>            <span class="kw">if </span>frags.len() != ptr_size.bytes_usize() {
+<a href=#146 id=146 data-nosnippet>146</a>                <span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#147 id=147 data-nosnippet>147</a>            }
+<a href=#148 id=148 data-nosnippet>148</a>            <span class="kw">for </span>(idx, (_offset, (frag_prov, frag_idx))) <span class="kw">in </span>frags.iter().copied().enumerate() {
+<a href=#149 id=149 data-nosnippet>149</a>                <span class="kw">if </span>frag_prov != prov || frag_idx != idx <span class="kw">as </span>u8 {
+<a href=#150 id=150 data-nosnippet>150</a>                    <span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#151 id=151 data-nosnippet>151</a>                }
+<a href=#152 id=152 data-nosnippet>152</a>            }
+<a href=#153 id=153 data-nosnippet>153</a>            <span class="comment">// Looks like a pointer! Move it over to the ptr provenance map.
+<a href=#154 id=154 data-nosnippet>154</a>            </span>bytes.remove_range(range);
+<a href=#155 id=155 data-nosnippet>155</a>            <span class="self">self</span>.ptrs.insert(offset, prov);
+<a href=#156 id=156 data-nosnippet>156</a>        }
+<a href=#157 id=157 data-nosnippet>157</a>        <span class="comment">// We managed to convert everything into whole pointers.
+<a href=#158 id=158 data-nosnippet>158</a>        </span><a class="self" href="#136">self</a>.bytes = <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>;
+<a href=#159 id=159 data-nosnippet>159</a>        <span class="bool-val">true
+<a href=#160 id=160 data-nosnippet>160</a>    </span>}
+<a href=#161 id=161 data-nosnippet>161</a>
+<a href=#162 id=162 data-nosnippet>162</a>    <span class="doccomment">/// Check if there is ptr-sized provenance at the given index.
+<a href=#163 id=163 data-nosnippet>163</a>    /// Does not mean anything for bytewise provenance! But can be useful as an optimization.
+<a href=#164 id=164 data-nosnippet>164</a>    </span><span class="kw">pub fn </span>get_ptr(<span class="kw-2">&amp;</span><span class="self">self</span>, offset: <a href="../../../../../rustc_abi/struct.Size.html">Size</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;Prov&gt; {
+<a href=#165 id=165 data-nosnippet>165</a>        <a class="self" href="#164">self</a>.ptrs.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.get">get</a>(<span class="kw-2">&amp;</span><a href="#164">offset</a>).<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.copied">copied</a>()
+<a href=#166 id=166 data-nosnippet>166</a>    }
+<a href=#167 id=167 data-nosnippet>167</a>
+<a href=#168 id=168 data-nosnippet>168</a>    <span class="doccomment">/// Returns whether this allocation has provenance overlapping with the given range.
+<a href=#169 id=169 data-nosnippet>169</a>    ///
+<a href=#170 id=170 data-nosnippet>170</a>    /// Note: this function exists to allow `range_get_provenance` to be private, in order to somewhat
+<a href=#171 id=171 data-nosnippet>171</a>    /// limit access to provenance outside of the `Allocation` abstraction.
+<a href=#172 id=172 data-nosnippet>172</a>    ///
+<a href=#173 id=173 data-nosnippet>173</a>    </span><span class="kw">pub fn </span>range_empty(<span class="kw-2">&amp;</span><span class="self">self</span>, range: <a href="../allocation.rs.html#344-347">AllocRange</a>, cx: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="../../../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a>) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a> {
+<a href=#174 id=174 data-nosnippet>174</a>        <a class="self" href="#173">self</a>.<a href="#91-93">range_ptrs_is_empty</a>(<a href="#173">range</a>, <a href="#173">cx</a>) &amp;&amp; <a class="self" href="#173">self</a>.<a href="#105-107">range_bytes_is_empty</a>(<a href="#173">range</a>)
+<a href=#175 id=175 data-nosnippet>175</a>    }
+<a href=#176 id=176 data-nosnippet>176</a>
+<a href=#177 id=177 data-nosnippet>177</a>    <span class="doccomment">/// Yields all the provenances stored in this map.
+<a href=#178 id=178 data-nosnippet>178</a>    </span><span class="kw">pub fn </span>provenances(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span><a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html">Iterator</a>&lt;Item = Prov&gt; {
+<a href=#179 id=179 data-nosnippet>179</a>        <span class="kw">let </span>bytes = <a class="self" href="#178">self</a>.bytes.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.iter">iter</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.flat_map">flat_map</a>(|b| <a href="#179">b</a>.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.values">values</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.map">map</a>(|(p, _i)| <a href="#179">p</a>));
+<a href=#180 id=180 data-nosnippet>180</a>        <a class="self" href="#178">self</a>.ptrs.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.values">values</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.chain">chain</a>(<a href="#179">bytes</a>).<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.copied">copied</a>()
+<a href=#181 id=181 data-nosnippet>181</a>    }
+<a href=#182 id=182 data-nosnippet>182</a>
+<a href=#183 id=183 data-nosnippet>183</a>    <span class="kw">pub fn </span>insert_ptr(<span class="kw-2">&amp;mut </span><span class="self">self</span>, offset: <a href="../../../../../rustc_abi/struct.Size.html">Size</a>, prov: Prov, cx: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="../../../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a>) {
+<a href=#184 id=184 data-nosnippet>184</a>        <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.debug_assert.html">debug_assert!</a>(<span class="self">self</span>.range_empty(alloc_range(offset, cx.data_layout().pointer_size()), cx));
+<a href=#185 id=185 data-nosnippet>185</a>        <a class="self" href="#183">self</a>.ptrs.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.insert">insert</a>(<a href="#183">offset</a>, <a href="#183">prov</a>);
+<a href=#186 id=186 data-nosnippet>186</a>    }
+<a href=#187 id=187 data-nosnippet>187</a>
+<a href=#188 id=188 data-nosnippet>188</a>    <span class="doccomment">/// Removes all provenance inside the given range.
+<a href=#189 id=189 data-nosnippet>189</a>    /// If there is provenance overlapping with the edges, might result in an error.
+<a href=#190 id=190 data-nosnippet>190</a>    </span><span class="kw">pub fn </span>clear(<span class="kw-2">&amp;mut </span><span class="self">self</span>, range: <a href="../allocation.rs.html#344-347">AllocRange</a>, cx: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="../../../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a>) {
+<a href=#191 id=191 data-nosnippet>191</a>        <span class="kw">let </span>start = <a href="#190">range</a>.start;
+<a href=#192 id=192 data-nosnippet>192</a>        <span class="kw">let </span>end = <a href="#190">range</a>.<a href="../allocation.rs.html#377-379">end</a>();
+<a href=#193 id=193 data-nosnippet>193</a>        <span class="comment">// Clear the bytewise part -- this is easy.
+<a href=#194 id=194 data-nosnippet>194</a>        </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(bytes) = <a class="self" href="#190">self</a>.bytes.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.as_mut">as_mut</a>() {
+<a href=#195 id=195 data-nosnippet>195</a>            <a href="#194">bytes</a>.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.remove_range">remove_range</a>(<a href="#191">start</a>..<a href="#192">end</a>);
+<a href=#196 id=196 data-nosnippet>196</a>        }
+<a href=#197 id=197 data-nosnippet>197</a>
+<a href=#198 id=198 data-nosnippet>198</a>        <span class="kw">let </span>pointer_size = <a href="#190">cx</a>.<a href="../../../../../rustc_abi/trait.HasDataLayout.html#tymethod.data_layout">data_layout</a>().<a href="../../../../../rustc_abi/struct.TargetDataLayout.html#method.pointer_size">pointer_size</a>();
+<a href=#199 id=199 data-nosnippet>199</a>
+<a href=#200 id=200 data-nosnippet>200</a>        <span class="comment">// For the ptr-sized part, find the first (inclusive) and last (exclusive) byte of
+<a href=#201 id=201 data-nosnippet>201</a>        // provenance that overlaps with the given range.
+<a href=#202 id=202 data-nosnippet>202</a>        </span><span class="kw">let </span>(first, last) = {
+<a href=#203 id=203 data-nosnippet>203</a>            <span class="comment">// Find all provenance overlapping the given range.
+<a href=#204 id=204 data-nosnippet>204</a>            </span><span class="kw">if </span><a class="self" href="#190">self</a>.<a href="#91-93">range_ptrs_is_empty</a>(<a href="#190">range</a>, <a href="#190">cx</a>) {
+<a href=#205 id=205 data-nosnippet>205</a>                <span class="comment">// No provenance in this range, we are done. This is the common case.
+<a href=#206 id=206 data-nosnippet>206</a>                </span><span class="kw">return</span>;
+<a href=#207 id=207 data-nosnippet>207</a>            }
+<a href=#208 id=208 data-nosnippet>208</a>
+<a href=#209 id=209 data-nosnippet>209</a>            <span class="comment">// This redoes some of the work of `range_get_ptrs_is_empty`, but this path is much
+<a href=#210 id=210 data-nosnippet>210</a>            // colder than the early return above, so it's worth it.
+<a href=#211 id=211 data-nosnippet>211</a>            </span><span class="kw">let </span>provenance = <a class="self" href="#190">self</a>.<a href="#82-88">range_ptrs_get</a>(<a href="#190">range</a>, <a href="#190">cx</a>);
+<a href=#212 id=212 data-nosnippet>212</a>            (<a href="#211">provenance</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.first">first</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>().<span class="number">0</span>, <a href="#211">provenance</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.last">last</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>().<span class="number">0 </span>+ <a href="#198">pointer_size</a>)
+<a href=#213 id=213 data-nosnippet>213</a>        };
+<a href=#214 id=214 data-nosnippet>214</a>
+<a href=#215 id=215 data-nosnippet>215</a>        <span class="comment">// We need to handle clearing the provenance from parts of a pointer.
+<a href=#216 id=216 data-nosnippet>216</a>        </span><span class="kw">if </span><a href="#202">first</a> &lt; <a href="#191">start</a> {
+<a href=#217 id=217 data-nosnippet>217</a>            <span class="comment">// Insert the remaining part in the bytewise provenance.
+<a href=#218 id=218 data-nosnippet>218</a>            </span><span class="kw">let </span>prov = <a class="self" href="#190">self</a>.ptrs[<span class="kw-2">&amp;</span><a href="#202">first</a>];
+<a href=#219 id=219 data-nosnippet>219</a>            <span class="kw">let </span>bytes = <a class="self" href="#190">self</a>.bytes.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.get_or_insert_with">get_or_insert_with</a>(Box::default);
+<a href=#220 id=220 data-nosnippet>220</a>            <span class="kw">for </span>offset <span class="kw">in </span>first..start {
+<a href=#221 id=221 data-nosnippet>221</a>                bytes.insert(offset, (prov, (offset - first).bytes() <span class="kw">as </span>u8));
+<a href=#222 id=222 data-nosnippet>222</a>            }
+<a href=#223 id=223 data-nosnippet>223</a>        }
+<a href=#224 id=224 data-nosnippet>224</a>        <span class="kw">if </span><a href="#202">last</a> &gt; <a href="#192">end</a> {
+<a href=#225 id=225 data-nosnippet>225</a>            <span class="kw">let </span>begin_of_last = <a href="#202">last</a> - <a href="#198">pointer_size</a>;
+<a href=#226 id=226 data-nosnippet>226</a>            <span class="comment">// Insert the remaining part in the bytewise provenance.
+<a href=#227 id=227 data-nosnippet>227</a>            </span><span class="kw">let </span>prov = <a class="self" href="#190">self</a>.ptrs[<span class="kw-2">&amp;</span><a href="#225">begin_of_last</a>];
+<a href=#228 id=228 data-nosnippet>228</a>            <span class="kw">let </span>bytes = <a class="self" href="#190">self</a>.bytes.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.get_or_insert_with">get_or_insert_with</a>(Box::default);
+<a href=#229 id=229 data-nosnippet>229</a>            <span class="kw">for </span>offset <span class="kw">in </span>end..last {
+<a href=#230 id=230 data-nosnippet>230</a>                bytes.insert(offset, (prov, (offset - begin_of_last).bytes() <span class="kw">as </span>u8));
+<a href=#231 id=231 data-nosnippet>231</a>            }
+<a href=#232 id=232 data-nosnippet>232</a>        }
+<a href=#233 id=233 data-nosnippet>233</a>
+<a href=#234 id=234 data-nosnippet>234</a>        <span class="comment">// Forget all the provenance.
+<a href=#235 id=235 data-nosnippet>235</a>        // Since provenance do not overlap, we know that removing until `last` (exclusive) is fine,
+<a href=#236 id=236 data-nosnippet>236</a>        // i.e., this will not remove any other provenance just after the ones we care about.
+<a href=#237 id=237 data-nosnippet>237</a>        </span><a class="self" href="#190">self</a>.ptrs.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.remove_range">remove_range</a>(<a href="#202">first</a>..<a href="#202">last</a>);
+<a href=#238 id=238 data-nosnippet>238</a>    }
+<a href=#239 id=239 data-nosnippet>239</a>
+<a href=#240 id=240 data-nosnippet>240</a>    <span class="doccomment">/// Overwrites all provenance in the given range with wildcard provenance.
+<a href=#241 id=241 data-nosnippet>241</a>    /// Pointers partially overwritten will have their provenances preserved
+<a href=#242 id=242 data-nosnippet>242</a>    /// bytewise on their remaining bytes.
+<a href=#243 id=243 data-nosnippet>243</a>    ///
+<a href=#244 id=244 data-nosnippet>244</a>    /// Provided for usage in Miri and panics otherwise.
+<a href=#245 id=245 data-nosnippet>245</a>    </span><span class="kw">pub fn </span>write_wildcards(<span class="kw-2">&amp;mut </span><span class="self">self</span>, cx: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="../../../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a>, range: <a href="../allocation.rs.html#344-347">AllocRange</a>) {
+<a href=#246 id=246 data-nosnippet>246</a>        <span class="kw">let </span>wildcard = Prov::WILDCARD.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.unwrap">unwrap</a>();
+<a href=#247 id=247 data-nosnippet>247</a>
+<a href=#248 id=248 data-nosnippet>248</a>        <span class="kw">let </span>bytes = <a class="self" href="#245">self</a>.bytes.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.get_or_insert_with">get_or_insert_with</a>(Box::default);
+<a href=#249 id=249 data-nosnippet>249</a>
+<a href=#250 id=250 data-nosnippet>250</a>        <span class="comment">// Remove pointer provenances that overlap with the range, then readd the edge ones bytewise.
+<a href=#251 id=251 data-nosnippet>251</a>        </span><span class="kw">let </span>ptr_range = <a href="#70-77"><span class="self">Self</span>::adjusted_range_ptrs</a>(<a href="#245">range</a>, <a href="#245">cx</a>);
+<a href=#252 id=252 data-nosnippet>252</a>        <span class="kw">let </span>ptrs = <a class="self" href="#245">self</a>.ptrs.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.range">range</a>(<a href="#251">ptr_range</a>.<a href="https://doc.rust-lang.org/beta/core/clone/trait.Clone.html#tymethod.clone">clone</a>());
+<a href=#253 id=253 data-nosnippet>253</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>((offset, prov)) = <a href="#252">ptrs</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.first">first</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.copied">copied</a>() {
+<a href=#254 id=254 data-nosnippet>254</a>            <span class="kw">for </span>byte_ofs <span class="kw">in </span>offset..range.start {
+<a href=#255 id=255 data-nosnippet>255</a>                bytes.insert(byte_ofs, (prov, (byte_ofs - offset).bytes() <span class="kw">as </span>u8));
+<a href=#256 id=256 data-nosnippet>256</a>            }
+<a href=#257 id=257 data-nosnippet>257</a>        }
+<a href=#258 id=258 data-nosnippet>258</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>((offset, prov)) = <a href="#252">ptrs</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.last">last</a>().<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.copied">copied</a>() {
+<a href=#259 id=259 data-nosnippet>259</a>            <span class="kw">for </span>byte_ofs <span class="kw">in </span>range.end()..offset + cx.data_layout().pointer_size() {
+<a href=#260 id=260 data-nosnippet>260</a>                bytes.insert(byte_ofs, (prov, (byte_ofs - offset).bytes() <span class="kw">as </span>u8));
+<a href=#261 id=261 data-nosnippet>261</a>            }
+<a href=#262 id=262 data-nosnippet>262</a>        }
+<a href=#263 id=263 data-nosnippet>263</a>        <a class="self" href="#245">self</a>.ptrs.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.remove_range">remove_range</a>(<a href="#251">ptr_range</a>);
+<a href=#264 id=264 data-nosnippet>264</a>
+<a href=#265 id=265 data-nosnippet>265</a>        <span class="comment">// Overwrite bytewise provenance.
+<a href=#266 id=266 data-nosnippet>266</a>        </span><span class="kw">for </span>offset <span class="kw">in </span>range.start..range.end() {
+<a href=#267 id=267 data-nosnippet>267</a>            <span class="comment">// The fragment index does not matter for wildcard provenance.
+<a href=#268 id=268 data-nosnippet>268</a>            </span>bytes.insert(offset, (wildcard, <span class="number">0</span>));
+<a href=#269 id=269 data-nosnippet>269</a>        }
+<a href=#270 id=270 data-nosnippet>270</a>    }
+<a href=#271 id=271 data-nosnippet>271</a>}
+<a href=#272 id=272 data-nosnippet>272</a>
+<a href=#273 id=273 data-nosnippet>273</a><span class="doccomment">/// A partial, owned list of provenance to transfer into another allocation.
+<a href=#274 id=274 data-nosnippet>274</a>///
+<a href=#275 id=275 data-nosnippet>275</a>/// Offsets are already adjusted to the destination allocation.
+<a href=#276 id=276 data-nosnippet>276</a></span><span class="kw">pub struct </span><a href="../../../../../rustc_middle/mir/interpret/allocation/provenance_map/struct.ProvenanceCopy.html">ProvenanceCopy</a>&lt;Prov&gt; {
+<a href=#277 id=277 data-nosnippet>277</a>    dest_ptrs: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/beta/alloc/boxed/struct.Box.html">Box</a>&lt;[(<a href="../../../../../rustc_abi/struct.Size.html">Size</a>, Prov)]&gt;&gt;,
+<a href=#278 id=278 data-nosnippet>278</a>    dest_bytes: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;<a href="https://doc.rust-lang.org/beta/alloc/boxed/struct.Box.html">Box</a>&lt;[(<a href="../../../../../rustc_abi/struct.Size.html">Size</a>, (Prov, <a href="https://doc.rust-lang.org/beta/std/primitive.u8.html">u8</a>))]&gt;&gt;,
+<a href=#279 id=279 data-nosnippet>279</a>}
+<a href=#280 id=280 data-nosnippet>280</a>
+<a href=#281 id=281 data-nosnippet>281</a><span class="kw">impl</span>&lt;Prov: <a href="../pointer.rs.html#59-83">Provenance</a>&gt; <a href="#18-27">ProvenanceMap</a>&lt;Prov&gt; {
+<a href=#282 id=282 data-nosnippet>282</a>    <span class="kw">pub fn </span>prepare_copy(
+<a href=#283 id=283 data-nosnippet>283</a>        <span class="kw-2">&amp;</span><span class="self">self</span>,
+<a href=#284 id=284 data-nosnippet>284</a>        src: <a href="../allocation.rs.html#344-347">AllocRange</a>,
+<a href=#285 id=285 data-nosnippet>285</a>        dest: <a href="../../../../../rustc_abi/struct.Size.html">Size</a>,
+<a href=#286 id=286 data-nosnippet>286</a>        count: <a href="https://doc.rust-lang.org/beta/std/primitive.u64.html">u64</a>,
+<a href=#287 id=287 data-nosnippet>287</a>        cx: <span class="kw-2">&amp;</span><span class="kw">impl </span><a href="../../../../../rustc_abi/trait.HasDataLayout.html">HasDataLayout</a>,
+<a href=#288 id=288 data-nosnippet>288</a>    ) -&gt; <a href="#276-279">ProvenanceCopy</a>&lt;Prov&gt; {
+<a href=#289 id=289 data-nosnippet>289</a>        <span class="kw">let </span>shift_offset = <span class="kw">move </span>|idx, offset| {
+<a href=#290 id=290 data-nosnippet>290</a>            <span class="comment">// compute offset for current repetition
+<a href=#291 id=291 data-nosnippet>291</a>            </span><span class="kw">let </span>dest_offset = <a href="#285">dest</a> + <a href="#284">src</a>.size * <a href="#289">idx</a>; <span class="comment">// `Size` operations
+<a href=#292 id=292 data-nosnippet>292</a>            // shift offsets from source allocation to destination allocation
+<a href=#293 id=293 data-nosnippet>293</a>            </span>(<a href="#289">offset</a> - <a href="#284">src</a>.start) + <a href="#291">dest_offset</a> <span class="comment">// `Size` operations
+<a href=#294 id=294 data-nosnippet>294</a>        </span>};
+<a href=#295 id=295 data-nosnippet>295</a>        <span class="kw">let </span>ptr_size = <a href="#287">cx</a>.<a href="../../../../../rustc_abi/trait.HasDataLayout.html#tymethod.data_layout">data_layout</a>().<a href="../../../../../rustc_abi/struct.TargetDataLayout.html#method.pointer_size">pointer_size</a>();
+<a href=#296 id=296 data-nosnippet>296</a>
+<a href=#297 id=297 data-nosnippet>297</a>        <span class="comment">// # Pointer-sized provenances
+<a href=#298 id=298 data-nosnippet>298</a>        // Get the provenances that are entirely within this range.
+<a href=#299 id=299 data-nosnippet>299</a>        // (Different from `range_get_ptrs` which asks if they overlap the range.)
+<a href=#300 id=300 data-nosnippet>300</a>        // Only makes sense if we are copying at least one pointer worth of bytes.
+<a href=#301 id=301 data-nosnippet>301</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>dest_ptrs_box = <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>;
+<a href=#302 id=302 data-nosnippet>302</a>        <span class="kw">if </span><a href="#284">src</a>.size &gt;= <a href="#295">ptr_size</a> {
+<a href=#303 id=303 data-nosnippet>303</a>            <span class="kw">let </span>adjusted_end = <a href="../../../../../rustc_abi/struct.Size.html#method.from_bytes">Size::from_bytes</a>(<a href="#284">src</a>.<a href="../allocation.rs.html#377-379">end</a>().<a href="../../../../../rustc_abi/struct.Size.html#method.bytes">bytes</a>() - (<a href="#295">ptr_size</a>.<a href="../../../../../rustc_abi/struct.Size.html#method.bytes">bytes</a>() - <span class="number">1</span>));
+<a href=#304 id=304 data-nosnippet>304</a>            <span class="kw">let </span>ptrs = <a class="self" href="#283">self</a>.ptrs.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.range">range</a>(<a href="#284">src</a>.start..<a href="#303">adjusted_end</a>);
+<a href=#305 id=305 data-nosnippet>305</a>            <span class="comment">// If `count` is large, this is rather wasteful -- we are allocating a big array here, which
+<a href=#306 id=306 data-nosnippet>306</a>            // is mostly filled with redundant information since it's just N copies of the same `Prov`s
+<a href=#307 id=307 data-nosnippet>307</a>            // at slightly adjusted offsets. The reason we do this is so that in `mark_provenance_range`
+<a href=#308 id=308 data-nosnippet>308</a>            // we can use `insert_presorted`. That wouldn't work with an `Iterator` that just produces
+<a href=#309 id=309 data-nosnippet>309</a>            // the right sequence of provenance for all N copies.
+<a href=#310 id=310 data-nosnippet>310</a>            // Basically, this large array would have to be created anyway in the target allocation.
+<a href=#311 id=311 data-nosnippet>311</a>            </span><span class="kw">let </span><span class="kw-2">mut </span>dest_ptrs = <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.with_capacity">Vec::with_capacity</a>(<a href="#304">ptrs</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.len">len</a>() * (<a href="#286">count</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/beta/std/primitive.usize.html">usize</a>));
+<a href=#312 id=312 data-nosnippet>312</a>            <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..count {
+<a href=#313 id=313 data-nosnippet>313</a>                dest_ptrs
+<a href=#314 id=314 data-nosnippet>314</a>                    .extend(ptrs.iter().map(|<span class="kw-2">&amp;</span>(offset, reloc)| (shift_offset(i, offset), reloc)));
+<a href=#315 id=315 data-nosnippet>315</a>            }
+<a href=#316 id=316 data-nosnippet>316</a>            <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.debug_assert_eq.html">debug_assert_eq!</a>(dest_ptrs.len(), dest_ptrs.capacity());
+<a href=#317 id=317 data-nosnippet>317</a>            <a href="#301">dest_ptrs_box</a> = <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#311">dest_ptrs</a>.<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.into_boxed_slice">into_boxed_slice</a>());
+<a href=#318 id=318 data-nosnippet>318</a>        };
+<a href=#319 id=319 data-nosnippet>319</a>
+<a href=#320 id=320 data-nosnippet>320</a>        <span class="comment">// # Byte-sized provenances
+<a href=#321 id=321 data-nosnippet>321</a>        // This includes the existing bytewise provenance in the range, and ptr provenance
+<a href=#322 id=322 data-nosnippet>322</a>        // that overlaps with the begin/end of the range.
+<a href=#323 id=323 data-nosnippet>323</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>dest_bytes_box = <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>;
+<a href=#324 id=324 data-nosnippet>324</a>        <span class="kw">let </span>begin_overlap = <a class="self" href="#283">self</a>.<a href="#82-88">range_ptrs_get</a>(<a href="../allocation.rs.html#357-359">alloc_range</a>(<a href="#284">src</a>.start, Size::ZERO), <a href="#287">cx</a>).<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.first">first</a>();
+<a href=#325 id=325 data-nosnippet>325</a>        <span class="kw">let </span>end_overlap = <a class="self" href="#283">self</a>.<a href="#82-88">range_ptrs_get</a>(<a href="../allocation.rs.html#357-359">alloc_range</a>(<a href="#284">src</a>.<a href="../allocation.rs.html#377-379">end</a>(), Size::ZERO), <a href="#287">cx</a>).<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.first">first</a>();
+<a href=#326 id=326 data-nosnippet>326</a>        <span class="comment">// We only need to go here if there is some overlap or some bytewise provenance.
+<a href=#327 id=327 data-nosnippet>327</a>        </span><span class="kw">if </span><a href="#324">begin_overlap</a>.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.is_some">is_some</a>() || <a href="#325">end_overlap</a>.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.is_some">is_some</a>() || <a class="self" href="#283">self</a>.bytes.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.is_some">is_some</a>() {
+<a href=#328 id=328 data-nosnippet>328</a>            <span class="kw">let </span><span class="kw-2">mut </span>bytes: <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;(<a href="../../../../../rustc_abi/struct.Size.html">Size</a>, (Prov, <a href="https://doc.rust-lang.org/beta/std/primitive.u8.html">u8</a>))&gt; = <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.new">Vec::new</a>();
+<a href=#329 id=329 data-nosnippet>329</a>            <span class="comment">// First, if there is a part of a pointer at the start, add that.
+<a href=#330 id=330 data-nosnippet>330</a>            </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(entry) = <a href="#324">begin_overlap</a> {
+<a href=#331 id=331 data-nosnippet>331</a>                <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"start overlapping entry: {entry:?}"</span>);
+<a href=#332 id=332 data-nosnippet>332</a>                <span class="comment">// For really small copies, make sure we don't run off the end of the `src` range.
+<a href=#333 id=333 data-nosnippet>333</a>                </span><span class="kw">let </span>entry_end = <a href="https://doc.rust-lang.org/beta/core/cmp/fn.min.html">cmp::min</a>(<a href="#330">entry</a>.<span class="number">0 </span>+ <a href="#295">ptr_size</a>, <a href="#284">src</a>.<a href="../allocation.rs.html#377-379">end</a>());
+<a href=#334 id=334 data-nosnippet>334</a>                <span class="kw">for </span>offset <span class="kw">in </span>src.start..entry_end {
+<a href=#335 id=335 data-nosnippet>335</a>                    bytes.push((offset, (entry.<span class="number">1</span>, (offset - entry.<span class="number">0</span>).bytes() <span class="kw">as </span>u8)));
+<a href=#336 id=336 data-nosnippet>336</a>                }
+<a href=#337 id=337 data-nosnippet>337</a>            } <span class="kw">else </span>{
+<a href=#338 id=338 data-nosnippet>338</a>                <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"no start overlapping entry"</span>);
+<a href=#339 id=339 data-nosnippet>339</a>            }
+<a href=#340 id=340 data-nosnippet>340</a>
+<a href=#341 id=341 data-nosnippet>341</a>            <span class="comment">// Then the main part, bytewise provenance from `self.bytes`.
+<a href=#342 id=342 data-nosnippet>342</a>            </span><a href="#328">bytes</a>.<a href="https://doc.rust-lang.org/beta/core/iter/traits/collect/trait.Extend.html#tymethod.extend">extend</a>(<a class="self" href="#283">self</a>.<a href="#96-102">range_bytes_get</a>(<a href="#284">src</a>));
+<a href=#343 id=343 data-nosnippet>343</a>
+<a href=#344 id=344 data-nosnippet>344</a>            <span class="comment">// And finally possibly parts of a pointer at the end.
+<a href=#345 id=345 data-nosnippet>345</a>            </span><span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(entry) = <a href="#325">end_overlap</a> {
+<a href=#346 id=346 data-nosnippet>346</a>                <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"end overlapping entry: {entry:?}"</span>);
+<a href=#347 id=347 data-nosnippet>347</a>                <span class="comment">// For really small copies, make sure we don't start before `src` does.
+<a href=#348 id=348 data-nosnippet>348</a>                </span><span class="kw">let </span>entry_start = <a href="https://doc.rust-lang.org/beta/core/cmp/fn.max.html">cmp::max</a>(<a href="#345">entry</a>.<span class="number">0</span>, <a href="#284">src</a>.start);
+<a href=#349 id=349 data-nosnippet>349</a>                <span class="kw">for </span>offset <span class="kw">in </span>entry_start..src.end() {
+<a href=#350 id=350 data-nosnippet>350</a>                    <span class="kw">if </span>bytes.last().is_none_or(|bytes_entry| bytes_entry.<span class="number">0 </span>&lt; offset) {
+<a href=#351 id=351 data-nosnippet>351</a>                        <span class="comment">// The last entry, if it exists, has a lower offset than us, so we
+<a href=#352 id=352 data-nosnippet>352</a>                        // can add it at the end and remain sorted.
+<a href=#353 id=353 data-nosnippet>353</a>                        </span>bytes.push((offset, (entry.<span class="number">1</span>, (offset - entry.<span class="number">0</span>).bytes() <span class="kw">as </span>u8)));
+<a href=#354 id=354 data-nosnippet>354</a>                    } <span class="kw">else </span>{
+<a href=#355 id=355 data-nosnippet>355</a>                        <span class="comment">// There already is an entry for this offset in there! This can happen when the
+<a href=#356 id=356 data-nosnippet>356</a>                        // start and end range checks actually end up hitting the same pointer, so we
+<a href=#357 id=357 data-nosnippet>357</a>                        // already added this in the "pointer at the start" part above.
+<a href=#358 id=358 data-nosnippet>358</a>                        </span><span class="macro">assert!</span>(entry.<span class="number">0 </span>&lt;= src.start);
+<a href=#359 id=359 data-nosnippet>359</a>                    }
+<a href=#360 id=360 data-nosnippet>360</a>                }
+<a href=#361 id=361 data-nosnippet>361</a>            } <span class="kw">else </span>{
+<a href=#362 id=362 data-nosnippet>362</a>                <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"no end overlapping entry"</span>);
+<a href=#363 id=363 data-nosnippet>363</a>            }
+<a href=#364 id=364 data-nosnippet>364</a>            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"byte provenances: {bytes:?}"</span>);
+<a href=#365 id=365 data-nosnippet>365</a>
+<a href=#366 id=366 data-nosnippet>366</a>            <span class="comment">// And again a buffer for the new list on the target side.
+<a href=#367 id=367 data-nosnippet>367</a>            </span><span class="kw">let </span><span class="kw-2">mut </span>dest_bytes = <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.with_capacity">Vec::with_capacity</a>(<a href="#328">bytes</a>.<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.len">len</a>() * (<a href="#286">count</a> <span class="kw">as </span><a href="https://doc.rust-lang.org/beta/std/primitive.usize.html">usize</a>));
+<a href=#368 id=368 data-nosnippet>368</a>            <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..count {
+<a href=#369 id=369 data-nosnippet>369</a>                dest_bytes
+<a href=#370 id=370 data-nosnippet>370</a>                    .extend(bytes.iter().map(|<span class="kw-2">&amp;</span>(offset, reloc)| (shift_offset(i, offset), reloc)));
+<a href=#371 id=371 data-nosnippet>371</a>            }
+<a href=#372 id=372 data-nosnippet>372</a>            <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.debug_assert_eq.html">debug_assert_eq!</a>(dest_bytes.len(), dest_bytes.capacity());
+<a href=#373 id=373 data-nosnippet>373</a>            <a href="#323">dest_bytes_box</a> = <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#367">dest_bytes</a>.<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.into_boxed_slice">into_boxed_slice</a>());
+<a href=#374 id=374 data-nosnippet>374</a>        }
+<a href=#375 id=375 data-nosnippet>375</a>
+<a href=#376 id=376 data-nosnippet>376</a>        <a href="#276-279">ProvenanceCopy</a> { dest_ptrs: <a href="#301">dest_ptrs_box</a>, dest_bytes: <a href="#323">dest_bytes_box</a> }
+<a href=#377 id=377 data-nosnippet>377</a>    }
+<a href=#378 id=378 data-nosnippet>378</a>
+<a href=#379 id=379 data-nosnippet>379</a>    <span class="doccomment">/// Applies a provenance copy.
+<a href=#380 id=380 data-nosnippet>380</a>    /// The affected range, as defined in the parameters to `prepare_copy` is expected
+<a href=#381 id=381 data-nosnippet>381</a>    /// to be clear of provenance.
+<a href=#382 id=382 data-nosnippet>382</a>    </span><span class="kw">pub fn </span>apply_copy(<span class="kw-2">&amp;mut </span><span class="self">self</span>, copy: <a href="#276-279">ProvenanceCopy</a>&lt;Prov&gt;) {
+<a href=#383 id=383 data-nosnippet>383</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(dest_ptrs) = <a href="#382">copy</a>.dest_ptrs {
+<a href=#384 id=384 data-nosnippet>384</a>            <a class="self" href="#382">self</a>.ptrs.<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.insert_presorted">insert_presorted</a>(<a href="#383">dest_ptrs</a>.<a href="https://doc.rust-lang.org/beta/core/convert/trait.Into.html#tymethod.into">into</a>());
+<a href=#385 id=385 data-nosnippet>385</a>        }
+<a href=#386 id=386 data-nosnippet>386</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(dest_bytes) = <a href="#382">copy</a>.dest_bytes
+<a href=#387 id=387 data-nosnippet>387</a>            &amp;&amp; !<a href="#386">dest_bytes</a>.<a href="https://doc.rust-lang.org/beta/core/foreigntype.slice.html#method.is_empty">is_empty</a>()
+<a href=#388 id=388 data-nosnippet>388</a>        {
+<a href=#389 id=389 data-nosnippet>389</a>            <a class="self" href="#382">self</a>.bytes.<a href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#method.get_or_insert_with">get_or_insert_with</a>(Box::default).<a href="../../../../../rustc_data_structures/sorted_map/struct.SortedMap.html#method.insert_presorted">insert_presorted</a>(<a href="#386">dest_bytes</a>.<a href="https://doc.rust-lang.org/beta/core/convert/trait.Into.html#tymethod.into">into</a>());
+<a href=#390 id=390 data-nosnippet>390</a>        }
+<a href=#391 id=391 data-nosnippet>391</a>    }
+<a href=#392 id=392 data-nosnippet>392</a>}</code></pre></div></section></main></body></html>

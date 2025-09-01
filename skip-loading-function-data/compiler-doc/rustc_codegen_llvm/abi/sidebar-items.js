@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ABI_AFFECTING_ATTRIBUTES","OPTIMIZATION_ATTRIBUTES"],"fn":["get_attrs"],"trait":["ArgAbiExt","ArgAttributesExt","FnAbiLlvmExt","LlvmType"]};

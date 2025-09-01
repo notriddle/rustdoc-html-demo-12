@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_recursion"],"struct":["CallRecursion","CheckCallRecursion","CheckDropRecursion","NonRecursive","RecursiveDrop","Search"],"trait":["TerminatorClassifier"]};

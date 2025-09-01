@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["NEEDS_CANONICAL"],"enum":["CanonicalizeInputKind","CanonicalizeMode"],"struct":["Canonicalizer"]};

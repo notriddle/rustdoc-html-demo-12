@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Ctx","FormatArg","FormatWarning","Piece"],"fn":["parse_arg","slice_span","warn_on_format_spec"],"mod":["errors"],"struct":["FormatArgs","FormatString"]};

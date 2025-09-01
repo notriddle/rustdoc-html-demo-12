@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["with_fn"],"struct":["BugAbort","Diag","DiagInner","DiagLocation","DiagStyledString","FatalAbort","IsLint","StringPart","Subdiag"],"trait":["Diagnostic","EmissionGuarantee","LintDiagnostic","LintDiagnosticBox","Subdiagnostic"],"type":["DiagArgMap"]};

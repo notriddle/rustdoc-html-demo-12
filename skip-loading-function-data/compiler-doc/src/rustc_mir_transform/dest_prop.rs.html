@@ -1,0 +1,820 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `compiler/rustc_mir_transform/src/dest_prop.rs`."><title>dest_prop.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="rustc_mir_transform" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0-beta.1 (788da80fc 2025-08-04)" data-channel="beta" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../static.files/storage-68b7e25d.js"></script><script defer src="../../static.files/src-script-813739b1.js"></script><script defer src="../../src-files.js"></script><script defer src="../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">rustc_mir_transform/</div>dest_prop.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Propagates assignment destinations backwards in the CFG to eliminate redundant assignments.
+<a href=#2 id=2 data-nosnippet>2</a>//!
+<a href=#3 id=3 data-nosnippet>3</a>//! # Motivation
+<a href=#4 id=4 data-nosnippet>4</a>//!
+<a href=#5 id=5 data-nosnippet>5</a>//! MIR building can insert a lot of redundant copies, and Rust code in general often tends to move
+<a href=#6 id=6 data-nosnippet>6</a>//! values around a lot. The result is a lot of assignments of the form `dest = {move} src;` in MIR.
+<a href=#7 id=7 data-nosnippet>7</a>//! MIR building for constants in particular tends to create additional locals that are only used
+<a href=#8 id=8 data-nosnippet>8</a>//! inside a single block to shuffle a value around unnecessarily.
+<a href=#9 id=9 data-nosnippet>9</a>//!
+<a href=#10 id=10 data-nosnippet>10</a>//! LLVM by itself is not good enough at eliminating these redundant copies (eg. see
+<a href=#11 id=11 data-nosnippet>11</a>//! &lt;https://github.com/rust-lang/rust/issues/32966&gt;), so this leaves some performance on the table
+<a href=#12 id=12 data-nosnippet>12</a>//! that we can regain by implementing an optimization for removing these assign statements in rustc
+<a href=#13 id=13 data-nosnippet>13</a>//! itself. When this optimization runs fast enough, it can also speed up the constant evaluation
+<a href=#14 id=14 data-nosnippet>14</a>//! and code generation phases of rustc due to the reduced number of statements and locals.
+<a href=#15 id=15 data-nosnippet>15</a>//!
+<a href=#16 id=16 data-nosnippet>16</a>//! # The Optimization
+<a href=#17 id=17 data-nosnippet>17</a>//!
+<a href=#18 id=18 data-nosnippet>18</a>//! Conceptually, this optimization is "destination propagation". It is similar to the Named Return
+<a href=#19 id=19 data-nosnippet>19</a>//! Value Optimization, or NRVO, known from the C++ world, except that it isn't limited to return
+<a href=#20 id=20 data-nosnippet>20</a>//! values or the return place `_0`. On a very high level, independent of the actual implementation
+<a href=#21 id=21 data-nosnippet>21</a>//! details, it does the following:
+<a href=#22 id=22 data-nosnippet>22</a>//!
+<a href=#23 id=23 data-nosnippet>23</a>//! 1) Identify `dest = src;` statements with values for `dest` and `src` whose storage can soundly
+<a href=#24 id=24 data-nosnippet>24</a>//!    be merged.
+<a href=#25 id=25 data-nosnippet>25</a>//! 2) Replace all mentions of `src` with `dest` ("unifying" them and propagating the destination
+<a href=#26 id=26 data-nosnippet>26</a>//!    backwards).
+<a href=#27 id=27 data-nosnippet>27</a>//! 3) Delete the `dest = src;` statement (by making it a `nop`).
+<a href=#28 id=28 data-nosnippet>28</a>//!
+<a href=#29 id=29 data-nosnippet>29</a>//! Step 1) is by far the hardest, so it is explained in more detail below.
+<a href=#30 id=30 data-nosnippet>30</a>//!
+<a href=#31 id=31 data-nosnippet>31</a>//! ## Soundness
+<a href=#32 id=32 data-nosnippet>32</a>//!
+<a href=#33 id=33 data-nosnippet>33</a>//! We have a pair of places `p` and `q`, whose memory we would like to merge. In order for this to
+<a href=#34 id=34 data-nosnippet>34</a>//! be sound, we need to check a number of conditions:
+<a href=#35 id=35 data-nosnippet>35</a>//!
+<a href=#36 id=36 data-nosnippet>36</a>//! * `p` and `q` must both be *constant* - it does not make much sense to talk about merging them
+<a href=#37 id=37 data-nosnippet>37</a>//!   if they do not consistently refer to the same place in memory. This is satisfied if they do
+<a href=#38 id=38 data-nosnippet>38</a>//!   not contain any indirection through a pointer or any indexing projections.
+<a href=#39 id=39 data-nosnippet>39</a>//!
+<a href=#40 id=40 data-nosnippet>40</a>//! * `p` and `q` must have the **same type**. If we replace a local with a subtype or supertype,
+<a href=#41 id=41 data-nosnippet>41</a>//!   we may end up with a different vtable for that local. See the `subtyping-impacts-selection`
+<a href=#42 id=42 data-nosnippet>42</a>//!   tests for an example where that causes issues.
+<a href=#43 id=43 data-nosnippet>43</a>//!
+<a href=#44 id=44 data-nosnippet>44</a>//! * We need to make sure that the goal of "merging the memory" is actually structurally possible
+<a href=#45 id=45 data-nosnippet>45</a>//!   in MIR. For example, even if all the other conditions are satisfied, there is no way to
+<a href=#46 id=46 data-nosnippet>46</a>//!   "merge" `_5.foo` and `_6.bar`. For now, we ensure this by requiring that both `p` and `q` are
+<a href=#47 id=47 data-nosnippet>47</a>//!   locals with no further projections. Future iterations of this pass should improve on this.
+<a href=#48 id=48 data-nosnippet>48</a>//!
+<a href=#49 id=49 data-nosnippet>49</a>//! * Finally, we want `p` and `q` to use the same memory - however, we still need to make sure that
+<a href=#50 id=50 data-nosnippet>50</a>//!   each of them has enough "ownership" of that memory to continue "doing its job." More
+<a href=#51 id=51 data-nosnippet>51</a>//!   precisely, what we will check is that whenever the program performs a write to `p`, then it
+<a href=#52 id=52 data-nosnippet>52</a>//!   does not currently care about what the value in `q` is (and vice versa). We formalize the
+<a href=#53 id=53 data-nosnippet>53</a>//!   notion of "does not care what the value in `q` is" by checking the *liveness* of `q`.
+<a href=#54 id=54 data-nosnippet>54</a>//!
+<a href=#55 id=55 data-nosnippet>55</a>//!   Because of the difficulty of computing liveness of places that have their address taken, we do
+<a href=#56 id=56 data-nosnippet>56</a>//!   not even attempt to do it. Any places that are in a local that has its address taken is
+<a href=#57 id=57 data-nosnippet>57</a>//!   excluded from the optimization.
+<a href=#58 id=58 data-nosnippet>58</a>//!
+<a href=#59 id=59 data-nosnippet>59</a>//! The first two conditions are simple structural requirements on the `Assign` statements that can
+<a href=#60 id=60 data-nosnippet>60</a>//! be trivially checked. The third requirement however is more difficult and costly to check.
+<a href=#61 id=61 data-nosnippet>61</a>//!
+<a href=#62 id=62 data-nosnippet>62</a>//! ## Future Improvements
+<a href=#63 id=63 data-nosnippet>63</a>//!
+<a href=#64 id=64 data-nosnippet>64</a>//! There are a number of ways in which this pass could be improved in the future:
+<a href=#65 id=65 data-nosnippet>65</a>//!
+<a href=#66 id=66 data-nosnippet>66</a>//! * Merging storage liveness ranges instead of removing storage statements completely. This may
+<a href=#67 id=67 data-nosnippet>67</a>//!   improve stack usage.
+<a href=#68 id=68 data-nosnippet>68</a>//!
+<a href=#69 id=69 data-nosnippet>69</a>//! * Allow merging locals into places with projections, eg `_5` into `_6.foo`.
+<a href=#70 id=70 data-nosnippet>70</a>//!
+<a href=#71 id=71 data-nosnippet>71</a>//! * Liveness analysis with more precision than whole locals at a time. The smaller benefit of this
+<a href=#72 id=72 data-nosnippet>72</a>//!   is that it would allow us to dest prop at "sub-local" levels in some cases. The bigger benefit
+<a href=#73 id=73 data-nosnippet>73</a>//!   of this is that such liveness analysis can report more accurate results about whole locals at
+<a href=#74 id=74 data-nosnippet>74</a>//!   a time. For example, consider:
+<a href=#75 id=75 data-nosnippet>75</a>//!
+<a href=#76 id=76 data-nosnippet>76</a>//!   ```ignore (syntax-highlighting-only)
+<a href=#77 id=77 data-nosnippet>77</a>//!   _1 = u;
+<a href=#78 id=78 data-nosnippet>78</a>//!   // unrelated code
+<a href=#79 id=79 data-nosnippet>79</a>//!   _1.f1 = v;
+<a href=#80 id=80 data-nosnippet>80</a>//!   _2 = _1.f1;
+<a href=#81 id=81 data-nosnippet>81</a>//!   ```
+<a href=#82 id=82 data-nosnippet>82</a>//!
+<a href=#83 id=83 data-nosnippet>83</a>//!   Because the current analysis only thinks in terms of locals, it does not have enough
+<a href=#84 id=84 data-nosnippet>84</a>//!   information to report that `_1` is dead in the "unrelated code" section.
+<a href=#85 id=85 data-nosnippet>85</a>//!
+<a href=#86 id=86 data-nosnippet>86</a>//! * Liveness analysis enabled by alias analysis. This would allow us to not just bail on locals
+<a href=#87 id=87 data-nosnippet>87</a>//!   that ever have their address taken. Of course that requires actually having alias analysis
+<a href=#88 id=88 data-nosnippet>88</a>//!   (and a model to build it on), so this might be a bit of a ways off.
+<a href=#89 id=89 data-nosnippet>89</a>//!
+<a href=#90 id=90 data-nosnippet>90</a>//! * Various perf improvements. There are a bunch of comments in here marked `PERF` with ideas for
+<a href=#91 id=91 data-nosnippet>91</a>//!   how to do things more efficiently. However, the complexity of the pass as a whole should be
+<a href=#92 id=92 data-nosnippet>92</a>//!   kept in mind.
+<a href=#93 id=93 data-nosnippet>93</a>//!
+<a href=#94 id=94 data-nosnippet>94</a>//! ## Previous Work
+<a href=#95 id=95 data-nosnippet>95</a>//!
+<a href=#96 id=96 data-nosnippet>96</a>//! A [previous attempt][attempt 1] at implementing an optimization like this turned out to be a
+<a href=#97 id=97 data-nosnippet>97</a>//! significant regression in compiler performance. Fixing the regressions introduced a lot of
+<a href=#98 id=98 data-nosnippet>98</a>//! undesirable complexity to the implementation.
+<a href=#99 id=99 data-nosnippet>99</a>//!
+<a href=#100 id=100 data-nosnippet>100</a>//! A [subsequent approach][attempt 2] tried to avoid the costly computation by limiting itself to
+<a href=#101 id=101 data-nosnippet>101</a>//! acyclic CFGs, but still turned out to be far too costly to run due to suboptimal performance
+<a href=#102 id=102 data-nosnippet>102</a>//! within individual basic blocks, requiring a walk across the entire block for every assignment
+<a href=#103 id=103 data-nosnippet>103</a>//! found within the block. For the `tuple-stress` benchmark, which has 458745 statements in a
+<a href=#104 id=104 data-nosnippet>104</a>//! single block, this proved to be far too costly.
+<a href=#105 id=105 data-nosnippet>105</a>//!
+<a href=#106 id=106 data-nosnippet>106</a>//! [Another approach after that][attempt 3] was much closer to correct, but had some soundness
+<a href=#107 id=107 data-nosnippet>107</a>//! issues - it was failing to consider stores outside live ranges, and failed to uphold some of the
+<a href=#108 id=108 data-nosnippet>108</a>//! requirements that MIR has for non-overlapping places within statements. However, it also had
+<a href=#109 id=109 data-nosnippet>109</a>//! performance issues caused by `O(l² * s)` runtime, where `l` is the number of locals and `s` is
+<a href=#110 id=110 data-nosnippet>110</a>//! the number of statements and terminators.
+<a href=#111 id=111 data-nosnippet>111</a>//!
+<a href=#112 id=112 data-nosnippet>112</a>//! Since the first attempt at this, the compiler has improved dramatically, and new analysis
+<a href=#113 id=113 data-nosnippet>113</a>//! frameworks have been added that should make this approach viable without requiring a limited
+<a href=#114 id=114 data-nosnippet>114</a>//! approach that only works for some classes of CFGs:
+<a href=#115 id=115 data-nosnippet>115</a>//! - rustc now has a powerful dataflow analysis framework that can handle forwards and backwards
+<a href=#116 id=116 data-nosnippet>116</a>//!   analyses efficiently.
+<a href=#117 id=117 data-nosnippet>117</a>//! - Layout optimizations for coroutines have been added to improve code generation for
+<a href=#118 id=118 data-nosnippet>118</a>//!   async/await, which are very similar in spirit to what this optimization does.
+<a href=#119 id=119 data-nosnippet>119</a>//!
+<a href=#120 id=120 data-nosnippet>120</a>//! Also, rustc now has a simple NRVO pass (see `nrvo.rs`), which handles a subset of the cases that
+<a href=#121 id=121 data-nosnippet>121</a>//! this destination propagation pass handles, proving that similar optimizations can be performed
+<a href=#122 id=122 data-nosnippet>122</a>//! on MIR.
+<a href=#123 id=123 data-nosnippet>123</a>//!
+<a href=#124 id=124 data-nosnippet>124</a>//! ## Pre/Post Optimization
+<a href=#125 id=125 data-nosnippet>125</a>//!
+<a href=#126 id=126 data-nosnippet>126</a>//! It is recommended to run `SimplifyCfg` and then `SimplifyLocals` some time after this pass, as
+<a href=#127 id=127 data-nosnippet>127</a>//! it replaces the eliminated assign statements with `nop`s and leaves unused locals behind.
+<a href=#128 id=128 data-nosnippet>128</a>//!
+<a href=#129 id=129 data-nosnippet>129</a>//! [liveness]: https://en.wikipedia.org/wiki/Live_variable_analysis
+<a href=#130 id=130 data-nosnippet>130</a>//! [attempt 1]: https://github.com/rust-lang/rust/pull/47954
+<a href=#131 id=131 data-nosnippet>131</a>//! [attempt 2]: https://github.com/rust-lang/rust/pull/71003
+<a href=#132 id=132 data-nosnippet>132</a>//! [attempt 3]: https://github.com/rust-lang/rust/pull/72632
+<a href=#133 id=133 data-nosnippet>133</a>
+<a href=#134 id=134 data-nosnippet>134</a></span><span class="kw">use </span>rustc_data_structures::fx::{<a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>, <a href="../../rustc_data_structures/fx/type.IndexEntry.html">IndexEntry</a>, <a href="../../rustc_data_structures/fx/type.IndexOccupiedEntry.html">IndexOccupiedEntry</a>};
+<a href=#135 id=135 data-nosnippet>135</a><span class="kw">use </span><a href="../../rustc_index/bit_set/struct.DenseBitSet.html">rustc_index::bit_set::DenseBitSet</a>;
+<a href=#136 id=136 data-nosnippet>136</a><span class="kw">use </span><a href="../../rustc_index/interval/struct.SparseIntervalMatrix.html">rustc_index::interval::SparseIntervalMatrix</a>;
+<a href=#137 id=137 data-nosnippet>137</a><span class="kw">use </span><a href="../../rustc_middle/macro.bug.html">rustc_middle::bug</a>;
+<a href=#138 id=138 data-nosnippet>138</a><span class="kw">use </span>rustc_middle::mir::visit::{<a href="../../rustc_middle/mir/visit/trait.MutVisitor.html">MutVisitor</a>, <a href="../../rustc_middle/mir/visit/enum.PlaceContext.html">PlaceContext</a>, <a href="../../rustc_middle/mir/visit/trait.Visitor.html">Visitor</a>};
+<a href=#139 id=139 data-nosnippet>139</a><span class="kw">use </span>rustc_middle::mir::{
+<a href=#140 id=140 data-nosnippet>140</a>    <a href="../../rustc_middle/mir/struct.Body.html">Body</a>, <a href="../../rustc_middle/mir/trait.HasLocalDecls.html">HasLocalDecls</a>, <a href="../../rustc_middle/mir/syntax/enum.InlineAsmOperand.html">InlineAsmOperand</a>, <a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="../../rustc_middle/mir/enum.LocalKind.html">LocalKind</a>, <a href="../../rustc_middle/mir/struct.Location.html">Location</a>, <a href="../../rustc_middle/mir/syntax/enum.Operand.html">Operand</a>, <a href="../../rustc_middle/mir/pretty/enum.PassWhere.html">PassWhere</a>, <a href="../../rustc_middle/mir/syntax/struct.Place.html">Place</a>,
+<a href=#141 id=141 data-nosnippet>141</a>    <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html">Rvalue</a>, <a href="../../rustc_middle/mir/statement/struct.Statement.html">Statement</a>, <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html">StatementKind</a>, <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html">TerminatorKind</a>, <a href="../../rustc_middle/mir/pretty/fn.dump_mir.html">dump_mir</a>, <a href="../../rustc_middle/mir/traversal/index.html">traversal</a>,
+<a href=#142 id=142 data-nosnippet>142</a>};
+<a href=#143 id=143 data-nosnippet>143</a><span class="kw">use </span><a href="../../rustc_middle/ty/context/struct.TyCtxt.html">rustc_middle::ty::TyCtxt</a>;
+<a href=#144 id=144 data-nosnippet>144</a><span class="kw">use </span><a href="../../rustc_mir_dataflow/framework/trait.Analysis.html">rustc_mir_dataflow::Analysis</a>;
+<a href=#145 id=145 data-nosnippet>145</a><span class="kw">use </span><a href="../../rustc_mir_dataflow/impls/liveness/struct.MaybeLiveLocals.html">rustc_mir_dataflow::impls::MaybeLiveLocals</a>;
+<a href=#146 id=146 data-nosnippet>146</a><span class="kw">use </span>rustc_mir_dataflow::points::{<a href="../../rustc_mir_dataflow/points/struct.DenseLocationMap.html">DenseLocationMap</a>, <a href="../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>, <a href="../../rustc_mir_dataflow/points/fn.save_as_intervals.html">save_as_intervals</a>};
+<a href=#147 id=147 data-nosnippet>147</a><span class="kw">use </span>tracing::{<a href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug</a>, <a href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace</a>};
+<a href=#148 id=148 data-nosnippet>148</a>
+<a href=#149 id=149 data-nosnippet>149</a><span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">struct </span><a href="../../rustc_mir_transform/dest_prop/struct.DestinationPropagation.html">DestinationPropagation</a>;
+<a href=#150 id=150 data-nosnippet>150</a>
+<a href=#151 id=151 data-nosnippet>151</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="pass_manager.rs.html#84-114"><span class="kw">crate</span>::MirPass</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#149">DestinationPropagation</a> {
+<a href=#152 id=152 data-nosnippet>152</a>    <span class="kw">fn </span>is_enabled(<span class="kw-2">&amp;</span><span class="self">self</span>, sess: <span class="kw-2">&amp;</span><a href="../../rustc_session/session/struct.Session.html">rustc_session::Session</a>) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a> {
+<a href=#153 id=153 data-nosnippet>153</a>        <span class="comment">// For now, only run at MIR opt level 3. Two things need to be changed before this can be
+<a href=#154 id=154 data-nosnippet>154</a>        // turned on by default:
+<a href=#155 id=155 data-nosnippet>155</a>        //  1. Because of the overeager removal of storage statements, this can cause stack space
+<a href=#156 id=156 data-nosnippet>156</a>        //     regressions. This opt is not the place to fix this though, it's a more general
+<a href=#157 id=157 data-nosnippet>157</a>        //     problem in MIR.
+<a href=#158 id=158 data-nosnippet>158</a>        //  2. Despite being an overall perf improvement, this still causes a 30% regression in
+<a href=#159 id=159 data-nosnippet>159</a>        //     keccak. We can temporarily fix this by bounding function size, but in the long term
+<a href=#160 id=160 data-nosnippet>160</a>        //     we should fix this by being smarter about invalidating analysis results.
+<a href=#161 id=161 data-nosnippet>161</a>        </span><a href="#152">sess</a>.<a href="../../rustc_session/session/struct.Session.html#method.mir_opt_level">mir_opt_level</a>() &gt;= <span class="number">3
+<a href=#162 id=162 data-nosnippet>162</a>    </span>}
+<a href=#163 id=163 data-nosnippet>163</a>
+<a href=#164 id=164 data-nosnippet>164</a>    <span class="kw">fn </span>run_pass(<span class="kw-2">&amp;</span><span class="self">self</span>, tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;mut </span><a href="../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;) {
+<a href=#165 id=165 data-nosnippet>165</a>        <span class="kw">let </span>def_id = <a href="#164">body</a>.source.<a href="../../rustc_middle/mir/struct.MirSource.html#method.def_id">def_id</a>();
+<a href=#166 id=166 data-nosnippet>166</a>        <span class="kw">let </span><span class="kw-2">mut </span>candidates = <a href="https://doc.rust-lang.org/beta/core/default/trait.Default.html#tymethod.default">Candidates::default</a>();
+<a href=#167 id=167 data-nosnippet>167</a>        <span class="kw">let </span><span class="kw-2">mut </span>write_info = <a href="https://doc.rust-lang.org/beta/core/default/trait.Default.html#tymethod.default">WriteInfo::default</a>();
+<a href=#168 id=168 data-nosnippet>168</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(func = <span class="question-mark">?</span>tcx.def_path_str(def_id));
+<a href=#169 id=169 data-nosnippet>169</a>
+<a href=#170 id=170 data-nosnippet>170</a>        <span class="kw">let </span>borrowed = <a href="../../rustc_mir_dataflow/impls/borrowed_locals/fn.borrowed_locals.html">rustc_mir_dataflow::impls::borrowed_locals</a>(<a href="#164">body</a>);
+<a href=#171 id=171 data-nosnippet>171</a>
+<a href=#172 id=172 data-nosnippet>172</a>        <span class="kw">let </span>live = <a href="../../rustc_mir_dataflow/impls/liveness/struct.MaybeLiveLocals.html">MaybeLiveLocals</a>.<a href="../../rustc_mir_dataflow/framework/trait.Analysis.html#tymethod.iterate_to_fixpoint">iterate_to_fixpoint</a>(<a href="#164">tcx</a>, <a href="#164">body</a>, <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<span class="string">"MaybeLiveLocals-DestProp"</span>));
+<a href=#173 id=173 data-nosnippet>173</a>        <span class="kw">let </span>points = <a href="../../rustc_mir_dataflow/points/struct.DenseLocationMap.html#method.new">DenseLocationMap::new</a>(<a href="#164">body</a>);
+<a href=#174 id=174 data-nosnippet>174</a>        <span class="kw">let </span><span class="kw-2">mut </span>live = <a href="../../rustc_mir_dataflow/points/fn.save_as_intervals.html">save_as_intervals</a>(<span class="kw-2">&amp;</span><a href="#173">points</a>, <a href="#164">body</a>, <a href="#172">live</a>.analysis, <a href="#172">live</a>.results);
+<a href=#175 id=175 data-nosnippet>175</a>
+<a href=#176 id=176 data-nosnippet>176</a>        <span class="comment">// In order to avoid having to collect data for every single pair of locals in the body, we
+<a href=#177 id=177 data-nosnippet>177</a>        // do not allow doing more than one merge for places that are derived from the same local at
+<a href=#178 id=178 data-nosnippet>178</a>        // once. To avoid missed opportunities, we instead iterate to a fixed point - we'll refer to
+<a href=#179 id=179 data-nosnippet>179</a>        // each of these iterations as a "round."
+<a href=#180 id=180 data-nosnippet>180</a>        //
+<a href=#181 id=181 data-nosnippet>181</a>        // Reaching a fixed point could in theory take up to `min(l, s)` rounds - however, we do not
+<a href=#182 id=182 data-nosnippet>182</a>        // expect to see MIR like that. To verify this, a test was run against `[rust-lang/regex]` -
+<a href=#183 id=183 data-nosnippet>183</a>        // the average MIR body saw 1.32 full iterations of this loop. The most that was hit were 30
+<a href=#184 id=184 data-nosnippet>184</a>        // for a single function. Only 80/2801 (2.9%) of functions saw at least 5.
+<a href=#185 id=185 data-nosnippet>185</a>        //
+<a href=#186 id=186 data-nosnippet>186</a>        // [rust-lang/regex]:
+<a href=#187 id=187 data-nosnippet>187</a>        //     https://github.com/rust-lang/regex/tree/b5372864e2df6a2f5e543a556a62197f50ca3650
+<a href=#188 id=188 data-nosnippet>188</a>        </span><span class="kw">let </span><span class="kw-2">mut </span>round_count = <span class="number">0</span>;
+<a href=#189 id=189 data-nosnippet>189</a>        <span class="kw">loop </span>{
+<a href=#190 id=190 data-nosnippet>190</a>            <span class="comment">// PERF: Can we do something smarter than recalculating the candidates and liveness
+<a href=#191 id=191 data-nosnippet>191</a>            // results?
+<a href=#192 id=192 data-nosnippet>192</a>            </span><a href="#166">candidates</a>.<a href="#359-375">reset_and_find</a>(<a href="#164">body</a>, <span class="kw-2">&amp;</span><a href="#170">borrowed</a>);
+<a href=#193 id=193 data-nosnippet>193</a>            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="question-mark">?</span>candidates);
+<a href=#194 id=194 data-nosnippet>194</a>            <a href="#802-820">dest_prop_mir_dump</a>(<a href="#164">tcx</a>, <a href="#164">body</a>, <span class="kw-2">&amp;</span><a href="#173">points</a>, <span class="kw-2">&amp;</span><a href="#174">live</a>, <a href="#188">round_count</a>);
+<a href=#195 id=195 data-nosnippet>195</a>
+<a href=#196 id=196 data-nosnippet>196</a>            <a href="#469-488">FilterInformation::filter_liveness</a>(
+<a href=#197 id=197 data-nosnippet>197</a>                <span class="kw-2">&amp;mut </span><a href="#166">candidates</a>,
+<a href=#198 id=198 data-nosnippet>198</a>                <span class="kw-2">&amp;</span><a href="#173">points</a>,
+<a href=#199 id=199 data-nosnippet>199</a>                <span class="kw-2">&amp;</span><a href="#174">live</a>,
+<a href=#200 id=200 data-nosnippet>200</a>                <span class="kw-2">&amp;mut </span><a href="#167">write_info</a>,
+<a href=#201 id=201 data-nosnippet>201</a>                <a href="#164">body</a>,
+<a href=#202 id=202 data-nosnippet>202</a>            );
+<a href=#203 id=203 data-nosnippet>203</a>
+<a href=#204 id=204 data-nosnippet>204</a>            <span class="comment">// Because we only filter once per round, it is unsound to use a local for more than
+<a href=#205 id=205 data-nosnippet>205</a>            // one merge operation within a single round of optimizations. We store here which ones
+<a href=#206 id=206 data-nosnippet>206</a>            // we have already used.
+<a href=#207 id=207 data-nosnippet>207</a>            </span><span class="kw">let </span><span class="kw-2">mut </span>merged_locals: <a href="../../rustc_index/bit_set/struct.DenseBitSet.html">DenseBitSet</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>&gt; =
+<a href=#208 id=208 data-nosnippet>208</a>                <a href="../../rustc_index/bit_set/struct.DenseBitSet.html#method.new_empty">DenseBitSet::new_empty</a>(<a href="#164">body</a>.local_decls.<a href="../../rustc_index/slice/struct.IndexSlice.html#method.len">len</a>());
+<a href=#209 id=209 data-nosnippet>209</a>
+<a href=#210 id=210 data-nosnippet>210</a>            <span class="comment">// This is the set of merges we will apply this round. It is a subset of the candidates.
+<a href=#211 id=211 data-nosnippet>211</a>            </span><span class="kw">let </span><span class="kw-2">mut </span>merges = <a href="https://doc.rust-lang.org/beta/core/default/trait.Default.html#tymethod.default">FxIndexMap::default</a>();
+<a href=#212 id=212 data-nosnippet>212</a>
+<a href=#213 id=213 data-nosnippet>213</a>            <span class="kw">for </span>(src, candidates) <span class="kw">in </span>candidates.c.iter() {
+<a href=#214 id=214 data-nosnippet>214</a>                <span class="kw">if </span>merged_locals.contains(<span class="kw-2">*</span>src) {
+<a href=#215 id=215 data-nosnippet>215</a>                    <span class="kw">continue</span>;
+<a href=#216 id=216 data-nosnippet>216</a>                }
+<a href=#217 id=217 data-nosnippet>217</a>                <span class="kw">let </span><span class="prelude-val">Some</span>(dest) = candidates.iter().find(|dest| !merged_locals.contains(<span class="kw-2">**</span>dest))
+<a href=#218 id=218 data-nosnippet>218</a>                <span class="kw">else </span>{
+<a href=#219 id=219 data-nosnippet>219</a>                    <span class="kw">continue</span>;
+<a href=#220 id=220 data-nosnippet>220</a>                };
+<a href=#221 id=221 data-nosnippet>221</a>
+<a href=#222 id=222 data-nosnippet>222</a>                <span class="comment">// Replace `src` by `dest` everywhere.
+<a href=#223 id=223 data-nosnippet>223</a>                </span>merges.insert(<span class="kw-2">*</span>src, <span class="kw-2">*</span>dest);
+<a href=#224 id=224 data-nosnippet>224</a>                merged_locals.insert(<span class="kw-2">*</span>src);
+<a href=#225 id=225 data-nosnippet>225</a>                merged_locals.insert(<span class="kw-2">*</span>dest);
+<a href=#226 id=226 data-nosnippet>226</a>
+<a href=#227 id=227 data-nosnippet>227</a>                <span class="comment">// Update liveness information based on the merge we just performed.
+<a href=#228 id=228 data-nosnippet>228</a>                // Every location where `src` was live, `dest` will be live.
+<a href=#229 id=229 data-nosnippet>229</a>                </span>live.union_rows(<span class="kw-2">*</span>src, <span class="kw-2">*</span>dest);
+<a href=#230 id=230 data-nosnippet>230</a>            }
+<a href=#231 id=231 data-nosnippet>231</a>            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(merging = <span class="question-mark">?</span>merges);
+<a href=#232 id=232 data-nosnippet>232</a>
+<a href=#233 id=233 data-nosnippet>233</a>            <span class="kw">if </span><a href="#211">merges</a>.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.is_empty">is_empty</a>() {
+<a href=#234 id=234 data-nosnippet>234</a>                <span class="kw">break</span>;
+<a href=#235 id=235 data-nosnippet>235</a>            }
+<a href=#236 id=236 data-nosnippet>236</a>            <a href="#188">round_count</a> += <span class="number">1</span>;
+<a href=#237 id=237 data-nosnippet>237</a>
+<a href=#238 id=238 data-nosnippet>238</a>            <a href="#278-286">apply_merges</a>(<a href="#164">body</a>, <a href="#164">tcx</a>, <a href="#211">merges</a>, <a href="#207">merged_locals</a>);
+<a href=#239 id=239 data-nosnippet>239</a>        }
+<a href=#240 id=240 data-nosnippet>240</a>
+<a href=#241 id=241 data-nosnippet>241</a>        <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(round_count);
+<a href=#242 id=242 data-nosnippet>242</a>    }
+<a href=#243 id=243 data-nosnippet>243</a>
+<a href=#244 id=244 data-nosnippet>244</a>    <span class="kw">fn </span>is_required(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a> {
+<a href=#245 id=245 data-nosnippet>245</a>        <span class="bool-val">false
+<a href=#246 id=246 data-nosnippet>246</a>    </span>}
+<a href=#247 id=247 data-nosnippet>247</a>}
+<a href=#248 id=248 data-nosnippet>248</a>
+<a href=#249 id=249 data-nosnippet>249</a><span class="attr">#[derive(Debug, Default)]
+<a href=#250 id=250 data-nosnippet>250</a></span><span class="kw">struct </span><a href="../../rustc_mir_transform/dest_prop/struct.Candidates.html">Candidates</a> {
+<a href=#251 id=251 data-nosnippet>251</a>    <span class="doccomment">/// The set of candidates we are considering in this optimization.
+<a href=#252 id=252 data-nosnippet>252</a>    ///
+<a href=#253 id=253 data-nosnippet>253</a>    /// We will always merge the key into at most one of its values.
+<a href=#254 id=254 data-nosnippet>254</a>    ///
+<a href=#255 id=255 data-nosnippet>255</a>    /// Whether a place ends up in the key or the value does not correspond to whether it appears as
+<a href=#256 id=256 data-nosnippet>256</a>    /// the lhs or rhs of any assignment. As a matter of fact, the places in here might never appear
+<a href=#257 id=257 data-nosnippet>257</a>    /// in an assignment at all. This happens because if we see an assignment like this:
+<a href=#258 id=258 data-nosnippet>258</a>    ///
+<a href=#259 id=259 data-nosnippet>259</a>    /// ```ignore (syntax-highlighting-only)
+<a href=#260 id=260 data-nosnippet>260</a>    /// _1.0 = _2.0
+<a href=#261 id=261 data-nosnippet>261</a>    /// ```
+<a href=#262 id=262 data-nosnippet>262</a>    ///
+<a href=#263 id=263 data-nosnippet>263</a>    /// We will still report that we would like to merge `_1` and `_2` in an attempt to allow us to
+<a href=#264 id=264 data-nosnippet>264</a>    /// remove that assignment.
+<a href=#265 id=265 data-nosnippet>265</a>    </span>c: <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>&gt;&gt;,
+<a href=#266 id=266 data-nosnippet>266</a>
+<a href=#267 id=267 data-nosnippet>267</a>    <span class="doccomment">/// A reverse index of the `c` set; if the `c` set contains `a =&gt; Place { local: b, proj }`,
+<a href=#268 id=268 data-nosnippet>268</a>    /// then this contains `b =&gt; a`.
+<a href=#269 id=269 data-nosnippet>269</a>    </span><span class="comment">// PERF: Possibly these should be `SmallVec`s?
+<a href=#270 id=270 data-nosnippet>270</a>    </span>reverse: <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>&gt;&gt;,
+<a href=#271 id=271 data-nosnippet>271</a>}
+<a href=#272 id=272 data-nosnippet>272</a>
+<a href=#273 id=273 data-nosnippet>273</a><span class="comment">//////////////////////////////////////////////////////////
+<a href=#274 id=274 data-nosnippet>274</a>// Merging
+<a href=#275 id=275 data-nosnippet>275</a>//
+<a href=#276 id=276 data-nosnippet>276</a>// Applies the actual optimization
+<a href=#277 id=277 data-nosnippet>277</a>
+<a href=#278 id=278 data-nosnippet>278</a></span><span class="kw">fn </span><a href="../../rustc_mir_transform/dest_prop/fn.apply_merges.html">apply_merges</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#279 id=279 data-nosnippet>279</a>    body: <span class="kw-2">&amp;mut </span><a href="../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#280 id=280 data-nosnippet>280</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#281 id=281 data-nosnippet>281</a>    merges: <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="../../rustc_middle/mir/struct.Local.html">Local</a>&gt;,
+<a href=#282 id=282 data-nosnippet>282</a>    merged_locals: <a href="../../rustc_index/bit_set/struct.DenseBitSet.html">DenseBitSet</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>&gt;,
+<a href=#283 id=283 data-nosnippet>283</a>) {
+<a href=#284 id=284 data-nosnippet>284</a>    <span class="kw">let </span><span class="kw-2">mut </span>merger = <a href="#288-292">Merger</a> { <a href="#280">tcx</a>, <a href="#281">merges</a>, <a href="#282">merged_locals</a> };
+<a href=#285 id=285 data-nosnippet>285</a>    <a href="#284">merger</a>.<a href="../../rustc_middle/mir/visit/trait.MutVisitor.html#tymethod.visit_body_preserves_cfg">visit_body_preserves_cfg</a>(<a href="#279">body</a>);
+<a href=#286 id=286 data-nosnippet>286</a>}
+<a href=#287 id=287 data-nosnippet>287</a>
+<a href=#288 id=288 data-nosnippet>288</a><span class="kw">struct </span><a href="../../rustc_mir_transform/dest_prop/struct.Merger.html">Merger</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#289 id=289 data-nosnippet>289</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#290 id=290 data-nosnippet>290</a>    merges: <a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="../../rustc_middle/mir/struct.Local.html">Local</a>&gt;,
+<a href=#291 id=291 data-nosnippet>291</a>    merged_locals: <a href="../../rustc_index/bit_set/struct.DenseBitSet.html">DenseBitSet</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>&gt;,
+<a href=#292 id=292 data-nosnippet>292</a>}
+<a href=#293 id=293 data-nosnippet>293</a>
+<a href=#294 id=294 data-nosnippet>294</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="../../rustc_middle/mir/visit/trait.MutVisitor.html">MutVisitor</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#288-292">Merger</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#295 id=295 data-nosnippet>295</a>    <span class="kw">fn </span>tcx(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt; {
+<a href=#296 id=296 data-nosnippet>296</a>        <a class="self" href="#295">self</a>.tcx
+<a href=#297 id=297 data-nosnippet>297</a>    }
+<a href=#298 id=298 data-nosnippet>298</a>
+<a href=#299 id=299 data-nosnippet>299</a>    <span class="kw">fn </span>visit_local(<span class="kw-2">&amp;mut </span><span class="self">self</span>, local: <span class="kw-2">&amp;mut </span><a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <span class="kw">_</span>: <a href="../../rustc_middle/mir/visit/enum.PlaceContext.html">PlaceContext</a>, _location: <a href="../../rustc_middle/mir/struct.Location.html">Location</a>) {
+<a href=#300 id=300 data-nosnippet>300</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(dest) = <a class="self" href="#299">self</a>.merges.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.get">get</a>(<a href="#299">local</a>) {
+<a href=#301 id=301 data-nosnippet>301</a>            <span class="kw-2">*</span><a href="#299">local</a> = <span class="kw-2">*</span><a href="#300">dest</a>;
+<a href=#302 id=302 data-nosnippet>302</a>        }
+<a href=#303 id=303 data-nosnippet>303</a>    }
+<a href=#304 id=304 data-nosnippet>304</a>
+<a href=#305 id=305 data-nosnippet>305</a>    <span class="kw">fn </span>visit_statement(<span class="kw-2">&amp;mut </span><span class="self">self</span>, statement: <span class="kw-2">&amp;mut </span><a href="../../rustc_middle/mir/statement/struct.Statement.html">Statement</a>&lt;<span class="lifetime">'tcx</span>&gt;, location: <a href="../../rustc_middle/mir/struct.Location.html">Location</a>) {
+<a href=#306 id=306 data-nosnippet>306</a>        <span class="kw">match </span><span class="kw-2">&amp;</span><a href="#305">statement</a>.kind {
+<a href=#307 id=307 data-nosnippet>307</a>            <span class="comment">// FIXME: Don't delete storage statements, but "merge" the storage ranges instead.
+<a href=#308 id=308 data-nosnippet>308</a>            </span><a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.StorageDead">StatementKind::StorageDead</a>(local) | <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.StorageLive">StatementKind::StorageLive</a>(local)
+<a href=#309 id=309 data-nosnippet>309</a>                <span class="kw">if </span><a class="self" href="#305">self</a>.merged_locals.<a href="../../rustc_index/bit_set/struct.DenseBitSet.html#method.contains">contains</a>(<span class="kw-2">*</span><a href="#308">local</a>) =&gt;
+<a href=#310 id=310 data-nosnippet>310</a>            {
+<a href=#311 id=311 data-nosnippet>311</a>                <a href="#305">statement</a>.<a href="../../rustc_middle/mir/statement/struct.Statement.html#method.make_nop">make_nop</a>();
+<a href=#312 id=312 data-nosnippet>312</a>                <span class="kw">return</span>;
+<a href=#313 id=313 data-nosnippet>313</a>            }
+<a href=#314 id=314 data-nosnippet>314</a>            <span class="kw">_ </span>=&gt; (),
+<a href=#315 id=315 data-nosnippet>315</a>        };
+<a href=#316 id=316 data-nosnippet>316</a>        <a class="self" href="#305">self</a>.<a href="../../rustc_middle/mir/visit/trait.MutVisitor.html#tymethod.super_statement">super_statement</a>(<a href="#305">statement</a>, <a href="#305">location</a>);
+<a href=#317 id=317 data-nosnippet>317</a>        <span class="kw">match </span><span class="kw-2">&amp;</span><a href="#305">statement</a>.kind {
+<a href=#318 id=318 data-nosnippet>318</a>            <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.Assign">StatementKind::Assign</a>(<span class="kw">box </span>(dest, rvalue)) =&gt; {
+<a href=#319 id=319 data-nosnippet>319</a>                <span class="kw">match </span><a href="#318">rvalue</a> {
+<a href=#320 id=320 data-nosnippet>320</a>                    <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.CopyForDeref">Rvalue::CopyForDeref</a>(place)
+<a href=#321 id=321 data-nosnippet>321</a>                    | <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.Use">Rvalue::Use</a>(Operand::Copy(place) | Operand::Move(place)) =&gt; {
+<a href=#322 id=322 data-nosnippet>322</a>                        <span class="comment">// These might've been turned into self-assignments by the replacement
+<a href=#323 id=323 data-nosnippet>323</a>                        // (this includes the original statement we wanted to eliminate).
+<a href=#324 id=324 data-nosnippet>324</a>                        </span><span class="kw">if </span><a href="#318">dest</a> == <a href="#320">place</a> {
+<a href=#325 id=325 data-nosnippet>325</a>                            <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.debug.html">debug!</a>(<span class="string">"{:?} turned into self-assignment, deleting"</span>, location);
+<a href=#326 id=326 data-nosnippet>326</a>                            <a href="#305">statement</a>.<a href="../../rustc_middle/mir/statement/struct.Statement.html#method.make_nop">make_nop</a>();
+<a href=#327 id=327 data-nosnippet>327</a>                        }
+<a href=#328 id=328 data-nosnippet>328</a>                    }
+<a href=#329 id=329 data-nosnippet>329</a>                    <span class="kw">_ </span>=&gt; {}
+<a href=#330 id=330 data-nosnippet>330</a>                }
+<a href=#331 id=331 data-nosnippet>331</a>            }
+<a href=#332 id=332 data-nosnippet>332</a>
+<a href=#333 id=333 data-nosnippet>333</a>            <span class="kw">_ </span>=&gt; {}
+<a href=#334 id=334 data-nosnippet>334</a>        }
+<a href=#335 id=335 data-nosnippet>335</a>    }
+<a href=#336 id=336 data-nosnippet>336</a>}
+<a href=#337 id=337 data-nosnippet>337</a>
+<a href=#338 id=338 data-nosnippet>338</a><span class="comment">//////////////////////////////////////////////////////////
+<a href=#339 id=339 data-nosnippet>339</a>// Liveness filtering
+<a href=#340 id=340 data-nosnippet>340</a>//
+<a href=#341 id=341 data-nosnippet>341</a>// This section enforces bullet point 2
+<a href=#342 id=342 data-nosnippet>342</a>
+<a href=#343 id=343 data-nosnippet>343</a></span><span class="kw">struct </span><a href="../../rustc_mir_transform/dest_prop/struct.FilterInformation.html">FilterInformation</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#344 id=344 data-nosnippet>344</a>    body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#345 id=345 data-nosnippet>345</a>    points: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_mir_dataflow/points/struct.DenseLocationMap.html">DenseLocationMap</a>,
+<a href=#346 id=346 data-nosnippet>346</a>    live: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_index/interval/struct.SparseIntervalMatrix.html">SparseIntervalMatrix</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>&gt;,
+<a href=#347 id=347 data-nosnippet>347</a>    candidates: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><a href="#250-271">Candidates</a>,
+<a href=#348 id=348 data-nosnippet>348</a>    write_info: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><a href="#542-547">WriteInfo</a>,
+<a href=#349 id=349 data-nosnippet>349</a>    at: <a href="../../rustc_middle/mir/struct.Location.html">Location</a>,
+<a href=#350 id=350 data-nosnippet>350</a>}
+<a href=#351 id=351 data-nosnippet>351</a>
+<a href=#352 id=352 data-nosnippet>352</a><span class="comment">// We first implement some utility functions which we will expose removing candidates according to
+<a href=#353 id=353 data-nosnippet>353</a>// different needs. Throughout the liveness filtering, the `candidates` are only ever accessed
+<a href=#354 id=354 data-nosnippet>354</a>// through these methods, and not directly.
+<a href=#355 id=355 data-nosnippet>355</a></span><span class="kw">impl </span><a href="#250-271">Candidates</a> {
+<a href=#356 id=356 data-nosnippet>356</a>    <span class="doccomment">/// Collects the candidates for merging.
+<a href=#357 id=357 data-nosnippet>357</a>    ///
+<a href=#358 id=358 data-nosnippet>358</a>    /// This is responsible for enforcing the first and third bullet point.
+<a href=#359 id=359 data-nosnippet>359</a>    </span><span class="kw">fn </span>reset_and_find&lt;<span class="lifetime">'tcx</span>&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, body: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;, borrowed: <span class="kw-2">&amp;</span><a href="../../rustc_index/bit_set/struct.DenseBitSet.html">DenseBitSet</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>&gt;) {
+<a href=#360 id=360 data-nosnippet>360</a>        <a class="self" href="#359">self</a>.c.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.clear">clear</a>();
+<a href=#361 id=361 data-nosnippet>361</a>        <a class="self" href="#359">self</a>.reverse.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.clear">clear</a>();
+<a href=#362 id=362 data-nosnippet>362</a>        <span class="kw">let </span><span class="kw-2">mut </span>visitor = <a href="#744-748">FindAssignments</a> { <a href="#359">body</a>, candidates: <span class="kw-2">&amp;mut </span><a class="self" href="#359">self</a>.c, <a href="#359">borrowed</a> };
+<a href=#363 id=363 data-nosnippet>363</a>        <a href="#362">visitor</a>.<a href="../../rustc_middle/mir/visit/trait.Visitor.html#tymethod.visit_body">visit_body</a>(<a href="#359">body</a>);
+<a href=#364 id=364 data-nosnippet>364</a>        <span class="comment">// Deduplicate candidates.
+<a href=#365 id=365 data-nosnippet>365</a>        </span><span class="kw">for </span>(<span class="kw">_</span>, cands) <span class="kw">in </span><span class="self">self</span>.c.iter_mut() {
+<a href=#366 id=366 data-nosnippet>366</a>            cands.sort();
+<a href=#367 id=367 data-nosnippet>367</a>            cands.dedup();
+<a href=#368 id=368 data-nosnippet>368</a>        }
+<a href=#369 id=369 data-nosnippet>369</a>        <span class="comment">// Generate the reverse map.
+<a href=#370 id=370 data-nosnippet>370</a>        </span><span class="kw">for </span>(src, cands) <span class="kw">in </span><span class="self">self</span>.c.iter() {
+<a href=#371 id=371 data-nosnippet>371</a>            <span class="kw">for </span>dest <span class="kw">in </span>cands.iter().copied() {
+<a href=#372 id=372 data-nosnippet>372</a>                <span class="self">self</span>.reverse.entry(dest).or_default().push(<span class="kw-2">*</span>src);
+<a href=#373 id=373 data-nosnippet>373</a>            }
+<a href=#374 id=374 data-nosnippet>374</a>        }
+<a href=#375 id=375 data-nosnippet>375</a>    }
+<a href=#376 id=376 data-nosnippet>376</a>
+<a href=#377 id=377 data-nosnippet>377</a>    <span class="doccomment">/// Just `Vec::retain`, but the condition is inverted and we add debugging output
+<a href=#378 id=378 data-nosnippet>378</a>    </span><span class="kw">fn </span>vec_filter_candidates(
+<a href=#379 id=379 data-nosnippet>379</a>        src: <a href="../../rustc_middle/mir/struct.Local.html">Local</a>,
+<a href=#380 id=380 data-nosnippet>380</a>        v: <span class="kw-2">&amp;mut </span><a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>&gt;,
+<a href=#381 id=381 data-nosnippet>381</a>        <span class="kw-2">mut </span>f: <span class="kw">impl </span><a href="https://doc.rust-lang.org/beta/core/ops/function/trait.FnMut.html">FnMut</a>(<a href="../../rustc_middle/mir/struct.Local.html">Local</a>) -&gt; <a href="#446-449">CandidateFilter</a>,
+<a href=#382 id=382 data-nosnippet>382</a>        at: <a href="../../rustc_middle/mir/struct.Location.html">Location</a>,
+<a href=#383 id=383 data-nosnippet>383</a>    ) {
+<a href=#384 id=384 data-nosnippet>384</a>        <a href="#380">v</a>.<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.retain">retain</a>(|dest| {
+<a href=#385 id=385 data-nosnippet>385</a>            <span class="kw">let </span>remove = <a href="#381">f</a>(<span class="kw-2">*</span><a href="#384">dest</a>);
+<a href=#386 id=386 data-nosnippet>386</a>            <span class="kw">if </span><a href="#385">remove</a> == <a href="#448">CandidateFilter::Remove</a> {
+<a href=#387 id=387 data-nosnippet>387</a>                <a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"eliminating {:?} =&gt; {:?} due to conflict at {:?}"</span>, src, dest, at);
+<a href=#388 id=388 data-nosnippet>388</a>            }
+<a href=#389 id=389 data-nosnippet>389</a>            <a href="#385">remove</a> == <a href="#447">CandidateFilter::Keep</a>
+<a href=#390 id=390 data-nosnippet>390</a>        });
+<a href=#391 id=391 data-nosnippet>391</a>    }
+<a href=#392 id=392 data-nosnippet>392</a>
+<a href=#393 id=393 data-nosnippet>393</a>    <span class="doccomment">/// `vec_filter_candidates` but for an `Entry`
+<a href=#394 id=394 data-nosnippet>394</a>    </span><span class="kw">fn </span>entry_filter_candidates(
+<a href=#395 id=395 data-nosnippet>395</a>        <span class="kw-2">mut </span>entry: <a href="../../rustc_data_structures/fx/type.IndexOccupiedEntry.html">IndexOccupiedEntry</a>&lt;<span class="lifetime">'_</span>, <a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>&gt;&gt;,
+<a href=#396 id=396 data-nosnippet>396</a>        p: <a href="../../rustc_middle/mir/struct.Local.html">Local</a>,
+<a href=#397 id=397 data-nosnippet>397</a>        f: <span class="kw">impl </span><a href="https://doc.rust-lang.org/beta/core/ops/function/trait.FnMut.html">FnMut</a>(<a href="../../rustc_middle/mir/struct.Local.html">Local</a>) -&gt; <a href="#446-449">CandidateFilter</a>,
+<a href=#398 id=398 data-nosnippet>398</a>        at: <a href="../../rustc_middle/mir/struct.Location.html">Location</a>,
+<a href=#399 id=399 data-nosnippet>399</a>    ) {
+<a href=#400 id=400 data-nosnippet>400</a>        <span class="kw">let </span>candidates = <a href="#395">entry</a>.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/core/entry/struct.OccupiedEntry.html#method.get_mut">get_mut</a>();
+<a href=#401 id=401 data-nosnippet>401</a>        <a href="#378-391"><span class="self">Self</span>::vec_filter_candidates</a>(<a href="#396">p</a>, <a href="#400">candidates</a>, <a href="#397">f</a>, <a href="#398">at</a>);
+<a href=#402 id=402 data-nosnippet>402</a>        <span class="kw">if </span><a href="#400">candidates</a>.<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.len">len</a>() == <span class="number">0 </span>{
+<a href=#403 id=403 data-nosnippet>403</a>            <span class="comment">// FIXME(#120456) - is `swap_remove` correct?
+<a href=#404 id=404 data-nosnippet>404</a>            </span><a href="#395">entry</a>.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/core/entry/struct.OccupiedEntry.html#method.swap_remove">swap_remove</a>();
+<a href=#405 id=405 data-nosnippet>405</a>        }
+<a href=#406 id=406 data-nosnippet>406</a>    }
+<a href=#407 id=407 data-nosnippet>407</a>
+<a href=#408 id=408 data-nosnippet>408</a>    <span class="doccomment">/// For all candidates `(p, q)` or `(q, p)` removes the candidate if `f(q)` says to do so
+<a href=#409 id=409 data-nosnippet>409</a>    </span><span class="kw">fn </span>filter_candidates_by(
+<a href=#410 id=410 data-nosnippet>410</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#411 id=411 data-nosnippet>411</a>        p: <a href="../../rustc_middle/mir/struct.Local.html">Local</a>,
+<a href=#412 id=412 data-nosnippet>412</a>        <span class="kw-2">mut </span>f: <span class="kw">impl </span><a href="https://doc.rust-lang.org/beta/core/ops/function/trait.FnMut.html">FnMut</a>(<a href="../../rustc_middle/mir/struct.Local.html">Local</a>) -&gt; <a href="#446-449">CandidateFilter</a>,
+<a href=#413 id=413 data-nosnippet>413</a>        at: <a href="../../rustc_middle/mir/struct.Location.html">Location</a>,
+<a href=#414 id=414 data-nosnippet>414</a>    ) {
+<a href=#415 id=415 data-nosnippet>415</a>        <span class="comment">// Cover the cases where `p` appears as a `src`
+<a href=#416 id=416 data-nosnippet>416</a>        </span><span class="kw">if let </span><a href="https://docs.rs/indexmap/2.10.0/indexmap/map/core/entry/enum.Entry.html#variant.Occupied">IndexEntry::Occupied</a>(entry) = <a class="self" href="#410">self</a>.c.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.entry">entry</a>(<a href="#411">p</a>) {
+<a href=#417 id=417 data-nosnippet>417</a>            <a href="#394-406"><span class="self">Self</span>::entry_filter_candidates</a>(<a href="#416">entry</a>, <a href="#411">p</a>, <span class="kw-2">&amp;mut </span><a href="#412">f</a>, <a href="#413">at</a>);
+<a href=#418 id=418 data-nosnippet>418</a>        }
+<a href=#419 id=419 data-nosnippet>419</a>        <span class="comment">// And the cases where `p` appears as a `dest`
+<a href=#420 id=420 data-nosnippet>420</a>        </span><span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(srcs) = <a class="self" href="#410">self</a>.reverse.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.get_mut">get_mut</a>(<span class="kw-2">&amp;</span><a href="#411">p</a>) <span class="kw">else </span>{
+<a href=#421 id=421 data-nosnippet>421</a>            <span class="kw">return</span>;
+<a href=#422 id=422 data-nosnippet>422</a>        };
+<a href=#423 id=423 data-nosnippet>423</a>        <span class="comment">// We use `retain` here to remove the elements from the reverse set if we've removed the
+<a href=#424 id=424 data-nosnippet>424</a>        // matching candidate in the forward set.
+<a href=#425 id=425 data-nosnippet>425</a>        </span><a href="#420">srcs</a>.<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.retain">retain</a>(|src| {
+<a href=#426 id=426 data-nosnippet>426</a>            <span class="kw">if </span><a href="#412">f</a>(<span class="kw-2">*</span><a href="#425">src</a>) == <a href="#447">CandidateFilter::Keep</a> {
+<a href=#427 id=427 data-nosnippet>427</a>                <span class="kw">return </span><span class="bool-val">true</span>;
+<a href=#428 id=428 data-nosnippet>428</a>            }
+<a href=#429 id=429 data-nosnippet>429</a>            <span class="kw">let </span><a href="https://docs.rs/indexmap/2.10.0/indexmap/map/core/entry/enum.Entry.html#variant.Occupied">IndexEntry::Occupied</a>(entry) = <a class="self" href="#410">self</a>.c.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.entry">entry</a>(<span class="kw-2">*</span><a href="#425">src</a>) <span class="kw">else </span>{
+<a href=#430 id=430 data-nosnippet>430</a>                <span class="kw">return </span><span class="bool-val">false</span>;
+<a href=#431 id=431 data-nosnippet>431</a>            };
+<a href=#432 id=432 data-nosnippet>432</a>            <a href="#394-406"><span class="self">Self</span>::entry_filter_candidates</a>(
+<a href=#433 id=433 data-nosnippet>433</a>                <a href="#429">entry</a>,
+<a href=#434 id=434 data-nosnippet>434</a>                <span class="kw-2">*</span><a href="#425">src</a>,
+<a href=#435 id=435 data-nosnippet>435</a>                |dest| {
+<a href=#436 id=436 data-nosnippet>436</a>                    <span class="kw">if </span><a href="#435">dest</a> == <a href="#411">p</a> { <a href="#448">CandidateFilter::Remove</a> } <span class="kw">else </span>{ <a href="#447">CandidateFilter::Keep</a> }
+<a href=#437 id=437 data-nosnippet>437</a>                },
+<a href=#438 id=438 data-nosnippet>438</a>                <a href="#413">at</a>,
+<a href=#439 id=439 data-nosnippet>439</a>            );
+<a href=#440 id=440 data-nosnippet>440</a>            <span class="bool-val">false
+<a href=#441 id=441 data-nosnippet>441</a>        </span>});
+<a href=#442 id=442 data-nosnippet>442</a>    }
+<a href=#443 id=443 data-nosnippet>443</a>}
+<a href=#444 id=444 data-nosnippet>444</a>
+<a href=#445 id=445 data-nosnippet>445</a><span class="attr">#[derive(Copy, Clone, PartialEq, Eq)]
+<a href=#446 id=446 data-nosnippet>446</a></span><span class="kw">enum </span><a href="../../rustc_mir_transform/dest_prop/enum.CandidateFilter.html">CandidateFilter</a> {
+<a href=#447 id=447 data-nosnippet>447</a>    Keep,
+<a href=#448 id=448 data-nosnippet>448</a>    Remove,
+<a href=#449 id=449 data-nosnippet>449</a>}
+<a href=#450 id=450 data-nosnippet>450</a>
+<a href=#451 id=451 data-nosnippet>451</a><span class="kw">impl</span>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; <a href="#343-350">FilterInformation</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#452 id=452 data-nosnippet>452</a>    <span class="doccomment">/// Filters the set of candidates to remove those that conflict.
+<a href=#453 id=453 data-nosnippet>453</a>    ///
+<a href=#454 id=454 data-nosnippet>454</a>    /// The steps we take are exactly those that are outlined at the top of the file. For each
+<a href=#455 id=455 data-nosnippet>455</a>    /// statement/terminator, we collect the set of locals that are written to in that
+<a href=#456 id=456 data-nosnippet>456</a>    /// statement/terminator, and then we remove all pairs of candidates that contain one such local
+<a href=#457 id=457 data-nosnippet>457</a>    /// and another one that is live.
+<a href=#458 id=458 data-nosnippet>458</a>    ///
+<a href=#459 id=459 data-nosnippet>459</a>    /// We need to be careful about the ordering of operations within each statement/terminator
+<a href=#460 id=460 data-nosnippet>460</a>    /// here. Many statements might write and read from more than one place, and we need to consider
+<a href=#461 id=461 data-nosnippet>461</a>    /// them all. The strategy for doing this is as follows: We first gather all the places that are
+<a href=#462 id=462 data-nosnippet>462</a>    /// written to within the statement/terminator via `WriteInfo`. Then, we use the liveness
+<a href=#463 id=463 data-nosnippet>463</a>    /// analysis from *before* the statement/terminator (in the control flow sense) to eliminate
+<a href=#464 id=464 data-nosnippet>464</a>    /// candidates - this is because we want to conservatively treat a pair of locals that is both
+<a href=#465 id=465 data-nosnippet>465</a>    /// read and written in the statement/terminator to be conflicting, and the liveness analysis
+<a href=#466 id=466 data-nosnippet>466</a>    /// before the statement/terminator will correctly report locals that are read in the
+<a href=#467 id=467 data-nosnippet>467</a>    /// statement/terminator to be live. We are additionally conservative by treating all written to
+<a href=#468 id=468 data-nosnippet>468</a>    /// locals as also being read from.
+<a href=#469 id=469 data-nosnippet>469</a>    </span><span class="kw">fn </span>filter_liveness(
+<a href=#470 id=470 data-nosnippet>470</a>        candidates: <span class="kw-2">&amp;mut </span><a href="#250-271">Candidates</a>,
+<a href=#471 id=471 data-nosnippet>471</a>        points: <span class="kw-2">&amp;</span><a href="../../rustc_mir_dataflow/points/struct.DenseLocationMap.html">DenseLocationMap</a>,
+<a href=#472 id=472 data-nosnippet>472</a>        live: <span class="kw-2">&amp;</span><a href="../../rustc_index/interval/struct.SparseIntervalMatrix.html">SparseIntervalMatrix</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>&gt;,
+<a href=#473 id=473 data-nosnippet>473</a>        write_info: <span class="kw-2">&amp;mut </span><a href="#542-547">WriteInfo</a>,
+<a href=#474 id=474 data-nosnippet>474</a>        body: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#475 id=475 data-nosnippet>475</a>    ) {
+<a href=#476 id=476 data-nosnippet>476</a>        <span class="kw">let </span><span class="kw-2">mut </span>this = <a href="#343-350">FilterInformation</a> {
+<a href=#477 id=477 data-nosnippet>477</a>            <a href="#474">body</a>,
+<a href=#478 id=478 data-nosnippet>478</a>            <a href="#471">points</a>,
+<a href=#479 id=479 data-nosnippet>479</a>            <a href="#472">live</a>,
+<a href=#480 id=480 data-nosnippet>480</a>            <a href="#470">candidates</a>,
+<a href=#481 id=481 data-nosnippet>481</a>            <span class="comment">// We don't actually store anything at this scope, we just keep things here to be able
+<a href=#482 id=482 data-nosnippet>482</a>            // to reuse the allocation.
+<a href=#483 id=483 data-nosnippet>483</a>            </span><a href="#473">write_info</a>,
+<a href=#484 id=484 data-nosnippet>484</a>            <span class="comment">// Doesn't matter what we put here, will be overwritten before being used
+<a href=#485 id=485 data-nosnippet>485</a>            </span>at: Location::START,
+<a href=#486 id=486 data-nosnippet>486</a>        };
+<a href=#487 id=487 data-nosnippet>487</a>        <a href="#476">this</a>.<a href="#490-502">internal_filter_liveness</a>();
+<a href=#488 id=488 data-nosnippet>488</a>    }
+<a href=#489 id=489 data-nosnippet>489</a>
+<a href=#490 id=490 data-nosnippet>490</a>    <span class="kw">fn </span>internal_filter_liveness(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#491 id=491 data-nosnippet>491</a>        <span class="kw">for </span>(block, data) <span class="kw">in </span>traversal::preorder(<span class="self">self</span>.body) {
+<a href=#492 id=492 data-nosnippet>492</a>            <span class="self">self</span>.at = Location { block, statement_index: data.statements.len() };
+<a href=#493 id=493 data-nosnippet>493</a>            <span class="self">self</span>.write_info.for_terminator(<span class="kw-2">&amp;</span>data.terminator().kind);
+<a href=#494 id=494 data-nosnippet>494</a>            <span class="self">self</span>.apply_conflicts();
+<a href=#495 id=495 data-nosnippet>495</a>
+<a href=#496 id=496 data-nosnippet>496</a>            <span class="kw">for </span>(i, statement) <span class="kw">in </span>data.statements.iter().enumerate().rev() {
+<a href=#497 id=497 data-nosnippet>497</a>                <span class="self">self</span>.at = Location { block, statement_index: i };
+<a href=#498 id=498 data-nosnippet>498</a>                <span class="self">self</span>.write_info.for_statement(<span class="kw-2">&amp;</span>statement.kind, <span class="self">self</span>.body);
+<a href=#499 id=499 data-nosnippet>499</a>                <span class="self">self</span>.apply_conflicts();
+<a href=#500 id=500 data-nosnippet>500</a>            }
+<a href=#501 id=501 data-nosnippet>501</a>        }
+<a href=#502 id=502 data-nosnippet>502</a>    }
+<a href=#503 id=503 data-nosnippet>503</a>
+<a href=#504 id=504 data-nosnippet>504</a>    <span class="kw">fn </span>apply_conflicts(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#505 id=505 data-nosnippet>505</a>        <span class="kw">let </span>writes = <span class="kw-2">&amp;</span><a class="self" href="#504">self</a>.write_info.writes;
+<a href=#506 id=506 data-nosnippet>506</a>        <span class="kw">for </span>p <span class="kw">in </span>writes {
+<a href=#507 id=507 data-nosnippet>507</a>            <span class="kw">let </span>other_skip = <span class="self">self</span>.write_info.skip_pair.and_then(|(a, b)| {
+<a href=#508 id=508 data-nosnippet>508</a>                <span class="kw">if </span>a == <span class="kw-2">*</span>p {
+<a href=#509 id=509 data-nosnippet>509</a>                    <span class="prelude-val">Some</span>(b)
+<a href=#510 id=510 data-nosnippet>510</a>                } <span class="kw">else if </span>b == <span class="kw-2">*</span>p {
+<a href=#511 id=511 data-nosnippet>511</a>                    <span class="prelude-val">Some</span>(a)
+<a href=#512 id=512 data-nosnippet>512</a>                } <span class="kw">else </span>{
+<a href=#513 id=513 data-nosnippet>513</a>                    <span class="prelude-val">None
+<a href=#514 id=514 data-nosnippet>514</a>                </span>}
+<a href=#515 id=515 data-nosnippet>515</a>            });
+<a href=#516 id=516 data-nosnippet>516</a>            <span class="kw">let </span>at = <span class="self">self</span>.points.point_from_location(<span class="self">self</span>.at);
+<a href=#517 id=517 data-nosnippet>517</a>            <span class="self">self</span>.candidates.filter_candidates_by(
+<a href=#518 id=518 data-nosnippet>518</a>                <span class="kw-2">*</span>p,
+<a href=#519 id=519 data-nosnippet>519</a>                |q| {
+<a href=#520 id=520 data-nosnippet>520</a>                    <span class="kw">if </span><span class="prelude-val">Some</span>(q) == other_skip {
+<a href=#521 id=521 data-nosnippet>521</a>                        <span class="kw">return </span>CandidateFilter::Keep;
+<a href=#522 id=522 data-nosnippet>522</a>                    }
+<a href=#523 id=523 data-nosnippet>523</a>                    <span class="comment">// It is possible that a local may be live for less than the
+<a href=#524 id=524 data-nosnippet>524</a>                    // duration of a statement This happens in the case of function
+<a href=#525 id=525 data-nosnippet>525</a>                    // calls or inline asm. Because of this, we also mark locals as
+<a href=#526 id=526 data-nosnippet>526</a>                    // conflicting when both of them are written to in the same
+<a href=#527 id=527 data-nosnippet>527</a>                    // statement.
+<a href=#528 id=528 data-nosnippet>528</a>                    </span><span class="kw">if </span><span class="self">self</span>.live.contains(q, at) || writes.contains(<span class="kw-2">&amp;</span>q) {
+<a href=#529 id=529 data-nosnippet>529</a>                        CandidateFilter::Remove
+<a href=#530 id=530 data-nosnippet>530</a>                    } <span class="kw">else </span>{
+<a href=#531 id=531 data-nosnippet>531</a>                        CandidateFilter::Keep
+<a href=#532 id=532 data-nosnippet>532</a>                    }
+<a href=#533 id=533 data-nosnippet>533</a>                },
+<a href=#534 id=534 data-nosnippet>534</a>                <span class="self">self</span>.at,
+<a href=#535 id=535 data-nosnippet>535</a>            );
+<a href=#536 id=536 data-nosnippet>536</a>        }
+<a href=#537 id=537 data-nosnippet>537</a>    }
+<a href=#538 id=538 data-nosnippet>538</a>}
+<a href=#539 id=539 data-nosnippet>539</a>
+<a href=#540 id=540 data-nosnippet>540</a><span class="doccomment">/// Describes where a statement/terminator writes to
+<a href=#541 id=541 data-nosnippet>541</a></span><span class="attr">#[derive(Default, Debug)]
+<a href=#542 id=542 data-nosnippet>542</a></span><span class="kw">struct </span><a href="../../rustc_mir_transform/dest_prop/struct.WriteInfo.html">WriteInfo</a> {
+<a href=#543 id=543 data-nosnippet>543</a>    writes: <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>&gt;,
+<a href=#544 id=544 data-nosnippet>544</a>    <span class="doccomment">/// If this pair of locals is a candidate pair, completely skip processing it during this
+<a href=#545 id=545 data-nosnippet>545</a>    /// statement. All other candidates are unaffected.
+<a href=#546 id=546 data-nosnippet>546</a>    </span>skip_pair: <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;(<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="../../rustc_middle/mir/struct.Local.html">Local</a>)&gt;,
+<a href=#547 id=547 data-nosnippet>547</a>}
+<a href=#548 id=548 data-nosnippet>548</a>
+<a href=#549 id=549 data-nosnippet>549</a><span class="kw">impl </span><a href="#542-547">WriteInfo</a> {
+<a href=#550 id=550 data-nosnippet>550</a>    <span class="kw">fn </span>for_statement&lt;<span class="lifetime">'tcx</span>&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, statement: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/syntax/enum.StatementKind.html">StatementKind</a>&lt;<span class="lifetime">'tcx</span>&gt;, body: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;) {
+<a href=#551 id=551 data-nosnippet>551</a>        <a class="self" href="#550">self</a>.<a href="#700-703">reset</a>();
+<a href=#552 id=552 data-nosnippet>552</a>        <span class="kw">match </span><a href="#550">statement</a> {
+<a href=#553 id=553 data-nosnippet>553</a>            <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.Assign">StatementKind::Assign</a>(<span class="kw">box </span>(lhs, rhs)) =&gt; {
+<a href=#554 id=554 data-nosnippet>554</a>                <a class="self" href="#550">self</a>.<a href="#685-687">add_place</a>(<span class="kw-2">*</span><a href="#553">lhs</a>);
+<a href=#555 id=555 data-nosnippet>555</a>                <span class="kw">match </span><a href="#553">rhs</a> {
+<a href=#556 id=556 data-nosnippet>556</a>                    <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.Use">Rvalue::Use</a>(op) =&gt; {
+<a href=#557 id=557 data-nosnippet>557</a>                        <a class="self" href="#550">self</a>.<a href="#689-698">add_operand</a>(<a href="#556">op</a>);
+<a href=#558 id=558 data-nosnippet>558</a>                        <a class="self" href="#550">self</a>.<a href="#610-620">consider_skipping_for_assign_use</a>(<span class="kw-2">*</span><a href="#553">lhs</a>, <a href="#556">op</a>, <a href="#550">body</a>);
+<a href=#559 id=559 data-nosnippet>559</a>                    }
+<a href=#560 id=560 data-nosnippet>560</a>                    <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.Repeat">Rvalue::Repeat</a>(op, <span class="kw">_</span>) =&gt; {
+<a href=#561 id=561 data-nosnippet>561</a>                        <a class="self" href="#550">self</a>.<a href="#689-698">add_operand</a>(<a href="#560">op</a>);
+<a href=#562 id=562 data-nosnippet>562</a>                    }
+<a href=#563 id=563 data-nosnippet>563</a>                    <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.Cast">Rvalue::Cast</a>(<span class="kw">_</span>, op, <span class="kw">_</span>)
+<a href=#564 id=564 data-nosnippet>564</a>                    | <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.UnaryOp">Rvalue::UnaryOp</a>(<span class="kw">_</span>, op)
+<a href=#565 id=565 data-nosnippet>565</a>                    | <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.ShallowInitBox">Rvalue::ShallowInitBox</a>(op, <span class="kw">_</span>) =&gt; {
+<a href=#566 id=566 data-nosnippet>566</a>                        <a class="self" href="#550">self</a>.<a href="#689-698">add_operand</a>(<a href="#563">op</a>);
+<a href=#567 id=567 data-nosnippet>567</a>                    }
+<a href=#568 id=568 data-nosnippet>568</a>                    <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.BinaryOp">Rvalue::BinaryOp</a>(<span class="kw">_</span>, ops) =&gt; {
+<a href=#569 id=569 data-nosnippet>569</a>                        <span class="kw">for </span>op <span class="kw">in </span>[<span class="kw-2">&amp;</span>ops.<span class="number">0</span>, <span class="kw-2">&amp;</span>ops.<span class="number">1</span>] {
+<a href=#570 id=570 data-nosnippet>570</a>                            <span class="self">self</span>.add_operand(op);
+<a href=#571 id=571 data-nosnippet>571</a>                        }
+<a href=#572 id=572 data-nosnippet>572</a>                    }
+<a href=#573 id=573 data-nosnippet>573</a>                    <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.Aggregate">Rvalue::Aggregate</a>(<span class="kw">_</span>, ops) =&gt; {
+<a href=#574 id=574 data-nosnippet>574</a>                        <span class="kw">for </span>op <span class="kw">in </span>ops {
+<a href=#575 id=575 data-nosnippet>575</a>                            <span class="self">self</span>.add_operand(op);
+<a href=#576 id=576 data-nosnippet>576</a>                        }
+<a href=#577 id=577 data-nosnippet>577</a>                    }
+<a href=#578 id=578 data-nosnippet>578</a>                    <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.WrapUnsafeBinder">Rvalue::WrapUnsafeBinder</a>(op, <span class="kw">_</span>) =&gt; {
+<a href=#579 id=579 data-nosnippet>579</a>                        <a class="self" href="#550">self</a>.<a href="#689-698">add_operand</a>(<a href="#578">op</a>);
+<a href=#580 id=580 data-nosnippet>580</a>                    }
+<a href=#581 id=581 data-nosnippet>581</a>                    <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.ThreadLocalRef">Rvalue::ThreadLocalRef</a>(<span class="kw">_</span>)
+<a href=#582 id=582 data-nosnippet>582</a>                    | <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.NullaryOp">Rvalue::NullaryOp</a>(<span class="kw">_</span>, <span class="kw">_</span>)
+<a href=#583 id=583 data-nosnippet>583</a>                    | <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.Ref">Rvalue::Ref</a>(<span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>)
+<a href=#584 id=584 data-nosnippet>584</a>                    | <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.RawPtr">Rvalue::RawPtr</a>(<span class="kw">_</span>, <span class="kw">_</span>)
+<a href=#585 id=585 data-nosnippet>585</a>                    | <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.Len">Rvalue::Len</a>(<span class="kw">_</span>)
+<a href=#586 id=586 data-nosnippet>586</a>                    | <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.Discriminant">Rvalue::Discriminant</a>(<span class="kw">_</span>)
+<a href=#587 id=587 data-nosnippet>587</a>                    | <a href="../../rustc_middle/mir/syntax/enum.Rvalue.html#variant.CopyForDeref">Rvalue::CopyForDeref</a>(<span class="kw">_</span>) =&gt; {}
+<a href=#588 id=588 data-nosnippet>588</a>                }
+<a href=#589 id=589 data-nosnippet>589</a>            }
+<a href=#590 id=590 data-nosnippet>590</a>            <span class="comment">// Retags are technically also reads, but reporting them as a write suffices
+<a href=#591 id=591 data-nosnippet>591</a>            </span><a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.SetDiscriminant">StatementKind::SetDiscriminant</a> { place, .. }
+<a href=#592 id=592 data-nosnippet>592</a>            | <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.Deinit">StatementKind::Deinit</a>(place)
+<a href=#593 id=593 data-nosnippet>593</a>            | <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.Retag">StatementKind::Retag</a>(<span class="kw">_</span>, place) =&gt; {
+<a href=#594 id=594 data-nosnippet>594</a>                <a class="self" href="#550">self</a>.<a href="#685-687">add_place</a>(<span class="kw-2">**</span><a href="#591">place</a>);
+<a href=#595 id=595 data-nosnippet>595</a>            }
+<a href=#596 id=596 data-nosnippet>596</a>            <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.Intrinsic">StatementKind::Intrinsic</a>(<span class="kw">_</span>)
+<a href=#597 id=597 data-nosnippet>597</a>            | <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.ConstEvalCounter">StatementKind::ConstEvalCounter</a>
+<a href=#598 id=598 data-nosnippet>598</a>            | <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.Nop">StatementKind::Nop</a>
+<a href=#599 id=599 data-nosnippet>599</a>            | <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.Coverage">StatementKind::Coverage</a>(<span class="kw">_</span>)
+<a href=#600 id=600 data-nosnippet>600</a>            | <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.StorageLive">StatementKind::StorageLive</a>(<span class="kw">_</span>)
+<a href=#601 id=601 data-nosnippet>601</a>            | <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.StorageDead">StatementKind::StorageDead</a>(<span class="kw">_</span>)
+<a href=#602 id=602 data-nosnippet>602</a>            | <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.BackwardIncompatibleDropHint">StatementKind::BackwardIncompatibleDropHint</a> { .. }
+<a href=#603 id=603 data-nosnippet>603</a>            | <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.PlaceMention">StatementKind::PlaceMention</a>(<span class="kw">_</span>) =&gt; {}
+<a href=#604 id=604 data-nosnippet>604</a>            <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.FakeRead">StatementKind::FakeRead</a>(<span class="kw">_</span>) | <a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.AscribeUserType">StatementKind::AscribeUserType</a>(<span class="kw">_</span>, <span class="kw">_</span>) =&gt; {
+<a href=#605 id=605 data-nosnippet>605</a>                <a class="macro" href="../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"{:?} not found in this MIR phase"</span>, statement)
+<a href=#606 id=606 data-nosnippet>606</a>            }
+<a href=#607 id=607 data-nosnippet>607</a>        }
+<a href=#608 id=608 data-nosnippet>608</a>    }
+<a href=#609 id=609 data-nosnippet>609</a>
+<a href=#610 id=610 data-nosnippet>610</a>    <span class="kw">fn </span>consider_skipping_for_assign_use&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#611 id=611 data-nosnippet>611</a>        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+<a href=#612 id=612 data-nosnippet>612</a>        lhs: <a href="../../rustc_middle/mir/syntax/struct.Place.html">Place</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#613 id=613 data-nosnippet>613</a>        rhs: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/syntax/enum.Operand.html">Operand</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#614 id=614 data-nosnippet>614</a>        body: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#615 id=615 data-nosnippet>615</a>    ) {
+<a href=#616 id=616 data-nosnippet>616</a>        <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(rhs) = <a href="#613">rhs</a>.<a href="../../rustc_middle/mir/syntax/enum.Operand.html#method.place">place</a>() <span class="kw">else </span>{ <span class="kw">return </span>};
+<a href=#617 id=617 data-nosnippet>617</a>        <span class="kw">if let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(pair) = <a href="#718-742">places_to_candidate_pair</a>(<a href="#612">lhs</a>, <a href="#616">rhs</a>, <a href="#614">body</a>) {
+<a href=#618 id=618 data-nosnippet>618</a>            <a class="self" href="#611">self</a>.skip_pair = <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>(<a href="#617">pair</a>);
+<a href=#619 id=619 data-nosnippet>619</a>        }
+<a href=#620 id=620 data-nosnippet>620</a>    }
+<a href=#621 id=621 data-nosnippet>621</a>
+<a href=#622 id=622 data-nosnippet>622</a>    <span class="kw">fn </span>for_terminator&lt;<span class="lifetime">'tcx</span>&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, terminator: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html">TerminatorKind</a>&lt;<span class="lifetime">'tcx</span>&gt;) {
+<a href=#623 id=623 data-nosnippet>623</a>        <a class="self" href="#622">self</a>.<a href="#700-703">reset</a>();
+<a href=#624 id=624 data-nosnippet>624</a>        <span class="kw">match </span><a href="#622">terminator</a> {
+<a href=#625 id=625 data-nosnippet>625</a>            <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.SwitchInt">TerminatorKind::SwitchInt</a> { discr: op, .. }
+<a href=#626 id=626 data-nosnippet>626</a>            | <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.Assert">TerminatorKind::Assert</a> { cond: op, .. } =&gt; {
+<a href=#627 id=627 data-nosnippet>627</a>                <a class="self" href="#622">self</a>.<a href="#689-698">add_operand</a>(<a href="#625">op</a>);
+<a href=#628 id=628 data-nosnippet>628</a>            }
+<a href=#629 id=629 data-nosnippet>629</a>            <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.Call">TerminatorKind::Call</a> { destination, func, args, .. } =&gt; {
+<a href=#630 id=630 data-nosnippet>630</a>                <a class="self" href="#622">self</a>.<a href="#685-687">add_place</a>(<span class="kw-2">*</span><a href="#629">destination</a>);
+<a href=#631 id=631 data-nosnippet>631</a>                <a class="self" href="#622">self</a>.<a href="#689-698">add_operand</a>(<a href="#629">func</a>);
+<a href=#632 id=632 data-nosnippet>632</a>                <span class="kw">for </span>arg <span class="kw">in </span>args {
+<a href=#633 id=633 data-nosnippet>633</a>                    <span class="self">self</span>.add_operand(<span class="kw-2">&amp;</span>arg.node);
+<a href=#634 id=634 data-nosnippet>634</a>                }
+<a href=#635 id=635 data-nosnippet>635</a>            }
+<a href=#636 id=636 data-nosnippet>636</a>            <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.TailCall">TerminatorKind::TailCall</a> { func, args, .. } =&gt; {
+<a href=#637 id=637 data-nosnippet>637</a>                <a class="self" href="#622">self</a>.<a href="#689-698">add_operand</a>(<a href="#636">func</a>);
+<a href=#638 id=638 data-nosnippet>638</a>                <span class="kw">for </span>arg <span class="kw">in </span>args {
+<a href=#639 id=639 data-nosnippet>639</a>                    <span class="self">self</span>.add_operand(<span class="kw-2">&amp;</span>arg.node);
+<a href=#640 id=640 data-nosnippet>640</a>                }
+<a href=#641 id=641 data-nosnippet>641</a>            }
+<a href=#642 id=642 data-nosnippet>642</a>            <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.InlineAsm">TerminatorKind::InlineAsm</a> { operands, .. } =&gt; {
+<a href=#643 id=643 data-nosnippet>643</a>                <span class="kw">for </span>asm_operand <span class="kw">in </span>operands {
+<a href=#644 id=644 data-nosnippet>644</a>                    <span class="kw">match </span>asm_operand {
+<a href=#645 id=645 data-nosnippet>645</a>                        InlineAsmOperand::In { value, .. } =&gt; {
+<a href=#646 id=646 data-nosnippet>646</a>                            <span class="self">self</span>.add_operand(value);
+<a href=#647 id=647 data-nosnippet>647</a>                        }
+<a href=#648 id=648 data-nosnippet>648</a>                        InlineAsmOperand::Out { place, .. } =&gt; {
+<a href=#649 id=649 data-nosnippet>649</a>                            <span class="kw">if let </span><span class="prelude-val">Some</span>(place) = place {
+<a href=#650 id=650 data-nosnippet>650</a>                                <span class="self">self</span>.add_place(<span class="kw-2">*</span>place);
+<a href=#651 id=651 data-nosnippet>651</a>                            }
+<a href=#652 id=652 data-nosnippet>652</a>                        }
+<a href=#653 id=653 data-nosnippet>653</a>                        <span class="comment">// Note that the `late` field in `InOut` is about whether the registers used
+<a href=#654 id=654 data-nosnippet>654</a>                        // for these things overlap, and is of absolutely no interest to us.
+<a href=#655 id=655 data-nosnippet>655</a>                        </span>InlineAsmOperand::InOut { in_value, out_place, .. } =&gt; {
+<a href=#656 id=656 data-nosnippet>656</a>                            <span class="kw">if let </span><span class="prelude-val">Some</span>(place) = out_place {
+<a href=#657 id=657 data-nosnippet>657</a>                                <span class="self">self</span>.add_place(<span class="kw-2">*</span>place);
+<a href=#658 id=658 data-nosnippet>658</a>                            }
+<a href=#659 id=659 data-nosnippet>659</a>                            <span class="self">self</span>.add_operand(in_value);
+<a href=#660 id=660 data-nosnippet>660</a>                        }
+<a href=#661 id=661 data-nosnippet>661</a>                        InlineAsmOperand::Const { .. }
+<a href=#662 id=662 data-nosnippet>662</a>                        | InlineAsmOperand::SymFn { .. }
+<a href=#663 id=663 data-nosnippet>663</a>                        | InlineAsmOperand::SymStatic { .. }
+<a href=#664 id=664 data-nosnippet>664</a>                        | InlineAsmOperand::Label { .. } =&gt; {}
+<a href=#665 id=665 data-nosnippet>665</a>                    }
+<a href=#666 id=666 data-nosnippet>666</a>                }
+<a href=#667 id=667 data-nosnippet>667</a>            }
+<a href=#668 id=668 data-nosnippet>668</a>            <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.Goto">TerminatorKind::Goto</a> { .. }
+<a href=#669 id=669 data-nosnippet>669</a>            | <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.UnwindResume">TerminatorKind::UnwindResume</a>
+<a href=#670 id=670 data-nosnippet>670</a>            | <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.UnwindTerminate">TerminatorKind::UnwindTerminate</a>(<span class="kw">_</span>)
+<a href=#671 id=671 data-nosnippet>671</a>            | <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.Return">TerminatorKind::Return</a>
+<a href=#672 id=672 data-nosnippet>672</a>            | <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.Unreachable">TerminatorKind::Unreachable</a> { .. } =&gt; (),
+<a href=#673 id=673 data-nosnippet>673</a>            <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.Drop">TerminatorKind::Drop</a> { .. } =&gt; {
+<a href=#674 id=674 data-nosnippet>674</a>                <span class="comment">// `Drop`s create a `&amp;mut` and so are not considered
+<a href=#675 id=675 data-nosnippet>675</a>            </span>}
+<a href=#676 id=676 data-nosnippet>676</a>            <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.Yield">TerminatorKind::Yield</a> { .. }
+<a href=#677 id=677 data-nosnippet>677</a>            | <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.CoroutineDrop">TerminatorKind::CoroutineDrop</a>
+<a href=#678 id=678 data-nosnippet>678</a>            | <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.FalseEdge">TerminatorKind::FalseEdge</a> { .. }
+<a href=#679 id=679 data-nosnippet>679</a>            | <a href="../../rustc_middle/mir/syntax/enum.TerminatorKind.html#variant.FalseUnwind">TerminatorKind::FalseUnwind</a> { .. } =&gt; {
+<a href=#680 id=680 data-nosnippet>680</a>                <a class="macro" href="../../rustc_middle/macro.bug.html">bug!</a>(<span class="string">"{:?} not found in this MIR phase"</span>, terminator)
+<a href=#681 id=681 data-nosnippet>681</a>            }
+<a href=#682 id=682 data-nosnippet>682</a>        }
+<a href=#683 id=683 data-nosnippet>683</a>    }
+<a href=#684 id=684 data-nosnippet>684</a>
+<a href=#685 id=685 data-nosnippet>685</a>    <span class="kw">fn </span>add_place(<span class="kw-2">&amp;mut </span><span class="self">self</span>, place: <a href="../../rustc_middle/mir/syntax/struct.Place.html">Place</a>&lt;<span class="lifetime">'_</span>&gt;) {
+<a href=#686 id=686 data-nosnippet>686</a>        <a class="self" href="#685">self</a>.writes.<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#685">place</a>.local);
+<a href=#687 id=687 data-nosnippet>687</a>    }
+<a href=#688 id=688 data-nosnippet>688</a>
+<a href=#689 id=689 data-nosnippet>689</a>    <span class="kw">fn </span>add_operand&lt;<span class="lifetime">'tcx</span>&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, op: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/syntax/enum.Operand.html">Operand</a>&lt;<span class="lifetime">'tcx</span>&gt;) {
+<a href=#690 id=690 data-nosnippet>690</a>        <span class="kw">match </span><a href="#689">op</a> {
+<a href=#691 id=691 data-nosnippet>691</a>            <span class="comment">// FIXME(JakobDegen): In a previous version, the `Move` case was incorrectly treated as
+<a href=#692 id=692 data-nosnippet>692</a>            // being a read only. This was unsound, however we cannot add a regression test because
+<a href=#693 id=693 data-nosnippet>693</a>            // it is not possible to set this off with current MIR. Once we have that ability, a
+<a href=#694 id=694 data-nosnippet>694</a>            // regression test should be added.
+<a href=#695 id=695 data-nosnippet>695</a>            </span><a href="../../rustc_middle/mir/syntax/enum.Operand.html#variant.Move">Operand::Move</a>(p) =&gt; <a class="self" href="#689">self</a>.<a href="#685-687">add_place</a>(<span class="kw-2">*</span><a href="#695">p</a>),
+<a href=#696 id=696 data-nosnippet>696</a>            <a href="../../rustc_middle/mir/syntax/enum.Operand.html#variant.Copy">Operand::Copy</a>(<span class="kw">_</span>) | <a href="../../rustc_middle/mir/syntax/enum.Operand.html#variant.Constant">Operand::Constant</a>(<span class="kw">_</span>) =&gt; (),
+<a href=#697 id=697 data-nosnippet>697</a>        }
+<a href=#698 id=698 data-nosnippet>698</a>    }
+<a href=#699 id=699 data-nosnippet>699</a>
+<a href=#700 id=700 data-nosnippet>700</a>    <span class="kw">fn </span>reset(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
+<a href=#701 id=701 data-nosnippet>701</a>        <a class="self" href="#700">self</a>.writes.<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.clear">clear</a>();
+<a href=#702 id=702 data-nosnippet>702</a>        <a class="self" href="#700">self</a>.skip_pair = <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>;
+<a href=#703 id=703 data-nosnippet>703</a>    }
+<a href=#704 id=704 data-nosnippet>704</a>}
+<a href=#705 id=705 data-nosnippet>705</a>
+<a href=#706 id=706 data-nosnippet>706</a><span class="comment">/////////////////////////////////////////////////////
+<a href=#707 id=707 data-nosnippet>707</a>// Candidate accumulation
+<a href=#708 id=708 data-nosnippet>708</a>
+<a href=#709 id=709 data-nosnippet>709</a></span><span class="doccomment">/// If the pair of places is being considered for merging, returns the candidate which would be
+<a href=#710 id=710 data-nosnippet>710</a>/// merged in order to accomplish this.
+<a href=#711 id=711 data-nosnippet>711</a>///
+<a href=#712 id=712 data-nosnippet>712</a>/// The contract here is in one direction - there is a guarantee that merging the locals that are
+<a href=#713 id=713 data-nosnippet>713</a>/// outputted by this function would result in an assignment between the inputs becoming a
+<a href=#714 id=714 data-nosnippet>714</a>/// self-assignment. However, there is no guarantee that the returned pair is actually suitable for
+<a href=#715 id=715 data-nosnippet>715</a>/// merging - candidate collection must still check this independently.
+<a href=#716 id=716 data-nosnippet>716</a>///
+<a href=#717 id=717 data-nosnippet>717</a>/// This output is unique for each unordered pair of input places.
+<a href=#718 id=718 data-nosnippet>718</a></span><span class="kw">fn </span><a href="../../rustc_mir_transform/dest_prop/fn.places_to_candidate_pair.html">places_to_candidate_pair</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#719 id=719 data-nosnippet>719</a>    a: <a href="../../rustc_middle/mir/syntax/struct.Place.html">Place</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#720 id=720 data-nosnippet>720</a>    b: <a href="../../rustc_middle/mir/syntax/struct.Place.html">Place</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#721 id=721 data-nosnippet>721</a>    body: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#722 id=722 data-nosnippet>722</a>) -&gt; <a class="prelude-ty" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html">Option</a>&lt;(<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="../../rustc_middle/mir/struct.Local.html">Local</a>)&gt; {
+<a href=#723 id=723 data-nosnippet>723</a>    <span class="kw">let </span>(<span class="kw-2">mut </span>a, <span class="kw-2">mut </span>b) = <span class="kw">if </span><a href="#719">a</a>.projection.<a href="../../rustc_middle/ty/list/struct.RawList.html#method.len">len</a>() == <span class="number">0 </span>&amp;&amp; <a href="#720">b</a>.projection.<a href="../../rustc_middle/ty/list/struct.RawList.html#method.len">len</a>() == <span class="number">0 </span>{
+<a href=#724 id=724 data-nosnippet>724</a>        (<a href="#719">a</a>.local, <a href="#720">b</a>.local)
+<a href=#725 id=725 data-nosnippet>725</a>    } <span class="kw">else </span>{
+<a href=#726 id=726 data-nosnippet>726</a>        <span class="kw">return </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.None">None</a>;
+<a href=#727 id=727 data-nosnippet>727</a>    };
+<a href=#728 id=728 data-nosnippet>728</a>
+<a href=#729 id=729 data-nosnippet>729</a>    <span class="comment">// By sorting, we make sure we're input order independent
+<a href=#730 id=730 data-nosnippet>730</a>    </span><span class="kw">if </span><a href="#723">a</a> &gt; <a href="#723">b</a> {
+<a href=#731 id=731 data-nosnippet>731</a>        <a href="https://doc.rust-lang.org/beta/core/mem/fn.swap.html">std::mem::swap</a>(<span class="kw-2">&amp;mut </span><a href="#723">a</a>, <span class="kw-2">&amp;mut </span><a href="#723">b</a>);
+<a href=#732 id=732 data-nosnippet>732</a>    }
+<a href=#733 id=733 data-nosnippet>733</a>
+<a href=#734 id=734 data-nosnippet>734</a>    <span class="comment">// We could now return `(a, b)`, but then we miss some candidates in the case where `a` can't be
+<a href=#735 id=735 data-nosnippet>735</a>    // used as a `src`.
+<a href=#736 id=736 data-nosnippet>736</a>    </span><span class="kw">if </span><a href="#792-797">is_local_required</a>(<a href="#723">a</a>, <a href="#721">body</a>) {
+<a href=#737 id=737 data-nosnippet>737</a>        <a href="https://doc.rust-lang.org/beta/core/mem/fn.swap.html">std::mem::swap</a>(<span class="kw-2">&amp;mut </span><a href="#723">a</a>, <span class="kw-2">&amp;mut </span><a href="#723">b</a>);
+<a href=#738 id=738 data-nosnippet>738</a>    }
+<a href=#739 id=739 data-nosnippet>739</a>    <span class="comment">// We could check `is_local_required` again here, but there's no need - after all, we make no
+<a href=#740 id=740 data-nosnippet>740</a>    // promise that the candidate pair is actually valid
+<a href=#741 id=741 data-nosnippet>741</a>    </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>((<a href="#723">a</a>, <a href="#723">b</a>))
+<a href=#742 id=742 data-nosnippet>742</a>}
+<a href=#743 id=743 data-nosnippet>743</a>
+<a href=#744 id=744 data-nosnippet>744</a><span class="kw">struct </span><a href="../../rustc_mir_transform/dest_prop/struct.FindAssignments.html">FindAssignments</a>&lt;<span class="lifetime">'a</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#745 id=745 data-nosnippet>745</a>    body: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#746 id=746 data-nosnippet>746</a>    candidates: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><span class="kw-2">mut </span><a href="../../rustc_data_structures/fx/type.FxIndexMap.html">FxIndexMap</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>&gt;&gt;,
+<a href=#747 id=747 data-nosnippet>747</a>    borrowed: <span class="kw-2">&amp;</span><span class="lifetime">'a </span><a href="../../rustc_index/bit_set/struct.DenseBitSet.html">DenseBitSet</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>&gt;,
+<a href=#748 id=748 data-nosnippet>748</a>}
+<a href=#749 id=749 data-nosnippet>749</a>
+<a href=#750 id=750 data-nosnippet>750</a><span class="kw">impl</span>&lt;<span class="lifetime">'tcx</span>&gt; <a href="../../rustc_middle/mir/visit/trait.Visitor.html">Visitor</a>&lt;<span class="lifetime">'tcx</span>&gt; <span class="kw">for </span><a href="#744-748">FindAssignments</a>&lt;<span class="lifetime">'_</span>, <span class="lifetime">'tcx</span>&gt; {
+<a href=#751 id=751 data-nosnippet>751</a>    <span class="kw">fn </span>visit_statement(<span class="kw-2">&amp;mut </span><span class="self">self</span>, statement: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/statement/struct.Statement.html">Statement</a>&lt;<span class="lifetime">'tcx</span>&gt;, <span class="kw">_</span>: <a href="../../rustc_middle/mir/struct.Location.html">Location</a>) {
+<a href=#752 id=752 data-nosnippet>752</a>        <span class="kw">if let </span><a href="../../rustc_middle/mir/syntax/enum.StatementKind.html#variant.Assign">StatementKind::Assign</a>(<span class="kw">box </span>(
+<a href=#753 id=753 data-nosnippet>753</a>            lhs,
+<a href=#754 id=754 data-nosnippet>754</a>            Rvalue::CopyForDeref(rhs) | Rvalue::Use(Operand::Copy(rhs) | Operand::Move(rhs)),
+<a href=#755 id=755 data-nosnippet>755</a>        )) = <span class="kw-2">&amp;</span><a href="#751">statement</a>.kind
+<a href=#756 id=756 data-nosnippet>756</a>        {
+<a href=#757 id=757 data-nosnippet>757</a>            <span class="kw">let </span><a class="prelude-val" href="https://doc.rust-lang.org/beta/core/option/enum.Option.html#variant.Some">Some</a>((src, dest)) = <a href="#718-742">places_to_candidate_pair</a>(<span class="kw-2">*</span><a href="#753">lhs</a>, <span class="kw-2">*</span><a href="#754">rhs</a>, <a class="self" href="#751">self</a>.body) <span class="kw">else </span>{
+<a href=#758 id=758 data-nosnippet>758</a>                <span class="kw">return</span>;
+<a href=#759 id=759 data-nosnippet>759</a>            };
+<a href=#760 id=760 data-nosnippet>760</a>
+<a href=#761 id=761 data-nosnippet>761</a>            <span class="comment">// As described at the top of the file, we do not go near things that have
+<a href=#762 id=762 data-nosnippet>762</a>            // their address taken.
+<a href=#763 id=763 data-nosnippet>763</a>            </span><span class="kw">if </span><a class="self" href="#751">self</a>.borrowed.<a href="../../rustc_index/bit_set/struct.DenseBitSet.html#method.contains">contains</a>(<a href="#757">src</a>) || <a class="self" href="#751">self</a>.borrowed.<a href="../../rustc_index/bit_set/struct.DenseBitSet.html#method.contains">contains</a>(<a href="#757">dest</a>) {
+<a href=#764 id=764 data-nosnippet>764</a>                <span class="kw">return</span>;
+<a href=#765 id=765 data-nosnippet>765</a>            }
+<a href=#766 id=766 data-nosnippet>766</a>
+<a href=#767 id=767 data-nosnippet>767</a>            <span class="comment">// As described at the top of this file, we do not touch locals which have
+<a href=#768 id=768 data-nosnippet>768</a>            // different types.
+<a href=#769 id=769 data-nosnippet>769</a>            </span><span class="kw">let </span>src_ty = <a class="self" href="#751">self</a>.body.<a href="../../rustc_middle/mir/trait.HasLocalDecls.html#tymethod.local_decls">local_decls</a>()[<a href="#757">src</a>].ty;
+<a href=#770 id=770 data-nosnippet>770</a>            <span class="kw">let </span>dest_ty = <a class="self" href="#751">self</a>.body.<a href="../../rustc_middle/mir/trait.HasLocalDecls.html#tymethod.local_decls">local_decls</a>()[<a href="#757">dest</a>].ty;
+<a href=#771 id=771 data-nosnippet>771</a>            <span class="kw">if </span><a href="#769">src_ty</a> != <a href="#770">dest_ty</a> {
+<a href=#772 id=772 data-nosnippet>772</a>                <span class="comment">// FIXME(#112651): This can be removed afterwards. Also update the module description.
+<a href=#773 id=773 data-nosnippet>773</a>                </span><a class="macro" href="https://docs.rs/tracing/0.1.37/tracing/macro.trace.html">trace!</a>(<span class="string">"skipped `{src:?} = {dest:?}` due to subtyping: {src_ty} != {dest_ty}"</span>);
+<a href=#774 id=774 data-nosnippet>774</a>                <span class="kw">return</span>;
+<a href=#775 id=775 data-nosnippet>775</a>            }
+<a href=#776 id=776 data-nosnippet>776</a>
+<a href=#777 id=777 data-nosnippet>777</a>            <span class="comment">// Also, we need to make sure that MIR actually allows the `src` to be removed
+<a href=#778 id=778 data-nosnippet>778</a>            </span><span class="kw">if </span><a href="#792-797">is_local_required</a>(<a href="#757">src</a>, <a class="self" href="#751">self</a>.body) {
+<a href=#779 id=779 data-nosnippet>779</a>                <span class="kw">return</span>;
+<a href=#780 id=780 data-nosnippet>780</a>            }
+<a href=#781 id=781 data-nosnippet>781</a>
+<a href=#782 id=782 data-nosnippet>782</a>            <span class="comment">// We may insert duplicates here, but that's fine
+<a href=#783 id=783 data-nosnippet>783</a>            </span><a class="self" href="#751">self</a>.candidates.<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html#method.entry">entry</a>(<a href="#757">src</a>).<a href="https://docs.rs/indexmap/2.10.0/indexmap/map/core/entry/enum.Entry.html#method.or_default">or_default</a>().<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html#method.push">push</a>(<a href="#757">dest</a>);
+<a href=#784 id=784 data-nosnippet>784</a>        }
+<a href=#785 id=785 data-nosnippet>785</a>    }
+<a href=#786 id=786 data-nosnippet>786</a>}
+<a href=#787 id=787 data-nosnippet>787</a>
+<a href=#788 id=788 data-nosnippet>788</a><span class="doccomment">/// Some locals are part of the function's interface and can not be removed.
+<a href=#789 id=789 data-nosnippet>789</a>///
+<a href=#790 id=790 data-nosnippet>790</a>/// Note that these locals *can* still be merged with non-required locals by removing that other
+<a href=#791 id=791 data-nosnippet>791</a>/// local.
+<a href=#792 id=792 data-nosnippet>792</a></span><span class="kw">fn </span><a href="../../rustc_mir_transform/dest_prop/fn.is_local_required.html">is_local_required</a>(local: <a href="../../rustc_middle/mir/struct.Local.html">Local</a>, body: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'_</span>&gt;) -&gt; <a href="https://doc.rust-lang.org/beta/std/primitive.bool.html">bool</a> {
+<a href=#793 id=793 data-nosnippet>793</a>    <span class="kw">match </span><a href="#792">body</a>.<a href="../../rustc_middle/mir/struct.Body.html#method.local_kind">local_kind</a>(<a href="#792">local</a>) {
+<a href=#794 id=794 data-nosnippet>794</a>        <a href="../../rustc_middle/mir/enum.LocalKind.html#variant.Arg">LocalKind::Arg</a> | <a href="../../rustc_middle/mir/enum.LocalKind.html#variant.ReturnPointer">LocalKind::ReturnPointer</a> =&gt; <span class="bool-val">true</span>,
+<a href=#795 id=795 data-nosnippet>795</a>        <a href="../../rustc_middle/mir/enum.LocalKind.html#variant.Temp">LocalKind::Temp</a> =&gt; <span class="bool-val">false</span>,
+<a href=#796 id=796 data-nosnippet>796</a>    }
+<a href=#797 id=797 data-nosnippet>797</a>}
+<a href=#798 id=798 data-nosnippet>798</a>
+<a href=#799 id=799 data-nosnippet>799</a><span class="comment">/////////////////////////////////////////////////////////
+<a href=#800 id=800 data-nosnippet>800</a>// MIR Dump
+<a href=#801 id=801 data-nosnippet>801</a>
+<a href=#802 id=802 data-nosnippet>802</a></span><span class="kw">fn </span><a href="../../rustc_mir_transform/dest_prop/fn.dest_prop_mir_dump.html">dest_prop_mir_dump</a>&lt;<span class="lifetime">'tcx</span>&gt;(
+<a href=#803 id=803 data-nosnippet>803</a>    tcx: <a href="../../rustc_middle/ty/context/struct.TyCtxt.html">TyCtxt</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#804 id=804 data-nosnippet>804</a>    body: <span class="kw-2">&amp;</span><a href="../../rustc_middle/mir/struct.Body.html">Body</a>&lt;<span class="lifetime">'tcx</span>&gt;,
+<a href=#805 id=805 data-nosnippet>805</a>    points: <span class="kw-2">&amp;</span><a href="../../rustc_mir_dataflow/points/struct.DenseLocationMap.html">DenseLocationMap</a>,
+<a href=#806 id=806 data-nosnippet>806</a>    live: <span class="kw-2">&amp;</span><a href="../../rustc_index/interval/struct.SparseIntervalMatrix.html">SparseIntervalMatrix</a>&lt;<a href="../../rustc_middle/mir/struct.Local.html">Local</a>, <a href="../../rustc_mir_dataflow/points/struct.PointIndex.html">PointIndex</a>&gt;,
+<a href=#807 id=807 data-nosnippet>807</a>    round: <a href="https://doc.rust-lang.org/beta/std/primitive.usize.html">usize</a>,
+<a href=#808 id=808 data-nosnippet>808</a>) {
+<a href=#809 id=809 data-nosnippet>809</a>    <span class="kw">let </span>locals_live_at = |location| {
+<a href=#810 id=810 data-nosnippet>810</a>        <span class="kw">let </span>location = <a href="#805">points</a>.<a href="../../rustc_mir_dataflow/points/struct.DenseLocationMap.html#method.point_from_location">point_from_location</a>(<a href="#809">location</a>);
+<a href=#811 id=811 data-nosnippet>811</a>        <a href="#806">live</a>.<a href="../../rustc_index/interval/struct.SparseIntervalMatrix.html#method.rows">rows</a>().<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.filter">filter</a>(|<span class="kw-2">&amp;</span>r| <a href="#806">live</a>.<a href="../../rustc_index/interval/struct.SparseIntervalMatrix.html#method.contains">contains</a>(<a href="#811">r</a>, <a href="#810">location</a>)).<a href="https://doc.rust-lang.org/beta/core/iter/traits/iterator/trait.Iterator.html#tymethod.collect">collect</a>::&lt;<a href="https://doc.rust-lang.org/beta/alloc/vec/struct.Vec.html">Vec</a>&lt;<span class="kw">_</span>&gt;&gt;()
+<a href=#812 id=812 data-nosnippet>812</a>    };
+<a href=#813 id=813 data-nosnippet>813</a>    <a href="../../rustc_middle/mir/pretty/fn.dump_mir.html">dump_mir</a>(<a href="#803">tcx</a>, <span class="bool-val">false</span>, <span class="string">"DestinationPropagation-dataflow"</span>, <span class="kw-2">&amp;</span><a href="#807">round</a>, <a href="#804">body</a>, |pass_where, w| {
+<a href=#814 id=814 data-nosnippet>814</a>        <span class="kw">if let </span><a href="../../rustc_middle/mir/pretty/enum.PassWhere.html#variant.BeforeLocation">PassWhere::BeforeLocation</a>(loc) = <a href="#813">pass_where</a> {
+<a href=#815 id=815 data-nosnippet>815</a>            <a class="macro" href="https://doc.rust-lang.org/beta/core/macro.writeln.html">writeln!</a>(<a href="#813">w</a>, <span class="string">"        // live: {:?}"</span>, locals_live_at(loc))<span class="question-mark">?</span>;
+<a href=#816 id=816 data-nosnippet>816</a>        }
+<a href=#817 id=817 data-nosnippet>817</a>
+<a href=#818 id=818 data-nosnippet>818</a>        <a class="prelude-val" href="https://doc.rust-lang.org/beta/core/result/enum.Result.html#variant.Ok">Ok</a>(())
+<a href=#819 id=819 data-nosnippet>819</a>    });
+<a href=#820 id=820 data-nosnippet>820</a>}</code></pre></div></section></main></body></html>

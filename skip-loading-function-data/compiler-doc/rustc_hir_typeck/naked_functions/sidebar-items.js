@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ItemKind"],"fn":["check_asm","check_no_parameters_use","check_no_patterns","typeck_naked_fn"],"struct":["CheckInlineAssembly","CheckParameters"]};
