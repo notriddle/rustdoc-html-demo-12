@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `library/alloc/src/vec/in_place_collect.rs`."><title>in_place_collect.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-f60b7906.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="alloc" data-themes="" data-resource-suffix="1.91.0" data-rustdoc-version="1.91.0-dev" data-channel="nightly" data-search-js="search-27c3a559.js" data-stringdex-js="stringdex-5af928a3.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files1.91.0.js"></script><script defer src="../../../static.files/main-6dc2a7f3.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">alloc/vec/</div>in_place_collect.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Inplace iterate-and-collect specialization for `Vec`
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `library/alloc/src/vec/in_place_collect.rs`."><title>in_place_collect.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-54c10573.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="alloc" data-themes="" data-resource-suffix="1.92.0" data-rustdoc-version="1.92.0-dev" data-channel="nightly" data-search-js="search-6c5c7cca.js" data-stringdex-js="stringdex-828709d0.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="../../../static.files/src-script-813739b1.js"></script><script defer src="../../../src-files1.92.0.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">alloc/vec/</div>in_place_collect.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap digits-3"><pre class="rust"><code><a href=#1 id=1 data-nosnippet>1</a><span class="doccomment">//! Inplace iterate-and-collect specialization for `Vec`
 <a href=#2 id=2 data-nosnippet>2</a>//!
 <a href=#3 id=3 data-nosnippet>3</a>//! Note: This documents Vec internals, some of the following sections explain implementation
 <a href=#4 id=4 data-nosnippet>4</a>//! details and are best read together with the source of this module.
@@ -229,203 +229,201 @@
 <a href=#229 id=229 data-nosnippet>229</a>    </span>I: Iterator&lt;Item = T&gt; + InPlaceCollect,
 <a href=#230 id=230 data-nosnippet>230</a>    &lt;I <span class="kw">as </span>SourceIter&gt;::Source: AsVecIntoIter,
 <a href=#231 id=231 data-nosnippet>231</a>{
-<a href=#232 id=232 data-nosnippet>232</a>    <span class="attr">#[track_caller]
-<a href=#233 id=233 data-nosnippet>233</a>    </span>default <span class="kw">fn </span>from_iter(iterator: I) -&gt; <span class="self">Self </span>{
-<a href=#234 id=234 data-nosnippet>234</a>        <span class="comment">// Select the implementation in const eval to avoid codegen of the dead branch to improve compile times.
-<a href=#235 id=235 data-nosnippet>235</a>        </span><span class="kw">let </span>fun: <span class="kw">fn</span>(I) -&gt; Vec&lt;T&gt; = <span class="kw">const </span>{
-<a href=#236 id=236 data-nosnippet>236</a>            <span class="comment">// See "Layout constraints" section in the module documentation. We use const conditions here
-<a href=#237 id=237 data-nosnippet>237</a>            // since these conditions currently cannot be expressed as trait bounds
-<a href=#238 id=238 data-nosnippet>238</a>            </span><span class="kw">if </span>in_place_collectible::&lt;T, I::Src&gt;(I::MERGE_BY, I::EXPAND_BY) {
-<a href=#239 id=239 data-nosnippet>239</a>                from_iter_in_place
-<a href=#240 id=240 data-nosnippet>240</a>            } <span class="kw">else </span>{
-<a href=#241 id=241 data-nosnippet>241</a>                <span class="comment">// fallback
-<a href=#242 id=242 data-nosnippet>242</a>                </span>SpecFromIterNested::&lt;T, I&gt;::from_iter
-<a href=#243 id=243 data-nosnippet>243</a>            }
-<a href=#244 id=244 data-nosnippet>244</a>        };
-<a href=#245 id=245 data-nosnippet>245</a>
-<a href=#246 id=246 data-nosnippet>246</a>        fun(iterator)
-<a href=#247 id=247 data-nosnippet>247</a>    }
-<a href=#248 id=248 data-nosnippet>248</a>}
-<a href=#249 id=249 data-nosnippet>249</a>
-<a href=#250 id=250 data-nosnippet>250</a><span class="attr">#[track_caller]
-<a href=#251 id=251 data-nosnippet>251</a></span><span class="kw">fn </span>from_iter_in_place&lt;I, T&gt;(<span class="kw-2">mut </span>iterator: I) -&gt; Vec&lt;T&gt;
-<a href=#252 id=252 data-nosnippet>252</a><span class="kw">where
-<a href=#253 id=253 data-nosnippet>253</a>    </span>I: Iterator&lt;Item = T&gt; + InPlaceCollect,
-<a href=#254 id=254 data-nosnippet>254</a>    &lt;I <span class="kw">as </span>SourceIter&gt;::Source: AsVecIntoIter,
-<a href=#255 id=255 data-nosnippet>255</a>{
-<a href=#256 id=256 data-nosnippet>256</a>    <span class="kw">let </span>(src_buf, src_ptr, src_cap, <span class="kw-2">mut </span>dst_buf, dst_end, dst_cap) = <span class="kw">unsafe </span>{
-<a href=#257 id=257 data-nosnippet>257</a>        <span class="kw">let </span>inner = iterator.as_inner().as_into_iter();
-<a href=#258 id=258 data-nosnippet>258</a>        (
-<a href=#259 id=259 data-nosnippet>259</a>            inner.buf,
-<a href=#260 id=260 data-nosnippet>260</a>            inner.ptr,
-<a href=#261 id=261 data-nosnippet>261</a>            inner.cap,
-<a href=#262 id=262 data-nosnippet>262</a>            inner.buf.cast::&lt;T&gt;(),
-<a href=#263 id=263 data-nosnippet>263</a>            inner.end <span class="kw">as </span><span class="kw-2">*const </span>T,
-<a href=#264 id=264 data-nosnippet>264</a>            <span class="comment">// SAFETY: the multiplication can not overflow, since `inner.cap * size_of::&lt;I::SRC&gt;()` is the size of the allocation.
-<a href=#265 id=265 data-nosnippet>265</a>            </span>inner.cap.unchecked_mul(size_of::&lt;I::Src&gt;()) / size_of::&lt;T&gt;(),
-<a href=#266 id=266 data-nosnippet>266</a>        )
-<a href=#267 id=267 data-nosnippet>267</a>    };
-<a href=#268 id=268 data-nosnippet>268</a>
-<a href=#269 id=269 data-nosnippet>269</a>    <span class="comment">// SAFETY: `dst_buf` and `dst_end` are the start and end of the buffer.
-<a href=#270 id=270 data-nosnippet>270</a>    </span><span class="kw">let </span>len = <span class="kw">unsafe </span>{
-<a href=#271 id=271 data-nosnippet>271</a>        SpecInPlaceCollect::collect_in_place(<span class="kw-2">&amp;mut </span>iterator, dst_buf.as_ptr() <span class="kw">as </span><span class="kw-2">*mut </span>T, dst_end)
-<a href=#272 id=272 data-nosnippet>272</a>    };
-<a href=#273 id=273 data-nosnippet>273</a>
-<a href=#274 id=274 data-nosnippet>274</a>    <span class="kw">let </span>src = <span class="kw">unsafe </span>{ iterator.as_inner().as_into_iter() };
-<a href=#275 id=275 data-nosnippet>275</a>    <span class="comment">// check if SourceIter contract was upheld
-<a href=#276 id=276 data-nosnippet>276</a>    // caveat: if they weren't we might not even make it to this point
-<a href=#277 id=277 data-nosnippet>277</a>    </span><span class="macro">debug_assert_eq!</span>(src_buf, src.buf);
-<a href=#278 id=278 data-nosnippet>278</a>    <span class="comment">// check InPlaceIterable contract. This is only possible if the iterator advanced the
-<a href=#279 id=279 data-nosnippet>279</a>    // source pointer at all. If it uses unchecked access via TrustedRandomAccess
-<a href=#280 id=280 data-nosnippet>280</a>    // then the source pointer will stay in its initial position and we can't use it as reference
-<a href=#281 id=281 data-nosnippet>281</a>    </span><span class="kw">if </span>src.ptr != src_ptr {
-<a href=#282 id=282 data-nosnippet>282</a>        <span class="macro">debug_assert!</span>(
-<a href=#283 id=283 data-nosnippet>283</a>            <span class="kw">unsafe </span>{ dst_buf.add(len).cast() } &lt;= src.ptr,
-<a href=#284 id=284 data-nosnippet>284</a>            <span class="string">"InPlaceIterable contract violation, write pointer advanced beyond read pointer"
-<a href=#285 id=285 data-nosnippet>285</a>        </span>);
-<a href=#286 id=286 data-nosnippet>286</a>    }
-<a href=#287 id=287 data-nosnippet>287</a>
-<a href=#288 id=288 data-nosnippet>288</a>    <span class="comment">// The ownership of the source allocation and the new `T` values is temporarily moved into `dst_guard`.
-<a href=#289 id=289 data-nosnippet>289</a>    // This is safe because
-<a href=#290 id=290 data-nosnippet>290</a>    // * `forget_allocation_drop_remaining` immediately forgets the allocation
-<a href=#291 id=291 data-nosnippet>291</a>    // before any panic can occur in order to avoid any double free, and then proceeds to drop
-<a href=#292 id=292 data-nosnippet>292</a>    // any remaining values at the tail of the source.
-<a href=#293 id=293 data-nosnippet>293</a>    // * the shrink either panics without invalidating the allocation, aborts or
-<a href=#294 id=294 data-nosnippet>294</a>    //   succeeds. In the last case we disarm the guard.
-<a href=#295 id=295 data-nosnippet>295</a>    //
-<a href=#296 id=296 data-nosnippet>296</a>    // Note: This access to the source wouldn't be allowed by the TrustedRandomIteratorNoCoerce
-<a href=#297 id=297 data-nosnippet>297</a>    // contract (used by SpecInPlaceCollect below). But see the "O(1) collect" section in the
-<a href=#298 id=298 data-nosnippet>298</a>    // module documentation why this is ok anyway.
-<a href=#299 id=299 data-nosnippet>299</a>    </span><span class="kw">let </span>dst_guard =
-<a href=#300 id=300 data-nosnippet>300</a>        InPlaceDstDataSrcBufDrop { ptr: dst_buf, len, src_cap, src: PhantomData::&lt;I::Src&gt; };
-<a href=#301 id=301 data-nosnippet>301</a>    src.forget_allocation_drop_remaining();
-<a href=#302 id=302 data-nosnippet>302</a>
-<a href=#303 id=303 data-nosnippet>303</a>    <span class="comment">// Adjust the allocation if the source had a capacity in bytes that wasn't a multiple
-<a href=#304 id=304 data-nosnippet>304</a>    // of the destination type size.
-<a href=#305 id=305 data-nosnippet>305</a>    // Since the discrepancy should generally be small this should only result in some
-<a href=#306 id=306 data-nosnippet>306</a>    // bookkeeping updates and no memmove.
-<a href=#307 id=307 data-nosnippet>307</a>    </span><span class="kw">if </span>needs_realloc::&lt;I::Src, T&gt;(src_cap, dst_cap) {
-<a href=#308 id=308 data-nosnippet>308</a>        <span class="kw">let </span>alloc = Global;
-<a href=#309 id=309 data-nosnippet>309</a>        <span class="macro">debug_assert_ne!</span>(src_cap, <span class="number">0</span>);
-<a href=#310 id=310 data-nosnippet>310</a>        <span class="macro">debug_assert_ne!</span>(dst_cap, <span class="number">0</span>);
-<a href=#311 id=311 data-nosnippet>311</a>        <span class="kw">unsafe </span>{
-<a href=#312 id=312 data-nosnippet>312</a>            <span class="comment">// The old allocation exists, therefore it must have a valid layout.
-<a href=#313 id=313 data-nosnippet>313</a>            </span><span class="kw">let </span>src_align = align_of::&lt;I::Src&gt;();
-<a href=#314 id=314 data-nosnippet>314</a>            <span class="kw">let </span>src_size = size_of::&lt;I::Src&gt;().unchecked_mul(src_cap);
-<a href=#315 id=315 data-nosnippet>315</a>            <span class="kw">let </span>old_layout = Layout::from_size_align_unchecked(src_size, src_align);
-<a href=#316 id=316 data-nosnippet>316</a>
-<a href=#317 id=317 data-nosnippet>317</a>            <span class="comment">// The allocation must be equal or smaller for in-place iteration to be possible
-<a href=#318 id=318 data-nosnippet>318</a>            // therefore the new layout must be ≤ the old one and therefore valid.
-<a href=#319 id=319 data-nosnippet>319</a>            </span><span class="kw">let </span>dst_align = align_of::&lt;T&gt;();
-<a href=#320 id=320 data-nosnippet>320</a>            <span class="kw">let </span>dst_size = size_of::&lt;T&gt;().unchecked_mul(dst_cap);
-<a href=#321 id=321 data-nosnippet>321</a>            <span class="kw">let </span>new_layout = Layout::from_size_align_unchecked(dst_size, dst_align);
-<a href=#322 id=322 data-nosnippet>322</a>
-<a href=#323 id=323 data-nosnippet>323</a>            <span class="kw">let </span>result = alloc.shrink(dst_buf.cast(), old_layout, new_layout);
-<a href=#324 id=324 data-nosnippet>324</a>            <span class="kw">let </span><span class="prelude-val">Ok</span>(reallocated) = result <span class="kw">else </span>{ handle_alloc_error(new_layout) };
-<a href=#325 id=325 data-nosnippet>325</a>            dst_buf = reallocated.cast::&lt;T&gt;();
-<a href=#326 id=326 data-nosnippet>326</a>        }
-<a href=#327 id=327 data-nosnippet>327</a>    } <span class="kw">else </span>{
-<a href=#328 id=328 data-nosnippet>328</a>        <span class="macro">debug_assert_eq!</span>(src_cap * size_of::&lt;I::Src&gt;(), dst_cap * size_of::&lt;T&gt;());
-<a href=#329 id=329 data-nosnippet>329</a>    }
+<a href=#232 id=232 data-nosnippet>232</a>    default <span class="kw">fn </span>from_iter(iterator: I) -&gt; <span class="self">Self </span>{
+<a href=#233 id=233 data-nosnippet>233</a>        <span class="comment">// Select the implementation in const eval to avoid codegen of the dead branch to improve compile times.
+<a href=#234 id=234 data-nosnippet>234</a>        </span><span class="kw">let </span>fun: <span class="kw">fn</span>(I) -&gt; Vec&lt;T&gt; = <span class="kw">const </span>{
+<a href=#235 id=235 data-nosnippet>235</a>            <span class="comment">// See "Layout constraints" section in the module documentation. We use const conditions here
+<a href=#236 id=236 data-nosnippet>236</a>            // since these conditions currently cannot be expressed as trait bounds
+<a href=#237 id=237 data-nosnippet>237</a>            </span><span class="kw">if </span>in_place_collectible::&lt;T, I::Src&gt;(I::MERGE_BY, I::EXPAND_BY) {
+<a href=#238 id=238 data-nosnippet>238</a>                from_iter_in_place
+<a href=#239 id=239 data-nosnippet>239</a>            } <span class="kw">else </span>{
+<a href=#240 id=240 data-nosnippet>240</a>                <span class="comment">// fallback
+<a href=#241 id=241 data-nosnippet>241</a>                </span>SpecFromIterNested::&lt;T, I&gt;::from_iter
+<a href=#242 id=242 data-nosnippet>242</a>            }
+<a href=#243 id=243 data-nosnippet>243</a>        };
+<a href=#244 id=244 data-nosnippet>244</a>
+<a href=#245 id=245 data-nosnippet>245</a>        fun(iterator)
+<a href=#246 id=246 data-nosnippet>246</a>    }
+<a href=#247 id=247 data-nosnippet>247</a>}
+<a href=#248 id=248 data-nosnippet>248</a>
+<a href=#249 id=249 data-nosnippet>249</a><span class="kw">fn </span>from_iter_in_place&lt;I, T&gt;(<span class="kw-2">mut </span>iterator: I) -&gt; Vec&lt;T&gt;
+<a href=#250 id=250 data-nosnippet>250</a><span class="kw">where
+<a href=#251 id=251 data-nosnippet>251</a>    </span>I: Iterator&lt;Item = T&gt; + InPlaceCollect,
+<a href=#252 id=252 data-nosnippet>252</a>    &lt;I <span class="kw">as </span>SourceIter&gt;::Source: AsVecIntoIter,
+<a href=#253 id=253 data-nosnippet>253</a>{
+<a href=#254 id=254 data-nosnippet>254</a>    <span class="kw">let </span>(src_buf, src_ptr, src_cap, <span class="kw-2">mut </span>dst_buf, dst_end, dst_cap) = <span class="kw">unsafe </span>{
+<a href=#255 id=255 data-nosnippet>255</a>        <span class="kw">let </span>inner = iterator.as_inner().as_into_iter();
+<a href=#256 id=256 data-nosnippet>256</a>        (
+<a href=#257 id=257 data-nosnippet>257</a>            inner.buf,
+<a href=#258 id=258 data-nosnippet>258</a>            inner.ptr,
+<a href=#259 id=259 data-nosnippet>259</a>            inner.cap,
+<a href=#260 id=260 data-nosnippet>260</a>            inner.buf.cast::&lt;T&gt;(),
+<a href=#261 id=261 data-nosnippet>261</a>            inner.end <span class="kw">as </span><span class="kw-2">*const </span>T,
+<a href=#262 id=262 data-nosnippet>262</a>            <span class="comment">// SAFETY: the multiplication can not overflow, since `inner.cap * size_of::&lt;I::SRC&gt;()` is the size of the allocation.
+<a href=#263 id=263 data-nosnippet>263</a>            </span>inner.cap.unchecked_mul(size_of::&lt;I::Src&gt;()) / size_of::&lt;T&gt;(),
+<a href=#264 id=264 data-nosnippet>264</a>        )
+<a href=#265 id=265 data-nosnippet>265</a>    };
+<a href=#266 id=266 data-nosnippet>266</a>
+<a href=#267 id=267 data-nosnippet>267</a>    <span class="comment">// SAFETY: `dst_buf` and `dst_end` are the start and end of the buffer.
+<a href=#268 id=268 data-nosnippet>268</a>    </span><span class="kw">let </span>len = <span class="kw">unsafe </span>{
+<a href=#269 id=269 data-nosnippet>269</a>        SpecInPlaceCollect::collect_in_place(<span class="kw-2">&amp;mut </span>iterator, dst_buf.as_ptr() <span class="kw">as </span><span class="kw-2">*mut </span>T, dst_end)
+<a href=#270 id=270 data-nosnippet>270</a>    };
+<a href=#271 id=271 data-nosnippet>271</a>
+<a href=#272 id=272 data-nosnippet>272</a>    <span class="kw">let </span>src = <span class="kw">unsafe </span>{ iterator.as_inner().as_into_iter() };
+<a href=#273 id=273 data-nosnippet>273</a>    <span class="comment">// check if SourceIter contract was upheld
+<a href=#274 id=274 data-nosnippet>274</a>    // caveat: if they weren't we might not even make it to this point
+<a href=#275 id=275 data-nosnippet>275</a>    </span><span class="macro">debug_assert_eq!</span>(src_buf, src.buf);
+<a href=#276 id=276 data-nosnippet>276</a>    <span class="comment">// check InPlaceIterable contract. This is only possible if the iterator advanced the
+<a href=#277 id=277 data-nosnippet>277</a>    // source pointer at all. If it uses unchecked access via TrustedRandomAccess
+<a href=#278 id=278 data-nosnippet>278</a>    // then the source pointer will stay in its initial position and we can't use it as reference
+<a href=#279 id=279 data-nosnippet>279</a>    </span><span class="kw">if </span>src.ptr != src_ptr {
+<a href=#280 id=280 data-nosnippet>280</a>        <span class="macro">debug_assert!</span>(
+<a href=#281 id=281 data-nosnippet>281</a>            <span class="kw">unsafe </span>{ dst_buf.add(len).cast() } &lt;= src.ptr,
+<a href=#282 id=282 data-nosnippet>282</a>            <span class="string">"InPlaceIterable contract violation, write pointer advanced beyond read pointer"
+<a href=#283 id=283 data-nosnippet>283</a>        </span>);
+<a href=#284 id=284 data-nosnippet>284</a>    }
+<a href=#285 id=285 data-nosnippet>285</a>
+<a href=#286 id=286 data-nosnippet>286</a>    <span class="comment">// The ownership of the source allocation and the new `T` values is temporarily moved into `dst_guard`.
+<a href=#287 id=287 data-nosnippet>287</a>    // This is safe because
+<a href=#288 id=288 data-nosnippet>288</a>    // * `forget_allocation_drop_remaining` immediately forgets the allocation
+<a href=#289 id=289 data-nosnippet>289</a>    // before any panic can occur in order to avoid any double free, and then proceeds to drop
+<a href=#290 id=290 data-nosnippet>290</a>    // any remaining values at the tail of the source.
+<a href=#291 id=291 data-nosnippet>291</a>    // * the shrink either panics without invalidating the allocation, aborts or
+<a href=#292 id=292 data-nosnippet>292</a>    //   succeeds. In the last case we disarm the guard.
+<a href=#293 id=293 data-nosnippet>293</a>    //
+<a href=#294 id=294 data-nosnippet>294</a>    // Note: This access to the source wouldn't be allowed by the TrustedRandomIteratorNoCoerce
+<a href=#295 id=295 data-nosnippet>295</a>    // contract (used by SpecInPlaceCollect below). But see the "O(1) collect" section in the
+<a href=#296 id=296 data-nosnippet>296</a>    // module documentation why this is ok anyway.
+<a href=#297 id=297 data-nosnippet>297</a>    </span><span class="kw">let </span>dst_guard =
+<a href=#298 id=298 data-nosnippet>298</a>        InPlaceDstDataSrcBufDrop { ptr: dst_buf, len, src_cap, src: PhantomData::&lt;I::Src&gt; };
+<a href=#299 id=299 data-nosnippet>299</a>    src.forget_allocation_drop_remaining();
+<a href=#300 id=300 data-nosnippet>300</a>
+<a href=#301 id=301 data-nosnippet>301</a>    <span class="comment">// Adjust the allocation if the source had a capacity in bytes that wasn't a multiple
+<a href=#302 id=302 data-nosnippet>302</a>    // of the destination type size.
+<a href=#303 id=303 data-nosnippet>303</a>    // Since the discrepancy should generally be small this should only result in some
+<a href=#304 id=304 data-nosnippet>304</a>    // bookkeeping updates and no memmove.
+<a href=#305 id=305 data-nosnippet>305</a>    </span><span class="kw">if </span>needs_realloc::&lt;I::Src, T&gt;(src_cap, dst_cap) {
+<a href=#306 id=306 data-nosnippet>306</a>        <span class="kw">let </span>alloc = Global;
+<a href=#307 id=307 data-nosnippet>307</a>        <span class="macro">debug_assert_ne!</span>(src_cap, <span class="number">0</span>);
+<a href=#308 id=308 data-nosnippet>308</a>        <span class="macro">debug_assert_ne!</span>(dst_cap, <span class="number">0</span>);
+<a href=#309 id=309 data-nosnippet>309</a>        <span class="kw">unsafe </span>{
+<a href=#310 id=310 data-nosnippet>310</a>            <span class="comment">// The old allocation exists, therefore it must have a valid layout.
+<a href=#311 id=311 data-nosnippet>311</a>            </span><span class="kw">let </span>src_align = align_of::&lt;I::Src&gt;();
+<a href=#312 id=312 data-nosnippet>312</a>            <span class="kw">let </span>src_size = size_of::&lt;I::Src&gt;().unchecked_mul(src_cap);
+<a href=#313 id=313 data-nosnippet>313</a>            <span class="kw">let </span>old_layout = Layout::from_size_align_unchecked(src_size, src_align);
+<a href=#314 id=314 data-nosnippet>314</a>
+<a href=#315 id=315 data-nosnippet>315</a>            <span class="comment">// The allocation must be equal or smaller for in-place iteration to be possible
+<a href=#316 id=316 data-nosnippet>316</a>            // therefore the new layout must be ≤ the old one and therefore valid.
+<a href=#317 id=317 data-nosnippet>317</a>            </span><span class="kw">let </span>dst_align = align_of::&lt;T&gt;();
+<a href=#318 id=318 data-nosnippet>318</a>            <span class="kw">let </span>dst_size = size_of::&lt;T&gt;().unchecked_mul(dst_cap);
+<a href=#319 id=319 data-nosnippet>319</a>            <span class="kw">let </span>new_layout = Layout::from_size_align_unchecked(dst_size, dst_align);
+<a href=#320 id=320 data-nosnippet>320</a>
+<a href=#321 id=321 data-nosnippet>321</a>            <span class="kw">let </span>result = alloc.shrink(dst_buf.cast(), old_layout, new_layout);
+<a href=#322 id=322 data-nosnippet>322</a>            <span class="kw">let </span><span class="prelude-val">Ok</span>(reallocated) = result <span class="kw">else </span>{ handle_alloc_error(new_layout) };
+<a href=#323 id=323 data-nosnippet>323</a>            dst_buf = reallocated.cast::&lt;T&gt;();
+<a href=#324 id=324 data-nosnippet>324</a>        }
+<a href=#325 id=325 data-nosnippet>325</a>    } <span class="kw">else </span>{
+<a href=#326 id=326 data-nosnippet>326</a>        <span class="macro">debug_assert_eq!</span>(src_cap * size_of::&lt;I::Src&gt;(), dst_cap * size_of::&lt;T&gt;());
+<a href=#327 id=327 data-nosnippet>327</a>    }
+<a href=#328 id=328 data-nosnippet>328</a>
+<a href=#329 id=329 data-nosnippet>329</a>    mem::forget(dst_guard);
 <a href=#330 id=330 data-nosnippet>330</a>
-<a href=#331 id=331 data-nosnippet>331</a>    mem::forget(dst_guard);
+<a href=#331 id=331 data-nosnippet>331</a>    <span class="kw">let </span>vec = <span class="kw">unsafe </span>{ Vec::from_parts(dst_buf, len, dst_cap) };
 <a href=#332 id=332 data-nosnippet>332</a>
-<a href=#333 id=333 data-nosnippet>333</a>    <span class="kw">let </span>vec = <span class="kw">unsafe </span>{ Vec::from_parts(dst_buf, len, dst_cap) };
-<a href=#334 id=334 data-nosnippet>334</a>
-<a href=#335 id=335 data-nosnippet>335</a>    vec
-<a href=#336 id=336 data-nosnippet>336</a>}
-<a href=#337 id=337 data-nosnippet>337</a>
-<a href=#338 id=338 data-nosnippet>338</a><span class="kw">fn </span>write_in_place_with_drop&lt;T&gt;(
-<a href=#339 id=339 data-nosnippet>339</a>    src_end: <span class="kw-2">*const </span>T,
-<a href=#340 id=340 data-nosnippet>340</a>) -&gt; <span class="kw">impl </span>FnMut(InPlaceDrop&lt;T&gt;, T) -&gt; <span class="prelude-ty">Result</span>&lt;InPlaceDrop&lt;T&gt;, !&gt; {
-<a href=#341 id=341 data-nosnippet>341</a>    <span class="kw">move </span>|<span class="kw-2">mut </span>sink, item| {
-<a href=#342 id=342 data-nosnippet>342</a>        <span class="kw">unsafe </span>{
-<a href=#343 id=343 data-nosnippet>343</a>            <span class="comment">// the InPlaceIterable contract cannot be verified precisely here since
-<a href=#344 id=344 data-nosnippet>344</a>            // try_fold has an exclusive reference to the source pointer
-<a href=#345 id=345 data-nosnippet>345</a>            // all we can do is check if it's still in range
-<a href=#346 id=346 data-nosnippet>346</a>            </span><span class="macro">debug_assert!</span>(sink.dst <span class="kw">as </span><span class="kw-2">*const </span><span class="kw">_ </span>&lt;= src_end, <span class="string">"InPlaceIterable contract violation"</span>);
-<a href=#347 id=347 data-nosnippet>347</a>            ptr::write(sink.dst, item);
-<a href=#348 id=348 data-nosnippet>348</a>            <span class="comment">// Since this executes user code which can panic we have to bump the pointer
-<a href=#349 id=349 data-nosnippet>349</a>            // after each step.
-<a href=#350 id=350 data-nosnippet>350</a>            </span>sink.dst = sink.dst.add(<span class="number">1</span>);
-<a href=#351 id=351 data-nosnippet>351</a>        }
-<a href=#352 id=352 data-nosnippet>352</a>        <span class="prelude-val">Ok</span>(sink)
-<a href=#353 id=353 data-nosnippet>353</a>    }
-<a href=#354 id=354 data-nosnippet>354</a>}
-<a href=#355 id=355 data-nosnippet>355</a>
-<a href=#356 id=356 data-nosnippet>356</a><span class="doccomment">/// Helper trait to hold specialized implementations of the in-place iterate-collect loop
-<a href=#357 id=357 data-nosnippet>357</a></span><span class="kw">trait </span>SpecInPlaceCollect&lt;T, I&gt;: Iterator&lt;Item = T&gt; {
-<a href=#358 id=358 data-nosnippet>358</a>    <span class="doccomment">/// Collects an iterator (`self`) into the destination buffer (`dst`) and returns the number of items
-<a href=#359 id=359 data-nosnippet>359</a>    /// collected. `end` is the last writable element of the allocation and used for bounds checks.
-<a href=#360 id=360 data-nosnippet>360</a>    ///
-<a href=#361 id=361 data-nosnippet>361</a>    /// This method is specialized and one of its implementations makes use of
-<a href=#362 id=362 data-nosnippet>362</a>    /// `Iterator::__iterator_get_unchecked` calls with a `TrustedRandomAccessNoCoerce` bound
-<a href=#363 id=363 data-nosnippet>363</a>    /// on `I` which means the caller of this method must take the safety conditions
-<a href=#364 id=364 data-nosnippet>364</a>    /// of that trait into consideration.
-<a href=#365 id=365 data-nosnippet>365</a>    </span><span class="kw">unsafe fn </span>collect_in_place(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dst: <span class="kw-2">*mut </span>T, end: <span class="kw-2">*const </span>T) -&gt; usize;
-<a href=#366 id=366 data-nosnippet>366</a>}
-<a href=#367 id=367 data-nosnippet>367</a>
-<a href=#368 id=368 data-nosnippet>368</a><span class="kw">impl</span>&lt;T, I&gt; SpecInPlaceCollect&lt;T, I&gt; <span class="kw">for </span>I
-<a href=#369 id=369 data-nosnippet>369</a><span class="kw">where
-<a href=#370 id=370 data-nosnippet>370</a>    </span>I: Iterator&lt;Item = T&gt;,
-<a href=#371 id=371 data-nosnippet>371</a>{
-<a href=#372 id=372 data-nosnippet>372</a>    <span class="attr">#[inline]
-<a href=#373 id=373 data-nosnippet>373</a>    </span>default <span class="kw">unsafe fn </span>collect_in_place(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dst_buf: <span class="kw-2">*mut </span>T, end: <span class="kw-2">*const </span>T) -&gt; usize {
-<a href=#374 id=374 data-nosnippet>374</a>        <span class="comment">// use try-fold since
-<a href=#375 id=375 data-nosnippet>375</a>        // - it vectorizes better for some iterator adapters
-<a href=#376 id=376 data-nosnippet>376</a>        // - unlike most internal iteration methods, it only takes a &amp;mut self
-<a href=#377 id=377 data-nosnippet>377</a>        // - it lets us thread the write pointer through its innards and get it back in the end
-<a href=#378 id=378 data-nosnippet>378</a>        </span><span class="kw">let </span>sink = InPlaceDrop { inner: dst_buf, dst: dst_buf };
-<a href=#379 id=379 data-nosnippet>379</a>        <span class="kw">let </span>sink =
-<a href=#380 id=380 data-nosnippet>380</a>            <span class="self">self</span>.try_fold::&lt;<span class="kw">_</span>, <span class="kw">_</span>, <span class="prelude-ty">Result</span>&lt;<span class="kw">_</span>, !&gt;&gt;(sink, write_in_place_with_drop(end)).into_ok();
-<a href=#381 id=381 data-nosnippet>381</a>        <span class="comment">// iteration succeeded, don't drop head
-<a href=#382 id=382 data-nosnippet>382</a>        </span><span class="kw">unsafe </span>{ ManuallyDrop::new(sink).dst.offset_from_unsigned(dst_buf) }
-<a href=#383 id=383 data-nosnippet>383</a>    }
-<a href=#384 id=384 data-nosnippet>384</a>}
-<a href=#385 id=385 data-nosnippet>385</a>
-<a href=#386 id=386 data-nosnippet>386</a><span class="kw">impl</span>&lt;T, I&gt; SpecInPlaceCollect&lt;T, I&gt; <span class="kw">for </span>I
-<a href=#387 id=387 data-nosnippet>387</a><span class="kw">where
-<a href=#388 id=388 data-nosnippet>388</a>    </span>I: Iterator&lt;Item = T&gt; + TrustedRandomAccessNoCoerce,
-<a href=#389 id=389 data-nosnippet>389</a>{
-<a href=#390 id=390 data-nosnippet>390</a>    <span class="attr">#[inline]
-<a href=#391 id=391 data-nosnippet>391</a>    </span><span class="kw">unsafe fn </span>collect_in_place(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dst_buf: <span class="kw-2">*mut </span>T, end: <span class="kw-2">*const </span>T) -&gt; usize {
-<a href=#392 id=392 data-nosnippet>392</a>        <span class="kw">let </span>len = <span class="self">self</span>.size();
-<a href=#393 id=393 data-nosnippet>393</a>        <span class="kw">let </span><span class="kw-2">mut </span>drop_guard = InPlaceDrop { inner: dst_buf, dst: dst_buf };
-<a href=#394 id=394 data-nosnippet>394</a>        <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..len {
-<a href=#395 id=395 data-nosnippet>395</a>            <span class="comment">// Safety: InplaceIterable contract guarantees that for every element we read
-<a href=#396 id=396 data-nosnippet>396</a>            // one slot in the underlying storage will have been freed up and we can immediately
-<a href=#397 id=397 data-nosnippet>397</a>            // write back the result.
-<a href=#398 id=398 data-nosnippet>398</a>            </span><span class="kw">unsafe </span>{
-<a href=#399 id=399 data-nosnippet>399</a>                <span class="kw">let </span>dst = dst_buf.add(i);
-<a href=#400 id=400 data-nosnippet>400</a>                <span class="macro">debug_assert!</span>(dst <span class="kw">as </span><span class="kw-2">*const </span><span class="kw">_ </span>&lt;= end, <span class="string">"InPlaceIterable contract violation"</span>);
-<a href=#401 id=401 data-nosnippet>401</a>                ptr::write(dst, <span class="self">self</span>.__iterator_get_unchecked(i));
-<a href=#402 id=402 data-nosnippet>402</a>                <span class="comment">// Since this executes user code which can panic we have to bump the pointer
-<a href=#403 id=403 data-nosnippet>403</a>                // after each step.
-<a href=#404 id=404 data-nosnippet>404</a>                </span>drop_guard.dst = dst.add(<span class="number">1</span>);
-<a href=#405 id=405 data-nosnippet>405</a>            }
-<a href=#406 id=406 data-nosnippet>406</a>        }
-<a href=#407 id=407 data-nosnippet>407</a>        mem::forget(drop_guard);
-<a href=#408 id=408 data-nosnippet>408</a>        len
-<a href=#409 id=409 data-nosnippet>409</a>    }
-<a href=#410 id=410 data-nosnippet>410</a>}
-<a href=#411 id=411 data-nosnippet>411</a>
-<a href=#412 id=412 data-nosnippet>412</a><span class="doccomment">/// Internal helper trait for in-place iteration specialization.
-<a href=#413 id=413 data-nosnippet>413</a>///
-<a href=#414 id=414 data-nosnippet>414</a>/// Currently this is only implemented by [`vec::IntoIter`] - returning a reference to itself - and
-<a href=#415 id=415 data-nosnippet>415</a>/// [`binary_heap::IntoIter`] which returns a reference to its inner representation.
-<a href=#416 id=416 data-nosnippet>416</a>///
-<a href=#417 id=417 data-nosnippet>417</a>/// Since this is an internal trait it hides the implementation detail `binary_heap::IntoIter`
-<a href=#418 id=418 data-nosnippet>418</a>/// uses `vec::IntoIter` internally.
-<a href=#419 id=419 data-nosnippet>419</a>///
-<a href=#420 id=420 data-nosnippet>420</a>/// [`vec::IntoIter`]: super::IntoIter
-<a href=#421 id=421 data-nosnippet>421</a>/// [`binary_heap::IntoIter`]: crate::collections::binary_heap::IntoIter
+<a href=#333 id=333 data-nosnippet>333</a>    vec
+<a href=#334 id=334 data-nosnippet>334</a>}
+<a href=#335 id=335 data-nosnippet>335</a>
+<a href=#336 id=336 data-nosnippet>336</a><span class="kw">fn </span>write_in_place_with_drop&lt;T&gt;(
+<a href=#337 id=337 data-nosnippet>337</a>    src_end: <span class="kw-2">*const </span>T,
+<a href=#338 id=338 data-nosnippet>338</a>) -&gt; <span class="kw">impl </span>FnMut(InPlaceDrop&lt;T&gt;, T) -&gt; <span class="prelude-ty">Result</span>&lt;InPlaceDrop&lt;T&gt;, !&gt; {
+<a href=#339 id=339 data-nosnippet>339</a>    <span class="kw">move </span>|<span class="kw-2">mut </span>sink, item| {
+<a href=#340 id=340 data-nosnippet>340</a>        <span class="kw">unsafe </span>{
+<a href=#341 id=341 data-nosnippet>341</a>            <span class="comment">// the InPlaceIterable contract cannot be verified precisely here since
+<a href=#342 id=342 data-nosnippet>342</a>            // try_fold has an exclusive reference to the source pointer
+<a href=#343 id=343 data-nosnippet>343</a>            // all we can do is check if it's still in range
+<a href=#344 id=344 data-nosnippet>344</a>            </span><span class="macro">debug_assert!</span>(sink.dst <span class="kw">as </span><span class="kw-2">*const </span><span class="kw">_ </span>&lt;= src_end, <span class="string">"InPlaceIterable contract violation"</span>);
+<a href=#345 id=345 data-nosnippet>345</a>            ptr::write(sink.dst, item);
+<a href=#346 id=346 data-nosnippet>346</a>            <span class="comment">// Since this executes user code which can panic we have to bump the pointer
+<a href=#347 id=347 data-nosnippet>347</a>            // after each step.
+<a href=#348 id=348 data-nosnippet>348</a>            </span>sink.dst = sink.dst.add(<span class="number">1</span>);
+<a href=#349 id=349 data-nosnippet>349</a>        }
+<a href=#350 id=350 data-nosnippet>350</a>        <span class="prelude-val">Ok</span>(sink)
+<a href=#351 id=351 data-nosnippet>351</a>    }
+<a href=#352 id=352 data-nosnippet>352</a>}
+<a href=#353 id=353 data-nosnippet>353</a>
+<a href=#354 id=354 data-nosnippet>354</a><span class="doccomment">/// Helper trait to hold specialized implementations of the in-place iterate-collect loop
+<a href=#355 id=355 data-nosnippet>355</a></span><span class="kw">trait </span>SpecInPlaceCollect&lt;T, I&gt;: Iterator&lt;Item = T&gt; {
+<a href=#356 id=356 data-nosnippet>356</a>    <span class="doccomment">/// Collects an iterator (`self`) into the destination buffer (`dst`) and returns the number of items
+<a href=#357 id=357 data-nosnippet>357</a>    /// collected. `end` is the last writable element of the allocation and used for bounds checks.
+<a href=#358 id=358 data-nosnippet>358</a>    ///
+<a href=#359 id=359 data-nosnippet>359</a>    /// This method is specialized and one of its implementations makes use of
+<a href=#360 id=360 data-nosnippet>360</a>    /// `Iterator::__iterator_get_unchecked` calls with a `TrustedRandomAccessNoCoerce` bound
+<a href=#361 id=361 data-nosnippet>361</a>    /// on `I` which means the caller of this method must take the safety conditions
+<a href=#362 id=362 data-nosnippet>362</a>    /// of that trait into consideration.
+<a href=#363 id=363 data-nosnippet>363</a>    </span><span class="kw">unsafe fn </span>collect_in_place(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dst: <span class="kw-2">*mut </span>T, end: <span class="kw-2">*const </span>T) -&gt; usize;
+<a href=#364 id=364 data-nosnippet>364</a>}
+<a href=#365 id=365 data-nosnippet>365</a>
+<a href=#366 id=366 data-nosnippet>366</a><span class="kw">impl</span>&lt;T, I&gt; SpecInPlaceCollect&lt;T, I&gt; <span class="kw">for </span>I
+<a href=#367 id=367 data-nosnippet>367</a><span class="kw">where
+<a href=#368 id=368 data-nosnippet>368</a>    </span>I: Iterator&lt;Item = T&gt;,
+<a href=#369 id=369 data-nosnippet>369</a>{
+<a href=#370 id=370 data-nosnippet>370</a>    <span class="attr">#[inline]
+<a href=#371 id=371 data-nosnippet>371</a>    </span>default <span class="kw">unsafe fn </span>collect_in_place(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dst_buf: <span class="kw-2">*mut </span>T, end: <span class="kw-2">*const </span>T) -&gt; usize {
+<a href=#372 id=372 data-nosnippet>372</a>        <span class="comment">// use try-fold since
+<a href=#373 id=373 data-nosnippet>373</a>        // - it vectorizes better for some iterator adapters
+<a href=#374 id=374 data-nosnippet>374</a>        // - unlike most internal iteration methods, it only takes a &amp;mut self
+<a href=#375 id=375 data-nosnippet>375</a>        // - it lets us thread the write pointer through its innards and get it back in the end
+<a href=#376 id=376 data-nosnippet>376</a>        </span><span class="kw">let </span>sink = InPlaceDrop { inner: dst_buf, dst: dst_buf };
+<a href=#377 id=377 data-nosnippet>377</a>        <span class="kw">let </span>sink =
+<a href=#378 id=378 data-nosnippet>378</a>            <span class="self">self</span>.try_fold::&lt;<span class="kw">_</span>, <span class="kw">_</span>, <span class="prelude-ty">Result</span>&lt;<span class="kw">_</span>, !&gt;&gt;(sink, write_in_place_with_drop(end)).into_ok();
+<a href=#379 id=379 data-nosnippet>379</a>        <span class="comment">// iteration succeeded, don't drop head
+<a href=#380 id=380 data-nosnippet>380</a>        </span><span class="kw">unsafe </span>{ ManuallyDrop::new(sink).dst.offset_from_unsigned(dst_buf) }
+<a href=#381 id=381 data-nosnippet>381</a>    }
+<a href=#382 id=382 data-nosnippet>382</a>}
+<a href=#383 id=383 data-nosnippet>383</a>
+<a href=#384 id=384 data-nosnippet>384</a><span class="kw">impl</span>&lt;T, I&gt; SpecInPlaceCollect&lt;T, I&gt; <span class="kw">for </span>I
+<a href=#385 id=385 data-nosnippet>385</a><span class="kw">where
+<a href=#386 id=386 data-nosnippet>386</a>    </span>I: Iterator&lt;Item = T&gt; + TrustedRandomAccessNoCoerce,
+<a href=#387 id=387 data-nosnippet>387</a>{
+<a href=#388 id=388 data-nosnippet>388</a>    <span class="attr">#[inline]
+<a href=#389 id=389 data-nosnippet>389</a>    </span><span class="kw">unsafe fn </span>collect_in_place(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dst_buf: <span class="kw-2">*mut </span>T, end: <span class="kw-2">*const </span>T) -&gt; usize {
+<a href=#390 id=390 data-nosnippet>390</a>        <span class="kw">let </span>len = <span class="self">self</span>.size();
+<a href=#391 id=391 data-nosnippet>391</a>        <span class="kw">let </span><span class="kw-2">mut </span>drop_guard = InPlaceDrop { inner: dst_buf, dst: dst_buf };
+<a href=#392 id=392 data-nosnippet>392</a>        <span class="kw">for </span>i <span class="kw">in </span><span class="number">0</span>..len {
+<a href=#393 id=393 data-nosnippet>393</a>            <span class="comment">// Safety: InplaceIterable contract guarantees that for every element we read
+<a href=#394 id=394 data-nosnippet>394</a>            // one slot in the underlying storage will have been freed up and we can immediately
+<a href=#395 id=395 data-nosnippet>395</a>            // write back the result.
+<a href=#396 id=396 data-nosnippet>396</a>            </span><span class="kw">unsafe </span>{
+<a href=#397 id=397 data-nosnippet>397</a>                <span class="kw">let </span>dst = dst_buf.add(i);
+<a href=#398 id=398 data-nosnippet>398</a>                <span class="macro">debug_assert!</span>(dst <span class="kw">as </span><span class="kw-2">*const </span><span class="kw">_ </span>&lt;= end, <span class="string">"InPlaceIterable contract violation"</span>);
+<a href=#399 id=399 data-nosnippet>399</a>                ptr::write(dst, <span class="self">self</span>.__iterator_get_unchecked(i));
+<a href=#400 id=400 data-nosnippet>400</a>                <span class="comment">// Since this executes user code which can panic we have to bump the pointer
+<a href=#401 id=401 data-nosnippet>401</a>                // after each step.
+<a href=#402 id=402 data-nosnippet>402</a>                </span>drop_guard.dst = dst.add(<span class="number">1</span>);
+<a href=#403 id=403 data-nosnippet>403</a>            }
+<a href=#404 id=404 data-nosnippet>404</a>        }
+<a href=#405 id=405 data-nosnippet>405</a>        mem::forget(drop_guard);
+<a href=#406 id=406 data-nosnippet>406</a>        len
+<a href=#407 id=407 data-nosnippet>407</a>    }
+<a href=#408 id=408 data-nosnippet>408</a>}
+<a href=#409 id=409 data-nosnippet>409</a>
+<a href=#410 id=410 data-nosnippet>410</a><span class="doccomment">/// Internal helper trait for in-place iteration specialization.
+<a href=#411 id=411 data-nosnippet>411</a>///
+<a href=#412 id=412 data-nosnippet>412</a>/// Currently this is only implemented by [`vec::IntoIter`] - returning a reference to itself - and
+<a href=#413 id=413 data-nosnippet>413</a>/// [`binary_heap::IntoIter`] which returns a reference to its inner representation.
+<a href=#414 id=414 data-nosnippet>414</a>///
+<a href=#415 id=415 data-nosnippet>415</a>/// Since this is an internal trait it hides the implementation detail `binary_heap::IntoIter`
+<a href=#416 id=416 data-nosnippet>416</a>/// uses `vec::IntoIter` internally.
+<a href=#417 id=417 data-nosnippet>417</a>///
+<a href=#418 id=418 data-nosnippet>418</a>/// [`vec::IntoIter`]: super::IntoIter
+<a href=#419 id=419 data-nosnippet>419</a>/// [`binary_heap::IntoIter`]: crate::collections::binary_heap::IntoIter
+<a href=#420 id=420 data-nosnippet>420</a>///
+<a href=#421 id=421 data-nosnippet>421</a>/// # Safety
 <a href=#422 id=422 data-nosnippet>422</a>///
-<a href=#423 id=423 data-nosnippet>423</a>/// # Safety
-<a href=#424 id=424 data-nosnippet>424</a>///
-<a href=#425 id=425 data-nosnippet>425</a>/// In-place iteration relies on implementation details of `vec::IntoIter`, most importantly that
-<a href=#426 id=426 data-nosnippet>426</a>/// it does not create references to the whole allocation during iteration, only raw pointers
-<a href=#427 id=427 data-nosnippet>427</a></span><span class="attr">#[rustc_specialization_trait]
-<a href=#428 id=428 data-nosnippet>428</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">unsafe trait </span>AsVecIntoIter {
-<a href=#429 id=429 data-nosnippet>429</a>    <span class="kw">type </span>Item;
-<a href=#430 id=430 data-nosnippet>430</a>    <span class="kw">fn </span>as_into_iter(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span><span class="kw">super</span>::IntoIter&lt;<span class="self">Self</span>::Item&gt;;
-<a href=#431 id=431 data-nosnippet>431</a>}</code></pre></div></section></main></body></html>
+<a href=#423 id=423 data-nosnippet>423</a>/// In-place iteration relies on implementation details of `vec::IntoIter`, most importantly that
+<a href=#424 id=424 data-nosnippet>424</a>/// it does not create references to the whole allocation during iteration, only raw pointers
+<a href=#425 id=425 data-nosnippet>425</a></span><span class="attr">#[rustc_specialization_trait]
+<a href=#426 id=426 data-nosnippet>426</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">unsafe trait </span>AsVecIntoIter {
+<a href=#427 id=427 data-nosnippet>427</a>    <span class="kw">type </span>Item;
+<a href=#428 id=428 data-nosnippet>428</a>    <span class="kw">fn </span>as_into_iter(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span><span class="kw">super</span>::IntoIter&lt;<span class="self">Self</span>::Item&gt;;
+<a href=#429 id=429 data-nosnippet>429</a>}</code></pre></div></section></main></body></html>
